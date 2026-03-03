@@ -43,7 +43,6 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] WP-03 Artifact + benchmark reliability (A/B thresholds)
 - [ ] ENG-04 Artifact manifest/checksum/version lifecycle (parallel CI-first scope; no physical-device dependency)
 - [ ] ENG-06 Tool runtime strict schema validation hardening (parallel CI-first scope; no physical-device dependency)
-- [ ] QA-02 prep: Stage-2 benchmark validation pipeline (A/B templates, runbook, threshold command path)
 
 ### Ready
 
@@ -59,6 +58,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] WP-01 Build/CI baseline
 - [x] WP-02 Real Android runtime slice
 - [x] ENG-OPS Engineering foundations simplification (strict gates, single-source docs, Android module realignment scaffolding)
+- [x] QA-02 Phase B: real Scenario A/B device run + threshold report + logcat evidence
 
 ## Evidence Log
 
@@ -69,6 +69,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-02 (ENG-03 device pass 01): `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-01.md`
 - WP-02 (ENG-03 device pass 02, acceptance met): `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`
 - WP-03 (QA-02 prep only): `docs/operations/evidence/wp-03/2026-03-03-qa-02-prep.md`
+- WP-03 (QA-02 Phase B execution): `docs/operations/evidence/wp-03/2026-03-03-qa-02-phase-b.md`
 - WP-03 (ENG-04 artifact lifecycle, parallel in progress): `docs/operations/evidence/wp-03/2026-03-03-eng-04.md`
 - WP-03 (ENG-OPS foundations simplification): `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`
 - WP-05 (ENG-06 tool schema hardening, parallel in progress): `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
