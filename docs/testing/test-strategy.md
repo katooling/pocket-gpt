@@ -36,6 +36,17 @@ Last updated: 2026-03-03
 | Scenario C + memory quality checks pass | Stage 5+ |
 | Soak test + go/no-go packet complete | Stage 6 beta |
 
+## CI Baseline (ENG-02)
+
+Primary CI workflow:
+
+- `.github/workflows/ci.yml`
+
+CI runs:
+
+1. `bash scripts/dev/verify.sh` (clean + test)
+2. uploads Gradle test reports as artifacts
+
 ## Benchmark and Evidence Rules
 
 1. Store artifacts in deterministic run folders under `scripts/benchmarks/runs/YYYY-MM-DD/<device>/`.
