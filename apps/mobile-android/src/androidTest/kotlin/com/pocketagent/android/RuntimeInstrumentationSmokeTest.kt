@@ -4,9 +4,9 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pocketagent.inference.ModelCatalog
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.test.assertTrue
 
 @RunWith(AndroidJUnit4::class)
 class RuntimeInstrumentationSmokeTest {
