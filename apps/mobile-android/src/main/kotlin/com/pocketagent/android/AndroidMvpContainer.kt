@@ -39,26 +39,19 @@ class AndroidMvpContainer(
     private val observabilityModule: ObservabilityModule = InMemoryObservabilityModule(),
     private val toolModule: ToolModule = SafeLocalToolRuntime(),
     private val memoryModule: MemoryModule = InMemoryMemoryModule(),
+    private val artifactSha256ByModelId: Map<String, String> = defaultArtifactSha256ByModelId(),
 ) {
     private val modelArtifactManager = ModelArtifactManager()
     private val imageInputModule = SmokeImageInputModule()
 
     init {
-        modelArtifactManager.registerArtifact(
-            ModelArtifact(
-                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
-                version = "1",
-                fileName = "qwen3.5-0.8b-q4.gguf",
-                expectedSha256 = "replace-with-real-sha256",
-            ),
+        registerArtifact(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            fileName = "qwen3.5-0.8b-q4.gguf",
         )
-        modelArtifactManager.registerArtifact(
-            ModelArtifact(
-                modelId = ModelCatalog.QWEN_3_5_2B_Q4,
-                version = "1",
-                fileName = "qwen3.5-2b-q4.gguf",
-                expectedSha256 = "replace-with-real-sha256",
-            ),
+        registerArtifact(
+            modelId = ModelCatalog.QWEN_3_5_2B_Q4,
+            fileName = "qwen3.5-2b-q4.gguf",
         )
         modelArtifactManager.setActiveModel(ModelCatalog.QWEN_3_5_0_8B_Q4)
     }
@@ -136,6 +129,15 @@ class AndroidMvpContainer(
 
     fun runStartupChecks(): List<String> {
         val checks = mutableListOf<String>()
+        val manifestIssues = modelArtifactManager.validateManifest()
+        if (manifestIssues.isNotEmpty()) {
+            checks.add(
+                "Artifact manifest invalid: ${manifestIssues.joinToString("; ") { "${it.modelId}@${it.version}:${it.code}" }}. " +
+                    "Set ${QWEN_0_8B_SHA256_ENV} and ${QWEN_2B_SHA256_ENV} with SHA-256 values before Stage-2 closure runs.",
+            )
+            return checks
+        }
+
         val available = inferenceModule.listAvailableModels().toSet()
         val required = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
         val missing = required.minus(available)
@@ -178,5 +180,26 @@ class AndroidMvpContainer(
             append("user: ")
             append(userText)
         }.take(contextBudget * 4)
+    }
+
+    private fun registerArtifact(modelId: String, fileName: String) {
+        modelArtifactManager.registerArtifact(
+            ModelArtifact(
+                modelId = modelId,
+                version = "1",
+                fileName = fileName,
+                expectedSha256 = artifactSha256ByModelId[modelId]?.trim().orEmpty(),
+            ),
+        )
+    }
+
+    companion object {
+        const val QWEN_0_8B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256"
+        const val QWEN_2B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_SHA256"
+
+        private fun defaultArtifactSha256ByModelId(): Map<String, String> = mapOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4 to System.getenv(QWEN_0_8B_SHA256_ENV).orEmpty(),
+            ModelCatalog.QWEN_3_5_2B_Q4 to System.getenv(QWEN_2B_SHA256_ENV).orEmpty(),
+        )
     }
 }

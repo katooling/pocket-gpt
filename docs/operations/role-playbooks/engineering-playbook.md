@@ -22,11 +22,18 @@ Deliver reliable local runtime capability and core feature implementation for MV
 - [x] ENG-02 completed: CI workflow for clean/test + test artifact upload (`docs/operations/evidence/wp-01/2026-03-03-eng-02.md`)
 - [x] ENG-03 completed: real Android runtime bridge path integrated with physical-device 10-run evidence (`docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`)
 - [x] ENG-OPS completed: engineering foundations simplification (strict PR gates, canonical docs, benchmark automation wrapper, Android app + host lane split) (`docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`)
+- [x] ENG-04 completed: artifact-manifest startup validation enforced, placeholder checksum removed from active Stage-2 path, QA handoff unblocked (`docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`)
 
 ## What Is In Progress
 
-- [ ] ENG-04 Artifact manifest/checksum/version lifecycle (parallel CI-first scope; device-independent)
 - [ ] ENG-06 Tool runtime strict schema validation hardening (parallel CI-first scope; device-independent)
+
+## Lead Eng Dispatch (Now)
+
+1. Run in parallel:
+   - ENG-06 package-close prep (keep tests/evidence current; package remains not-Done until WP-03 and package acceptance criteria are met)
+2. Handoff trigger:
+   - ENG-04 closeout evidence landed; QA is unblocked to execute final QA-02 closure refresh run
 
 ## Task Queue
 
@@ -35,7 +42,7 @@ Deliver reliable local runtime capability and core feature implementation for MV
 | ENG-01 | Implement Gradle wrapper + stable local build command | Done | WP-01 | Eng Lead | `docs/operations/evidence/wp-01/2026-03-03-eng-01.md` |
 | ENG-02 | Add CI for module tests and app tests | Done | ENG-01 | Eng Platform | `docs/operations/evidence/wp-01/2026-03-03-eng-02.md` |
 | ENG-03 | Integrate real Android `llama.cpp` runtime bridge | Done | WP-01 complete | Runtime Eng | `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md` |
-| ENG-04 | Artifact manifest/checksum/version lifecycle | In Progress | ENG-03 | Runtime Eng | `docs/feasibility/benchmark-protocol.md` |
+| ENG-04 | Artifact manifest/checksum/version lifecycle | Done | ENG-03 | Runtime Eng | `docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md` |
 | ENG-05 | Routing + policy hardening with boundary tests | Backlog | ENG-04 | Runtime Eng | `docs/security/privacy-model.md` |
 | ENG-06 | Tool runtime strict schema validation | In Progress | ENG-04 | Platform Eng | `docs/product/feature-catalog.md` |
 | ENG-07 | SQLite memory backend + pruning | Backlog | ENG-05 | Core Eng | `docs/roadmap/mvp-implementation-tracker.md` |
@@ -59,8 +66,11 @@ Deliver reliable local runtime capability and core feature implementation for MV
 - 2026-03-03: ENG-03 device pass 01 captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-01.md`
 - 2026-03-03: ENG-03 device pass 02 captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`
 - 2026-03-03: ENG-04 artifact lifecycle evidence (parallel in progress) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-04.md`
+- 2026-03-03: ENG-04 closeout evidence (active Stage-2 startup path enforces checksum metadata and removes placeholder ambiguity) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`
 - 2026-03-03: ENG-06 tool schema hardening evidence (parallel in progress) captured in `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
 - 2026-03-03: ENG-OPS engineering foundations simplification captured in `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`
+- 2026-03-03: ENG devctl DX consolidation (config-driven orchestrator + Maestro/Espresso lanes) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-devctl-dx-consolidation.md`
+- 2026-03-03: Platform governance hardening refresh with governance self-test coverage captured in `docs/operations/evidence/wp-03/2026-03-03-eng-platform-governance-refresh.md`
 
 ## Engineering References
 

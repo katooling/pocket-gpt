@@ -41,12 +41,12 @@ All teams should update status here first, then mirror updates in role playbooks
 ### In Progress
 
 - [ ] WP-03 Artifact + benchmark reliability (A/B thresholds)
-- [ ] ENG-04 Artifact manifest/checksum/version lifecycle (parallel CI-first scope; no physical-device dependency)
 - [ ] ENG-06 Tool runtime strict schema validation hardening (parallel CI-first scope; no physical-device dependency)
 
 ### Ready
 
-- [ ] None
+- [ ] WP-03 closeout gate: QA-02 rerun on artifact-validated runtime path with Scenario A/B CSV + threshold report + logcat evidence refresh
+- [ ] PM/Prod sync packet for post-WP-03 dispatch (WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies)
 
 ### Blocked
 
@@ -59,6 +59,21 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] WP-02 Real Android runtime slice
 - [x] ENG-OPS Engineering foundations simplification (strict gates, single-source docs, Android module realignment scaffolding)
 - [x] QA-02 Phase B: real Scenario A/B device run + threshold report + logcat evidence
+- [x] ENG-04 closeout gate: artifact-manifest startup validation active, placeholder checksum removed from active Stage-2 path, and QA unblocked for final QA-02 rerun
+
+## Immediate Assignments (PM Dispatch)
+
+1. Lead Eng - start now:
+   - ENG-04 gate for WP-03 is closed (`docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`)
+   - keep ENG-06 package-close prep running in parallel (do not claim WP-05 Done yet)
+2. QA - start immediately after ENG-04 closeout:
+   - run QA-02 closure refresh now on artifact-validated path and publish final WP-03 packet
+3. Product - start now in draft mode, finalize after WP-03 Done:
+   - `PROD-01` launch workflows
+   - `PROD-02` launch device support policy
+4. Marketing - start now in draft mode, finalize after WP-03 Done:
+   - `MKT-01` messaging architecture
+   - `MKT-02` evidence-safe competitor matrix (after MKT-01 draft)
 
 ## Evidence Log
 
@@ -71,7 +86,12 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-03 (QA-02 prep only): `docs/operations/evidence/wp-03/2026-03-03-qa-02-prep.md`
 - WP-03 (QA-02 Phase B execution): `docs/operations/evidence/wp-03/2026-03-03-qa-02-phase-b.md`
 - WP-03 (ENG-04 artifact lifecycle, parallel in progress): `docs/operations/evidence/wp-03/2026-03-03-eng-04.md`
+- WP-03 (ENG-04 closeout, artifact-validated startup path + QA unblock): `docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`
 - WP-03 (ENG-OPS foundations simplification): `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`
+- WP-03 (ENG devctl DX consolidation: orchestrator + Maestro/Espresso lanes): `docs/operations/evidence/wp-03/2026-03-03-eng-devctl-dx-consolidation.md`
+- WP-03 (Platform governance hardening refresh + self-test coverage): `docs/operations/evidence/wp-03/2026-03-03-eng-platform-governance-refresh.md`
+- WP-03 (PM post-reconciliation next-step dispatch): `docs/operations/evidence/wp-03/2026-03-03-pm-next-steps-dispatch.md`
+- WP-03 (PM owner-level assignment briefs): `docs/operations/evidence/wp-03/2026-03-03-pm-owner-briefs.md`
 - WP-05 (ENG-06 tool schema hardening, parallel in progress): `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
 
 ## Dependency Flow

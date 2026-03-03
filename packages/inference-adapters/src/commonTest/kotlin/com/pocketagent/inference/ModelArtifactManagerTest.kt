@@ -164,7 +164,7 @@ class ModelArtifactManagerTest {
                 modelId = "model-invalid",
                 version = "1.0.0",
                 fileName = "model-invalid.gguf",
-                expectedSha256 = "replace-with-real-sha256",
+                expectedSha256 = "not-a-valid-sha",
             ),
         )
 
@@ -174,5 +174,20 @@ class ModelArtifactManagerTest {
         assertNotNull(checksumIssue)
         assertEquals("model-invalid", checksumIssue.modelId)
         assertEquals("1.0.0", checksumIssue.version)
+    }
+
+    @Test
+    fun `manifest validation passes for real-format checksum metadata`() {
+        val manager = ModelArtifactManager()
+        manager.registerArtifact(
+            ModelArtifact(
+                modelId = "model-valid",
+                version = "1.0.0",
+                fileName = "model-valid.gguf",
+                expectedSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            ),
+        )
+
+        assertTrue(manager.validateManifest().isEmpty())
     }
 }

@@ -7,6 +7,7 @@ import com.pocketagent.inference.ModelCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class AndroidMvpContainerTest {
@@ -64,6 +65,39 @@ class AndroidMvpContainerTest {
         }
         assertTrue(error.message?.contains("Runtime returned no tokens") == true)
         assertEquals(1, inference.unloadCalls)
+    }
+
+    @Test
+    fun `startup checks fail when artifact checksum metadata is missing`() {
+        val container = AndroidMvpContainer(
+            inferenceModule = RecordingInferenceModule(),
+            artifactSha256ByModelId = emptyMap(),
+        )
+
+        val checks = container.runStartupChecks()
+
+        assertTrue(checks.isNotEmpty())
+        assertTrue(checks.first().contains("Artifact manifest invalid"))
+        assertTrue(checks.first().contains(AndroidMvpContainer.QWEN_0_8B_SHA256_ENV))
+        assertTrue(checks.first().contains(AndroidMvpContainer.QWEN_2B_SHA256_ENV))
+    }
+
+    @Test
+    fun `startup checks pass with valid sha256 metadata and ready runtime models`() {
+        val inference = RecordingInferenceModule()
+        val container = AndroidMvpContainer(
+            inferenceModule = inference,
+            artifactSha256ByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            ),
+        )
+
+        val checks = container.runStartupChecks()
+
+        assertEquals(emptyList(), checks)
+        assertTrue(inference.loadCalls.contains(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertNotEquals(0, inference.unloadCalls)
     }
 }
 
