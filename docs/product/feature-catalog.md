@@ -21,7 +21,7 @@ This catalog lists current and possible features based on known technical constr
 |---|---|---|---|
 | iOS parity | market expansion | runtime bridge and platform integration | Planned |
 | SQLite-backed memory | durable reliability | migrations and pruning correctness | Planned |
-| Strict JSON-schema tools | stronger safety guarantees | parser contract and test coverage | Planned |
+| Strict JSON-schema tools | stronger safety guarantees | parser contract and test coverage | In active implementation (ENG-06 parallel) |
 | Rich diagnostics dashboards | faster QA and regression triage | safe redaction + metrics consistency | Planned |
 | Better image workflows | broader use cases (documents/photos) | model quality on edge cases | Planned |
 
