@@ -20,10 +20,13 @@ Deliver reliable local runtime capability and core feature implementation for MV
 - [x] Foundational docs and architecture ADRs complete
 - [x] ENG-01 completed: Gradle wrapper + one-command verification baseline (`docs/operations/evidence/wp-01/2026-03-03-eng-01.md`)
 - [x] ENG-02 completed: CI workflow for clean/test + test artifact upload (`docs/operations/evidence/wp-01/2026-03-03-eng-02.md`)
+- [x] ENG-03 completed: real Android runtime bridge path integrated with physical-device 10-run evidence (`docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`)
+- [x] ENG-OPS completed: engineering foundations simplification (strict PR gates, canonical docs, benchmark automation wrapper, Android app + host lane split) (`docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`)
 
 ## What Is In Progress
 
-- [ ] ENG-03 Integrate real Android `llama.cpp` runtime bridge (awaiting physical-device validation evidence)
+- [ ] ENG-04 Artifact manifest/checksum/version lifecycle (parallel CI-first scope; device-independent)
+- [ ] ENG-06 Tool runtime strict schema validation hardening (parallel CI-first scope; device-independent)
 
 ## Task Queue
 
@@ -31,13 +34,14 @@ Deliver reliable local runtime capability and core feature implementation for MV
 |---|---|---|---|---|---|
 | ENG-01 | Implement Gradle wrapper + stable local build command | Done | WP-01 | Eng Lead | `docs/operations/evidence/wp-01/2026-03-03-eng-01.md` |
 | ENG-02 | Add CI for module tests and app tests | Done | ENG-01 | Eng Platform | `docs/operations/evidence/wp-01/2026-03-03-eng-02.md` |
-| ENG-03 | Integrate real Android `llama.cpp` runtime bridge | In Progress | WP-01 complete | Runtime Eng | `docs/roadmap/next-steps-execution-plan.md` |
-| ENG-04 | Artifact manifest/checksum/version lifecycle | Backlog | ENG-03 | Runtime Eng | `docs/feasibility/benchmark-protocol.md` |
+| ENG-03 | Integrate real Android `llama.cpp` runtime bridge | Done | WP-01 complete | Runtime Eng | `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md` |
+| ENG-04 | Artifact manifest/checksum/version lifecycle | In Progress | ENG-03 | Runtime Eng | `docs/feasibility/benchmark-protocol.md` |
 | ENG-05 | Routing + policy hardening with boundary tests | Backlog | ENG-04 | Runtime Eng | `docs/security/privacy-model.md` |
-| ENG-06 | Tool runtime strict schema validation | Backlog | ENG-04 | Platform Eng | `docs/product/feature-catalog.md` |
+| ENG-06 | Tool runtime strict schema validation | In Progress | ENG-04 | Platform Eng | `docs/product/feature-catalog.md` |
 | ENG-07 | SQLite memory backend + pruning | Backlog | ENG-05 | Core Eng | `docs/roadmap/mvp-implementation-tracker.md` |
 | ENG-08 | Image path production hardening | Backlog | ENG-07 | Runtime Eng | `docs/feasibility/benchmark-protocol.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
+| ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
 
 ## Engineering Definition of Done
 
@@ -50,7 +54,13 @@ Deliver reliable local runtime capability and core feature implementation for MV
 
 - 2026-03-03: ENG-01 evidence captured in `docs/operations/evidence/wp-01/2026-03-03-eng-01.md`
 - 2026-03-03: ENG-02 evidence captured in `docs/operations/evidence/wp-01/2026-03-03-eng-02.md`
-- 2026-03-03: ENG-03 runtime bridge integration evidence (in progress) captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03.md`
+- 2026-03-03: ENG-03 runtime bridge integration evidence captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03.md`
+- 2026-03-03: ENG-03 automation foundation update captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03-automation-foundation.md`
+- 2026-03-03: ENG-03 device pass 01 captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-01.md`
+- 2026-03-03: ENG-03 device pass 02 captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`
+- 2026-03-03: ENG-04 artifact lifecycle evidence (parallel in progress) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-04.md`
+- 2026-03-03: ENG-06 tool schema hardening evidence (parallel in progress) captured in `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
+- 2026-03-03: ENG-OPS engineering foundations simplification captured in `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`
 
 ## Engineering References
 

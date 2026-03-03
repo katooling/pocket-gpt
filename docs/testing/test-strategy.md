@@ -2,6 +2,11 @@
 
 Last updated: 2026-03-03
 
+## Source of truth
+
+- Command contract: `scripts/dev/README.md`
+- Android device execution details: `docs/testing/android-dx-and-test-playbook.md`
+
 ## Goals
 
 1. Catch regressions early with fast local feedback.
@@ -10,20 +15,10 @@ Last updated: 2026-03-03
 
 ## Test Pyramid
 
-1. **Unit tests (fast, required on every change)**
-   - routing logic
-   - tool validation and execution behavior
-   - memory retrieval/pruning
-   - policy and diagnostics helpers
-2. **Module integration tests**
-   - container flow: session -> prompt -> inference -> response
-   - artifact checksum + model selection flow
-3. **Device validation tests**
-   - Scenario A/B/C benchmark protocol
-   - thermal, battery, and stability checks
-4. **Soak/reliability tests**
-   - 30-minute sessions
-   - crash/OOM/ANR observation and recovery behavior
+1. Unit tests (required on every change)
+2. Module integration tests
+3. Device validation tests (Scenario A/B/C)
+4. Soak/reliability tests
 
 ## Release Gates
 
@@ -36,38 +31,34 @@ Last updated: 2026-03-03
 | Scenario C + memory quality checks pass | Stage 5+ |
 | Soak test + go/no-go packet complete | Stage 6 beta |
 
-## CI Baseline (ENG-02)
+## CI Baseline
 
-Primary CI workflow:
+Primary workflow: `.github/workflows/ci.yml`
 
-- `.github/workflows/ci.yml`
+CI responsibilities:
 
-CI runs:
+1. `bash scripts/dev/test.sh ci`
+2. `bash scripts/dev/docs-drift-check.sh`
+3. PR governance checks (template completion)
+4. Test report artifact upload
 
-1. `bash scripts/dev/verify.sh` (clean + test)
-2. uploads Gradle test reports as artifacts
+## Automation Boundary (CI vs Human)
 
-## Benchmark and Evidence Rules
+Automate by default:
 
-1. Store artifacts in deterministic run folders under `scripts/benchmarks/runs/YYYY-MM-DD/<device>/`.
-2. Include:
-   - benchmark CSV
-   - threshold report
-   - logcat extract
-   - optional perfetto trace
-3. Do not treat mock/template data as production validation evidence.
-4. Stage-2 execution checklist and evidence capture workflow live in `docs/testing/stage-2-benchmark-runbook.md`.
+1. Unit/module tests for touched modules
+2. Contract/failure-path tests for runtime wiring/policies
+3. Deterministic script execution and artifact generation
+4. Crash/OOM signal scanning from collected logs
 
-## Ownership Split
+Human-required checkpoints:
 
-1. Runtime team: inference performance/stability tests
-2. Platform team: Android lifecycle, memory, ANR/OOM tests
-3. Security team: tool/policy abuse and privacy redaction tests
-4. Product QA: scenario acceptance and UX quality rubrics
+1. USB trust bootstrap (developer mode + RSA authorization)
+2. Physical environment control during benchmark windows
+3. Anomaly adjudication when metrics/logs conflict
 
-## Critical Regressions (Block Release)
+## Artifact/Evidence Policy
 
-1. Repeatable OOM/ANR in standard benchmark loops
-2. Tool execution bypassing allowlist/policy gates
-3. Policy allows unintended network activity in offline mode
-4. Significant first-token or throughput regression on target device class
+1. Raw machine artifacts only in `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...`
+2. Human evidence notes/status only in `docs/operations/evidence/wp-xx/...`
+3. Stage closure requires evidence note linking raw artifact paths

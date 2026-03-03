@@ -1,150 +1,45 @@
 # Android DX and Test Playbook
 
-This playbook defines the development and testing workflow for Android-first MVP execution.
+Last updated: 2026-03-03
 
-Companion docs:
+## Source of truth
 
-- `docs/testing/test-strategy.md`
-- `docs/testing/stage-2-benchmark-runbook.md`
-- `docs/roadmap/mvp-implementation-tracker.md`
+- Command contract: `scripts/dev/README.md`
+- Strategy/release gates: `docs/testing/test-strategy.md`
 
-## Tooling Stack
+## Purpose
 
-1. Android Studio (run/debug, profiler, logcat)
-2. ADB (install, shell, log collection)
-3. Perfetto (CPU/memory/thermal traces)
-4. LeakCanary (memory leak detection)
-5. Macrobenchmark (startup and interaction timing)
-6. StrictMode (threading/disk/network policy checks)
+Define the Android development + physical-device validation workflow with minimal ambiguity.
 
 ## Environment Prerequisites
 
 1. JDK 17+
-2. Gradle (or Gradle wrapper once added)
-3. Android SDK platform-tools (`adb`)
-4. One physical Android device with USB debugging enabled
+2. Android SDK platform-tools (`adb`)
+3. One physical Android device with USB debugging enabled
+4. USB debugging RSA authorization accepted on-device
 
-## Fast Local Dev Loop
+## Canonical Commands
 
-1. Run module/unit tests for routing, tools, memory logic.
-2. Run stage runner flow and capture structured logs by module tag:
-   - `Inference`
-   - `Routing`
-   - `Policy`
-   - `Tool`
-   - `Memory`
-3. Validate diagnostics export for every run.
+Use only commands documented in `scripts/dev/README.md` for:
 
-Suggested local command baseline (add wrapper/tasks as repo evolves):
+1. Standard local/CI tests
+2. Physical-device lane
+3. Stage-2 benchmark wrapper
+4. Governance checks (`docs-drift-check`, `evidence-check`)
 
-```bash
-# one-command clean build + tests (WP-01 baseline)
-bash scripts/dev/verify.sh
+## Device Validation Loop
 
-# optional stage runtime run
-./gradlew :apps:mobile-android:run
-```
+1. `bash scripts/android/ensure_device.sh`
+2. `bash scripts/android/capture_device_baseline.sh`
+3. `bash scripts/android/configure_device_for_benchmark.sh apply`
+4. run scenario command using `scripts/android/run_short_loop.sh` or `scripts/dev/device-test.sh`
+5. reset benchmark settings
+6. store raw run artifacts under `scripts/benchmarks/runs/...`
+7. link those run artifacts from `docs/operations/evidence/...` note
 
-## Android Device Validation Loop
-
-1. Connect device via USB (developer mode + USB debugging enabled).
-2. Install app and clear old data before benchmark runs.
-3. Run benchmark scenarios:
-   - Scenario A (short text)
-   - Scenario B (long text)
-   - Scenario C (image)
-4. Capture:
-   - first-token latency
-   - throughput
-   - memory
-   - thermal notes
-   - battery drop over 10 minutes
-5. Aggregate with benchmark scripts and compare against thresholds.
-
-## Regression Rules
-
-Fail stage if any occurs:
+## Regression Rules (Fail Stage)
 
 1. first-token latency regression beyond target band
 2. new OOM or ANR in repeated runs
 3. tool validation bypass or unsafe payload execution
 4. policy allows network in offline-only mode
-
-## Stage-by-Stage DX + Reliability Gates
-
-### Stage 1
-
-- Keep startup-to-first-response loop under 60s for local iteration.
-- Require at least one deterministic unit test for each changed class.
-- Keep runtime startup output stable and documented.
-
-### Stage 2
-
-- Artifact checksum validation must be covered by unit tests.
-- Threshold evaluation script run is required for every benchmark update.
-- Benchmark CSV schema changes require script compatibility checks.
-- Use `docs/testing/stage-2-benchmark-runbook.md` for the physical-device A/B execution checklist and evidence path conventions.
-
-### Stage 3
-
-- Routing decisions must be table-tested across battery/thermal/RAM bands.
-- Diagnostics export must avoid sensitive content; assert via tests.
-- Regression test that downgrade behavior is preserved.
-
-### Stage 4
-
-- Tool validation must reject malformed and adversarial payloads.
-- Prefer schema-driven parser/validator over string parsing.
-- Tool execution branches require success and failure-path tests.
-
-### Stage 5
-
-- Memory retrieval quality tests required for common follow-up flows.
-- Retention/pruning behavior requires deterministic tests.
-- Image path must include non-empty output and latency capture assertions.
-
-### Stage 6
-
-- Soak tests produce reproducible artifacts (logs + benchmark + diagnostics).
-- Recovery/startup behavior must be tested after forced-stop conditions.
-- Release candidate requires all prior stage gates to remain green.
-
-## Recommended Test Cases Per Stage
-
-### Stage 1
-
-- 10 short chat runs with the `llama.cpp` runtime bridge
-- startup checks must pass
-
-### Stage 2
-
-- scenario A/B with real Qwen 0.8B Q4
-- threshold report must pass
-
-### Stage 3
-
-- low battery (<20%) should force downgrade
-- high thermal should force downgrade
-
-### Stage 4
-
-- valid tool calls return expected output
-- malformed tool payload is rejected
-
-### Stage 5
-
-- relevant memory is retrieved on follow-up prompts
-- image input flow returns non-empty analysis
-
-### Stage 6
-
-- 30-minute soak without crash
-- diagnostics export is available post-run
-
-## Artifacts to Store
-
-1. Benchmark CSV files in `scripts/benchmarks/runs/YYYY-MM-DD/<device>/`
-2. Threshold report as `threshold-report.txt` in same run folder
-3. Logcat traces as `logcat.txt` in same run folder
-4. Optional perf trace as `perfetto.trace` in same run folder
-5. Updated go/no-go packet in `docs/roadmap/mvp-beta-go-no-go-packet.md`

@@ -24,7 +24,7 @@ Exit criteria:
 
 Goal: replace smoke inference path with real Android baseline runtime integration.
 
-Status (2026-03-03): In progress. Android app flow now wires load/generate/unload through a `llama.cpp` runtime bridge path; physical-device validation evidence is still pending.
+Status (2026-03-03): Completed for WP-02. Android app flow wires load/generate/unload through the `llama.cpp` bridge path, and physical-device Samsung runs now execute Scenario A successfully with 10-run stability evidence attached.
 
 Deliverables:
 
@@ -141,12 +141,26 @@ Exit criteria:
    - run smallest relevant test scope first
    - keep long-running tests isolated in dedicated suites
 3. Keep evidence reproducible:
-   - use deterministic artifact paths
+   - use deterministic artifact paths:
+     - raw artifacts: `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...`
+     - human evidence notes: `docs/operations/evidence/wp-xx/...`
    - timestamp and device-label all run outputs
-4. Update tracker and this plan at each stage boundary:
+4. Keep command/process docs single-source:
+   - commands: `scripts/dev/README.md`
+   - strategy/gates: `docs/testing/test-strategy.md`
+   - Android execution details: `docs/testing/android-dx-and-test-playbook.md`
+   - companion docs are pointer-only
+5. Enforce governance through CI:
+   - PR template completion required
+   - docs drift check required
+   - stage-close evidence gate required when `Stage close: yes`
+6. Android execution model:
+   - `apps/mobile-android` for Android app + instrumentation
+   - `apps/mobile-android-host` for host smoke and fast iteration
+7. Update tracker and this plan at each stage boundary:
    - `docs/roadmap/mvp-implementation-tracker.md`
    - `docs/roadmap/mvp-beta-go-no-go-packet.md`
-5. Keep cross-functional alignment current:
+8. Keep cross-functional alignment current:
    - `docs/roadmap/product-roadmap.md`
    - `docs/roadmap/team-workstreams.md`
    - `docs/product/open-questions-log.md`

@@ -1,32 +1,16 @@
-# Android MVP Module
+# Android App Module
 
-Android-first MVP implementation scaffolding aligned with the staged execution plan.
+Real Android app module for instrumentation-ready execution (`test` + `androidTest`).
 
-## Implemented Stage Coverage
+## Source of truth
 
-1. Stage 1: text-only streaming chat loop via `AndroidMvpContainer` + `AndroidLlamaCppInferenceModule`
-2. Stage 2: model artifact registration and benchmark runner (`StageBenchmarkRunner`)
-3. Stage 3: adaptive routing + policy + diagnostics export
-4. Stage 4: local tool runtime integration
-5. Stage 5: image analysis path and memory integration
-6. Stage 6: resilience guards for battery/thermal/prompt limits
+- Dev/test commands: `scripts/dev/README.md`
+- Android workflow details: `docs/testing/android-dx-and-test-playbook.md`
 
-## Key Files
+## Role
 
-- `src/main/kotlin/com/pocketagent/android/AndroidMvpContainer.kt`
-- `src/main/kotlin/com/pocketagent/android/AndroidLlamaCppRuntimeBridge.kt`
-- `src/main/kotlin/com/pocketagent/android/AndroidLlamaCppInferenceModule.kt`
-- `src/main/kotlin/com/pocketagent/android/StageBenchmarkRunner.kt`
-- `src/main/kotlin/com/pocketagent/android/ResilienceGuards.kt`
-- `src/main/kotlin/com/pocketagent/android/StageRunnerMain.kt`
+1. Android packaging and runtime entrypoint (`MainActivity`)
+2. Android unit test lane (`testDebugUnitTest`)
+3. Android instrumentation lane (`connectedDebugAndroidTest`)
 
-## Android Device Testing
-
-Use the playbook:
-
-- `docs/testing/android-dx-and-test-playbook.md`
-
-Use scripts:
-
-- `scripts/android/run_stage_checks.sh`
-- `scripts/android/collect_logcat.sh`
+Host smoke/runtime loop remains in `apps/mobile-android-host`.
