@@ -20,14 +20,14 @@ Ensure performance, reliability, safety, and privacy quality gates are met with 
 
 ## What Is In Progress
 
-- [ ] No active QA task currently marked in-progress
+- [ ] QA-02 prep: Stage-2 benchmark validation pipeline and evidence scaffolding
 
 ## Task Queue
 
 | Task ID | Task | Status | Prerequisites | Owner | References |
 |---|---|---|---|---|---|
 | QA-01 | Validate Stage 1 smoke loop on physical Android | Ready | WP-02 | QA Engineer | `docs/testing/android-dx-and-test-playbook.md` |
-| QA-02 | Run Scenario A/B with real Qwen model and evaluate thresholds | Ready | WP-03 | QA Engineer | `docs/feasibility/benchmark-protocol.md` |
+| QA-02 | Run Scenario A/B with real Qwen model and evaluate thresholds | In Progress (prep) | WP-03 | QA Engineer | `docs/feasibility/benchmark-protocol.md`, `docs/testing/stage-2-benchmark-runbook.md`, `docs/operations/evidence/wp-03/2026-03-03-qa-02-prep.md` |
 | QA-03 | Routing/policy boundary regression suite | Backlog | WP-04 | QA + Security | `docs/testing/test-strategy.md` |
 | QA-04 | Tool safety adversarial regression suite | Backlog | WP-05 | QA + Security | `docs/testing/test-strategy.md` |
 | QA-05 | Scenario C image and memory acceptance runs | Backlog | WP-06 | QA Engineer | `docs/roadmap/mvp-implementation-tracker.md` |

@@ -24,6 +24,8 @@ Exit criteria:
 
 Goal: replace smoke inference path with real Android baseline runtime integration.
 
+Status (2026-03-03): In progress. Android app flow now wires load/generate/unload through a `llama.cpp` runtime bridge path; physical-device validation evidence is still pending.
+
 Deliverables:
 
 1. Real `llama.cpp` bridge in Android runtime path.

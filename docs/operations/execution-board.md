@@ -26,7 +26,7 @@ All teams should update status here first, then mirror updates in role playbooks
 |---|---|---|---|---|---|---|---|---|
 | WP-00 | Foundation docs and architecture baseline | Product | Eng, QA | 0 | No | none | Done | Complete |
 | WP-01 | Build/CI baseline (wrapper, CI jobs, test command) | Engineering | QA | 1 | No | WP-00 | Done | Week 1 |
-| WP-02 | Real Android runtime slice (`llama.cpp`) | Engineering | QA | 2 | No | WP-01 | Ready | Week 1-2 |
+| WP-02 | Real Android runtime slice (`llama.cpp`) | Engineering | QA | 2 | No | WP-01 | In Progress | Week 1-2 |
 | WP-03 | Artifact + benchmark reliability (A/B thresholds) | Engineering | QA, Product | 3 | Partial | WP-02 | Blocked | Week 2 |
 | WP-04 | Routing, policy, diagnostics hardening | Engineering | Security, QA | 4 | Yes | WP-03 | Backlog | Week 3 |
 | WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | Backlog | Week 3-4 |
@@ -40,11 +40,12 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### In Progress
 
-- [ ] None
+- [ ] WP-02 Real Android runtime slice (runtime wiring complete; awaiting physical-device validation evidence)
+- [ ] QA-02 prep: Stage-2 benchmark validation pipeline (A/B templates, runbook, threshold command path)
 
 ### Ready
 
-- [ ] WP-02 Real Android runtime slice
+- [ ] None
 
 ### Blocked
 
@@ -59,6 +60,8 @@ All teams should update status here first, then mirror updates in role playbooks
 
 - WP-01 (ENG-01 partial delivery): `docs/operations/evidence/wp-01/2026-03-03-eng-01.md`
 - WP-01 (ENG-02 CI baseline): `docs/operations/evidence/wp-01/2026-03-03-eng-02.md`
+- WP-02 (ENG-03 runtime bridge integration, in progress): `docs/operations/evidence/wp-02/2026-03-03-eng-03.md`
+- WP-03 (QA-02 prep only): `docs/operations/evidence/wp-03/2026-03-03-qa-02-prep.md`
 
 ## Dependency Flow
 

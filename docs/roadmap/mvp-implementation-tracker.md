@@ -6,7 +6,7 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 
 | Stage | Description | Primary Owner | Scaffolded in Repo | Validated on Device | Required Evidence |
 |---|---|---|---|---|---|
-| 1 | Android text-only runtime slice with smoke model | Runtime + Android | Yes | No | startup check output, 10-run short chat logs |
+| 1 | Android text-only runtime slice with `llama.cpp` bridge wiring | Runtime + Android | Yes | No | startup check output, 10-run short chat logs |
 | 2 | Qwen 0.8B swap + scenario A/B thresholds | Runtime + QA | Partial (artifact/runners scaffolded) | No | benchmark CSV + threshold report |
 | 3 | Routing/policy/observability integration | Runtime + Security | Yes (policy/routing scaffolds) | No | downgrade test logs, diagnostics export |
 | 4 | Schema-safe tool runtime v1 | Platform + Security | Partial (allowlist + basic checks) | No | malformed call rejection tests |
@@ -23,11 +23,11 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 
 ## Stage 1 Checklist
 
-- [ ] Build and run Stage runner
+- [ ] Build and run Stage runner with `llama.cpp` bridge
 - [ ] Capture first-token and total latency
 - [ ] Confirm no crashes/OOM in 10 short runs
 - [ ] `:apps:mobile-android:test` passes for stage changes
-- [ ] Fast local run script and expected runtime documented
+- [ ] Fast local run script and expected runtime bridge behavior documented
 
 ## Stage 2 Checklist
 

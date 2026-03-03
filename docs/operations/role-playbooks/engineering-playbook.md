@@ -23,7 +23,7 @@ Deliver reliable local runtime capability and core feature implementation for MV
 
 ## What Is In Progress
 
-- [ ] No active engineering task currently marked in-progress
+- [ ] ENG-03 Integrate real Android `llama.cpp` runtime bridge (awaiting physical-device validation evidence)
 
 ## Task Queue
 
@@ -31,7 +31,7 @@ Deliver reliable local runtime capability and core feature implementation for MV
 |---|---|---|---|---|---|
 | ENG-01 | Implement Gradle wrapper + stable local build command | Done | WP-01 | Eng Lead | `docs/operations/evidence/wp-01/2026-03-03-eng-01.md` |
 | ENG-02 | Add CI for module tests and app tests | Done | ENG-01 | Eng Platform | `docs/operations/evidence/wp-01/2026-03-03-eng-02.md` |
-| ENG-03 | Integrate real Android `llama.cpp` runtime bridge | Ready | WP-01 complete | Runtime Eng | `docs/roadmap/next-steps-execution-plan.md` |
+| ENG-03 | Integrate real Android `llama.cpp` runtime bridge | In Progress | WP-01 complete | Runtime Eng | `docs/roadmap/next-steps-execution-plan.md` |
 | ENG-04 | Artifact manifest/checksum/version lifecycle | Backlog | ENG-03 | Runtime Eng | `docs/feasibility/benchmark-protocol.md` |
 | ENG-05 | Routing + policy hardening with boundary tests | Backlog | ENG-04 | Runtime Eng | `docs/security/privacy-model.md` |
 | ENG-06 | Tool runtime strict schema validation | Backlog | ENG-04 | Platform Eng | `docs/product/feature-catalog.md` |
@@ -50,6 +50,7 @@ Deliver reliable local runtime capability and core feature implementation for MV
 
 - 2026-03-03: ENG-01 evidence captured in `docs/operations/evidence/wp-01/2026-03-03-eng-01.md`
 - 2026-03-03: ENG-02 evidence captured in `docs/operations/evidence/wp-01/2026-03-03-eng-02.md`
+- 2026-03-03: ENG-03 runtime bridge integration evidence (in progress) captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03.md`
 
 ## Engineering References
 
