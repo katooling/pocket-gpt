@@ -37,10 +37,10 @@ Companion docs:
 Suggested local command baseline (add wrapper/tasks as repo evolves):
 
 ```bash
-# unit tests by package
-./gradlew :packages:inference-adapters:test :packages:tool-runtime:test :packages:memory:test :apps:mobile-android:test
+# one-command clean build + tests (WP-01 baseline)
+bash scripts/dev/verify.sh
 
-# stage smoke run
+# optional stage smoke run
 ./gradlew :apps:mobile-android:run
 ```
 

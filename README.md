@@ -29,3 +29,11 @@ Foundation repository for an offline, privacy-first mobile AI product.
   - `docs/product/feature-catalog.md`
   - `docs/testing/test-strategy.md`
   - `docs/testing/android-dx-and-test-playbook.md`
+
+## Local Verification Command
+
+Run the engineering baseline build/test command:
+
+```bash
+bash scripts/dev/verify.sh
+```

@@ -1,6 +1,7 @@
 # General
 .DS_Store
 *.log
+!docs/operations/evidence/**/*.log
 
 # Build
 build/
@@ -9,6 +10,7 @@ out/
 
 # Kotlin/Gradle
 .gradle/
+.gradle-home/
 **/build/
 
 # Xcode
