@@ -1,0 +1,13 @@
+{
+  "stage": "stage2",
+  "device_id": "MOCK-DEVICE",
+  "run_date": "2026-03-03",
+  "run_dir": "scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE",
+  "scenario_a_csv": "scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/scenario-a.csv",
+  "scenario_b_csv": "scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/scenario-b.csv",
+  "threshold_input_csv": "scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/stage-2-threshold-input.csv",
+  "threshold_report": "scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/threshold-report.txt",
+  "logcat": "scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/logcat.txt",
+  "notes": "scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/notes.md",
+  "threshold_exit_code": 0
+}

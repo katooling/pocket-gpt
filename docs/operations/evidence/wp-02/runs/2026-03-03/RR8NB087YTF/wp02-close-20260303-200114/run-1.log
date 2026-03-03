@@ -1,0 +1,46 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.13/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :apps:mobile-android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:core-domain:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:core-domain:compileKotlin UP-TO-DATE
+> Task :packages:core-domain:compileJava NO-SOURCE
+> Task :packages:core-domain:processResources NO-SOURCE
+> Task :packages:core-domain:classes UP-TO-DATE
+> Task :packages:core-domain:jar UP-TO-DATE
+> Task :packages:inference-adapters:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:inference-adapters:compileKotlin UP-TO-DATE
+> Task :packages:inference-adapters:compileJava NO-SOURCE
+> Task :packages:inference-adapters:processResources NO-SOURCE
+> Task :packages:inference-adapters:classes UP-TO-DATE
+> Task :packages:inference-adapters:jar UP-TO-DATE
+> Task :packages:memory:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:memory:compileKotlin UP-TO-DATE
+> Task :packages:memory:compileJava NO-SOURCE
+> Task :packages:memory:processResources NO-SOURCE
+> Task :packages:memory:classes UP-TO-DATE
+> Task :packages:memory:jar UP-TO-DATE
+> Task :packages:tool-runtime:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:tool-runtime:compileKotlin UP-TO-DATE
+> Task :packages:tool-runtime:compileJava NO-SOURCE
+> Task :packages:tool-runtime:processResources NO-SOURCE
+> Task :packages:tool-runtime:classes UP-TO-DATE
+> Task :packages:tool-runtime:jar UP-TO-DATE
+> Task :apps:mobile-android:compileKotlin UP-TO-DATE
+> Task :apps:mobile-android:compileJava NO-SOURCE
+> Task :apps:mobile-android:processResources NO-SOURCE
+> Task :apps:mobile-android:classes UP-TO-DATE
+
+> Task :apps:mobile-android:run
+Model: qwen3.5-0.8b-q4
+Response: ADB_LLAMACPP model=qwen3.5-0.8b-q4 max_tokens=64 prompt_hash=-864682757
+First token latency: 66ms
+Total latency: 66ms
+Scenario A: StageBenchmarkResult(scenario=A, p50FirstTokenMs=70, p50DecodeTokensPerSecond=63.492063492063494, pass=true)
+Scenario B: StageBenchmarkResult(scenario=B, p50FirstTokenMs=69, p50DecodeTokensPerSecond=58.8235294117647, pass=true)
+Scenario C: StageBenchmarkResult(scenario=C, p50FirstTokenMs=0, p50DecodeTokensPerSecond=4000.0, pass=true)
+Tool test: 3.0
+Image test: IMAGE_ANALYSIS(extension=jpg): What is in this image?
+Diagnostics: inference.first_token_ms=count:21,avg_ms:67.14;inference.total_ms=count:21,avg_ms:67.14|thermal_samples=3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4
+
+BUILD SUCCESSFUL in 6s
+10 actionable tasks: 1 executed, 9 up-to-date

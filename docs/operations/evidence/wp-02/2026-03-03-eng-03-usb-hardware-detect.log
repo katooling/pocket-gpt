@@ -1,0 +1,18 @@
+64:  | +-o SAMSUNG_Android@01100000  <class IOUSBHostDevice, id 0x100011a34, registered, matched, active, busy 0 (258 ms), retain 31>
+70:  |       "idProduct" = 26720
+80:  |       "USB Product Name" = "SAMSUNG_Android"
+84:  |       "kUSBSerialNumberString" = "RR8NB087YTF"
+93:  |       "idVendor" = 1256
+94:  |       "kUSBProductString" = "SAMSUNG_Android"
+127:    |     "kUSBSerialNumberString" = "DLC124201JCKD56AE"
+142:    |     "USB Product Name" = "USB3.1 Hub"
+144:    |     "idVendor" = 1452
+147:    |     "idProduct" = 4120
+168:      |   "kUSBSerialNumberString" = "DLC124201JCKD56AE"
+183:      |   "USB Product Name" = "USB2.0 Hub"
+185:      |   "idVendor" = 1452
+188:      |   "idProduct" = 4119
+209:            "kUSBSerialNumberString" = "DLC124201JCKD56AE"
+223:            "USB Product Name" = "USB-C Digital AV Multiport Adapter"
+225:            "idVendor" = 1452
+228:            "idProduct" = 5219

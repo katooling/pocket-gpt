@@ -1,0 +1,104 @@
+--------- beginning of system
+03-03 20:06:35.955  4564  4564 D io_stats: !@   8,0 r 253350 9631980 w 399813 189049536 d 0 0 f 0 0 iot 315372 0 th 0 0 0 pt 0 inp 0 0 2003.771
+03-03 20:06:37.957  4564  4564 D io_stats: !@   8,0 r 253388 9632868 w 399815 189050368 d 0 0 f 0 0 iot 315400 0 th 0 0 0 pt 0 inp 0 0 2005.773
+03-03 20:06:41.050  5405  6722 D FreecessController: com.sec.android.app.myfiles(10119) is important[!isUidIdle]
+03-03 20:06:41.778  7525  8838 I SDHMS:D : SIOP:: AP:371 BAT:384 USB:0 CHG:392 WIFI:367 SKIN:369 SKINF:368 SKINB:369 LRP:369 LRF:368 LRB:369 
+--------- beginning of main
+03-03 20:06:42.238 19919 19961 I PlayCommon: [62] Preparing logs for uploading
+03-03 20:06:42.242 19919 19961 I PlayCommon: [62] Connecting to server for timestamp: https://play.googleapis.com/play/log/timestamp
+03-03 20:06:42.257 19919 19961 E PlayCommon: [62] Failed to connect to server for server timestamp: java.net.UnknownHostException: Unable to resolve host "play.googleapis.com": No address associated with hostname
+03-03 20:06:42.383  6565 12670 W Auth    : [TokenResponseCallback] TokenResponse failed with exception [CONTEXT service_id=343 ]
+03-03 20:06:42.383  6565 12670 W Auth    : cgnd: Failed to process request
+03-03 20:06:42.383  6565 12670 W Auth    : 	at cgnj.a(:com.google.android.gms@252037029@25.20.37 (190400-766884605):23)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at cgrd.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):15)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at cgrr.onFailed(:com.google.android.gms@252037029@25.20.37 (190400-766884605):15)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at m1.mb.onFailed(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):3)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at m1.lc.run(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):16)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at aymv.c(:com.google.android.gms@252037029@25.20.37 (190400-766884605):50)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at aymv.run(:com.google.android.gms@252037029@25.20.37 (190400-766884605):70)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at aysk.run(:com.google.android.gms@252037029@25.20.37 (190400-766884605):8)
+03-03 20:06:42.383  6565 12670 W Auth    : 	at java.lang.Thread.run(Thread.java:1012)
+03-03 20:06:42.383  6565 12670 W Auth    : Caused by: m1.ll: Exception in CronetUrlRequest: net::ERR_INTERNET_DISCONNECTED, ErrorCode=2, InternalErrorCode=-106, Retryable=false
+03-03 20:06:42.383  6565 12670 W Auth    : 	at org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):3)
+03-03 20:06:42.387  6565 14024 E AuthPII : [RequestTokenManager] getToken() -> NETWORK_ERROR. App: com.android.vending, Service: oauth2:https://www.googleapis.com/auth/googleplay
+03-03 20:06:42.387  6565 14024 E AuthPII : axhw: Error when calling server using GmsNetworkStack.
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjg.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):1366)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abje.a(:com.google.android.gms@252037029@25.20.37 (190400-766884605):557)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjd.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):104)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at uyv.d(:com.google.android.gms@252037029@25.20.37 (190400-766884605):529)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abck.getAuthToken(:com.google.android.gms@252037029@25.20.37 (190400-766884605):410)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.accounts.AbstractAccountAuthenticator$Transport.getAuthToken(AbstractAccountAuthenticator.java:246)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.accounts.IAccountAuthenticator$Stub.onTransact(IAccountAuthenticator.java:242)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.os.Binder.transact(Binder.java:1200)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at byjb.onTransact(:com.google.android.gms@252037029@25.20.37 (190400-766884605):10)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.os.Binder.transact(Binder.java:1200)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at bopm.onTransact(:com.google.android.gms@252037029@25.20.37 (190400-766884605):148)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.os.Binder.execTransactInternal(Binder.java:1321)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.os.Binder.execTransact(Binder.java:1280)
+03-03 20:06:42.387  6565 14024 E AuthPII : Caused by: axhw: Error requesting token.
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjg.d(:com.google.android.gms@252037029@25.20.37 (190400-766884605):208)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjg.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):51)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	... 12 more
+03-03 20:06:42.387  6565 14024 E AuthPII : Caused by: java.util.concurrent.ExecutionException: cgnd: Failed to process request
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at gaqs.j(:com.google.android.gms@252037029@25.20.37 (190400-766884605):21)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at garb.v(:com.google.android.gms@252037029@25.20.37 (190400-766884605):107)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjg.d(:com.google.android.gms@252037029@25.20.37 (190400-766884605):193)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	... 13 more
+03-03 20:06:42.387  6565 14024 E AuthPII : Caused by: cgnd: Failed to process request
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at cgnj.a(:com.google.android.gms@252037029@25.20.37 (190400-766884605):23)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at cgrd.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):15)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at cgrr.onFailed(:com.google.android.gms@252037029@25.20.37 (190400-766884605):15)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at m1.mb.onFailed(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):3)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at m1.lc.run(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):16)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at aymv.c(:com.google.android.gms@252037029@25.20.37 (190400-766884605):50)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at aymv.run(:com.google.android.gms@252037029@25.20.37 (190400-766884605):70)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at aysk.run(:com.google.android.gms@252037029@25.20.37 (190400-766884605):8)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at java.lang.Thread.run(Thread.java:1012)
+03-03 20:06:42.387  6565 14024 E AuthPII : Caused by: m1.ll: Exception in CronetUrlRequest: net::ERR_INTERNET_DISCONNECTED, ErrorCode=2, InternalErrorCode=-106, Retryable=false
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):3)
+03-03 20:06:42.387  6565 14024 E AuthPII : Message is Error when calling server using GmsNetworkStack.
+03-03 20:06:42.387  6565 14024 E AuthPII : axhw: Error when calling server using GmsNetworkStack.
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjg.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):1366)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abje.a(:com.google.android.gms@252037029@25.20.37 (190400-766884605):557)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjd.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):104)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at uyv.d(:com.google.android.gms@252037029@25.20.37 (190400-766884605):529)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abck.getAuthToken(:com.google.android.gms@252037029@25.20.37 (190400-766884605):410)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.accounts.AbstractAccountAuthenticator$Transport.getAuthToken(AbstractAccountAuthenticator.java:246)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.accounts.IAccountAuthenticator$Stub.onTransact(IAccountAuthenticator.java:242)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.os.Binder.transact(Binder.java:1200)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at byjb.onTransact(:com.google.android.gms@252037029@25.20.37 (190400-766884605):10)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.os.Binder.transact(Binder.java:1200)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at bopm.onTransact(:com.google.android.gms@252037029@25.20.37 (190400-766884605):148)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.os.Binder.execTransactInternal(Binder.java:1321)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at android.os.Binder.execTransact(Binder.java:1280)
+03-03 20:06:42.387  6565 14024 E AuthPII : Caused by: axhw: Error requesting token.
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjg.d(:com.google.android.gms@252037029@25.20.37 (190400-766884605):208)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjg.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):51)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	... 12 more
+03-03 20:06:42.387  6565 14024 E AuthPII : Caused by: java.util.concurrent.ExecutionException: cgnd: Failed to process request
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at gaqs.j(:com.google.android.gms@252037029@25.20.37 (190400-766884605):21)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at garb.v(:com.google.android.gms@252037029@25.20.37 (190400-766884605):107)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at abjg.d(:com.google.android.gms@252037029@25.20.37 (190400-766884605):193)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	... 13 more
+03-03 20:06:42.387  6565 14024 E AuthPII : Caused by: cgnd: Failed to process request
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at cgnj.a(:com.google.android.gms@252037029@25.20.37 (190400-766884605):23)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at cgrd.b(:com.google.android.gms@252037029@25.20.37 (190400-766884605):15)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at cgrr.onFailed(:com.google.android.gms@252037029@25.20.37 (190400-766884605):15)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at m1.mb.onFailed(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):3)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at m1.lc.run(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):16)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at aymv.c(:com.google.android.gms@252037029@25.20.37 (190400-766884605):50)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at aymv.run(:com.google.android.gms@252037029@25.20.37 (190400-766884605):70)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at aysk.run(:com.google.android.gms@252037029@25.20.37 (190400-766884605):8)
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at java.lang.Thread.run(Thread.java:1012)
+03-03 20:06:42.387  6565 14024 E AuthPII : Caused by: m1.ll: Exception in CronetUrlRequest: net::ERR_INTERNET_DISCONNECTED, ErrorCode=2, InternalErrorCode=-106, Retryable=false
+03-03 20:06:42.387  6565 14024 E AuthPII : 	at org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@252037029@25.20.37 (190400-0):3)
+03-03 20:06:42.388  6565 14024 W Auth    : [GetToken] GetToken failed with status code: NetworkError  [CONTEXT service_id=343 ]
+03-03 20:06:42.389  6565 14024 W GLSActivity: [GmsAccountAuthenticatorImpl] error status while fetching token:NetworkError
+03-03 20:06:42.396 19919 19961 E PlayCommon: [62] Failed to get auth token: java.io.IOException: NetworkError
+03-03 20:06:42.396 19919 19961 W PlayCommon: [62] Deferring log upload because couldn't retrieve auth token

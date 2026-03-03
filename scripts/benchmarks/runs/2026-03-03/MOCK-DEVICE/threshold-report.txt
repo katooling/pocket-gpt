@@ -1,0 +1,14 @@
+Threshold Evaluation
+====================
+Scenario A median first-token: 1200.00 ms
+Scenario A median decode: 9.50 tok/s
+Scenario B median first-token: 1800.00 ms
+Scenario B median decode: 4.50 tok/s
+
+Checks
+- Scenario A first-token <= 2500ms: PASS
+- Scenario A decode >= 8 tok/s: PASS
+- Scenario B first-token <= 2500ms: PASS
+- Scenario B decode >= 4 tok/s: PASS
+
+Overall: PASS

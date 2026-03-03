@@ -1,0 +1,26 @@
+--------- beginning of system
+03-03 20:06:57.865  5405  5454 E Watchdog: !@Sync: 68 heap: 85 / 102 FD: 921 [2026-03-03 20:06:57.864]
+03-03 20:06:59.359  5405  6722 D FreecessController: com.sec.android.app.camera(10107) is important[!isUidIdle]
+--------- beginning of main
+03-03 20:06:59.429  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 5525000 / mChargingTime : 5525000
+03-03 20:06:59.430  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!
+03-03 20:07:00.006  5763  5763 D KeyguardUpdateMonitor: received broadcast android.intent.action.TIME_TICK
+03-03 20:07:00.007  5763  5763 D KeyguardUpdateMonitor: handleTimeUpdate
+03-03 20:07:00.008  5763  6242 D QSClockBellTower: onReceive(android.intent.action.TIME_TICK) mTimeZoneString:null
+03-03 20:07:00.010  5763  5763 D FaceWidgetPagesController: onTimeChanged()
+03-03 20:07:00.016  5763  5763 D QSClockBellTower: He is ready to ring the bell. (((QSClockBellSound - TimeText:20:07, TimeContentDescription:20:07, DateText:Tue, 3 March, ShortDateText:Tue, 3 Mar, Demo:false, QuickStar-Second(false|12:34:56))))
+03-03 20:07:00.019  5763  5763 D QSClockIndicatorView: Home Indicator status_bar_clock 20:07 notifyTimeChanged(QSClockBellSound - TimeText:20:07, TimeContentDescription:20:07, DateText:Tue, 3 March, ShortDateText:Tue, 3 Mar, Demo:false, QuickStar-Second(false|12:34:56)) ClockVisibleByPolicy:true, ClockVisibleByUser:true, visible?true, parent:android.widget.LinearLayout{6e0da4a V.E...... ......ID 0,0-97,55 #7f0b04f0 app:id/left_clock_container}
+03-03 20:07:00.020  5763  5763 D QSClockBellTower: Everyone heard the bell. run(currentTime:1772543220011,   getTime():Tue Mar 03 20:07:00 GMT+07:00 2026,   getTimeZone():libcore.util.ZoneInfo[mDstSavings=0,mUseDst=false,mDelegate=[id="Asia/Bangkok",mRawOffset=25200000,mEarliestRawOffset=24124000,transitions=3]])
+03-03 20:07:00.054  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() height = 0 container Visibility = 8, isValid = false, mIsDozing = false, fraction = 1.0, source = 0, target = 0
+03-03 20:07:00.055  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() supplier = 0
+03-03 20:07:00.060  5763  5763 V QsExpandAnimator: setQsExpansionPosition 0.0
+03-03 20:07:00.074  5763  5763 V QsExpandAnimator: updateAnimators
+03-03 20:07:00.075  5763  5763 V QsExpandAnimator: clearAnimationState 
+03-03 20:07:00.076  5763  5763 V QsExpandAnimator: updateViews
+03-03 20:07:00.084  5763  5763 V QsExpandAnimator: updateTileAnimator
+03-03 20:07:00.087  5763  5763 V QsExpandAnimator: updateHeaderAnimator
+03-03 20:07:00.089  5763  5763 V QsExpandAnimator: updateBarAnimator
+03-03 20:07:00.089  5763  5763 V QsExpandAnimator: setQsExpansionPosition 0.0
+03-03 20:07:00.089  5763  5763 V QsExpandAnimator: onAnimationAtStart
+03-03 20:07:01.772  7525  8838 I SDHMS:D : SIOP:: AP:371 BAT:384 USB:0 CHG:392 WIFI:367 SKIN:369 SKINF:368 SKINB:369 LRP:369 LRF:368 LRB:369 
+03-03 20:07:01.975  4564  4564 D io_stats: !@   8,0 r 253388 9632868 w 399820 189050400 d 0 0 f 0 0 iot 315408 0 th 0 0 0 pt 0 inp 0 0 2029.791

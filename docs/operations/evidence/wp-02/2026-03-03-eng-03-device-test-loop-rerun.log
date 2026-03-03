@@ -1,0 +1,85 @@
+[1/5] Checking adb availability...
+Android Debug Bridge version 1.0.41
+Version 36.0.2-14143358
+Installed as /opt/homebrew/bin/adb
+Running on Darwin 25.3.0 (arm64)
+[2/5] Verifying one adb-ready device...
+Using device serial: RR8NB087YTF
+[3/5] Reading device identity...
+samsung
+SM-A515F
+13
+[4/5] Reading battery info...
+Current Battery Service state:
+  AC powered: false
+  USB powered: true
+  Wireless powered: false
+  Max charging current: 0
+  Max charging voltage: 0
+  Charge counter: 1904301
+  status: 2
+  health: 2
+  present: true
+  level: 50
+  scale: 100
+  voltage: 3918
+  temperature: 384
+  technology: Li-ion
+  batteryMiscEvent: 131072
+  batteryCurrentEvent: 98304
+  mSecPlugTypeSummary: 2
+  LED Charging: true
+  LED Low Battery: true
+  current now: 589
+  charge counter: 1904301
+  Adaptive Fast Charging Settings: false
+  Super Fast Charging Settings: false
+FEATURE_WIRELESS_FAST_CHARGER_CONTROL: true
+[5/5] Reading thermal summary...
+IsStatusOverride: false
+ThermalEventListeners:
+	callbacks: 2
+	killed: false
+	broadcasts count: -1
+ThermalStatusListeners:
+	callbacks: 5
+	killed: false
+	broadcasts count: -1
+Thermal Status: 0
+Cached temperatures:
+	Temperature{mValue=37.0, mType=0, mName=AP, mStatus=0}
+	Temperature{mValue=38.4, mType=2, mName=BAT, mStatus=0}
+	Temperature{mValue=0.0, mType=4, mName=USB, mStatus=0}
+	Temperature{mValue=36.9, mType=3, mName=SKIN, mStatus=0}
+HAL Ready: true
+HAL connection:
+	ThermalHAL 2.0 connected: yes
+Current temperatures from HAL:
+	Temperature{mValue=37.0, mType=0, mName=AP, mStatus=0}
+	Temperature{mValue=38.4, mType=2, mName=BAT, mStatus=0}
+	Temperature{mValue=36.9, mType=3, mName=SKIN, mStatus=0}
+	Temperature{mValue=0.0, mType=4, mName=USB, mStatus=0}
+Current cooling devices from HAL:
+Temperature static thresholds from HAL:
+Stage check script completed.
+Saved baseline to docs/operations/evidence/wp-02/device-baselines/20260303-200253-RR8NB087YTF-baseline.txt
+Device: RR8NB087YTF
+stay_on_while_plugged_in=3
+window_animation_scale=0
+transition_animation_scale=0
+animator_duration_scale=0
+screen_off_timeout=1800000
+Running 10 loops on device RR8NB087YTF
+Output directory: docs/operations/evidence/wp-02/runs/2026-03-03/RR8NB087YTF/wp02-close-rerun-20260303-200256
+Command: ./gradlew --no-daemon :apps:mobile-android:run
+=== Run 1/10 ===
+=== Run 2/10 ===
+=== Run 3/10 ===
+=== Run 4/10 ===
+=== Run 5/10 ===
+=== Run 6/10 ===
+=== Run 7/10 ===
+=== Run 8/10 ===
+=== Run 9/10 ===
+=== Run 10/10 ===
+Run summary written to docs/operations/evidence/wp-02/runs/2026-03-03/RR8NB087YTF/wp02-close-rerun-20260303-200256/summary.csv

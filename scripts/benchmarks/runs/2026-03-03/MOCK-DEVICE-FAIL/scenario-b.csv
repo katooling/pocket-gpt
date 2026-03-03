@@ -1,0 +1,2 @@
+date,platform,device_class,device_name,runtime,model,scenario,first_token_ms,decode_tps,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom
+2026-03-03,android,mid,mock,llama.cpp,qwen3.5-0.8b-q4,B,1800,4.5,1300,3,normal,false

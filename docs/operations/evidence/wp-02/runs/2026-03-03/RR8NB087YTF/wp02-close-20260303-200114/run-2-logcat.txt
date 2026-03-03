@@ -1,0 +1,54 @@
+--------- beginning of system
+03-03 20:06:11.038  5405  6722 D FreecessController: com.sec.android.app.myfiles(10119) is important[!isUidIdle]
+03-03 20:06:11.776  7525  8838 I SDHMS:D : SIOP:: AP:371 BAT:384 USB:0 CHG:392 WIFI:366 SKIN:369 SKINF:368 SKINB:369 LRP:369 LRF:368 LRB:369 
+03-03 20:06:14.049  5405  5421 D BatteryService: Sending ACTION_BATTERY_CHANGED: level:49, status:2, health:2, ac:false, usb:true, wireless:false, pogo:false, misc:0x20000, charge_type:1, charger_type:0, voltage:3915, temperature:384, online:19, current_avg:590, ps:false, hvc:false, capacity:280000, current_event:0x18000, current_now:590, mcc:0, mcv:0, cc:1885296, present:true, scale:100, technology:Li-ion
+--------- beginning of main
+03-03 20:06:14.050  5000  5000 E sehhealth-service: Could not open /sys/class/power_supply/battery/lrp
+03-03 20:06:14.055  5405  5405 D PhoneWindowManagerExt: ACTION_BATTERY_CHANGED - Level=49, status=2
+03-03 20:06:14.056  5405  5569 D MotionRecognitionService: [SAR]  onReceive : ACTION_BATTERY_CHANGED, Plugged: 2
+03-03 20:06:14.057  5405  5712 I DeviceBatteryInfoService: action: android.intent.action.BATTERY_CHANGED
+03-03 20:06:14.057  5405  5712 I DeviceBatteryInfoService: phone battery level: 49
+03-03 20:06:14.057  5405  5712 I DeviceBatteryInfoService: phone battery status: 2
+03-03 20:06:14.057  5405  5405 D AdaptiveBrightnessLongtermModelBuilder: Received android.intent.action.BATTERY_CHANGED
+03-03 20:06:14.059  5405  5405 D SemWifiApBroadcastReceiver: Received : android.intent.action.BATTERY_CHANGED
+03-03 20:06:14.063  5740  5740 D SemBigDataInfoController: Intent: android.intent.action.BATTERY_CHANGED
+03-03 20:06:14.064  5740  5740 D SemBigDataInfoController: Intent: android.intent.action.BATTERY_CHANGED
+03-03 20:06:14.068  5763  5763 D KeyguardUpdateMonitor: received broadcast android.intent.action.BATTERY_CHANGED
+03-03 20:06:14.071  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 20:06:14.073  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 20:06:14.074  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 20:06:14.074 13984 13984 I [SCPMV2][SystemMonitorReceiver]: onReceive: android.intent.action.BATTERY_CHANGED
+03-03 20:06:14.075  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 20:06:14.077  5763  5763 I PowerUI : mBootCompleted = true |  mFullyConnected = true
+03-03 20:06:14.077  5763  5763 I PowerUI : BATTERY_HEALTH_CHECK extraHealth=2 mBatteryMiscEvent=131072
+03-03 20:06:14.077  5763  5763 W PowerUI : Plug reason
+03-03 20:06:14.078  5763 11800 D SecPowerUI.Notification: dismissing low battery warning: level=49
+03-03 20:06:14.078  5763 11800 D SecPowerUI.Notification: updateNotification mWarning=false mPlaySound=false
+03-03 20:06:14.078  5763  5763 W PowerUI : Skip charging animation - by plug status
+03-03 20:06:14.078  5763 11800 D SecPowerUI.Notification: SecBatteryStatsSnapshot{batteryLevel=49, currentBatteryMode=0, chargingTime=5553000, chargingType=11, batteryHealth=2, automaticTestMode=false, isHiccupState=false}
+03-03 20:06:14.079  5763  5763 D PowerUI : priorPlugType = 2 mPlugType = 2 priorBatteryStatus = 2 mBatteryStatus = 2
+03-03 20:06:14.079  5763  5763 W PowerUI : Plug reason
+03-03 20:06:14.079  5763  5763 W PowerUI : Skip charging sound - by plug status
+03-03 20:06:14.079  5763  5763 I PowerUI : oldMisalign : false, curMisalign : false
+03-03 20:06:14.082  5763 11800 D SecPowerUI.Notification: 1. restoreScreenTimeOut - saved_value : :
+03-03 20:06:14.082  5763 11800 E SecPowerUI.Notification: no saved value, so we do nothing !!
+03-03 20:06:14.082  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 5553000 / mChargingTime : 5553000
+03-03 20:06:14.082  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!
+03-03 20:06:14.083  5763  5763 D PowerUI : Battery swelling mode - priorBatterySwellingMode = 0 mBatterySwellingMode = 0 mBatteryStatus = 2
+03-03 20:06:14.083  5763  5763 I PowerUI : mBatteryMiscEvent = 131072
+03-03 20:06:14.085  5763  5763 I PowerUI : checkShouldTurnOffProtectBattery : -1, Scheduling start ? : false
+03-03 20:06:14.085  5763  5763 I PowerUI : Clear time
+03-03 20:06:14.086  5405  7613 D SettingsProvider: isChangeAllowed() : name = charger_connected_time
+03-03 20:06:14.086  5405  7613 D SettingsProvider: edmUri: content://com.sec.knox.provider/RestrictionPolicy3
+03-03 20:06:14.086  5405  7613 D SettingsProvider: projectionArgs: isSettingsChangesAllowed
+03-03 20:06:14.086  5405  7613 D SettingsProvider: selectionArgs: false
+03-03 20:06:14.086  5405  7613 D SettingsProvider: selectionArgs: 10052
+03-03 20:06:14.087  5405  7613 D SecContentProvider: query(), uri = 17 selection = isSettingsChangesAllowed
+03-03 20:06:14.087  5405  7613 D SecContentProvider: called from android.uid.systemui:10052
+03-03 20:06:14.087  5405  7613 D RestrictionPolicy: isSettingsChangesAllowedAsUser, userId 0 : true
+03-03 20:06:14.087  5405  7613 D SettingsProvider: ret = 1
+03-03 20:06:14.089  5763  5763 I AODBatteryManager: updateBatteryData: ACTION_BATTERY_CHANGED
+03-03 20:06:14.091  5763  5763 I AODBatteryManager: saveBatteryData : AOD BatteryData [mBatteryLevel=49, mBatteryStatus=CHARGING, mBatteryPlugType=USB, mBatteryPlugged=true, mRemainingChargeTime=5553000, mBatteryChargingType=1, mBatteryChargerType=NORMAL, mBatteryOnline=NOT_DEFINED, mBatterySwellingMode=NONE, mBatteryProtectMode=false]
+03-03 20:06:14.092  5763  5763 D KeyguardUpdateMonitor: handleBatteryUpdate
+03-03 20:06:14.349  5405  6722 D FreecessController: com.sec.android.app.camera(10107) is important[!isUidIdle]
+03-03 20:06:15.942  4564  4564 D io_stats: !@   8,0 r 253349 9631960 w 399806 189049508 d 0 0 f 0 0 iot 315352 0 th 0 0 0 pt 0 inp 0 0 1983.757

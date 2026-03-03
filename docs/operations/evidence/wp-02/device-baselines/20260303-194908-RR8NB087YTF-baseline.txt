@@ -1,0 +1,111 @@
+timestamp=20260303-194908
+serial=RR8NB087YTF
+
+[device.props]
+samsung
+SM-A515F
+a51
+13
+2023-08-01
+
+[battery]
+Current Battery Service state:
+  AC powered: false
+  USB powered: true
+  Wireless powered: false
+  Max charging current: 0
+  Max charging voltage: 0
+  Charge counter: 1748460
+  status: 2
+  health: 2
+  present: true
+  level: 46
+  scale: 100
+  voltage: 3902
+  temperature: 372
+  technology: Li-ion
+  batteryMiscEvent: 131072
+  batteryCurrentEvent: 98304
+  mSecPlugTypeSummary: 2
+  LED Charging: true
+  LED Low Battery: true
+  current now: 585
+  charge counter: 1748460
+  Adaptive Fast Charging Settings: false
+  Super Fast Charging Settings: false
+FEATURE_WIRELESS_FAST_CHARGER_CONTROL: true
+  mWasUsedWirelessFastChargerPreviously: false
+  mWirelessFastChargingSettingsEnable: true
+LLB CAL: 20201204
+LLB MAN: 
+LLB CURRENT: YEAR2026M3D3
+LLB DIFF: 273
+  mSavedBatteryBeginningDate: 0
+SEC_FEATURE_BATTERY_FULL_CAPACITY: true
+  mFullCapacityEnable: true
+FEATURE_HICCUP_CONTROL: true
+FEATURE_SUPPORTED_DAILY_BOARD: false
+SEC_FEATURE_BATTERY_LIFE_EXTENDER: false
+SEC_FEATURE_USE_WIRELESS_POWER_SHARING: false
+BatteryInfoBackUp
+  mSavedBatteryAsoc: 88
+
+[thermal]
+IsStatusOverride: false
+ThermalEventListeners:
+	callbacks: 2
+	killed: false
+	broadcasts count: -1
+ThermalStatusListeners:
+	callbacks: 4
+	killed: false
+	broadcasts count: -1
+Thermal Status: 0
+Cached temperatures:
+	Temperature{mValue=35.9, mType=0, mName=AP, mStatus=0}
+	Temperature{mValue=37.2, mType=2, mName=BAT, mStatus=0}
+	Temperature{mValue=0.0, mType=4, mName=USB, mStatus=0}
+	Temperature{mValue=35.8, mType=3, mName=SKIN, mStatus=0}
+HAL Ready: true
+HAL connection:
+	ThermalHAL 2.0 connected: yes
+Current temperatures from HAL:
+	Temperature{mValue=35.9, mType=0, mName=AP, mStatus=0}
+	Temperature{mValue=37.2, mType=2, mName=BAT, mStatus=0}
+	Temperature{mValue=35.8, mType=3, mName=SKIN, mStatus=0}
+	Temperature{mValue=0.0, mType=4, mName=USB, mStatus=0}
+Current cooling devices from HAL:
+Temperature static thresholds from HAL:
+
+[memory]
+MemTotal:        7762156 kB
+MemFree:          421940 kB
+MemAvailable:    4797100 kB
+Buffers:            4476 kB
+Cached:          4484384 kB
+SwapCached:        44044 kB
+Active:          2519452 kB
+Inactive:        3606264 kB
+Active(anon):    1172472 kB
+Inactive(anon):   473480 kB
+Active(file):    1346980 kB
+Inactive(file):  3132784 kB
+Unevictable:        2652 kB
+Mlocked:            2652 kB
+SwapTotal:       4194300 kB
+SwapFree:        3854844 kB
+Dirty:               104 kB
+Writeback:             0 kB
+AnonPages:       1636944 kB
+Mapped:           893460 kB
+
+[storage]
+Filesystem       Size Used Avail Use% Mounted on
+/dev/block/sda32 230G  53G  178G  23% /data/user/0
+
+[benchmark.settings]
+stay_on_while_plugged_in=3
+window_animation_scale=0
+transition_animation_scale=0
+animator_duration_scale=0
+screen_off_timeout=1800000

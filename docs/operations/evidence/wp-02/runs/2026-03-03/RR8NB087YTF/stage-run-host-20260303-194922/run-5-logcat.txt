@@ -1,0 +1,5 @@
+--------- beginning of system
+03-03 19:54:31.737  7525  8838 I SDHMS:D : SIOP:: AP:359 BAT:373 USB:0 CHG:383 WIFI:357 SKIN:359 SKINF:358 SKINB:359 LRP:359 LRF:358 LRB:359 
+--------- beginning of main
+03-03 19:54:35.110  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 6083000 / mChargingTime : 6083000
+03-03 19:54:35.110  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!

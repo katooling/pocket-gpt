@@ -1,0 +1,88 @@
+--------- beginning of system
+03-03 20:07:57.914  5405  5454 E Watchdog: !@Sync: 70 heap: 89 / 102 FD: 922 [2026-03-03 20:07:57.913]
+03-03 20:07:59.378  5405  6722 D FreecessController: com.sec.android.app.camera(10107) is important[!isUidIdle]
+--------- beginning of main
+03-03 20:07:59.766  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 5463000 / mChargingTime : 5463000
+03-03 20:07:59.767  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!
+03-03 20:08:00.005  5763  6242 D QSClockBellTower: onReceive(android.intent.action.TIME_TICK) mTimeZoneString:null
+03-03 20:08:00.006  5763  5763 D KeyguardUpdateMonitor: received broadcast android.intent.action.TIME_TICK
+03-03 20:08:00.013  5763  5763 D QSClockBellTower: He is ready to ring the bell. (((QSClockBellSound - TimeText:20:08, TimeContentDescription:20:08, DateText:Tue, 3 March, ShortDateText:Tue, 3 Mar, Demo:false, QuickStar-Second(false|12:34:56))))
+03-03 20:08:00.015  5763  5763 D QSClockIndicatorView: Home Indicator status_bar_clock 20:08 notifyTimeChanged(QSClockBellSound - TimeText:20:08, TimeContentDescription:20:08, DateText:Tue, 3 March, ShortDateText:Tue, 3 Mar, Demo:false, QuickStar-Second(false|12:34:56)) ClockVisibleByPolicy:true, ClockVisibleByUser:true, visible?true, parent:android.widget.LinearLayout{6e0da4a V.E...... ......ID 0,0-97,55 #7f0b04f0 app:id/left_clock_container}
+03-03 20:08:00.017  5763  5763 D QSClockBellTower: Everyone heard the bell. run(currentTime:1772543280007,   getTime():Tue Mar 03 20:08:00 GMT+07:00 2026,   getTimeZone():libcore.util.ZoneInfo[mDstSavings=0,mUseDst=false,mDelegate=[id="Asia/Bangkok",mRawOffset=25200000,mEarliestRawOffset=24124000,transitions=3]])
+03-03 20:08:00.020  5763  5763 D KeyguardUpdateMonitor: handleTimeUpdate
+03-03 20:08:00.022  5763  5763 D FaceWidgetPagesController: onTimeChanged()
+03-03 20:08:00.047  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() height = 0 container Visibility = 8, isValid = false, mIsDozing = false, fraction = 1.0, source = 0, target = 0
+03-03 20:08:00.048  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() supplier = 0
+03-03 20:08:00.053  5763  5763 V QsExpandAnimator: setQsExpansionPosition 0.0
+03-03 20:08:00.064  5763  5763 V QsExpandAnimator: updateAnimators
+03-03 20:08:00.064  5763  5763 V QsExpandAnimator: clearAnimationState 
+03-03 20:08:00.065  5763  5763 V QsExpandAnimator: updateViews
+03-03 20:08:00.072  5763  5763 V QsExpandAnimator: updateTileAnimator
+03-03 20:08:00.076  5763  5763 V QsExpandAnimator: updateHeaderAnimator
+03-03 20:08:00.078  5763  5763 V QsExpandAnimator: updateBarAnimator
+03-03 20:08:00.078  5763  5763 V QsExpandAnimator: setQsExpansionPosition 0.0
+03-03 20:08:00.078  5763  5763 V QsExpandAnimator: onAnimationAtStart
+03-03 20:08:01.774  7525  8838 I SDHMS:D : SIOP:: AP:370 BAT:384 USB:0 CHG:392 WIFI:368 SKIN:369 SKINF:368 SKINB:369 LRP:369 LRF:368 LRB:369 
+03-03 20:08:04.024  4564  4564 D io_stats: !@   8,0 r 253404 9632956 w 400001 189058052 d 0 0 f 0 0 iot 315508 0 th 0 0 0 pt 0 inp 0 0 2091.839
+03-03 20:08:04.750  5000  5000 E sehhealth-service: Could not open /sys/class/power_supply/battery/lrp
+03-03 20:08:04.751  5405  5421 D BatteryService: Sending ACTION_BATTERY_CHANGED: level:50, status:2, health:2, ac:false, usb:true, wireless:false, pogo:false, misc:0x20000, charge_type:1, charger_type:0, voltage:3918, temperature:384, online:19, current_avg:585, ps:false, hvc:false, capacity:280000, current_event:0x18000, current_now:585, mcc:0, mcv:0, cc:1908102, present:true, scale:100, technology:Li-ion
+03-03 20:08:04.756  5405  5569 D MotionRecognitionService: [SAR]  onReceive : ACTION_BATTERY_CHANGED, Plugged: 2
+03-03 20:08:04.757  5405  5405 D PhoneWindowManagerExt: ACTION_BATTERY_CHANGED - Level=50, status=2
+03-03 20:08:04.759  5405  5712 I DeviceBatteryInfoService: action: android.intent.action.BATTERY_CHANGED
+03-03 20:08:04.759  5405  5712 I DeviceBatteryInfoService: phone battery level: 50
+03-03 20:08:04.759  5405  5712 I DeviceBatteryInfoService: phone battery status: 2
+03-03 20:08:04.760  5405  5405 D AdaptiveBrightnessLongtermModelBuilder: Received android.intent.action.BATTERY_CHANGED
+03-03 20:08:04.761  5405  5405 D SemWifiApBroadcastReceiver: Received : android.intent.action.BATTERY_CHANGED
+03-03 20:08:04.762  5740  5740 D SemBigDataInfoController: Intent: android.intent.action.BATTERY_CHANGED
+03-03 20:08:04.763  5740  5740 D SemBigDataInfoController: Intent: android.intent.action.BATTERY_CHANGED
+03-03 20:08:04.764  5763  5763 D KeyguardUpdateMonitor: received broadcast android.intent.action.BATTERY_CHANGED
+03-03 20:08:04.765  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 20:08:04.766  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 20:08:04.767  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 20:08:04.768  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 20:08:04.769  5763  5763 I PowerUI : mBootCompleted = true |  mFullyConnected = true
+03-03 20:08:04.770  5763  5763 I PowerUI : BATTERY_HEALTH_CHECK extraHealth=2 mBatteryMiscEvent=131072
+03-03 20:08:04.770  5763  5763 W PowerUI : Plug reason
+03-03 20:08:04.770 13984 13984 I [SCPMV2][SystemMonitorReceiver]: onReceive: android.intent.action.BATTERY_CHANGED
+03-03 20:08:04.770  5763  5763 W PowerUI : Skip charging animation - by plug status
+03-03 20:08:04.770  5763  5763 D PowerUI : priorPlugType = 2 mPlugType = 2 priorBatteryStatus = 2 mBatteryStatus = 2
+03-03 20:08:04.770  5763  5763 W PowerUI : Plug reason
+03-03 20:08:04.770  5763  5763 W PowerUI : Skip charging sound - by plug status
+03-03 20:08:04.770  5763  5763 I PowerUI : oldMisalign : false, curMisalign : false
+03-03 20:08:04.772  5763 11897 D SecPowerUI.Notification: dismissing low battery warning: level=50
+03-03 20:08:04.772  5763 11897 D SecPowerUI.Notification: updateNotification mWarning=false mPlaySound=false
+03-03 20:08:04.772  5763 11897 D SecPowerUI.Notification: SecBatteryStatsSnapshot{batteryLevel=50, currentBatteryMode=0, chargingTime=5463000, chargingType=11, batteryHealth=2, automaticTestMode=false, isHiccupState=false}
+03-03 20:08:04.774  5763 11897 D SecPowerUI.Notification: 1. restoreScreenTimeOut - saved_value : :
+03-03 20:08:04.774  5763 11897 E SecPowerUI.Notification: no saved value, so we do nothing !!
+03-03 20:08:04.774  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 5463000 / mChargingTime : 5445000
+03-03 20:08:04.775  5763  5763 D SecPowerUI.Notification: showChargingNotification()
+03-03 20:08:04.775  5763  5763 D SecPowerUI.Notification: SecBatteryStatsSnapshot{batteryLevel=50, currentBatteryMode=0, chargingTime=5445000, chargingType=11, batteryHealth=2, automaticTestMode=false, isHiccupState=false}
+03-03 20:08:04.779  5405  5421 D ApplicationPolicy: isStatusBarNotificationAllowedAsUser: packageName = com.android.systemui,userId = 0
+03-03 20:08:04.780  5405  5421 D ApplicationPolicy: isStatusBarNotificationAllowedAsUser: packageName = com.android.systemui,userId = -1
+03-03 20:08:04.780  5405  5421 D ApplicationPolicy: isStatusBarNotificationAllowedAsUser: converting userId from USER_ALLto 0
+03-03 20:08:04.782  5763  5763 D PowerUI : Battery swelling mode - priorBatterySwellingMode = 0 mBatterySwellingMode = 0 mBatteryStatus = 2
+03-03 20:08:04.782  5763  5763 I PowerUI : mBatteryMiscEvent = 131072
+03-03 20:08:04.783  5763  5763 I PowerUI : checkShouldTurnOffProtectBattery : -1, Scheduling start ? : false
+03-03 20:08:04.784  5763  5763 I PowerUI : Clear time
+03-03 20:08:04.785  5405  5421 D SettingsProvider: isChangeAllowed() : name = charger_connected_time
+03-03 20:08:04.785  5405  5421 D SettingsProvider: edmUri: content://com.sec.knox.provider/RestrictionPolicy3
+03-03 20:08:04.785  5405  5421 D SettingsProvider: projectionArgs: isSettingsChangesAllowed
+03-03 20:08:04.785  5405  5421 D SettingsProvider: selectionArgs: false
+03-03 20:08:04.785  5405  5421 D SettingsProvider: selectionArgs: 10052
+03-03 20:08:04.785  5405  5421 D SecContentProvider: query(), uri = 17 selection = isSettingsChangesAllowed
+03-03 20:08:04.785  5405  5421 D SecContentProvider: called from android.uid.systemui:10052
+03-03 20:08:04.786  5405  5421 D RestrictionPolicy: isSettingsChangesAllowedAsUser, userId 0 : true
+03-03 20:08:04.786  5405  5421 D SettingsProvider: ret = 1
+03-03 20:08:04.788  5763  5763 D KeyguardUpdateMonitor: handleBatteryUpdate
+03-03 20:08:04.795  5763  5763 D KeyguardSecIndicationController: addIndicationTimeout() returned - unlocking
+03-03 20:08:04.795  5763  5763 D KeyguardSecIndicationController: addIndication() returned - unlocking
+03-03 20:08:04.796  5763  5763 D KeyguardSecIndicationController: addIndication() returned - unlocking
+03-03 20:08:04.796  5763  5763 D KeyguardSecIndicationController: addBatteryAndOwnerInfoIndication() battery status = BatteryStatus{status=2,level=50,plugged=2,health=2,maxChargingWattage=-1,remaining=5445000ultraFastCharger=0}
+03-03 20:08:04.796  5763  5763 I AODBatteryManager: updateBatteryData: ACTION_BATTERY_CHANGED
+03-03 20:08:04.798  5763  5763 I AODBatteryManager: saveBatteryData : AOD BatteryData [mBatteryLevel=50, mBatteryStatus=CHARGING, mBatteryPlugType=USB, mBatteryPlugged=true, mRemainingChargeTime=5445000, mBatteryChargingType=1, mBatteryChargerType=NORMAL, mBatteryOnline=NOT_DEFINED, mBatterySwellingMode=NONE, mBatteryProtectMode=false]
+03-03 20:08:04.799  5763  5763 I ChargingInfoManager: updateChargingInfo: newState = AOD ChargingInfo [mState=BATTERY_AND_REMAIN_TIME, mIsCharging=true, mIsFullyCharged=false, mIsBatteryProtectMode=false], oldState = AOD ChargingInfo [mState=BATTERY_AND_REMAIN_TIME, mIsCharging=true, mIsFullyCharged=false, mIsBatteryProtectMode=false]
+03-03 20:08:04.990  5405  5405 I Telecom:SamsungTelecomServiceImpl: isInManagedCall - callingPackage : android
+03-03 20:08:04.998  6173  6173 I Launcher.NotificationListener: onNotificationPosted : com.android.systemui number : 0
+03-03 20:08:05.201  5763  5763 D BubblesManager: onEntryUpdated : shouldBubbleUp=false ,key=-1|com.android.systemui|2131428972|charging_state|10052
+03-03 20:08:05.234  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() height = 0 container Visibility = 8, isValid = false, mIsDozing = false, fraction = 1.0, source = 0, target = 0
+03-03 20:08:05.235  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() supplier = 0

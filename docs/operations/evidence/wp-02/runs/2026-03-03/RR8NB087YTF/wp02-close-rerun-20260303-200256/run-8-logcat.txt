@@ -1,0 +1,8 @@
+--------- beginning of system
+03-03 20:08:38.047  4564  4564 D io_stats: !@   8,0 r 253404 9632956 w 400016 189058140 d 0 0 f 0 0 iot 315512 0 th 0 0 0 pt 0 inp 0 0 2125.863
+--------- beginning of main
+03-03 20:08:39.988  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 5431000 / mChargingTime : 5431000
+03-03 20:08:39.988  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!
+03-03 20:08:40.049  4564  4564 D io_stats: !@   8,0 r 253421 9633520 w 400018 189058204 d 0 0 f 0 0 iot 315524 0 th 0 0 0 pt 0 inp 0 0 2127.864
+03-03 20:08:41.086  5405  6722 D FreecessController: com.sec.android.app.myfiles(10119) is important[!isUidIdle]
+03-03 20:08:41.782  7525  8838 I SDHMS:D : SIOP:: AP:370 BAT:384 USB:0 CHG:392 WIFI:367 SKIN:369 SKINF:368 SKINB:369 LRP:369 LRF:368 LRB:369 

@@ -1,0 +1,14 @@
+--------- beginning of main
+03-03 19:54:40.592  5763  5763 D BubblesManager: onEntryUpdated : shouldBubbleUp=false ,key=-1|com.android.systemui|2131428972|charging_state|10052
+03-03 19:54:40.647  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() height = 0 container Visibility = 8, isValid = false, mIsDozing = false, fraction = 1.0, source = 0, target = 0
+03-03 19:54:40.647  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() supplier = 0
+03-03 19:54:40.710  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() height = 0 container Visibility = 8, isValid = false, mIsDozing = false, fraction = 1.0, source = 0, target = 0
+03-03 19:54:40.711  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() supplier = 0
+03-03 19:54:40.772  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() height = 0 container Visibility = 8, isValid = false, mIsDozing = false, fraction = 1.0, source = 0, target = 0
+03-03 19:54:40.773  5763  5763 I FaceWidgetPositionAlgorithm: getMediaContainerHeight() supplier = 0
+--------- beginning of system
+03-03 19:54:40.786  5405  6722 D FreecessController: com.sec.android.app.myfiles(10119) is important[!isUidIdle]
+03-03 19:54:41.738  7525  8838 I SDHMS:D : SIOP:: AP:359 BAT:373 USB:0 CHG:383 WIFI:357 SKIN:359 SKINF:358 SKINB:359 LRP:359 LRF:358 LRB:359 
+03-03 19:54:44.151  5405  6722 D FreecessController: com.sec.android.app.camera(10107) is important[!isUidIdle]
+03-03 19:54:45.171  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 6068000 / mChargingTime : 6068000
+03-03 19:54:45.172  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!

@@ -1,0 +1,67 @@
+--------- beginning of system
+03-03 19:54:27.245  7525  8829 I SDHMS:h : Periodic event 'saveLog' will starts soon.
+03-03 19:54:27.245  5405  5468 D BatteryExternalStatsWorker: update stats : update-network-netlog (6)
+03-03 19:54:27.246  7525  8829 I SDHMS:m : Polling event syncDatabaseLocked will starts.
+03-03 19:54:27.247  5405  5468 D BatteryExternalStatsWorker: Fetch WiFi data
+03-03 19:54:27.247  5405  5468 D BatteryExternalStatsWorker: Update Rail Energy data
+03-03 19:54:27.248  5405  5468 D BatteryExternalStatsWorker: Fetch modem data
+03-03 19:54:27.257  7525  8829 I SDHMS:m : Polling event syncDatabaseLocked finished.
+03-03 19:54:27.257  7525  8829 I SDHMS:m : Polling event checkDatabaseLocked will starts.
+03-03 19:54:27.258  5405  5454 E Watchdog: !@Sync: 43 heap: 92 / 102 FD: 921 [2026-03-03 19:54:27.257]
+03-03 19:54:27.266  7525  8829 I SDHMS:m : Polling event checkDatabaseLocked finished.
+03-03 19:54:27.267  7525  8829 I SDHMS:m : Polling event checkDatabaseOverflow will starts.
+--------- beginning of main
+03-03 19:54:27.269  5405  5805 W TelephonyManager: requestModemActivityInfo: Received an invalid ModemActivityInfo
+03-03 19:54:27.269  7525  8829 I SDHMS:m : Polling event checkDatabaseOverflow finished.
+03-03 19:54:27.269  5405  5805 W BatteryExternalStatsWorker: error reading modem stats:ERROR_INVALID_INFO_RECEIVED
+03-03 19:54:27.269  5405  5468 D BatteryExternalStatsWorker: mStats lock released
+03-03 19:54:27.269  5405  5468 D BatteryExternalStatsWorker: done updateExternalStatsLocked
+03-03 19:54:29.146  5405  6722 D FreecessController: com.sec.android.app.camera(10107) is important[!isUidIdle]
+03-03 19:54:30.072  5405  7494 D BatteryService: Sending ACTION_BATTERY_CHANGED: level:46, status:2, health:2, ac:false, usb:true, wireless:false, pogo:false, misc:0x20000, charge_type:1, charger_type:0, voltage:3903, temperature:373, online:19, current_avg:576, ps:false, hvc:false, capacity:280000, current_event:0x18000, current_now:585, mcc:0, mcv:0, cc:1756062, present:true, scale:100, technology:Li-ion
+03-03 19:54:30.072  5000  5000 E sehhealth-service: Could not open /sys/class/power_supply/battery/lrp
+03-03 19:54:30.077  5405  5569 D MotionRecognitionService: [SAR]  onReceive : ACTION_BATTERY_CHANGED, Plugged: 2
+03-03 19:54:30.078  5405  5405 D PhoneWindowManagerExt: ACTION_BATTERY_CHANGED - Level=46, status=2
+03-03 19:54:30.081  5405  5712 I DeviceBatteryInfoService: action: android.intent.action.BATTERY_CHANGED
+03-03 19:54:30.081  5405  5712 I DeviceBatteryInfoService: phone battery level: 46
+03-03 19:54:30.081  5405  5712 I DeviceBatteryInfoService: phone battery status: 2
+03-03 19:54:30.082  5405  5405 D AdaptiveBrightnessLongtermModelBuilder: Received android.intent.action.BATTERY_CHANGED
+03-03 19:54:30.083  5405  5405 D SemWifiApBroadcastReceiver: Received : android.intent.action.BATTERY_CHANGED
+03-03 19:54:30.086  5740  5740 D SemBigDataInfoController: Intent: android.intent.action.BATTERY_CHANGED
+03-03 19:54:30.087  5740  5740 D SemBigDataInfoController: Intent: android.intent.action.BATTERY_CHANGED
+03-03 19:54:30.088  5763  5763 D KeyguardUpdateMonitor: received broadcast android.intent.action.BATTERY_CHANGED
+03-03 19:54:30.090  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 19:54:30.091  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 19:54:30.092 13984 13984 I [SCPMV2][SystemMonitorReceiver]: onReceive: android.intent.action.BATTERY_CHANGED
+03-03 19:54:30.096  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 19:54:30.096  5763  5763 D SamsungBatteryMeterDrawable: onBatteryLevelChanged isSomethingChanged: false
+03-03 19:54:30.097  5763  5763 I PowerUI : mBootCompleted = true |  mFullyConnected = true
+03-03 19:54:30.097  5763  5763 I PowerUI : BATTERY_HEALTH_CHECK extraHealth=2 mBatteryMiscEvent=131072
+03-03 19:54:30.098  5763  5763 W PowerUI : Plug reason
+03-03 19:54:30.098  5763  5763 W PowerUI : Skip charging animation - by plug status
+03-03 19:54:30.098  5763  9282 D SecPowerUI.Notification: dismissing low battery warning: level=46
+03-03 19:54:30.098  5763  5763 D PowerUI : priorPlugType = 2 mPlugType = 2 priorBatteryStatus = 2 mBatteryStatus = 2
+03-03 19:54:30.098  5763  9282 D SecPowerUI.Notification: updateNotification mWarning=false mPlaySound=false
+03-03 19:54:30.099  5763  9282 D SecPowerUI.Notification: SecBatteryStatsSnapshot{batteryLevel=46, currentBatteryMode=0, chargingTime=6083000, chargingType=11, batteryHealth=2, automaticTestMode=false, isHiccupState=false}
+03-03 19:54:30.099  5763  5763 W PowerUI : Plug reason
+03-03 19:54:30.099  5763  5763 W PowerUI : Skip charging sound - by plug status
+03-03 19:54:30.099  5763  5763 I PowerUI : oldMisalign : false, curMisalign : false
+03-03 19:54:30.101  5763  9282 D SecPowerUI.Notification: 1. restoreScreenTimeOut - saved_value : :
+03-03 19:54:30.101  5763  9282 E SecPowerUI.Notification: no saved value, so we do nothing !!
+03-03 19:54:30.101  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 6083000 / mChargingTime : 6083000
+03-03 19:54:30.101  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!
+03-03 19:54:30.101  5763  5763 D PowerUI : Battery swelling mode - priorBatterySwellingMode = 0 mBatterySwellingMode = 0 mBatteryStatus = 2
+03-03 19:54:30.102  5763  5763 I PowerUI : mBatteryMiscEvent = 131072
+03-03 19:54:30.103  5763  5763 I PowerUI : checkShouldTurnOffProtectBattery : -1, Scheduling start ? : false
+03-03 19:54:30.104  5763  5763 I PowerUI : Clear time
+03-03 19:54:30.105  5405  7494 D SettingsProvider: isChangeAllowed() : name = charger_connected_time
+03-03 19:54:30.105  5405  7494 D SettingsProvider: edmUri: content://com.sec.knox.provider/RestrictionPolicy3
+03-03 19:54:30.105  5405  7494 D SettingsProvider: projectionArgs: isSettingsChangesAllowed
+03-03 19:54:30.105  5405  7494 D SettingsProvider: selectionArgs: false
+03-03 19:54:30.105  5405  7494 D SettingsProvider: selectionArgs: 10052
+03-03 19:54:30.105  5405  7494 D SecContentProvider: query(), uri = 17 selection = isSettingsChangesAllowed
+03-03 19:54:30.105  5405  7494 D SecContentProvider: called from android.uid.systemui:10052
+03-03 19:54:30.106  5405  7494 D RestrictionPolicy: isSettingsChangesAllowedAsUser, userId 0 : true
+03-03 19:54:30.106  5405  7494 D SettingsProvider: ret = 1
+03-03 19:54:30.109  5763  5763 D KeyguardUpdateMonitor: handleBatteryUpdate
+03-03 19:54:30.110  5763  5763 I AODBatteryManager: updateBatteryData: ACTION_BATTERY_CHANGED
+03-03 19:54:30.113  5763  5763 I AODBatteryManager: saveBatteryData : AOD BatteryData [mBatteryLevel=46, mBatteryStatus=CHARGING, mBatteryPlugType=USB, mBatteryPlugged=true, mRemainingChargeTime=6083000, mBatteryChargingType=1, mBatteryChargerType=NORMAL, mBatteryOnline=NOT_DEFINED, mBatterySwellingMode=NONE, mBatteryProtectMode=false]

@@ -1,0 +1,3 @@
+Schema Error
+============
+Missing required columns: decode_tps, first_token_ms, scenario
