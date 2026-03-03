@@ -1,0 +1,40 @@
+{
+  "required_files": [
+    "scenario-a.csv",
+    "scenario-b.csv",
+    "stage-2-threshold-input.csv",
+    "threshold-report.txt",
+    "logcat.txt",
+    "notes.md",
+    "summary.json"
+  ],
+  "threshold_csv": {
+    "columns": [
+      "scenario",
+      "first_token_ms",
+      "decode_tps"
+    ]
+  },
+  "summary_json": {
+    "fields": [
+      "stage",
+      "device_id",
+      "run_date",
+      "run_dir",
+      "scenario_a_csv",
+      "scenario_b_csv",
+      "threshold_input_csv",
+      "threshold_report",
+      "logcat",
+      "notes",
+      "summary_json",
+      "threshold_exit_code"
+    ]
+  },
+  "adb_logcat_timeout_seconds": 15,
+  "templates": {
+    "notes": "docs/operations/evidence/wp-03/templates/notes.md",
+    "scenario_a": "docs/operations/evidence/wp-03/templates/scenario-a.csv",
+    "scenario_b": "docs/operations/evidence/wp-03/templates/scenario-b.csv"
+  }
+}
