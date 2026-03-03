@@ -30,13 +30,12 @@ Use only commands documented in `scripts/dev/README.md` for:
 
 ## Device Validation Loop
 
-1. `bash scripts/android/ensure_device.sh`
-2. `bash scripts/android/capture_device_baseline.sh`
-3. `bash scripts/android/configure_device_for_benchmark.sh apply`
-4. run scenario command using `scripts/android/run_short_loop.sh` or `scripts/dev/device-test.sh`
-5. reset benchmark settings
-6. store raw run artifacts under `scripts/benchmarks/runs/...`
-7. link those run artifacts from `docs/operations/evidence/...` note
+1. Run `python3 tools/devctl/main.py doctor` and resolve failures.
+2. Run `bash scripts/dev/device-test.sh ...` for stage checks/baseline/loop/framework/reset sequence.
+3. Store raw run artifacts under `scripts/benchmarks/runs/...`.
+4. Link raw run artifacts from the matching `docs/operations/evidence/...` note.
+
+`scripts/android/*` helpers are internal implementation details behind `devctl` and are not a stable interface for new contributors.
 
 ## Framework Lanes
 

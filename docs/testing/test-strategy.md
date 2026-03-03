@@ -38,9 +38,9 @@ Primary workflow: `.github/workflows/ci.yml`
 CI responsibilities:
 
 1. `python3 tools/devctl/main.py lane test ci`
-2. `bash scripts/dev/docs-drift-check.sh`
-3. `bash scripts/dev/evidence-check-changed.sh` for changed evidence notes
-4. `bash scripts/dev/governance-self-test.sh`
+2. `python3 tools/devctl/main.py governance docs-drift`
+3. `python3 tools/devctl/main.py governance evidence-check-changed` for changed evidence notes
+4. `python3 tools/devctl/main.py governance self-test`
 5. PR governance checks (template completion)
 6. Test report artifact upload
 

@@ -4,20 +4,30 @@ This is the canonical command reference for local, CI, and device-lane execution
 All wrappers delegate to the config-driven orchestrator:
 
 ```bash
-python3 tools/devctl/main.py lane <lane> ...
+python3 tools/devctl/main.py <command> ...
 ```
+
+## First 10 Minutes (New Joiner)
+
+```bash
+python3 -m pip install -r tools/devctl/requirements.txt
+python3 tools/devctl/main.py doctor
+bash scripts/dev/test.sh quick
+```
+
+If `doctor` fails, follow the suggested fix lines and rerun `doctor`.
 
 ## Standard (CI + Local)
 
 ```bash
-bash scripts/dev/test.sh
+bash scripts/dev/test.sh [full|quick|ci]
 ```
 
 Modes:
 
-- `bash scripts/dev/test.sh` -> clean + module tests (plus Android unit tests when SDK is configured)
-- `bash scripts/dev/test.sh quick` -> test only (no clean)
-- `bash scripts/dev/test.sh ci` -> CI-safe alias
+- `full` (default): clean + module tests (plus Android unit tests when SDK is configured)
+- `quick`: no clean
+- `ci`: CI-safe alias
 
 Compatibility wrapper:
 
@@ -26,21 +36,21 @@ Compatibility wrapper:
 ## Physical Device Lane
 
 ```bash
-bash scripts/dev/device-test.sh
+bash scripts/dev/device-test.sh [runs] [label] [-- <command...>] [--framework espresso|maestro|both]
 ```
 
 Defaults:
 
-1. Runs stage checks and captures baseline.
-2. Applies benchmark-friendly device settings.
-3. Executes a 10-loop run on `:apps:mobile-android-host:run`.
-4. Runs optional framework lanes (`espresso` + `maestro` by default).
-5. Restores device settings on exit.
+1. Stage checks and baseline capture.
+2. Benchmark settings apply.
+3. 10-loop scenario command (`:apps:mobile-android-host:run`).
+4. Optional framework lanes (`espresso` + `maestro` by default).
+5. Benchmark settings reset on exit.
 
 Examples:
 
-- `bash scripts/dev/device-test.sh` (10 runs, default command)
-- `bash scripts/dev/device-test.sh 5 smoke-loop` (5 runs, custom label)
+- `bash scripts/dev/device-test.sh`
+- `bash scripts/dev/device-test.sh 5 smoke-loop`
 - `bash scripts/dev/device-test.sh 10 scenario-a -- ./gradlew --no-daemon :apps:mobile-android-host:run`
 - `bash scripts/dev/device-test.sh 10 scenario-a --framework espresso`
 - `bash scripts/dev/device-test.sh 10 scenario-a --framework maestro`
@@ -48,7 +58,7 @@ Examples:
 ## Stage-2 Benchmark Wrapper
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id>
+bash scripts/dev/bench.sh stage2 --device <device-id> [--date YYYY-MM-DD] [--scenario-a <file>] [--scenario-b <file>]
 ```
 
 Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
@@ -61,26 +71,28 @@ Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
 6. `notes.md`
 7. `summary.json`
 
-## Framework Lanes
-
-Run directly through `devctl`:
+## Framework Lanes (Direct)
 
 ```bash
 python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
 ```
 
-Maestro install (validated against `v1.39.13`):
+Maestro install:
 
 ```bash
 curl -Ls https://get.maestro.mobile.dev | bash
 ```
 
-## Governance Helpers
+## Governance Commands
+
+Wrappers remain callable, but all governance logic runs via `devctl governance`.
 
 ```bash
-bash scripts/dev/docs-drift-check.sh
-bash scripts/dev/evidence-check.sh docs/operations/evidence/wp-xx/YYYY-MM-DD-note.md
-bash scripts/dev/evidence-check-changed.sh
-bash scripts/dev/governance-self-test.sh
+python3 tools/devctl/main.py governance docs-drift
+python3 tools/devctl/main.py governance evidence-check docs/operations/evidence/wp-xx/YYYY-MM-DD-note.md
+python3 tools/devctl/main.py governance evidence-check-changed
+python3 tools/devctl/main.py governance validate-pr-body /tmp/pr-body.md
+python3 tools/devctl/main.py governance stage-close-gate /tmp/pr-body.md
+python3 tools/devctl/main.py governance self-test
 ```
