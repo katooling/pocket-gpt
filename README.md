@@ -20,3 +20,6 @@ Foundation repository for an offline, privacy-first mobile AI product.
 - `packages/memory/`: memory and retrieval contracts
 - `scripts/benchmarks/`: benchmark harness docs and scripts
 - `scripts/dev/`: canonical test/dev entrypoints
+- `tools/devctl/`: config-driven lane orchestrator backing `scripts/dev/*`
+- `config/devctl/`: lane/device/stage2 manifests for orchestrator behavior
+- `tests/maestro/`: mobile E2E flow assets

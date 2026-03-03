@@ -25,7 +25,8 @@ Use only commands documented in `scripts/dev/README.md` for:
 1. Standard local/CI tests
 2. Physical-device lane
 3. Stage-2 benchmark wrapper
-4. Governance checks (`docs-drift-check`, `evidence-check`)
+4. Framework lanes (`android-instrumented`, `maestro`)
+5. Governance checks (`docs-drift-check`, `evidence-check`)
 
 ## Device Validation Loop
 
@@ -36,6 +37,18 @@ Use only commands documented in `scripts/dev/README.md` for:
 5. reset benchmark settings
 6. store raw run artifacts under `scripts/benchmarks/runs/...`
 7. link those run artifacts from `docs/operations/evidence/...` note
+
+## Framework Lanes
+
+1. Espresso: `python3 tools/devctl/main.py lane android-instrumented`
+2. Maestro: `python3 tools/devctl/main.py lane maestro`
+3. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
+
+Maestro install (validated against `v1.39.13`):
+
+```bash
+curl -Ls https://get.maestro.mobile.dev | bash
+```
 
 ## Regression Rules (Fail Stage)
 

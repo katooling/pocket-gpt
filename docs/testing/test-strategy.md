@@ -37,10 +37,12 @@ Primary workflow: `.github/workflows/ci.yml`
 
 CI responsibilities:
 
-1. `bash scripts/dev/test.sh ci`
+1. `python3 tools/devctl/main.py lane test ci`
 2. `bash scripts/dev/docs-drift-check.sh`
-3. PR governance checks (template completion)
-4. Test report artifact upload
+3. `bash scripts/dev/evidence-check-changed.sh` for changed evidence notes
+4. `bash scripts/dev/governance-self-test.sh`
+5. PR governance checks (template completion)
+6. Test report artifact upload
 
 ## Automation Boundary (CI vs Human)
 
@@ -62,3 +64,8 @@ Human-required checkpoints:
 1. Raw machine artifacts only in `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...`
 2. Human evidence notes/status only in `docs/operations/evidence/wp-xx/...`
 3. Stage closure requires evidence note linking raw artifact paths
+
+## Android Automation Lanes
+
+1. Espresso instrumentation lane: `python3 tools/devctl/main.py lane android-instrumented`
+2. Maestro E2E lane: `python3 tools/devctl/main.py lane maestro`
