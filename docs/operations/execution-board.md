@@ -1,6 +1,6 @@
 # Execution Board
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 This is the single board for planning and delivery.  
 All teams should update status here first, then mirror updates in role playbooks.
@@ -45,7 +45,6 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### Ready
 
-- [ ] WP-03 closeout gate: QA-02 rerun on artifact-validated runtime path with Scenario A/B CSV + threshold report + logcat evidence refresh
 - [ ] PM/Prod sync packet for post-WP-03 dispatch (WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies)
 
 ### Blocked
@@ -60,6 +59,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-OPS Engineering foundations simplification (strict gates, single-source docs, Android module realignment scaffolding)
 - [x] QA-02 Phase B: real Scenario A/B device run + threshold report + logcat evidence
 - [x] ENG-04 closeout gate: artifact-manifest startup validation active, placeholder checksum removed from active Stage-2 path, and QA unblocked for final QA-02 rerun
+- [x] QA-02 closeout rerun: artifact-validated Stage-2 Scenario A/B packet refreshed with threshold PASS + logcat (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`)
 
 ## Immediate Assignments (PM Dispatch)
 
@@ -67,7 +67,7 @@ All teams should update status here first, then mirror updates in role playbooks
    - ENG-04 gate for WP-03 is closed (`docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`)
    - keep ENG-06 package-close prep running in parallel (do not claim WP-05 Done yet)
 2. QA - start immediately after ENG-04 closeout:
-   - run QA-02 closure refresh now on artifact-validated path and publish final WP-03 packet
+   - QA-02 closure refresh complete (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`); recommend WP-03 package close decision
 3. Product - start now in draft mode, finalize after WP-03 Done:
    - `PROD-01` launch workflows
    - `PROD-02` launch device support policy
@@ -85,6 +85,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-02 (ENG-03 device pass 02, acceptance met): `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`
 - WP-03 (QA-02 prep only): `docs/operations/evidence/wp-03/2026-03-03-qa-02-prep.md`
 - WP-03 (QA-02 Phase B execution): `docs/operations/evidence/wp-03/2026-03-03-qa-02-phase-b.md`
+- WP-03 (QA-02 final closeout rerun on artifact-validated path): `docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`
 - WP-03 (ENG-04 artifact lifecycle, parallel in progress): `docs/operations/evidence/wp-03/2026-03-03-eng-04.md`
 - WP-03 (ENG-04 closeout, artifact-validated startup path + QA unblock): `docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`
 - WP-03 (ENG-OPS foundations simplification): `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`
