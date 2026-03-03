@@ -4,6 +4,9 @@ import statistics
 import sys
 
 
+REQUIRED_COLUMNS = {"scenario", "first_token_ms", "decode_tps"}
+
+
 def median(values):
     if not values:
         return 0.0
@@ -21,6 +24,13 @@ def main(path):
     rows = []
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        fieldnames = set(reader.fieldnames or [])
+        missing_columns = sorted(REQUIRED_COLUMNS - fieldnames)
+        if missing_columns:
+            print("Schema Error")
+            print("============")
+            print(f"Missing required columns: {', '.join(missing_columns)}")
+            return 1
         for row in reader:
             rows.append(row)
 
@@ -39,6 +49,18 @@ def main(path):
     b_first = [x for x in b_first if x is not None]
     b_tps = [x for x in b_tps if x is not None]
     c_tps = [x for x in c_tps if x is not None]
+
+    if not scenario_a or not scenario_b:
+        print("Data Error")
+        print("==========")
+        print("Benchmark CSV must include at least one row for Scenario A and Scenario B.")
+        return 1
+
+    if not a_first or not a_tps or not b_first or not b_tps:
+        print("Data Error")
+        print("==========")
+        print("Scenario A/B rows must include numeric first_token_ms and decode_tps values.")
+        return 1
 
     checks = []
     checks.append(("Scenario A first-token <= 2500ms", median(a_first) <= 2500))

@@ -56,6 +56,7 @@ CI runs:
    - logcat extract
    - optional perfetto trace
 3. Do not treat mock/template data as production validation evidence.
+4. Stage-2 execution checklist and evidence capture workflow live in `docs/testing/stage-2-benchmark-runbook.md`.
 
 ## Ownership Split
 

@@ -5,6 +5,7 @@ This playbook defines the development and testing workflow for Android-first MVP
 Companion docs:
 
 - `docs/testing/test-strategy.md`
+- `docs/testing/stage-2-benchmark-runbook.md`
 - `docs/roadmap/mvp-implementation-tracker.md`
 
 ## Tooling Stack
@@ -40,7 +41,7 @@ Suggested local command baseline (add wrapper/tasks as repo evolves):
 # one-command clean build + tests (WP-01 baseline)
 bash scripts/dev/verify.sh
 
-# optional stage smoke run
+# optional stage runtime run
 ./gradlew :apps:mobile-android:run
 ```
 
@@ -75,13 +76,14 @@ Fail stage if any occurs:
 
 - Keep startup-to-first-response loop under 60s for local iteration.
 - Require at least one deterministic unit test for each changed class.
-- Keep smoke script output stable and documented.
+- Keep runtime startup output stable and documented.
 
 ### Stage 2
 
 - Artifact checksum validation must be covered by unit tests.
 - Threshold evaluation script run is required for every benchmark update.
 - Benchmark CSV schema changes require script compatibility checks.
+- Use `docs/testing/stage-2-benchmark-runbook.md` for the physical-device A/B execution checklist and evidence path conventions.
 
 ### Stage 3
 
@@ -111,7 +113,7 @@ Fail stage if any occurs:
 
 ### Stage 1
 
-- 10 short chat runs with smoke model
+- 10 short chat runs with the `llama.cpp` runtime bridge
 - startup checks must pass
 
 ### Stage 2
