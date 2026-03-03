@@ -11,7 +11,7 @@ data class ModelArtifact(
 
 class ModelArtifactManager {
     private val manifests: MutableMap<String, ModelArtifact> = mutableMapOf()
-    private var activeModelId: String = ModelCatalog.SMOKE_ECHO_120M
+    private var activeModelId: String = ModelCatalog.QWEN_3_5_0_8B_Q4
 
     fun registerArtifact(artifact: ModelArtifact) {
         manifests[artifact.modelId] = artifact
@@ -20,7 +20,7 @@ class ModelArtifactManager {
     fun listArtifacts(): List<ModelArtifact> = manifests.values.sortedBy { it.modelId }
 
     fun setActiveModel(modelId: String): Boolean {
-        if (!manifests.containsKey(modelId) && modelId != ModelCatalog.SMOKE_ECHO_120M) {
+        if (!manifests.containsKey(modelId)) {
             return false
         }
         activeModelId = modelId

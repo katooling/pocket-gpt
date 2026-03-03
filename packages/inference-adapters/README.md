@@ -17,7 +17,12 @@ Runtime abstraction and adapter contracts.
 
 ## Implemented MVP Scaffolding
 
-- `SmokeInferenceModule`: stage-1 streaming smoke model adapter
+- `SmokeInferenceModule`: legacy stage-1 streaming smoke adapter retained for local scaffolding only
 - `ModelArtifactManager`: stage-2 model manifest and checksum helpers
 - `AdaptiveRoutingPolicy`: stage-3 battery/thermal/device-aware selection
 - `SmokeImageInputModule`: stage-5 image path placeholder for local integration
+
+Android runtime bridge wiring is implemented in the app layer with:
+
+- `AndroidLlamaCppRuntimeBridge`
+- `AndroidLlamaCppInferenceModule`

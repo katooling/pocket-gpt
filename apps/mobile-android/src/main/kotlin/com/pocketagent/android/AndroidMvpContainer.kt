@@ -16,7 +16,6 @@ import com.pocketagent.inference.ModelArtifactManager
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.RoutingModule
 import com.pocketagent.inference.SmokeImageInputModule
-import com.pocketagent.inference.SmokeInferenceModule
 import com.pocketagent.memory.InMemoryMemoryModule
 import com.pocketagent.memory.MemoryChunk
 import com.pocketagent.memory.MemoryModule
@@ -34,7 +33,7 @@ data class ChatResponse(
 
 class AndroidMvpContainer(
     private val conversationModule: ConversationModule = InMemoryConversationModule(),
-    private val inferenceModule: InferenceModule = SmokeInferenceModule(),
+    private val inferenceModule: InferenceModule = AndroidLlamaCppInferenceModule(),
     private val routingModule: RoutingModule = AdaptiveRoutingPolicy(),
     private val policyModule: PolicyModule = DefaultPolicyModule(offlineOnly = true),
     private val observabilityModule: ObservabilityModule = InMemoryObservabilityModule(),
@@ -61,7 +60,7 @@ class AndroidMvpContainer(
                 expectedSha256 = "replace-with-real-sha256",
             ),
         )
-        inferenceModule.loadModel(ModelCatalog.SMOKE_ECHO_120M)
+        modelArtifactManager.setActiveModel(ModelCatalog.QWEN_3_5_0_8B_Q4)
     }
 
     fun createSession(): SessionId = conversationModule.createSession()
@@ -74,8 +73,12 @@ class AndroidMvpContainer(
         maxTokens: Int = 128,
     ): ChatResponse {
         val modelId = routingModule.selectModel(taskType, deviceState)
-        inferenceModule.loadModel(modelId)
-        modelArtifactManager.setActiveModel(modelId)
+        check(inferenceModule.loadModel(modelId)) {
+            "Failed to load runtime model: $modelId"
+        }
+        check(modelArtifactManager.setActiveModel(modelId)) {
+            "Model artifact not registered for runtime model: $modelId"
+        }
 
         conversationModule.appendUserTurn(sessionId, userText)
         memoryModule.saveMemoryChunk(
@@ -90,12 +93,17 @@ class AndroidMvpContainer(
         val startedMs = System.currentTimeMillis()
         var firstTokenLatencyMs = -1L
         val builder = StringBuilder()
-        inferenceModule.generateStream(InferenceRequest(prompt = prompt, maxTokens = maxTokens)) { token ->
-            if (firstTokenLatencyMs < 0) {
-                firstTokenLatencyMs = System.currentTimeMillis() - startedMs
+        try {
+            inferenceModule.generateStream(InferenceRequest(prompt = prompt, maxTokens = maxTokens)) { token ->
+                if (firstTokenLatencyMs < 0) {
+                    firstTokenLatencyMs = System.currentTimeMillis() - startedMs
+                }
+                builder.append(token)
             }
-            builder.append(token)
+        } finally {
+            inferenceModule.unloadModel()
         }
+        check(firstTokenLatencyMs >= 0) { "Runtime returned no tokens." }
         val totalLatency = System.currentTimeMillis() - startedMs
         observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
         observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
@@ -128,8 +136,17 @@ class AndroidMvpContainer(
 
     fun runStartupChecks(): List<String> {
         val checks = mutableListOf<String>()
-        if (!inferenceModule.listAvailableModels().contains(ModelCatalog.SMOKE_ECHO_120M)) {
-            checks.add("Missing smoke model.")
+        val available = inferenceModule.listAvailableModels().toSet()
+        val required = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
+        val missing = required.minus(available)
+        if (missing.isNotEmpty()) {
+            checks.add("Missing runtime model(s): ${missing.joinToString(", ")}.")
+        } else {
+            if (!inferenceModule.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4)) {
+                checks.add("Failed to load baseline runtime model: ${ModelCatalog.QWEN_3_5_0_8B_Q4}.")
+            } else {
+                inferenceModule.unloadModel()
+            }
         }
         if (!policyModule.enforceDataBoundary("inference.startup_check")) {
             checks.add("Policy module rejected startup event type.")

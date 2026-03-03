@@ -12,7 +12,7 @@ fun main() {
 
     val session = container.createSession()
     val guards = ResilienceGuards()
-    val prompt = guards.validatePrompt("hello from stage1 smoke test")
+    val prompt = guards.validatePrompt("hello from stage1 runtime test")
     val canRun = guards.canRunTask(
         taskType = "short_text",
         deviceState = DeviceState(batteryPercent = 70, thermalLevel = 3, ramClassGb = 8),

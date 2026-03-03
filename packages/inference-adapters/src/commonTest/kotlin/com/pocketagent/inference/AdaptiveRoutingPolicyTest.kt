@@ -7,12 +7,12 @@ class AdaptiveRoutingPolicyTest {
     private val routing = AdaptiveRoutingPolicy()
 
     @Test
-    fun `uses smoke model in high thermal conditions`() {
+    fun `uses qwen 0dot8b model in high thermal conditions`() {
         val selected = routing.selectModel(
             taskType = "short_text",
             deviceState = DeviceState(batteryPercent = 80, thermalLevel = 8, ramClassGb = 8),
         )
-        assertEquals(ModelCatalog.SMOKE_ECHO_120M, selected)
+        assertEquals(ModelCatalog.QWEN_3_5_0_8B_Q4, selected)
     }
 
     @Test

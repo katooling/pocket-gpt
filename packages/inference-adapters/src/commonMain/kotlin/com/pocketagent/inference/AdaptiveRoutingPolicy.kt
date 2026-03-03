@@ -3,7 +3,7 @@ package com.pocketagent.inference
 class AdaptiveRoutingPolicy : RoutingModule {
     override fun selectModel(taskType: String, deviceState: DeviceState): String {
         if (deviceState.thermalLevel >= 7 || deviceState.batteryPercent < 20) {
-            return ModelCatalog.SMOKE_ECHO_120M
+            return ModelCatalog.QWEN_3_5_0_8B_Q4
         }
         if (deviceState.ramClassGb >= 8 && taskType in setOf("reasoning", "image")) {
             return ModelCatalog.QWEN_3_5_0_8B_Q4

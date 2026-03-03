@@ -4,7 +4,7 @@ Android-first MVP implementation scaffolding aligned with the staged execution p
 
 ## Implemented Stage Coverage
 
-1. Stage 1: text-only streaming chat loop via `AndroidMvpContainer`
+1. Stage 1: text-only streaming chat loop via `AndroidMvpContainer` + `AndroidLlamaCppInferenceModule`
 2. Stage 2: model artifact registration and benchmark runner (`StageBenchmarkRunner`)
 3. Stage 3: adaptive routing + policy + diagnostics export
 4. Stage 4: local tool runtime integration
@@ -14,6 +14,8 @@ Android-first MVP implementation scaffolding aligned with the staged execution p
 ## Key Files
 
 - `src/main/kotlin/com/pocketagent/android/AndroidMvpContainer.kt`
+- `src/main/kotlin/com/pocketagent/android/AndroidLlamaCppRuntimeBridge.kt`
+- `src/main/kotlin/com/pocketagent/android/AndroidLlamaCppInferenceModule.kt`
 - `src/main/kotlin/com/pocketagent/android/StageBenchmarkRunner.kt`
 - `src/main/kotlin/com/pocketagent/android/ResilienceGuards.kt`
 - `src/main/kotlin/com/pocketagent/android/StageRunnerMain.kt`
