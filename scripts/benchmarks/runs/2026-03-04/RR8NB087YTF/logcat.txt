@@ -1,0 +1,4 @@
+--------- beginning of main
+03-04 00:06:44.603  4884  4884 E audit   : type=1400 audit(1772557604.599:1753): avc:  denied  { write } for  pid=13007 comm="ThreadPoolForeg" name="traced_producer" dev="tmpfs" ino=24980 scontext=u:r:gmscore_app:s0:c512,c768 tcontext=u:object_r:traced_producer_socket:s0 tclass=sock_file permissive=0 SEPF_SM-A515F_13_0001 audit_filtered
+03-04 00:06:44.603  4884  4884 E audit   : type=1300 audit(1772557604.599:1753): arch=c00000b7 syscall=203 success=no exit=-13 a0=4f a1=74f20325e0 a2=1e a3=3d241a39a items=0 ppid=4905 pid=13007 auid=4294967295 uid=10224 gid=10224 euid=10224 suid=10224 fsuid=10224 egid=10224 sgid=10224 fsgid=10224 tty=(none) ses=4294967295 comm="ThreadPoolForeg" exe="/system/bin/app_process64" subj=u:r:gmscore_app:s0:c512,c768 key=(null)
+03-04 00:06:44.604  4884  4884 E audit   : type=1327 audit(1772557604.599:1753): proctitle="com.google.android.gms"
