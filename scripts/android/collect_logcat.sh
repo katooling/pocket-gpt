@@ -10,7 +10,11 @@ SERIAL="$(bash "${SCRIPT_DIR}/ensure_device.sh")"
 
 echo "Capturing logcat for package ${PACKAGE_NAME} from ${SERIAL} for ${DURATION_SECONDS}s..."
 adb -s "${SERIAL}" logcat -c
-adb -s "${SERIAL}" logcat | rg "${PACKAGE_NAME}|Inference|Routing|Tool|Memory|Policy" > "${OUT_FILE}" &
+if command -v rg >/dev/null 2>&1; then
+  adb -s "${SERIAL}" logcat | rg "${PACKAGE_NAME}|Inference|Routing|Tool|Memory|Policy" > "${OUT_FILE}" &
+else
+  adb -s "${SERIAL}" logcat | grep -E "${PACKAGE_NAME}|Inference|Routing|Tool|Memory|Policy" > "${OUT_FILE}" &
+fi
 LOG_PID=$!
 sleep "${DURATION_SECONDS}"
 kill "${LOG_PID}" || true

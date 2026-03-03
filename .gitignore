@@ -12,6 +12,7 @@ out/
 .gradle/
 .gradle-home/
 **/build/
+local.properties
 
 # Xcode
 DerivedData/

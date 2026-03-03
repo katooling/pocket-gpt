@@ -1,6 +1,7 @@
 # Android Script Helpers
 
 Source of truth for dev/test command contracts: `scripts/dev/README.md`.
+Status: Internal implementation details for `devctl` lanes. These script interfaces are not stable and may change without notice.
 
 These scripts support repeatable Android device testing for MVP stages.
 

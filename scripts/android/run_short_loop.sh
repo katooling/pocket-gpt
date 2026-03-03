@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+has_rg() {
+  command -v rg >/dev/null 2>&1
+}
+
+matches_pattern() {
+  local pattern="$1"
+  local file="$2"
+  if has_rg; then
+    rg -q "${pattern}" "${file}"
+  else
+    grep -Eq "${pattern}" "${file}"
+  fi
+}
+
 if [[ "$#" -lt 5 ]]; then
   echo "Usage: $0 --runs <n> --label <label> -- <command...>" >&2
   exit 1
@@ -66,10 +80,10 @@ for ((i=1; i<=RUNS; i++)); do
 
   CRASH_DETECTED="false"
   OOM_DETECTED="false"
-  if rg -q "FATAL EXCEPTION|ANR in|Fatal signal|Process .* has died" "${LOGCAT_FILE}"; then
+  if matches_pattern "FATAL EXCEPTION|ANR in|Fatal signal|Process .* has died" "${LOGCAT_FILE}"; then
     CRASH_DETECTED="true"
   fi
-  if rg -q "OutOfMemoryError|lowmemorykiller|LMKD" "${LOGCAT_FILE}"; then
+  if matches_pattern "OutOfMemoryError|lowmemorykiller|LMKD" "${LOGCAT_FILE}"; then
     OOM_DETECTED="true"
   fi
 
