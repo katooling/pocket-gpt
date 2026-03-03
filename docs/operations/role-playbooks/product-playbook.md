@@ -22,6 +22,21 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 
 - [ ] No active product task currently marked in-progress
 
+## Product Dispatch Timing
+
+1. Start now (draft/prep only):
+   - draft `PROD-01` and `PROD-02` outputs with unresolved assumptions clearly marked
+2. Finalize immediately after WP-03 is marked Done:
+   - lock top launch workflows (`PROD-01`)
+   - lock required vs best-effort device support policy (`PROD-02`)
+3. After `PROD-01` is locked:
+   - execute `PROD-03` final acceptance checklist consolidation with QA
+
+## Immediate PM Dispatch
+
+1. Use `docs/operations/evidence/wp-03/2026-03-03-pm-next-steps-dispatch.md` as the source for post-reconciliation next-owner assignments.
+2. Do not re-dispatch completed C4-C7 work; focus on WP-03 closure gates and post-WP-03 package dispatch.
+
 ## Task Queue
 
 | Task ID | Task | Status | Prerequisites | Owner | References |

@@ -7,7 +7,7 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 | Stage | Description | Primary Owner | Scaffolded in Repo | Validated on Device | Required Evidence |
 |---|---|---|---|---|---|
 | 1 | Android text-only runtime slice with `llama.cpp` bridge wiring | Runtime + Android | Yes | Yes | startup check output, 10-run short chat logs |
-| 2 | Qwen 0.8B swap + scenario A/B thresholds | Runtime + QA | Partial (artifact/runners scaffolded) | No | benchmark CSV + threshold report |
+| 2 | Qwen 0.8B swap + scenario A/B thresholds | Runtime + QA | Yes | Yes | benchmark CSV + threshold report |
 | 3 | Routing/policy/observability integration | Runtime + Security | Yes (policy/routing scaffolds) | No | downgrade test logs, diagnostics export |
 | 4 | Schema-safe tool runtime v1 | Platform + Security | Yes (schema validator + adversarial regression tests) | No | malformed call rejection tests |
 | 5 | Memory v1 + image input v1 | Core/AI + Runtime | Partial (in-memory + smoke image path) | No | scenario C benchmark + quality rubric notes |
@@ -36,11 +36,12 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 
 ## Stage 2 Checklist
 
-- [ ] Replace smoke model artifact with real Qwen `0.8B Q4`
-- [ ] Run Scenario A/B from benchmark protocol
-- [ ] Evaluate thresholds and record pass/fail
-- [x] Add checksum verification tests for artifact manager (ENG-04 CI-first parallel scope, 2026-03-03)
+- [x] Artifact-validation startup path active for Stage-2 closure (`POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256`, `POCKETGPT_QWEN_3_5_2B_Q4_SHA256`) (ENG-04 closeout, 2026-03-03)
+- [x] Run Scenario A/B from benchmark protocol (QA-02 final closeout, 2026-03-04)
+- [x] Evaluate thresholds and record pass/fail (QA-02 final closeout PASS, 2026-03-04)
+- [x] Add checksum verification tests for artifact manager (ENG-04 CI scope, 2026-03-03)
 - [x] Automate threshold script run in dev script (`scripts/dev/bench.sh stage2`) (2026-03-03)
+- [x] Re-run final Scenario A/B closure packet after ENG-04 artifact closeout (2026-03-04)
 
 ## Stage 3 Checklist
 

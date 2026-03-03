@@ -42,6 +42,8 @@ Exit criteria:
 
 Goal: make model packaging/checksum and threshold evaluation reliable.
 
+Status (2026-03-04): Completed. ENG-04 artifact closeout and QA-02 final rerun evidence are captured, including Stage-2 threshold PASS and logcat packet.
+
 Deliverables:
 
 1. Artifact manifest + checksum verification + version handling.

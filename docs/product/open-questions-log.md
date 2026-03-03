@@ -11,6 +11,7 @@ Track these questions continuously so engineering, product, and go-to-market sta
 3. Should stage runner and benchmark tooling be fully CI-automated before real runtime integration?
 4. What strict schema framework should replace current lightweight tool parsing?
 5. What is the minimum acceptable image quality rubric for MVP?
+6. For WP-03 closure, what is the exact definition of “artifact-validated runtime path” (checksum-only contract vs mandatory real GGUF load proof on-device)?
 
 ## Product Questions
 

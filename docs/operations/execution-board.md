@@ -27,9 +27,9 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-00 | Foundation docs and architecture baseline | Product | Eng, QA | 0 | No | none | Done | Complete |
 | WP-01 | Build/CI baseline (wrapper, CI jobs, test command) | Engineering | QA | 1 | No | WP-00 | Done | Week 1 |
 | WP-02 | Real Android runtime slice (`llama.cpp`) | Engineering | QA | 2 | No | WP-01 | Done | Week 1-2 |
-| WP-03 | Artifact + benchmark reliability (A/B thresholds) | Engineering | QA, Product | 3 | Partial | WP-02 | In Progress | Week 2 |
-| WP-04 | Routing, policy, diagnostics hardening | Engineering | Security, QA | 4 | Yes | WP-03 | Backlog | Week 3 |
-| WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | Backlog | Week 3-4 |
+| WP-03 | Artifact + benchmark reliability (A/B thresholds) | Engineering | QA, Product | 3 | Partial | WP-02 | Done | Week 2 |
+| WP-04 | Routing, policy, diagnostics hardening | Engineering | Security, QA | 4 | Yes | WP-03 | Ready | Week 3 |
+| WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | In Progress | Week 3-4 |
 | WP-06 | Memory + image productionization | Engineering | QA, Product | 5 | Partial | WP-04 | Backlog | Week 4-5 |
 | WP-07 | Beta hardening and go/no-go packet | QA | Eng, Product | 6 | No | WP-05, WP-06 | Backlog | Week 6 |
 | WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | Backlog | Week 4-6 |
@@ -40,12 +40,13 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### In Progress
 
-- [ ] WP-03 Artifact + benchmark reliability (A/B thresholds)
+- [ ] WP-05 Tool runtime safety productionization
 - [ ] ENG-06 Tool runtime strict schema validation hardening (parallel CI-first scope; no physical-device dependency)
 
 ### Ready
 
-- [ ] PM/Prod sync packet for post-WP-03 dispatch (WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies)
+- [ ] WP-04 Routing, policy, diagnostics hardening
+- [ ] PM/Prod dispatch for WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies
 
 ### Blocked
 
@@ -56,6 +57,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] WP-00 Foundation docs and architecture baseline
 - [x] WP-01 Build/CI baseline
 - [x] WP-02 Real Android runtime slice
+- [x] WP-03 Artifact + benchmark reliability (A/B thresholds)
 - [x] ENG-OPS Engineering foundations simplification (strict gates, single-source docs, Android module realignment scaffolding)
 - [x] QA-02 Phase B: real Scenario A/B device run + threshold report + logcat evidence
 - [x] ENG-04 closeout gate: artifact-manifest startup validation active, placeholder checksum removed from active Stage-2 path, and QA unblocked for final QA-02 rerun

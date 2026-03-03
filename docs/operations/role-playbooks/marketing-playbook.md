@@ -21,6 +21,15 @@ Define and validate messaging, category positioning, and launch channel strategy
 
 - [ ] No active marketing task currently marked in-progress
 
+## Marketing Dispatch Timing
+
+1. Start now (draft mode):
+   - `MKT-01` messaging architecture draft
+2. Start after `MKT-01` draft baseline:
+   - `MKT-02` competitor matrix draft with evidence-backed claims only
+3. Finalize both after WP-03 is marked Done:
+   - remove provisional claims and align copy to validated capability/evidence set
+
 ## Task Queue
 
 | Task ID | Task | Status | Prerequisites | Owner | References |
