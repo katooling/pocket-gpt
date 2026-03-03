@@ -1,0 +1,50 @@
+# QA Playbook
+
+Last updated: 2026-03-03
+
+## Mission
+
+Ensure performance, reliability, safety, and privacy quality gates are met with reproducible evidence before release decisions.
+
+## Where To Start
+
+1. Check `docs/operations/execution-board.md`.
+2. Run stage-appropriate tests from the Android playbook and test strategy.
+3. Store evidence artifacts in deterministic benchmark run paths.
+
+## What Is Done
+
+- [x] Benchmark protocol and threshold scripts prepared
+- [x] Stage-by-stage QA gate structure documented
+- [x] Go/no-go packet template prepared
+
+## What Is In Progress
+
+- [ ] No active QA task currently marked in-progress
+
+## Task Queue
+
+| Task ID | Task | Status | Prerequisites | Owner | References |
+|---|---|---|---|---|---|
+| QA-01 | Validate Stage 1 smoke loop on physical Android | Ready | WP-02 | QA Engineer | `docs/testing/android-dx-and-test-playbook.md` |
+| QA-02 | Run Scenario A/B with real Qwen model and evaluate thresholds | Ready | WP-03 | QA Engineer | `docs/feasibility/benchmark-protocol.md` |
+| QA-03 | Routing/policy boundary regression suite | Backlog | WP-04 | QA + Security | `docs/testing/test-strategy.md` |
+| QA-04 | Tool safety adversarial regression suite | Backlog | WP-05 | QA + Security | `docs/testing/test-strategy.md` |
+| QA-05 | Scenario C image and memory acceptance runs | Backlog | WP-06 | QA Engineer | `docs/roadmap/mvp-implementation-tracker.md` |
+| QA-06 | 30-minute soak and crash/OOM/ANR evidence pack | Backlog | WP-07 | QA Lead | `docs/roadmap/mvp-beta-go-no-go-packet.md` |
+| QA-07 | Voice STT/TTS quality benchmark framework (post-MVP) | Backlog | WP-10 | QA Lead | `docs/roadmap/product-roadmap.md` |
+
+## QA Definition of Done
+
+1. Required test suite executed for the stage.
+2. Evidence artifacts archived in expected structure.
+3. Failures triaged with severity and owner.
+4. Gate decision recorded and synced to execution board.
+
+## QA References
+
+- `docs/operations/execution-board.md`
+- `docs/testing/test-strategy.md`
+- `docs/testing/android-dx-and-test-playbook.md`
+- `docs/feasibility/benchmark-protocol.md`
+- `docs/roadmap/mvp-beta-go-no-go-packet.md`
