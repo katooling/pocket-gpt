@@ -1,25 +1,29 @@
-{
-  "preflight": {
-    "required_props": [
-      "ro.product.manufacturer",
-      "ro.product.model",
-      "ro.build.version.release"
-    ],
-    "ensure_device_command": ["bash", "scripts/android/ensure_device.sh"]
-  },
-  "benchmark_settings": {
-    "apply": ["bash", "scripts/android/configure_device_for_benchmark.sh", "apply"],
-    "reset": ["bash", "scripts/android/configure_device_for_benchmark.sh", "reset"]
-  },
-  "crash_signatures": [
-    "FATAL EXCEPTION",
-    "ANR in",
-    "Fatal signal",
-    "Process .* has died"
-  ],
-  "oom_signatures": [
-    "OutOfMemoryError",
-    "lowmemorykiller",
-    "LMKD"
-  ]
-}
+preflight:
+  required_props:
+    - ro.product.manufacturer
+    - ro.product.model
+    - ro.build.version.release
+  ensure_device_command:
+    - bash
+    - scripts/android/ensure_device.sh
+
+benchmark_settings:
+  apply:
+    - bash
+    - scripts/android/configure_device_for_benchmark.sh
+    - apply
+  reset:
+    - bash
+    - scripts/android/configure_device_for_benchmark.sh
+    - reset
+
+crash_signatures:
+  - FATAL EXCEPTION
+  - ANR in
+  - Fatal signal
+  - Process .* has died
+
+oom_signatures:
+  - OutOfMemoryError
+  - lowmemorykiller
+  - LMKD

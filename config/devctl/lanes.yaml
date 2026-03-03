@@ -1,100 +1,102 @@
-{
-  "lanes": {
-    "test": {
-      "requires_android_sdk": false,
-      "requires_device": false,
-      "artifacts": {
-        "output_dir_template": "build/test-results"
-      },
-      "commands": [
-        {
-          "name": "python_unit_tests",
-          "argv": ["python3", "-m", "unittest", "discover", "-s", "tools/devctl/tests"]
-        }
-      ],
-      "gradle_binary": "./gradlew",
-      "gradle_flags": ["--no-daemon"],
-      "common_tasks": [
-        ":packages:core-domain:test",
-        ":packages:inference-adapters:test",
-        ":packages:tool-runtime:test",
-        ":packages:memory:test",
-        ":apps:mobile-android-host:test"
-      ],
-      "android_tasks": [
-        ":apps:mobile-android:testDebugUnitTest"
-      ]
-    },
-    "device": {
-      "requires_android_sdk": false,
-      "requires_device": true,
-      "artifacts": {
-        "output_dir_template": "scripts/benchmarks/runs/{date}/{device}/{label}-{stamp}"
-      },
-      "commands": [
-        {
-          "name": "stage_checks",
-          "argv": ["bash", "scripts/android/run_stage_checks.sh"]
-        },
-        {
-          "name": "capture_baseline",
-          "argv": ["bash", "scripts/android/capture_device_baseline.sh"]
-        },
-        {
-          "name": "apply_benchmark_settings",
-          "argv": ["bash", "scripts/android/configure_device_for_benchmark.sh", "apply"]
-        },
-        {
-          "name": "reset_benchmark_settings",
-          "argv": ["bash", "scripts/android/configure_device_for_benchmark.sh", "reset"]
-        },
-        {
-          "name": "run_short_loop",
-          "argv": ["bash", "scripts/android/run_short_loop.sh"]
-        }
-      ],
-      "default_scenario_command": ["./gradlew", "--no-daemon", ":apps:mobile-android-host:run"]
-    },
-    "stage2": {
-      "requires_android_sdk": false,
-      "requires_device": false,
-      "artifacts": {
-        "output_dir_template": "scripts/benchmarks/runs/{date}/{device}"
-      },
-      "threshold_command": ["python3", "scripts/benchmarks/evaluate_thresholds.py"]
-    },
-    "android-instrumented": {
-      "requires_android_sdk": true,
-      "requires_device": true,
-      "artifacts": {
-        "output_dir_template": "build/outputs/androidTest-results"
-      },
-      "commands": [
-        {
-          "name": "connected_debug_android_test",
-          "argv": ["./gradlew", "--no-daemon", ":apps:mobile-android:connectedDebugAndroidTest"]
-        }
-      ]
-    },
-    "maestro": {
-      "requires_android_sdk": false,
-      "requires_device": true,
-      "artifacts": {
-        "output_dir_template": "scripts/benchmarks/runs/{date}/{device}/maestro"
-      },
-      "version": "1.39.13",
-      "flows": [
-        "tests/maestro/scenario-a.yaml",
-        "tests/maestro/scenario-b.yaml"
-      ]
-    },
-    "nightly-hardware": {
-      "requires_android_sdk": false,
-      "requires_device": false,
-      "artifacts": {
-        "output_dir_template": "scripts/benchmarks/runs/{date}/{device}/nightly"
-      },
-      "commands": []
-    }
-  }
-}
+lanes:
+  test:
+    requires_android_sdk: false
+    requires_device: false
+    artifacts:
+      output_dir_template: build/test-results
+    commands:
+      - name: python_unit_tests
+        argv:
+          - python3
+          - -m
+          - unittest
+          - discover
+          - -s
+          - tools/devctl/tests
+    gradle_binary: ./gradlew
+    gradle_flags:
+      - --no-daemon
+    common_tasks:
+      - :packages:core-domain:test
+      - :packages:inference-adapters:test
+      - :packages:tool-runtime:test
+      - :packages:memory:test
+      - :apps:mobile-android-host:test
+    android_tasks:
+      - :apps:mobile-android:testDebugUnitTest
+
+  device:
+    requires_android_sdk: false
+    requires_device: true
+    artifacts:
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/{label}-{stamp}
+    commands:
+      - name: stage_checks
+        argv:
+          - bash
+          - scripts/android/run_stage_checks.sh
+      - name: capture_baseline
+        argv:
+          - bash
+          - scripts/android/capture_device_baseline.sh
+      - name: apply_benchmark_settings
+        argv:
+          - bash
+          - scripts/android/configure_device_for_benchmark.sh
+          - apply
+      - name: reset_benchmark_settings
+        argv:
+          - bash
+          - scripts/android/configure_device_for_benchmark.sh
+          - reset
+      - name: run_short_loop
+        argv:
+          - bash
+          - scripts/android/run_short_loop.sh
+    default_scenario_command:
+      - ./gradlew
+      - --no-daemon
+      - :apps:mobile-android-host:run
+
+  stage2:
+    requires_android_sdk: false
+    requires_device: false
+    artifacts:
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}
+    threshold_command:
+      - python3
+      - scripts/benchmarks/evaluate_thresholds.py
+
+  android-instrumented:
+    requires_android_sdk: true
+    requires_device: true
+    artifacts:
+      output_dir_template: build/outputs/androidTest-results
+    commands:
+      - name: connected_debug_android_test
+        argv:
+          - ./gradlew
+          - --no-daemon
+          - :apps:mobile-android:connectedDebugAndroidTest
+
+  maestro:
+    requires_android_sdk: false
+    requires_device: true
+    artifacts:
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/maestro
+    version: 1.39.13
+    preflight_commands:
+      -
+        - ./gradlew
+        - --no-daemon
+        - :apps:mobile-android:installDebug
+    flows:
+      - tests/maestro/scenario-a.yaml
+      - tests/maestro/scenario-b.yaml
+
+  nightly-hardware:
+    requires_android_sdk: false
+    requires_device: false
+    artifacts:
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/nightly
+    commands: []
