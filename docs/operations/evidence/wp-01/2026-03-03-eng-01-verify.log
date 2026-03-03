@@ -1,0 +1,66 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.13/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :clean UP-TO-DATE
+> Task :apps:mobile-android:clean
+> Task :packages:core-domain:clean
+> Task :packages:inference-adapters:clean
+> Task :packages:memory:clean
+> Task :packages:tool-runtime:clean
+> Task :apps:mobile-android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:core-domain:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:core-domain:processResources NO-SOURCE
+> Task :packages:inference-adapters:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:inference-adapters:processResources NO-SOURCE
+> Task :packages:memory:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:memory:processResources NO-SOURCE
+> Task :packages:tool-runtime:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:tool-runtime:processResources NO-SOURCE
+> Task :apps:mobile-android:processResources NO-SOURCE
+> Task :apps:mobile-android:processTestResources NO-SOURCE
+> Task :packages:core-domain:processTestResources NO-SOURCE
+> Task :packages:inference-adapters:processTestResources NO-SOURCE
+> Task :packages:memory:processTestResources NO-SOURCE
+> Task :packages:tool-runtime:processTestResources NO-SOURCE
+> Task :packages:memory:compileKotlin
+> Task :packages:memory:compileJava NO-SOURCE
+> Task :packages:memory:classes UP-TO-DATE
+> Task :packages:memory:jar
+> Task :packages:tool-runtime:compileKotlin
+> Task :packages:core-domain:compileKotlin
+> Task :packages:core-domain:compileJava NO-SOURCE
+> Task :packages:core-domain:classes UP-TO-DATE
+> Task :packages:core-domain:jar
+> Task :packages:tool-runtime:compileJava NO-SOURCE
+> Task :packages:tool-runtime:classes UP-TO-DATE
+> Task :packages:tool-runtime:jar
+> Task :packages:core-domain:compileTestKotlin NO-SOURCE
+> Task :packages:core-domain:compileTestJava NO-SOURCE
+> Task :packages:core-domain:testClasses UP-TO-DATE
+> Task :packages:core-domain:test NO-SOURCE
+> Task :packages:memory:compileTestKotlin
+> Task :packages:memory:compileTestJava NO-SOURCE
+> Task :packages:memory:testClasses UP-TO-DATE
+> Task :packages:tool-runtime:compileTestKotlin
+> Task :packages:inference-adapters:compileKotlin
+> Task :packages:memory:test
+> Task :packages:inference-adapters:compileJava NO-SOURCE
+> Task :packages:inference-adapters:classes UP-TO-DATE
+> Task :packages:inference-adapters:jar
+> Task :packages:tool-runtime:compileTestJava NO-SOURCE
+> Task :packages:tool-runtime:testClasses UP-TO-DATE
+> Task :packages:inference-adapters:compileTestKotlin
+> Task :packages:tool-runtime:test
+> Task :packages:inference-adapters:compileTestJava NO-SOURCE
+> Task :packages:inference-adapters:testClasses UP-TO-DATE
+> Task :apps:mobile-android:compileKotlin
+> Task :packages:inference-adapters:test
+> Task :apps:mobile-android:compileJava NO-SOURCE
+> Task :apps:mobile-android:classes UP-TO-DATE
+> Task :apps:mobile-android:jar
+> Task :apps:mobile-android:compileTestKotlin
+> Task :apps:mobile-android:compileTestJava NO-SOURCE
+> Task :apps:mobile-android:testClasses UP-TO-DATE
+> Task :apps:mobile-android:test
+
+BUILD SUCCESSFUL in 7s
+24 actionable tasks: 23 executed, 1 up-to-date

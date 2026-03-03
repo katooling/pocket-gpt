@@ -18,6 +18,8 @@ Deliver reliable local runtime capability and core feature implementation for MV
 - [x] Core module interfaces scaffolded (`Conversation`, `Inference`, `Routing`, `Tool`, `Memory`, `Policy`, `Observability`)
 - [x] Android-first scaffolding and benchmark scripts established
 - [x] Foundational docs and architecture ADRs complete
+- [x] ENG-01 completed: Gradle wrapper + one-command verification baseline (`docs/operations/evidence/wp-01/2026-03-03-eng-01.md`)
+- [x] ENG-02 completed: CI workflow for clean/test + test artifact upload (`docs/operations/evidence/wp-01/2026-03-03-eng-02.md`)
 
 ## What Is In Progress
 
@@ -27,10 +29,10 @@ Deliver reliable local runtime capability and core feature implementation for MV
 
 | Task ID | Task | Status | Prerequisites | Owner | References |
 |---|---|---|---|---|---|
-| ENG-01 | Implement Gradle wrapper + stable local build command | Ready | WP-01 | Eng Lead | `docs/roadmap/next-steps-execution-plan.md` |
-| ENG-02 | Add CI for module tests and app tests | Ready | ENG-01 | Eng Platform | `docs/testing/test-strategy.md` |
-| ENG-03 | Integrate real Android `llama.cpp` runtime bridge | Ready | ENG-01 | Runtime Eng | `docs/roadmap/next-steps-execution-plan.md` |
-| ENG-04 | Artifact manifest/checksum/version lifecycle | Ready | ENG-03 | Runtime Eng | `docs/feasibility/benchmark-protocol.md` |
+| ENG-01 | Implement Gradle wrapper + stable local build command | Done | WP-01 | Eng Lead | `docs/operations/evidence/wp-01/2026-03-03-eng-01.md` |
+| ENG-02 | Add CI for module tests and app tests | Done | ENG-01 | Eng Platform | `docs/operations/evidence/wp-01/2026-03-03-eng-02.md` |
+| ENG-03 | Integrate real Android `llama.cpp` runtime bridge | Ready | WP-01 complete | Runtime Eng | `docs/roadmap/next-steps-execution-plan.md` |
+| ENG-04 | Artifact manifest/checksum/version lifecycle | Backlog | ENG-03 | Runtime Eng | `docs/feasibility/benchmark-protocol.md` |
 | ENG-05 | Routing + policy hardening with boundary tests | Backlog | ENG-04 | Runtime Eng | `docs/security/privacy-model.md` |
 | ENG-06 | Tool runtime strict schema validation | Backlog | ENG-04 | Platform Eng | `docs/product/feature-catalog.md` |
 | ENG-07 | SQLite memory backend + pruning | Backlog | ENG-05 | Core Eng | `docs/roadmap/mvp-implementation-tracker.md` |
@@ -43,6 +45,11 @@ Deliver reliable local runtime capability and core feature implementation for MV
 2. No policy/security regressions introduced.
 3. Required benchmark or runtime evidence attached for stage tasks.
 4. `execution-board.md` and this file status updated.
+
+## Evidence Log
+
+- 2026-03-03: ENG-01 evidence captured in `docs/operations/evidence/wp-01/2026-03-03-eng-01.md`
+- 2026-03-03: ENG-02 evidence captured in `docs/operations/evidence/wp-01/2026-03-03-eng-02.md`
 
 ## Engineering References
 
