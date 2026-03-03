@@ -4,6 +4,11 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToLong
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 
 class SafeLocalToolRuntime : ToolModule {
     private val allowlistedTools = setOf(
@@ -13,29 +18,76 @@ class SafeLocalToolRuntime : ToolModule {
         "local_search",
         "reminder_create",
     )
+    private val parser = Json {
+        isLenient = false
+        ignoreUnknownKeys = false
+        allowSpecialFloatingPointValues = false
+    }
+    private val toolSchemas: Map<String, ToolSchema> = mapOf(
+        "calculator" to ToolSchema(
+            fields = mapOf(
+                "expression" to ToolFieldSchema(
+                    required = true,
+                    type = ToolFieldType.STRING,
+                    allowBlank = false,
+                    maxLength = 64,
+                    pattern = Regex("^[0-9+\\-*/().\\s]+$"),
+                    deniedFragments = COMMON_DENIED_FRAGMENTS,
+                ),
+            ),
+        ),
+        "date_time" to ToolSchema(fields = emptyMap()),
+        "notes_lookup" to ToolSchema(
+            fields = mapOf(
+                "query" to ToolFieldSchema(
+                    required = true,
+                    type = ToolFieldType.STRING,
+                    allowBlank = false,
+                    maxLength = 256,
+                    deniedFragments = COMMON_DENIED_FRAGMENTS,
+                ),
+            ),
+        ),
+        "local_search" to ToolSchema(
+            fields = mapOf(
+                "query" to ToolFieldSchema(
+                    required = true,
+                    type = ToolFieldType.STRING,
+                    allowBlank = false,
+                    maxLength = 256,
+                    deniedFragments = COMMON_DENIED_FRAGMENTS,
+                ),
+            ),
+        ),
+        "reminder_create" to ToolSchema(
+            fields = mapOf(
+                "title" to ToolFieldSchema(
+                    required = true,
+                    type = ToolFieldType.STRING,
+                    allowBlank = false,
+                    maxLength = 128,
+                    deniedFragments = COMMON_DENIED_FRAGMENTS,
+                ),
+            ),
+        ),
+    )
 
     override fun listEnabledTools(): List<String> = allowlistedTools.sorted()
 
-    override fun validateToolCall(call: ToolCall): Boolean {
-        if (!allowlistedTools.contains(call.name)) return false
-        val trimmed = call.jsonArgs.trim()
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false
-        // Block suspicious payloads for schema-safe local execution.
-        val deniedFragments = listOf("exec", "bash", "sh -c", "http://", "https://")
-        return deniedFragments.none { fragment -> trimmed.contains(fragment, ignoreCase = true) }
-    }
+    override fun validateToolCall(call: ToolCall): Boolean = validateToolCallDetailed(call).valid
 
     override fun executeToolCall(call: ToolCall): ToolResult {
-        if (!validateToolCall(call)) {
-            return ToolResult(false, "Rejected tool call: validation failed.")
+        val validated = validateToolCallDetailed(call)
+        if (!validated.valid) {
+            return validationFailure(validated)
         }
-        val args = parseFlatJsonObject(call.jsonArgs)
+        val args = validated.args
         return when (call.name) {
-            "calculator" -> runCalculator(args["expression"].orEmpty())
+            "calculator" -> runCalculator(args.getValue("expression"))
             "date_time" -> currentDateTime()
-            "notes_lookup" -> ToolResult(true, "notes_lookup placeholder: no note store connected yet.")
-            "local_search" -> ToolResult(true, "local_search placeholder for query='${args["query"].orEmpty()}'.")
-            "reminder_create" -> ToolResult(true, "reminder_create accepted for '${args["title"].orEmpty()}'.")
+            "notes_lookup" -> ToolResult(true, "notes_lookup placeholder for query='${args.getValue("query")}'.")
+            "local_search" -> ToolResult(true, "local_search placeholder for query='${args.getValue("query")}'.")
+            "reminder_create" -> ToolResult(true, "reminder_create accepted for '${args.getValue("title")}'.")
             else -> ToolResult(false, "Unknown tool.")
         }
     }
@@ -66,15 +118,177 @@ class SafeLocalToolRuntime : ToolModule {
         return ToolResult(true, formatter.format(now))
     }
 
-    private fun parseFlatJsonObject(json: String): Map<String, String> {
-        val body = json.trim().removePrefix("{").removeSuffix("}")
-        if (body.isBlank()) return emptyMap()
-        return body.split(",").mapNotNull { pair ->
-            val split = pair.split(":", limit = 2)
-            if (split.size != 2) return@mapNotNull null
-            val key = split[0].trim().removePrefix("\"").removeSuffix("\"")
-            val value = split[1].trim().removePrefix("\"").removeSuffix("\"")
-            key to value
-        }.toMap()
+    private fun validateToolCallDetailed(call: ToolCall): ToolValidationResult {
+        if (!allowlistedTools.contains(call.name)) {
+            return ToolValidationResult.invalid(
+                code = ToolValidationErrorCode.NOT_ALLOWLISTED,
+                detail = "Tool '${call.name}' is not allowlisted.",
+            )
+        }
+        val schema = toolSchemas[call.name]
+            ?: return ToolValidationResult.invalid(
+                code = ToolValidationErrorCode.INVALID_SCHEMA,
+                detail = "No validation schema is configured for tool '${call.name}'.",
+            )
+
+        val payload = parseJsonObject(call.jsonArgs)
+            ?: return ToolValidationResult.invalid(
+                code = ToolValidationErrorCode.INVALID_JSON,
+                detail = "Payload must be valid JSON object text.",
+            )
+
+        val unknownFields = payload.keys.filterNot { schema.fields.containsKey(it) }.sorted()
+        if (unknownFields.isNotEmpty()) {
+            return ToolValidationResult.invalid(
+                code = ToolValidationErrorCode.UNKNOWN_FIELD,
+                detail = "Unknown field '${unknownFields.first()}'.",
+            )
+        }
+
+        val missingRequired = schema.fields.entries
+            .filter { it.value.required && !payload.containsKey(it.key) }
+            .map { it.key }
+            .sorted()
+        if (missingRequired.isNotEmpty()) {
+            return ToolValidationResult.invalid(
+                code = ToolValidationErrorCode.MISSING_REQUIRED_FIELD,
+                detail = "Missing required field '${missingRequired.first()}'.",
+            )
+        }
+
+        val normalizedArgs = mutableMapOf<String, String>()
+        payload.entries.sortedBy { it.key }.forEach { (fieldName, rawValue) ->
+            val fieldSchema = schema.fields.getValue(fieldName)
+            when (fieldSchema.type) {
+                ToolFieldType.STRING -> {
+                    val primitive = rawValue as? JsonPrimitive
+                    if (primitive == null || !primitive.isString) {
+                        return ToolValidationResult.invalid(
+                            code = ToolValidationErrorCode.INVALID_FIELD_TYPE,
+                            detail = "Field '$fieldName' must be a string.",
+                        )
+                    }
+                    val value = primitive.content
+                    if (!fieldSchema.allowBlank && value.isBlank()) {
+                        return ToolValidationResult.invalid(
+                            code = ToolValidationErrorCode.INVALID_FIELD_VALUE,
+                            detail = "Field '$fieldName' must not be blank.",
+                        )
+                    }
+                    if (value.length > fieldSchema.maxLength) {
+                        return ToolValidationResult.invalid(
+                            code = ToolValidationErrorCode.INVALID_FIELD_VALUE,
+                            detail = "Field '$fieldName' exceeds max length ${fieldSchema.maxLength}.",
+                        )
+                    }
+                    if (value.any { it.isISOControl() }) {
+                        return ToolValidationResult.invalid(
+                            code = ToolValidationErrorCode.INVALID_FIELD_VALUE,
+                            detail = "Field '$fieldName' contains control characters.",
+                        )
+                    }
+                    if (fieldSchema.pattern != null && !fieldSchema.pattern.matches(value)) {
+                        return ToolValidationResult.invalid(
+                            code = ToolValidationErrorCode.INVALID_FIELD_VALUE,
+                            detail = "Field '$fieldName' has disallowed characters.",
+                        )
+                    }
+                    val denied = fieldSchema.deniedFragments.firstOrNull {
+                        value.contains(it, ignoreCase = true)
+                    }
+                    if (denied != null) {
+                        return ToolValidationResult.invalid(
+                            code = ToolValidationErrorCode.INVALID_FIELD_VALUE,
+                            detail = "Field '$fieldName' contains denied fragment '$denied'.",
+                        )
+                    }
+                    normalizedArgs[fieldName] = value
+                }
+            }
+        }
+        return ToolValidationResult.valid(args = normalizedArgs)
+    }
+
+    private fun parseJsonObject(json: String): JsonObject? {
+        return runCatching {
+            val parsed: JsonElement = parser.parseToJsonElement(json)
+            parsed.jsonObject
+        }.getOrNull()
+    }
+
+    private fun validationFailure(result: ToolValidationResult): ToolResult {
+        val code = result.errorCode ?: ToolValidationErrorCode.INVALID_SCHEMA
+        val detail = result.errorDetail ?: "Validation failed."
+        return ToolResult(
+            success = false,
+            content = "TOOL_VALIDATION_ERROR:${code.name}:$detail",
+        )
+    }
+
+    private data class ToolSchema(
+        val fields: Map<String, ToolFieldSchema>,
+    )
+
+    private data class ToolFieldSchema(
+        val required: Boolean,
+        val type: ToolFieldType,
+        val allowBlank: Boolean = true,
+        val maxLength: Int = Int.MAX_VALUE,
+        val pattern: Regex? = null,
+        val deniedFragments: Set<String> = emptySet(),
+    )
+
+    private enum class ToolFieldType {
+        STRING,
+    }
+
+    private enum class ToolValidationErrorCode {
+        NOT_ALLOWLISTED,
+        INVALID_JSON,
+        MISSING_REQUIRED_FIELD,
+        UNKNOWN_FIELD,
+        INVALID_FIELD_TYPE,
+        INVALID_FIELD_VALUE,
+        INVALID_SCHEMA,
+    }
+
+    private data class ToolValidationResult(
+        val valid: Boolean,
+        val args: Map<String, String>,
+        val errorCode: ToolValidationErrorCode?,
+        val errorDetail: String?,
+    ) {
+        companion object {
+            fun valid(args: Map<String, String>): ToolValidationResult {
+                return ToolValidationResult(
+                    valid = true,
+                    args = args,
+                    errorCode = null,
+                    errorDetail = null,
+                )
+            }
+
+            fun invalid(code: ToolValidationErrorCode, detail: String): ToolValidationResult {
+                return ToolValidationResult(
+                    valid = false,
+                    args = emptyMap(),
+                    errorCode = code,
+                    errorDetail = detail,
+                )
+            }
+        }
+    }
+
+    private companion object {
+        val COMMON_DENIED_FRAGMENTS = setOf(
+            "exec",
+            "bash",
+            "sh -c",
+            "http://",
+            "https://",
+            "<script",
+            "../",
+            "..\\",
+        )
     }
 }

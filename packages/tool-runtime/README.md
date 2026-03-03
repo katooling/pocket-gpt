@@ -24,3 +24,7 @@ Local tool execution contracts and safety model.
   - notes_lookup
   - local_search
   - reminder_create
+  - schema-driven JSON argument validation per tool
+  - deterministic validation error contract:
+    - `TOOL_VALIDATION_ERROR:<ERROR_CODE>:<DETAIL>`
+  - strict unknown-field rejection and denylist checks for adversarial fragments
