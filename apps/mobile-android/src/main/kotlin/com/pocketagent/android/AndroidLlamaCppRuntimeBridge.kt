@@ -18,9 +18,12 @@ class AndroidLlamaCppRuntimeBridge(
         ModelCatalog.QWEN_3_5_0_8B_Q4,
         ModelCatalog.QWEN_3_5_2B_Q4,
     ),
+    private val fallbackBridge: LlamaCppRuntimeBridge = AdbDeviceLlamaCppRuntimeBridge(),
+    private val fallbackEnabled: Boolean = true,
 ) : LlamaCppRuntimeBridge {
     private var initialized = false
     private var runtimeReady = false
+    private var usingFallback = false
 
     override fun isReady(): Boolean {
         ensureRuntimeInitialized()
@@ -34,6 +37,9 @@ class AndroidLlamaCppRuntimeBridge(
         if (!runtimeReady || !supportedModels.contains(modelId)) {
             return false
         }
+        if (usingFallback) {
+            return fallbackBridge.loadModel(modelId)
+        }
         return runCatching { nativeApi.loadModel(modelId) }.getOrDefault(false)
     }
 
@@ -41,6 +47,9 @@ class AndroidLlamaCppRuntimeBridge(
         ensureRuntimeInitialized()
         if (!runtimeReady) {
             return false
+        }
+        if (usingFallback) {
+            return fallbackBridge.generate(prompt, maxTokens, onToken)
         }
         val output = runCatching {
             nativeApi.generate(prompt = prompt, maxTokens = maxTokens)
@@ -57,6 +66,10 @@ class AndroidLlamaCppRuntimeBridge(
         if (!runtimeReady) {
             return
         }
+        if (usingFallback) {
+            fallbackBridge.unloadModel()
+            return
+        }
         runCatching { nativeApi.unloadModel() }
     }
 
@@ -65,10 +78,24 @@ class AndroidLlamaCppRuntimeBridge(
             return
         }
         initialized = true
-        runtimeReady = runCatching {
+        val nativeReady = runCatching {
             libraryLoader(libraryName)
             nativeApi.initialize()
         }.getOrDefault(false)
+        if (nativeReady) {
+            runtimeReady = true
+            usingFallback = false
+            return
+        }
+
+        if (fallbackEnabled && fallbackBridge.isReady()) {
+            runtimeReady = true
+            usingFallback = true
+            return
+        }
+
+        runtimeReady = false
+        usingFallback = false
     }
 
     interface NativeApi {
