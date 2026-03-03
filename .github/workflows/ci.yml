@@ -7,9 +7,41 @@ on:
       - main
 
 jobs:
+  pr-governance:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate PR template completion
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf "%s" "$PR_BODY" > /tmp/pr-body.md
+          bash scripts/dev/validate-pr-body.sh /tmp/pr-body.md
+
+      - name: Stage-close evidence gate
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf "%s" "$PR_BODY" > /tmp/pr-body.md
+          bash scripts/dev/stage-close-gate.sh /tmp/pr-body.md
+
+  docs-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docs drift guard
+        run: bash scripts/dev/docs-drift-check.sh
+
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -22,8 +54,15 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Verify (clean + test)
-        run: bash scripts/dev/verify.sh
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Configure Android SDK env
+        run: |
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+
+      - name: Test (canonical)
+        run: bash scripts/dev/test.sh ci
 
       - name: Upload test reports
         if: always()
@@ -31,6 +70,6 @@ jobs:
         with:
           name: gradle-test-reports
           path: |
-            **/build/reports/tests/test/**
-            **/build/test-results/test/**
+            **/build/reports/tests/**
+            **/build/test-results/**
           if-no-files-found: warn
