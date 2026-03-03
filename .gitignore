@@ -1,0 +1,21 @@
+# General
+.DS_Store
+*.log
+
+# Build
+build/
+dist/
+out/
+
+# Kotlin/Gradle
+.gradle/
+**/build/
+
+# Xcode
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Python
+.venv/
+__pycache__/
