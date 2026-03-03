@@ -9,30 +9,175 @@ data class ModelArtifact(
     val expectedSha256: String,
 )
 
+data class ModelArtifactManifest(
+    val models: List<ModelManifestEntry>,
+    val activeModelId: String,
+    val activeVersion: String?,
+)
+
+data class ModelManifestEntry(
+    val modelId: String,
+    val latestVersion: String?,
+    val artifacts: List<ModelArtifact>,
+)
+
+enum class ChecksumVerificationStatus {
+    PASS,
+    CHECKSUM_MISMATCH,
+    UNKNOWN_MODEL,
+    UNKNOWN_VERSION,
+}
+
+data class ChecksumVerificationResult(
+    val status: ChecksumVerificationStatus,
+    val modelId: String,
+    val version: String?,
+    val expectedSha256: String?,
+    val actualSha256: String,
+) {
+    val passed: Boolean
+        get() = status == ChecksumVerificationStatus.PASS
+}
+
+data class ArtifactValidationIssue(
+    val modelId: String,
+    val version: String,
+    val code: String,
+    val message: String,
+)
+
 class ModelArtifactManager {
-    private val manifests: MutableMap<String, ModelArtifact> = mutableMapOf()
+    private val manifests: MutableMap<String, MutableMap<String, ModelArtifact>> = mutableMapOf()
     private var activeModelId: String = ModelCatalog.QWEN_3_5_0_8B_Q4
+    private var pinnedActiveVersion: String? = null
 
     fun registerArtifact(artifact: ModelArtifact) {
-        manifests[artifact.modelId] = artifact
+        val versions = manifests.getOrPut(artifact.modelId) { mutableMapOf() }
+        versions[artifact.version] = artifact
     }
 
-    fun listArtifacts(): List<ModelArtifact> = manifests.values.sortedBy { it.modelId }
+    fun listArtifacts(): List<ModelArtifact> = manifests.keys.sorted().flatMap { modelId ->
+        manifests.getValue(modelId).values.sortedWith(
+            Comparator { left, right ->
+                compareVersions(left.version, right.version)
+            },
+        )
+    }
 
     fun setActiveModel(modelId: String): Boolean {
         if (!manifests.containsKey(modelId)) {
             return false
         }
         activeModelId = modelId
+        pinnedActiveVersion = null
+        return true
+    }
+
+    fun setActiveModelVersion(modelId: String, version: String): Boolean {
+        val modelVersions = manifests[modelId] ?: return false
+        if (!modelVersions.containsKey(version)) {
+            return false
+        }
+        activeModelId = modelId
+        pinnedActiveVersion = version
         return true
     }
 
     fun getActiveModel(): String = activeModelId
 
+    fun getActiveModelVersion(): String? = resolveArtifact(activeModelId, pinnedActiveVersion)?.version
+
+    fun getActiveArtifact(): ModelArtifact? = resolveArtifact(activeModelId, pinnedActiveVersion)
+
+    fun buildManifest(): ModelArtifactManifest {
+        val entries = manifests.keys.sorted().map { modelId ->
+            val artifacts = manifests.getValue(modelId).values.sortedWith(
+                Comparator { left, right ->
+                    compareVersions(left.version, right.version)
+                },
+            )
+            ModelManifestEntry(
+                modelId = modelId,
+                latestVersion = artifacts.maxWithOrNull(
+                    Comparator { left, right ->
+                        compareVersions(left.version, right.version)
+                    },
+                )?.version,
+                artifacts = artifacts,
+            )
+        }
+        return ModelArtifactManifest(
+            models = entries,
+            activeModelId = activeModelId,
+            activeVersion = getActiveModelVersion(),
+        )
+    }
+
+    fun verifyChecksumResult(modelId: String, bytes: ByteArray): ChecksumVerificationResult {
+        return verifyChecksumResultInternal(modelId = modelId, version = null, bytes = bytes)
+    }
+
+    fun verifyChecksumResult(
+        modelId: String,
+        version: String,
+        bytes: ByteArray,
+    ): ChecksumVerificationResult {
+        return verifyChecksumResultInternal(modelId = modelId, version = version, bytes = bytes)
+    }
+
+    fun validateManifest(): List<ArtifactValidationIssue> {
+        val issues = mutableListOf<ArtifactValidationIssue>()
+        manifests.keys.sorted().forEach { modelId ->
+            val artifacts = manifests.getValue(modelId)
+            artifacts.keys.sorted().forEach { version ->
+                val artifact = artifacts.getValue(version)
+                if (artifact.modelId.isBlank()) {
+                    issues.add(
+                        ArtifactValidationIssue(
+                            modelId = modelId,
+                            version = version,
+                            code = "EMPTY_MODEL_ID",
+                            message = "Model identifier must not be blank.",
+                        ),
+                    )
+                }
+                if (artifact.version.isBlank()) {
+                    issues.add(
+                        ArtifactValidationIssue(
+                            modelId = modelId,
+                            version = version,
+                            code = "EMPTY_VERSION",
+                            message = "Artifact version must not be blank.",
+                        ),
+                    )
+                }
+                if (artifact.fileName.isBlank()) {
+                    issues.add(
+                        ArtifactValidationIssue(
+                            modelId = modelId,
+                            version = version,
+                            code = "EMPTY_FILE_NAME",
+                            message = "Artifact file name must not be blank.",
+                        ),
+                    )
+                }
+                if (!SHA256_PATTERN.matches(artifact.expectedSha256)) {
+                    issues.add(
+                        ArtifactValidationIssue(
+                            modelId = modelId,
+                            version = version,
+                            code = "INVALID_SHA256",
+                            message = "Expected SHA-256 must be exactly 64 hex characters.",
+                        ),
+                    )
+                }
+            }
+        }
+        return issues
+    }
+
     fun verifyChecksum(modelId: String, bytes: ByteArray): Boolean {
-        val manifest = manifests[modelId] ?: return false
-        val actual = sha256Hex(bytes)
-        return actual.equals(manifest.expectedSha256, ignoreCase = true)
+        return verifyChecksumResult(modelId, bytes).passed
     }
 
     fun sha256Hex(bytes: ByteArray): String {
@@ -40,5 +185,153 @@ class ModelArtifactManager {
         val builder = StringBuilder()
         digest.forEach { b -> builder.append("%02x".format(b)) }
         return builder.toString()
+    }
+
+    private fun verifyChecksumResultInternal(
+        modelId: String,
+        version: String?,
+        bytes: ByteArray,
+    ): ChecksumVerificationResult {
+        val actual = sha256Hex(bytes)
+        if (!manifests.containsKey(modelId)) {
+            return ChecksumVerificationResult(
+                status = ChecksumVerificationStatus.UNKNOWN_MODEL,
+                modelId = modelId,
+                version = version,
+                expectedSha256 = null,
+                actualSha256 = actual,
+            )
+        }
+
+        val artifact = resolveArtifact(modelId, version)
+        if (artifact == null) {
+            return ChecksumVerificationResult(
+                status = ChecksumVerificationStatus.UNKNOWN_VERSION,
+                modelId = modelId,
+                version = version,
+                expectedSha256 = null,
+                actualSha256 = actual,
+            )
+        }
+
+        val status = if (actual.equals(artifact.expectedSha256, ignoreCase = true)) {
+            ChecksumVerificationStatus.PASS
+        } else {
+            ChecksumVerificationStatus.CHECKSUM_MISMATCH
+        }
+        return ChecksumVerificationResult(
+            status = status,
+            modelId = artifact.modelId,
+            version = artifact.version,
+            expectedSha256 = artifact.expectedSha256,
+            actualSha256 = actual,
+        )
+    }
+
+    private fun resolveArtifact(modelId: String, version: String?): ModelArtifact? {
+        val modelVersions = manifests[modelId] ?: return null
+        return if (version == null) {
+            modelVersions.values.maxWithOrNull(
+                Comparator { left, right ->
+                    compareVersions(left.version, right.version)
+                },
+            )
+        } else {
+            modelVersions[version]
+        }
+    }
+
+    private fun compareVersions(left: String, right: String): Int {
+        val leftParts = parseVersion(left)
+        val rightParts = parseVersion(right)
+
+        val maxSegments = maxOf(leftParts.coreSegments.size, rightParts.coreSegments.size)
+        for (index in 0 until maxSegments) {
+            val leftToken = leftParts.coreSegments.getOrElse(index) { "0" }
+            val rightToken = rightParts.coreSegments.getOrElse(index) { "0" }
+            val coreCmp = compareVersionToken(leftToken, rightToken)
+            if (coreCmp != 0) {
+                return coreCmp
+            }
+        }
+
+        val leftPre = leftParts.preRelease
+        val rightPre = rightParts.preRelease
+        if (leftPre == null && rightPre != null) {
+            return 1
+        }
+        if (leftPre != null && rightPre == null) {
+            return -1
+        }
+        if (leftPre != null && rightPre != null) {
+            val preCmp = comparePreRelease(leftPre, rightPre)
+            if (preCmp != 0) {
+                return preCmp
+            }
+        }
+        return left.compareTo(right)
+    }
+
+    private fun parseVersion(version: String): ParsedVersion {
+        val split = version.trim().split("-", limit = 2)
+        val core = split[0].ifBlank { "0" }
+        return ParsedVersion(
+            coreSegments = core.split("."),
+            preRelease = split.getOrNull(1),
+        )
+    }
+
+    private fun comparePreRelease(left: String, right: String): Int {
+        val leftParts = left.split(".")
+        val rightParts = right.split(".")
+        val maxParts = maxOf(leftParts.size, rightParts.size)
+        for (index in 0 until maxParts) {
+            val leftToken = leftParts.getOrElse(index) { "0" }
+            val rightToken = rightParts.getOrElse(index) { "0" }
+            val cmp = comparePreReleaseToken(leftToken, rightToken)
+            if (cmp != 0) {
+                return cmp
+            }
+        }
+        return 0
+    }
+
+    private fun compareVersionToken(left: String, right: String): Int {
+        val leftInt = left.toIntOrNull()
+        val rightInt = right.toIntOrNull()
+        if (leftInt != null && rightInt != null) {
+            return leftInt.compareTo(rightInt)
+        }
+        if (leftInt != null && rightInt == null) {
+            return 1
+        }
+        if (leftInt == null && rightInt != null) {
+            return -1
+        }
+        return left.compareTo(right)
+    }
+
+    private fun comparePreReleaseToken(left: String, right: String): Int {
+        val leftInt = left.toIntOrNull()
+        val rightInt = right.toIntOrNull()
+        if (leftInt != null && rightInt != null) {
+            return leftInt.compareTo(rightInt)
+        }
+        if (leftInt != null && rightInt == null) {
+            return -1
+        }
+        if (leftInt == null && rightInt != null) {
+            return 1
+        }
+        return left.compareTo(right)
+    }
+
+    private data class ParsedVersion(
+        val coreSegments: List<String>,
+        val preRelease: String?,
+    )
+
+    private companion object {
+        val SHA256_PATTERN = Regex("^[A-Fa-f0-9]{64}$")
     }
 }

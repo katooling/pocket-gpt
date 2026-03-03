@@ -18,7 +18,11 @@ Runtime abstraction and adapter contracts.
 ## Implemented MVP Scaffolding
 
 - `SmokeInferenceModule`: legacy stage-1 streaming smoke adapter retained for local scaffolding only
-- `ModelArtifactManager`: stage-2 model manifest and checksum helpers
+- `ModelArtifactManager`: stage-2 artifact lifecycle support:
+  - multi-version manifest structure (`buildManifest`)
+  - deterministic active model/version selection (`setActiveModel`, `setActiveModelVersion`)
+  - checksum verification result semantics (`verifyChecksumResult`)
+  - CI-safe artifact validation hook (`validateManifest`)
 - `AdaptiveRoutingPolicy`: stage-3 battery/thermal/device-aware selection
 - `SmokeImageInputModule`: stage-5 image path placeholder for local integration
 
