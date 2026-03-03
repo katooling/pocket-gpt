@@ -55,3 +55,16 @@ PocketAgent is local-first by default:
 1. Privacy claims map directly to implemented controls
 2. User consent required for any optional cloud path
 3. Documented data inventory and retention behavior
+
+## Implementation Coverage (As Of 2026-03-03)
+
+| Control Area | Planned Guarantee | Current Coverage |
+|---|---|---|
+| Local inference default | No cloud-required inference path | Partial (smoke adapter path only) |
+| Local data retention policy | explicit retention window + pruning | Partial (policy interface present; in-memory memory backend) |
+| Tool safety | strict schema validation + allowlist | Partial (allowlist + payload fragment blocking) |
+| Diagnostics privacy | no raw prompt/response by default | Partial (diagnostics are metric-only strings; needs explicit redaction tests) |
+| Network gating | explicit policy checks per action | Partial (policy module exists; enforcement not integrated with platform network stack yet) |
+| Voice privacy (future STT/TTS) | equivalent controls to text/image paths | Planned (post-MVP) |
+
+Use `docs/roadmap/next-steps-execution-plan.md` as the source of truth for closure of these gaps.

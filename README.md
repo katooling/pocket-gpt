@@ -16,5 +16,16 @@ Foundation repository for an offline, privacy-first mobile AI product.
 ## Current Status
 
 - Phase 0 docs and architecture are in place.
-- Android-first MVP stage scaffolding (Stages 1-6) is implemented in code/docs.
-- Next step is physical Android device execution using the test playbook.
+- Android-first MVP stages 1-6 are scaffolded across modules.
+- Real runtime/device validation is still pending:
+  - real `llama.cpp` Android integration
+  - physical-device benchmark/soak evidence
+  - production-ready memory/tool hardening paths
+- Immediate execution guide:
+  - `docs/operations/execution-board.md`
+  - `docs/operations/role-playbooks/`
+  - `docs/roadmap/next-steps-execution-plan.md`
+  - `docs/roadmap/product-roadmap.md`
+  - `docs/product/feature-catalog.md`
+  - `docs/testing/test-strategy.md`
+  - `docs/testing/android-dx-and-test-playbook.md`

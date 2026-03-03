@@ -15,10 +15,19 @@ This directory contains Phase 0 documentation for the product foundation, techni
 - `feasibility/mvp-stage-execution-report.md`: MVP stage implementation and validation report
 - `security/privacy-model.md`: privacy model and security controls
 - `security/risk-register.md`: risk register with mitigations
+- `testing/test-strategy.md`: repo-wide testing strategy and release gates
 - `roadmap/phase-1-mvp-plan.md`: prioritized MVP implementation plan
 - `roadmap/mvp-implementation-tracker.md`: stage-by-stage MVP execution tracker
 - `roadmap/mvp-beta-go-no-go-packet.md`: beta decision packet template
+- `roadmap/next-steps-execution-plan.md`: concrete next execution stages with DX/test gates
+- `roadmap/product-roadmap.md`: short-, mid-, and long-term roadmap
+- `roadmap/team-workstreams.md`: team ownership and independent workstreams
+- `operations/README.md`: operating framework entrypoint
+- `operations/execution-board.md`: single execution board with milestones and dependencies
+- `operations/role-playbooks/`: role-based playbooks for Engineering, Product, Marketing, and QA
 - `testing/android-dx-and-test-playbook.md`: Android testing and DX workflow
+- `product/feature-catalog.md`: feature list by feasibility and horizon
+- `product/open-questions-log.md`: active engineering/product/GTM questions
 
 ## Phase 0 Exit Package
 

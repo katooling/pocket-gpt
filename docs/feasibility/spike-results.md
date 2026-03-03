@@ -1,5 +1,9 @@
 # Phase 0 Feasibility Spike Results
 
+## Evidence Status
+
+Current numeric results in this file are from repository mock/template runs (`2026-03-03`), not from physical devices. They are useful for harness validation only and must not be used as final feasibility sign-off.
+
 ## Execution Status
 
 Phase 0 benchmarking harness is implemented and validated in-repo.

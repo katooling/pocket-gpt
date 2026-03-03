@@ -2,6 +2,11 @@
 
 This playbook defines the development and testing workflow for Android-first MVP execution.
 
+Companion docs:
+
+- `docs/testing/test-strategy.md`
+- `docs/roadmap/mvp-implementation-tracker.md`
+
 ## Tooling Stack
 
 1. Android Studio (run/debug, profiler, logcat)
@@ -29,6 +34,16 @@ This playbook defines the development and testing workflow for Android-first MVP
    - `Memory`
 3. Validate diagnostics export for every run.
 
+Suggested local command baseline (add wrapper/tasks as repo evolves):
+
+```bash
+# unit tests by package
+./gradlew :packages:inference-adapters:test :packages:tool-runtime:test :packages:memory:test :apps:mobile-android:test
+
+# stage smoke run
+./gradlew :apps:mobile-android:run
+```
+
 ## Android Device Validation Loop
 
 1. Connect device via USB (developer mode + USB debugging enabled).
@@ -53,6 +68,44 @@ Fail stage if any occurs:
 2. new OOM or ANR in repeated runs
 3. tool validation bypass or unsafe payload execution
 4. policy allows network in offline-only mode
+
+## Stage-by-Stage DX + Reliability Gates
+
+### Stage 1
+
+- Keep startup-to-first-response loop under 60s for local iteration.
+- Require at least one deterministic unit test for each changed class.
+- Keep smoke script output stable and documented.
+
+### Stage 2
+
+- Artifact checksum validation must be covered by unit tests.
+- Threshold evaluation script run is required for every benchmark update.
+- Benchmark CSV schema changes require script compatibility checks.
+
+### Stage 3
+
+- Routing decisions must be table-tested across battery/thermal/RAM bands.
+- Diagnostics export must avoid sensitive content; assert via tests.
+- Regression test that downgrade behavior is preserved.
+
+### Stage 4
+
+- Tool validation must reject malformed and adversarial payloads.
+- Prefer schema-driven parser/validator over string parsing.
+- Tool execution branches require success and failure-path tests.
+
+### Stage 5
+
+- Memory retrieval quality tests required for common follow-up flows.
+- Retention/pruning behavior requires deterministic tests.
+- Image path must include non-empty output and latency capture assertions.
+
+### Stage 6
+
+- Soak tests produce reproducible artifacts (logs + benchmark + diagnostics).
+- Recovery/startup behavior must be tested after forced-stop conditions.
+- Release candidate requires all prior stage gates to remain green.
 
 ## Recommended Test Cases Per Stage
 
@@ -88,7 +141,8 @@ Fail stage if any occurs:
 
 ## Artifacts to Store
 
-1. benchmark CSV files in `scripts/benchmarks`
-2. threshold report output
-3. logcat traces per stage
-4. updated go/no-go packet
+1. Benchmark CSV files in `scripts/benchmarks/runs/YYYY-MM-DD/<device>/`
+2. Threshold report as `threshold-report.txt` in same run folder
+3. Logcat traces as `logcat.txt` in same run folder
+4. Optional perf trace as `perfetto.trace` in same run folder
+5. Updated go/no-go packet in `docs/roadmap/mvp-beta-go-no-go-packet.md`

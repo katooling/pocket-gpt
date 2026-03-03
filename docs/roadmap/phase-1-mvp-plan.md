@@ -7,6 +7,10 @@ Ship a usable, privacy-first offline assistant MVP with text + single-image supp
 Execution tracker:
 
 - `docs/roadmap/mvp-implementation-tracker.md`
+- `docs/roadmap/next-steps-execution-plan.md`
+- `docs/roadmap/product-roadmap.md`
+- `docs/roadmap/team-workstreams.md`
+- `docs/testing/test-strategy.md`
 
 ## Priority Backlog (Ordered)
 
@@ -63,3 +67,11 @@ No-Go if any are true:
 1. Sustained thermal regressions remain unresolved
 2. Frequent OOM on target mid-tier devices
 3. Privacy controls not enforceable in implementation
+
+## MVP Completion Definition
+
+MVP is considered complete when all are true:
+
+1. Stage 1-6 exit criteria in `docs/roadmap/next-steps-execution-plan.md` are satisfied.
+2. Required evidence artifacts are present for benchmark and soak runs.
+3. Cross-functional go/no-go packet is approved.

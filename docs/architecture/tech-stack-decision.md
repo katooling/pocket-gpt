@@ -68,3 +68,15 @@ Decision: prefer KMP shared domain with native UI.
 2. No arbitrary code execution from model output.
 3. Any network call must be explicit and policy-gated.
 4. Benchmarks drive routing defaults, not assumptions.
+
+## Implementation Maturity (As Of 2026-03-03)
+
+| Area | Decision | Current Maturity |
+|---|---|---|
+| Baseline inference | `llama.cpp` + GGUF | Planned; scaffold currently uses smoke adapter |
+| iOS optimization | Core ML + Metal | Planned; no active implementation yet |
+| Android optimization | LiteRT/NNAPI | Planned; no active implementation yet |
+| Shared architecture | KMP shared domain + native UI | Partial; Kotlin/JVM modular scaffolding in place |
+| Local storage | SQLite baseline | Planned; in-memory implementation used for scaffolding |
+| Tool execution | strict schema validation + local sandbox | Partial; allowlist and lightweight validation implemented |
+| Voice (STT/TTS) | offline-preferred, policy-gated | Planned; post-MVP design and benchmark phase |

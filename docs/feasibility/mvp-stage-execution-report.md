@@ -41,3 +41,20 @@ Run on Android hardware with real app/runtime integration:
 2. battery/thermal captures over 10-minute workloads
 3. 30-minute soak tests and ANR/OOM checks
 4. logcat/perfetto evidence attached to go/no-go packet
+
+## Not Yet Implemented in Production Form
+
+1. Real Android `llama.cpp` bridge (current path uses smoke inference adapter)
+2. End-to-end artifact fetch/version/eviction lifecycle (manifest/checksum helper exists only)
+3. SQLite-backed memory with retention pruning jobs (current memory is in-memory)
+4. Strict JSON-schema tool argument validation (current checks are lightweight string-based)
+5. iOS runtime/app integration slice (currently placeholder shell docs)
+
+## Evidence Location Convention
+
+Store artifacts using deterministic paths:
+
+1. `scripts/benchmarks/runs/YYYY-MM-DD/<device>/<scenario>.csv`
+2. `scripts/benchmarks/runs/YYYY-MM-DD/<device>/threshold-report.txt`
+3. `scripts/benchmarks/runs/YYYY-MM-DD/<device>/logcat.txt`
+4. `scripts/benchmarks/runs/YYYY-MM-DD/<device>/perfetto.trace`
