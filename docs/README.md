@@ -12,9 +12,13 @@ This directory contains Phase 0 documentation for the product foundation, techni
 - `feasibility/device-matrix.md`: target devices and class definitions
 - `feasibility/benchmark-protocol.md`: repeatable performance/quality tests
 - `feasibility/spike-results.md`: Phase 0 spike execution record
+- `feasibility/mvp-stage-execution-report.md`: MVP stage implementation and validation report
 - `security/privacy-model.md`: privacy model and security controls
 - `security/risk-register.md`: risk register with mitigations
 - `roadmap/phase-1-mvp-plan.md`: prioritized MVP implementation plan
+- `roadmap/mvp-implementation-tracker.md`: stage-by-stage MVP execution tracker
+- `roadmap/mvp-beta-go-no-go-packet.md`: beta decision packet template
+- `testing/android-dx-and-test-playbook.md`: Android testing and DX workflow
 
 ## Phase 0 Exit Package
 

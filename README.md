@@ -1,6 +1,6 @@
 # PocketAgent
 
-Phase 0 foundation repository for an offline, privacy-first mobile AI product.
+Foundation repository for an offline, privacy-first mobile AI product.
 
 ## Layout
 
@@ -13,6 +13,8 @@ Phase 0 foundation repository for an offline, privacy-first mobile AI product.
 - `packages/memory/`: memory and retrieval contracts
 - `scripts/benchmarks/`: benchmark harness docs and scripts
 
-## Phase 0 Goal
+## Current Status
 
-Complete planning, architecture, and feasibility validation before broad MVP implementation.
+- Phase 0 docs and architecture are in place.
+- Android-first MVP stage scaffolding (Stages 1-6) is implemented in code/docs.
+- Next step is physical Android device execution using the test playbook.

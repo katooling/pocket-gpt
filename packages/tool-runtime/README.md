@@ -15,3 +15,12 @@ Local tool execution contracts and safety model.
 - strict schema validation before execution
 - no arbitrary shell execution
 - policy gate checks for any external access
+
+## Implemented MVP Scaffolding
+
+- `SafeLocalToolRuntime` with allowlisted tools:
+  - calculator
+  - date_time
+  - notes_lookup
+  - local_search
+  - reminder_create

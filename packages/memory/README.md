@@ -12,3 +12,10 @@ Local memory and retrieval contracts.
 
 - SQLite as canonical data store
 - retrieval index behind an abstraction interface
+
+## Implemented MVP Scaffolding
+
+- `InMemoryMemoryModule` for stage execution:
+  - chunk save
+  - overlap-based retrieval
+  - bounded pruning

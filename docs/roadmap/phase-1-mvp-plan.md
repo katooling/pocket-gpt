@@ -4,6 +4,10 @@
 
 Ship a usable, privacy-first offline assistant MVP with text + single-image support and safe local tools.
 
+Execution tracker:
+
+- `docs/roadmap/mvp-implementation-tracker.md`
+
 ## Priority Backlog (Ordered)
 
 1. Runtime integration baseline (`llama.cpp`) for iOS and Android shells
