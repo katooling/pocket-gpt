@@ -1,0 +1,7 @@
+appId: com.pocketagent.android
+---
+- launchApp
+- assertVisible: "PocketAgent Android runtime shell"
+- swipe:
+    start: 50%,80%
+    end: 50%,20%

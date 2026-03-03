@@ -1,0 +1,4 @@
+appId: com.pocketagent.android
+---
+- launchApp
+- assertVisible: "PocketAgent Android runtime shell"
