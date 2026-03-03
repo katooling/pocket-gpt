@@ -6,6 +6,8 @@ This folder contains scripts/templates to run and record feasibility spikes.
 
 - `result-template.csv`: manual metric capture template
 - `aggregate.py`: aggregates CSV results and computes summary by model/runtime/device class
+- `evaluate_thresholds.py`: compares scenario medians against MVP thresholds
+- `stage-scenarios-template.csv`: template for Scenario A/B/C threshold evaluation
 
 ## Usage
 
@@ -18,3 +20,9 @@ python3 scripts/benchmarks/aggregate.py scripts/benchmarks/result-template.csv
 ```
 
 4. Paste summary output into `docs/feasibility/spike-results.md`.
+
+5. Evaluate stage thresholds:
+
+```bash
+python3 scripts/benchmarks/evaluate_thresholds.py scripts/benchmarks/stage-scenarios-template.csv
+```

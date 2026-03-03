@@ -19,3 +19,6 @@ DerivedData/
 # Python
 .venv/
 __pycache__/
+
+# Benchmark and device logs
+scripts/benchmarks/logcat-*.txt
