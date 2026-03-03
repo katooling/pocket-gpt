@@ -17,6 +17,7 @@ require_checked() {
 }
 
 require_checked '- \[x\] I ran `bash scripts/dev/test\.sh` \(or `bash scripts/dev/test\.sh ci`\) and it passed\.' "test command checkbox must be checked"
+require_checked '- \[x\] I used canonical orchestrator lanes \(`python3 tools/devctl/main\.py lane \.\.\.`\) directly or via the `scripts/dev/\*` wrappers\.' "orchestrator lane checkbox must be checked"
 require_checked '- \[x\] I updated docs affected by this change, or confirmed no docs changes are needed\.' "docs checkbox must be checked"
 
 if rg -q '(?i)wp-|work package|stage' "${PR_BODY_FILE}"; then

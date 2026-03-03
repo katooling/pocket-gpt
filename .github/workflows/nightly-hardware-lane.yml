@@ -22,5 +22,5 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Run hardware lane preflight/stub
-        run: bash scripts/dev/nightly-hardware-check.sh
+      - name: Run hardware lane preflight/stub (devctl)
+        run: python3 tools/devctl/main.py lane nightly-hardware

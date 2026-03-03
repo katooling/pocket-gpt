@@ -29,6 +29,12 @@ jobs:
           printf "%s" "$PR_BODY" > /tmp/pr-body.md
           bash scripts/dev/stage-close-gate.sh /tmp/pr-body.md
 
+      - name: Validate changed evidence references
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: bash scripts/dev/evidence-check-changed.sh
+
   docs-drift:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -38,6 +44,9 @@ jobs:
 
       - name: Docs drift guard
         run: bash scripts/dev/docs-drift-check.sh
+
+      - name: Governance self-tests
+        run: bash scripts/dev/governance-self-test.sh
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -61,8 +70,8 @@ jobs:
         run: |
           echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
 
-      - name: Test (canonical)
-        run: bash scripts/dev/test.sh ci
+      - name: Test (devctl canonical lane)
+        run: python3 tools/devctl/main.py lane test ci
 
       - name: Upload test reports
         if: always()
