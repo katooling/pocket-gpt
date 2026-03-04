@@ -55,6 +55,34 @@ Included:
 4. Model routing between `0.8B` and `2B` quantized tiers based on capability rules
 5. Rolling context + summarization memory
 
+## MVP UI Product Surface (WP-11)
+
+UI direction: chat-first, WhatsApp-like conversation timeline with advanced controls hidden behind an expandable sheet.
+
+Required MVP UI capabilities:
+
+1. Chat timeline with user/assistant/system bubbles and streaming assistant updates.
+2. Composer with send action, disabled/loading states, and image attachment action.
+3. Session UX with create/switch/delete and persistence across app restarts.
+4. Tool UX with deterministic result rendering and clear safety-error feedback.
+5. Advanced controls sheet with:
+   - routing mode: `Auto`, `QWEN_0_8B`, `QWEN_2B`
+   - diagnostics export action
+   - runtime detail readout (active model + latest latency snapshots).
+6. Product guardrails:
+   - explicit offline-first status indicator
+   - clear startup/runtime error banners
+   - no hidden cloud behavior in MVP flows.
+
+## Canonical MVP UI User Stories
+
+1. As a user, I can send a prompt and see streaming output in a chat bubble timeline.
+2. As a user, I can reopen the app and continue prior conversations.
+3. As a user, I can attach one image and get a contextual response in the same thread.
+4. As a user, I can run safe local tools and see deterministic tool results.
+5. As a power user, I can override model selection from an advanced sheet.
+6. As a privacy-sensitive user, I can export diagnostics without exposing sensitive content.
+
 ## Launch Workflow Lock (PROD-01)
 
 Status: Finalized lock pass on 2026-03-04 (WP-03 confirmed Done on execution board).
@@ -89,6 +117,23 @@ Final lock gate for PROD-01:
 2. Workflow A/B/C evidence links are attached in the MVP beta go/no-go packet.
 3. Product + QA both mark the launch workflow checklist as complete (PROD-03 handoff).
 
+## UI Acceptance Suite (WP-11)
+
+1. `UI-01` Launch renders chat screen, composer, and empty-state prompt.
+2. `UI-02` Send message streams token updates and finalizes assistant bubble.
+3. `UI-03` Session switch preserves per-session timeline state.
+4. `UI-04` App restart restores session list and last active session.
+5. `UI-05` Image attach handles success and invalid-file failure paths.
+6. `UI-06` Tool request shows success and schema-rejection error UX.
+7. `UI-07` Advanced sheet changes routing mode and reflects active mode.
+8. `UI-08` Diagnostics export succeeds and sensitive keys remain redacted.
+9. `UI-09` Offline policy remains enforced while UI actions are used.
+10. `UI-10` Long-run UI soak includes navigation + send/image/tool loops without ANR/OOM.
+
+Release policy update:
+
+- External beta/go-live signoff requires both `WP-07 Done` and `WP-11 Done`.
+
 Excluded (non-MVP):
 
 1. Broad video analysis workflows
@@ -111,6 +156,7 @@ MVP readiness:
 2. P50 decode throughput meets target
 3. Crash-free benchmark sessions >= 95%
 4. Image task completion quality meets acceptance rubric
+5. UI acceptance suite (`UI-01` to `UI-10`) passes on the release candidate app.
 
 ## Assumptions That Must Hold
 

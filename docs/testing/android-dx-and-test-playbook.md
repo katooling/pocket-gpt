@@ -1,6 +1,6 @@
 # Android DX and Test Playbook
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 ## Source of truth
 
@@ -49,9 +49,26 @@ Maestro install (validated against `v1.39.13`):
 curl -Ls https://get.maestro.mobile.dev | bash
 ```
 
+## WP-11 UI Validation Loop
+
+Use this loop once Compose UI changes land:
+
+1. Run JVM UI tests:
+   - `./gradlew --no-daemon -Pkotlin.incremental=false :apps:mobile-android:testDebugUnitTest`
+2. Compile instrumentation lane:
+   - `./gradlew --no-daemon -Pkotlin.incremental=false :apps:mobile-android:compileDebugAndroidTestKotlin`
+3. Run instrumentation + Maestro on connected device:
+   - `python3 tools/devctl/main.py lane android-instrumented`
+   - `python3 tools/devctl/main.py lane maestro`
+4. Capture logs and summary under deterministic run path:
+   - `scripts/benchmarks/runs/YYYY-MM-DD/<device>/wp-11-ui-acceptance/...`
+5. Publish evidence note under:
+   - `docs/operations/evidence/wp-11/YYYY-MM-DD-*.md`
+
 ## Regression Rules (Fail Stage)
 
 1. first-token latency regression beyond target band
 2. new OOM or ANR in repeated runs
 3. tool validation bypass or unsafe payload execution
 4. policy allows network in offline-only mode
+5. core UI workflows fail (`UI-01`..`UI-10`)

@@ -13,4 +13,8 @@ interface ConversationModule {
     fun appendUserTurn(sessionId: SessionId, content: String): Turn
     fun appendAssistantTurn(sessionId: SessionId, content: String): Turn
     fun buildPromptContext(sessionId: SessionId): String
+    fun listSessions(): List<SessionId>
+    fun listTurns(sessionId: SessionId): List<Turn>
+    fun restoreSession(sessionId: SessionId, turns: List<Turn>)
+    fun deleteSession(sessionId: SessionId): Boolean
 }

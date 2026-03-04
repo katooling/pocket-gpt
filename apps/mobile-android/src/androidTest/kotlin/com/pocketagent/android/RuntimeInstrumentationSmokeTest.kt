@@ -23,6 +23,12 @@ class RuntimeInstrumentationSmokeTest {
     }
 
     @Test
+    fun runtimeDependenciesDefaultToFacadeFactory() {
+        val facade = AppRuntimeDependencies.runtimeFacadeFactory()
+        assertTrue(facade.javaClass.simpleName.contains("DefaultMvpRuntimeFacade"))
+    }
+
+    @Test
     fun runtimeBridgeExposesSupportedModelCatalogViaFallback() {
         val bridge = AndroidLlamaCppRuntimeBridge(
             nativeApi = AlwaysUnavailableNativeApi(),

@@ -16,5 +16,5 @@ python3 tools/devctl/main.py lane maestro
 
 Flows:
 
-1. `scenario-a.yaml`
-2. `scenario-b.yaml`
+1. `scenario-a.yaml` - send-message chat loop smoke
+2. `scenario-b.yaml` - advanced controls and diagnostics action smoke

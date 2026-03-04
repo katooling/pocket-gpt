@@ -1,7 +1,8 @@
 appId: com.pocketagent.android
 ---
 - launchApp
-- assertVisible: "PocketAgent Android runtime shell"
-- swipe:
-    start: 50%,80%
-    end: 50%,20%
+- assertVisible: "Offline-first"
+- tapOn: "Advanced"
+- assertVisible: "Advanced controls"
+- tapOn: "QWEN_0_8B"
+- tapOn: "Export diagnostics"

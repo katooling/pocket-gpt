@@ -1,60 +1,34 @@
-# MVP Stage Execution Report (Repository Level)
+# MVP Stage Execution Report (Historical Snapshot)
 
-This report captures implementation and local script verification completed in the repository. Physical Android device execution remains required for final sign-off.
+Status: Archived historical snapshot.  
+Last updated: 2026-03-04
 
-## Implemented Artifacts by Stage
+## Current-State Marker
 
-1. Stage 1:
-   - Android container and streaming chat loop scaffolding
-   - startup checks and session flow
-2. Stage 2:
-   - model artifact manager and benchmark runner
-   - threshold evaluation script
-3. Stage 3:
-   - routing policy and policy/observability integration
-4. Stage 4:
-   - schema-safe allowlisted tool runtime
-5. Stage 5:
-   - in-memory retrieval module and image analysis path scaffold
-6. Stage 6:
-   - resilience guards and beta go/no-go packet template
+This document is no longer the source of truth for current MVP state because multiple statements here became outdated after WP-02..WP-08 and WP-11 updates.
 
-## Repository-Level Script Verification
+Use these canonical sources instead:
 
-Executed:
+1. `docs/operations/execution-board.md` (live package status)
+2. `docs/roadmap/mvp-implementation-tracker.md` (stage criteria + gate checklist)
+3. `docs/roadmap/mvp-beta-go-no-go-packet.md` (release decision package)
+4. `docs/prd/phase-0-prd.md` (product scope + user stories + UI acceptance contract)
 
-```bash
-python3 scripts/benchmarks/evaluate_thresholds.py scripts/benchmarks/stage-scenarios-template.csv
-python3 scripts/benchmarks/aggregate.py scripts/benchmarks/stage-scenarios-template.csv
-```
+## Why Archived
 
-Observed:
+This historical report predates productionized updates that are now implemented, including:
 
-- threshold checks: PASS on template sample
-- aggregate summary generated successfully
+1. Real Android runtime bridge integration
+2. SQLite memory backend and pruning behavior
+3. Strict schema-safe tool runtime
+4. Image path production hardening
+5. User-facing Compose MVP UI implementation track (WP-11)
 
-## Remaining Physical Device Validation
+## Historical Reference (Read-Only)
 
-Run on Android hardware with real app/runtime integration:
+Keep this file only as an audit trail of earlier feasibility assumptions and scaffold-era execution notes. Do not use it for current delivery decisions.
 
-1. Scenario A/B/C benchmarks with real Qwen artifacts
-2. battery/thermal captures over 10-minute workloads
-3. 30-minute soak tests and ANR/OOM checks
-4. logcat/perfetto evidence attached to go/no-go packet
+## Evidence Location Convention (Current)
 
-## Not Yet Implemented in Production Form
-
-1. Real Android `llama.cpp` bridge (current path uses smoke inference adapter)
-2. End-to-end artifact fetch/version/eviction lifecycle (manifest/checksum helper exists only)
-3. SQLite-backed memory with retention pruning jobs (current memory is in-memory)
-4. Strict JSON-schema tool argument validation (current checks are lightweight string-based)
-5. iOS runtime/app integration slice (currently placeholder shell docs)
-
-## Evidence Location Convention
-
-Store artifacts using deterministic paths:
-
-1. `scripts/benchmarks/runs/YYYY-MM-DD/<device>/<scenario>.csv`
-2. `scripts/benchmarks/runs/YYYY-MM-DD/<device>/threshold-report.txt`
-3. `scripts/benchmarks/runs/YYYY-MM-DD/<device>/logcat.txt`
-4. `scripts/benchmarks/runs/YYYY-MM-DD/<device>/perfetto.trace`
+1. Raw machine artifacts: `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...`
+2. Human evidence notes: `docs/operations/evidence/wp-xx/YYYY-MM-DD-*.md`

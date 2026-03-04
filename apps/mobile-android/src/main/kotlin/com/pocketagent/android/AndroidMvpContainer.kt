@@ -7,6 +7,7 @@ import com.pocketagent.core.InMemoryObservabilityModule
 import com.pocketagent.core.ObservabilityModule
 import com.pocketagent.core.PolicyModule
 import com.pocketagent.core.SessionId
+import com.pocketagent.core.Turn
 import com.pocketagent.inference.AdaptiveRoutingPolicy
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
@@ -43,6 +44,7 @@ class AndroidMvpContainer(
 ) {
     private val modelArtifactManager = ModelArtifactManager()
     private val imageInputModule = SmokeImageInputModule()
+    private var routingMode: RoutingMode = RoutingMode.AUTO
 
     init {
         registerArtifact(
@@ -65,11 +67,29 @@ class AndroidMvpContainer(
         deviceState: DeviceState,
         maxTokens: Int = 128,
     ): ChatResponse {
+        return sendUserMessage(
+            sessionId = sessionId,
+            userText = userText,
+            taskType = taskType,
+            deviceState = deviceState,
+            maxTokens = maxTokens,
+            onToken = {},
+        )
+    }
+
+    fun sendUserMessage(
+        sessionId: SessionId,
+        userText: String,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int = 128,
+        onToken: (String) -> Unit,
+    ): ChatResponse {
         requirePolicyEvent(
             eventType = "routing.model_select",
             failureMessage = "Policy module rejected routing event type.",
         )
-        val modelId = routingModule.selectModel(taskType, deviceState)
+        val modelId = selectModelId(taskType = taskType, deviceState = deviceState)
         check(inferenceModule.loadModel(modelId)) {
             "Failed to load runtime model: $modelId"
         }
@@ -104,6 +124,7 @@ class AndroidMvpContainer(
                     firstTokenLatencyMs = System.currentTimeMillis() - startedMs
                 }
                 builder.append(token)
+                onToken(token)
             }
         } finally {
             inferenceModule.unloadModel()
@@ -145,7 +166,7 @@ class AndroidMvpContainer(
             eventType = "routing.image_model_select",
             failureMessage = "Policy module rejected image routing event type.",
         )
-        val modelId = routingModule.selectModel(taskType = "image", deviceState = deviceState)
+        val modelId = selectModelId(taskType = "image", deviceState = deviceState)
         check(inferenceModule.loadModel(modelId)) {
             "Failed to load runtime model for image analysis: $modelId"
         }
@@ -217,6 +238,31 @@ class AndroidMvpContainer(
         return redactDiagnostics(observabilityModule.exportLocalDiagnostics())
     }
 
+    fun listSessions(): List<SessionId> = conversationModule.listSessions()
+
+    fun listTurns(sessionId: SessionId): List<Turn> = conversationModule.listTurns(sessionId)
+
+    fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
+        conversationModule.restoreSession(sessionId, turns)
+        turns.filter { it.role == "user" }.forEach { turn ->
+            memoryModule.saveMemoryChunk(
+                MemoryChunk(
+                    id = "restore-${sessionId.value}-${turn.timestampEpochMs}",
+                    content = turn.content,
+                    createdAtEpochMs = turn.timestampEpochMs,
+                ),
+            )
+        }
+    }
+
+    fun deleteSession(sessionId: SessionId): Boolean = conversationModule.deleteSession(sessionId)
+
+    fun setRoutingMode(mode: RoutingMode) {
+        routingMode = mode
+    }
+
+    fun getRoutingMode(): RoutingMode = routingMode
+
     private fun buildPrompt(
         userText: String,
         sessionId: SessionId,
@@ -254,6 +300,14 @@ class AndroidMvpContainer(
 
     private fun requirePolicyEvent(eventType: String, failureMessage: String) {
         check(policyModule.enforceDataBoundary(eventType)) { failureMessage }
+    }
+
+    private fun selectModelId(taskType: String, deviceState: DeviceState): String {
+        return when (routingMode) {
+            RoutingMode.AUTO -> routingModule.selectModel(taskType, deviceState)
+            RoutingMode.QWEN_0_8B -> ModelCatalog.QWEN_3_5_0_8B_Q4
+            RoutingMode.QWEN_2B -> ModelCatalog.QWEN_3_5_2B_Q4
+        }
     }
 
     private fun redactDiagnostics(raw: String): String {

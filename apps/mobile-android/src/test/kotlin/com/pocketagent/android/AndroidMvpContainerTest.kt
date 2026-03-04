@@ -2,6 +2,8 @@ package com.pocketagent.android
 
 import com.pocketagent.core.ObservabilityModule
 import com.pocketagent.core.PolicyModule
+import com.pocketagent.core.SessionId
+import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
@@ -14,6 +16,23 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class AndroidMvpContainerTest {
+    @Test
+    fun `manual routing mode override forces selected model`() {
+        val inference = RecordingInferenceModule()
+        val container = AndroidMvpContainer(inferenceModule = inference)
+        val session = container.createSession()
+
+        container.setRoutingMode(RoutingMode.QWEN_2B)
+        container.sendUserMessage(
+            sessionId = session,
+            userText = "force 2b",
+            taskType = "short_text",
+            deviceState = DeviceState(batteryPercent = 15, thermalLevel = 5, ramClassGb = 4),
+        )
+
+        assertEquals(ModelCatalog.QWEN_3_5_2B_Q4, inference.loadCalls.first())
+    }
+
     @Test
     fun `send user message runs load generate unload lifecycle`() {
         val inference = RecordingInferenceModule()
@@ -92,6 +111,31 @@ class AndroidMvpContainerTest {
         assertEquals(2, inference.capturedPrompts.size)
         val secondPrompt = inference.capturedPrompts[1]
         assertTrue(secondPrompt.contains("memory: project launch timeline and owner updates"))
+    }
+
+    @Test
+    fun `restored session history is used for follow up prompts`() {
+        val inference = RecordingInferenceModule()
+        val container = AndroidMvpContainer(inferenceModule = inference)
+        val session = SessionId("restored-session")
+        container.restoreSession(
+            sessionId = session,
+            turns = listOf(
+                Turn(role = "user", content = "remember this project update", timestampEpochMs = 1),
+                Turn(role = "assistant", content = "I will remember it", timestampEpochMs = 2),
+            ),
+        )
+
+        container.sendUserMessage(
+            sessionId = session,
+            userText = "what did I ask you to remember",
+            taskType = "short_text",
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+        )
+
+        val prompt = inference.capturedPrompts.last()
+        assertTrue(prompt.contains("user: remember this project update"))
+        assertTrue(prompt.contains("assistant: I will remember it"))
     }
 
     @Test

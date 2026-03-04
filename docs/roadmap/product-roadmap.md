@@ -1,6 +1,6 @@
 # Product Roadmap
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 ## Vision Anchors
 
@@ -22,16 +22,18 @@ Last updated: 2026-03-03
 Scope:
 
 1. Offline text chat with streaming output
-2. Single-image/document-photo understanding
-3. 3-5 local deterministic tools
-4. Memory v1 (bounded retrieval + retention policy)
-5. Evidence-driven benchmark and go/no-go process
+2. User-facing Android chat UX (session list, composer, advanced controls)
+3. Single-image/document-photo understanding
+4. 3-5 local deterministic tools
+5. Memory v1 (bounded retrieval + retention policy)
+6. Evidence-driven benchmark and go/no-go process
 
 Exit criteria:
 
 1. Scenario A/B/C thresholds met on target Android mid-tier devices
 2. No repeatable blocker OOM/ANR in soak tests
 3. Privacy controls and policy gates verified by tests and evidence
+4. User-facing UI acceptance suite passes for core workflows
 
 ## H2: Cross-Platform and Reliability
 

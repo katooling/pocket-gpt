@@ -8,12 +8,14 @@ Track these questions continuously so engineering, product, and go-to-market sta
 
 1. What are hard limits for first-token latency and battery drain by tier?
 2. What is the minimum acceptable image quality rubric for MVP?
+3. What are pass/fail thresholds for UI responsiveness under sustained on-device load?
 
 ## Product Questions
 
 1. What should be free vs paid in early pricing (if monetization starts at beta)?
 2. What UX language best explains local-first privacy without overclaiming?
 3. Which features are explicitly excluded from MVP despite high demand?
+4. Which device classes are mandatory for WP-11 UI acceptance evidence beyond the current primary test phone?
 
 ## Marketing Questions
 
@@ -45,14 +47,20 @@ Track these questions continuously so engineering, product, and go-to-market sta
    - Resolved in execution flow by completion of WP-01/WP-02 baseline and current stage governance in tracker docs.
    - Decision: CI-first baseline is required; physical-device evidence remains mandatory for launch gates.
 4. What strict schema framework should replace current lightweight tool parsing?
-   - Resolved in WP-05 parallel scope (ENG-06) with schema-driven validation and adversarial tests.
+   - Resolved in WP-05 scope (ENG-06) with schema-driven validation and adversarial tests.
    - Decision: ad-hoc parsing is replaced by strict schema validation contracts.
 5. For WP-03 closure, what is the exact definition of artifact-validated runtime path?
    - Resolved by WP-03 evidence and closeout records.
-   - Decision: active startup path must enforce artifact-manifest validation + SHA checks on runtime-selected artifacts, with QA rerun on artifact-validated path.
+   - Decision: active startup path enforces artifact-manifest validation + SHA checks with QA rerun on validated path.
 6. Are launch workflow and device support decisions still draft, or locked after WP-03?
    - Resolved by lock pass on 2026-03-04 with WP-03 marked Done.
    - Decision: PROD-01 workflow set and PROD-02 device policy are finalized for MVP launch planning.
 7. Is PROD-03 fully closed after WP-03 completion?
    - Resolved for scope alignment, not release closure.
-   - Decision: checklist alignment is finalized for current scope; final beta acceptance closeout remains gated by Stage 5/6 evidence.
+   - Decision: checklist alignment finalized for current scope; final beta acceptance remains gated by WP-07 and WP-11 closure.
+8. Is user-facing MVP UI optional for external beta?
+   - Resolved in product recovery policy.
+   - Decision: external beta/go-live signoff requires both WP-07 (hardening) and WP-11 (user-facing UI) to be Done.
+9. Which UI architecture path should be used for MVP?
+   - Resolved in product recovery implementation.
+   - Decision: Jetpack Compose + ViewModel with an app-facing runtime façade (`MvpRuntimeFacade`) and advanced controls in sheet UX.

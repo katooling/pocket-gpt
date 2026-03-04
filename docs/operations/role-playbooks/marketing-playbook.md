@@ -22,16 +22,15 @@ Define and validate messaging, category positioning, and launch channel strategy
 
 ## What Is In Progress
 
-- [ ] No active marketing task currently marked in-progress
+- [x] MKT-03 launch channel test plan draft started (execution gated by release gates)
+- [x] MKT-04 prep draft started (publish blocked until dual-track gate closes)
 
-## Marketing Dispatch Timing
+## Launch Publishing Rule
 
-1. Start now (draft mode):
-   - `MKT-01` messaging architecture draft
-2. Start after `MKT-01` draft baseline:
-   - `MKT-02` competitor matrix draft with evidence-backed claims only
-3. Finalize both after WP-03 is marked Done:
-   - remove provisional claims and align copy to validated capability/evidence set
+Public launch copy/screens must remain blocked until both are true:
+
+1. `WP-07` is `Done`
+2. `WP-11` is `Done`
 
 ## Task Queue
 
@@ -39,8 +38,8 @@ Define and validate messaging, category positioning, and launch channel strategy
 |---|---|---|---|---|---|
 | MKT-01 | Messaging architecture (privacy vs reliability vs utility) | Done | WP-03 | Marketing Lead | `docs/operations/mkt-01-messaging-architecture-draft.md` |
 | MKT-02 | Competitor matrix with evidence-safe claims | Done | MKT-01 | Product Marketing | `docs/operations/mkt-02-competitor-matrix-template-draft.md` |
-| MKT-03 | Launch channel test plan (communities, beta cohorts) | Backlog | MKT-01 | Growth Lead | `docs/roadmap/product-roadmap.md` |
-| MKT-04 | Landing page and launch copy v1 | Backlog | WP-07 | Content Lead | `docs/product/feature-catalog.md` |
+| MKT-03 | Launch channel test plan (communities, beta cohorts) | In Progress (draft only) | MKT-01 | Growth Lead | `docs/operations/mkt-03-launch-channel-test-plan-draft.md` |
+| MKT-04 | Landing page and launch copy v1 | In Progress (draft only) | WP-07, WP-11 | Content Lead | `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md` |
 | MKT-05 | Voice horizon narrative (STT/TTS roadmap messaging) | Backlog | PROD-05 | Product Marketing | `docs/roadmap/product-roadmap.md` |
 | MKT-06 | Distribution partnership list and outreach strategy | Backlog | WP-09 | Marketing Ops | `docs/product/open-questions-log.md` |
 
@@ -56,8 +55,8 @@ Define and validate messaging, category positioning, and launch channel strategy
 - `docs/operations/execution-board.md`
 - `docs/operations/mkt-01-messaging-architecture-draft.md`
 - `docs/operations/mkt-02-competitor-matrix-template-draft.md`
+- `docs/operations/mkt-03-launch-channel-test-plan-draft.md`
+- `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md`
 - `docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`
-- `docs/roadmap/product-roadmap.md`
+- `docs/prd/phase-0-prd.md`
 - `docs/product/feature-catalog.md`
-- `docs/product/open-questions-log.md`
-- `docs/feasibility/mvp-stage-execution-report.md`

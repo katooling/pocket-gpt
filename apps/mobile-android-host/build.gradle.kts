@@ -8,9 +8,11 @@ kotlin {
         main {
             kotlin.srcDir("../mobile-android/src/main/kotlin")
             kotlin.exclude("**/MainActivity.kt")
+            kotlin.exclude("**/ui/**")
         }
         test {
             kotlin.srcDir("../mobile-android/src/test/kotlin")
+            kotlin.exclude("**/ui/**")
         }
     }
 }
