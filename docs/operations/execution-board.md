@@ -80,6 +80,7 @@ All teams should update status here first, then mirror updates in role playbooks
    - keep ENG-06 package-close prep running in parallel (do not claim WP-05 Done yet)
 2. QA - start immediately after ENG-04 closeout:
    - QA-02 closure refresh complete (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`); recommend WP-03 package close decision
+   - QA-03/QA-04 baseline regression execution captured (`docs/operations/evidence/wp-04/2026-03-04-qa-03.md`, `docs/operations/evidence/wp-05/2026-03-04-qa-04.md`); rerun required on final WP-04/WP-05 merge set before package-close recommendation
 3. Product - start now in draft mode, finalize after WP-03 Done:
    - `PROD-01` launch workflows finalized (lock pass complete 2026-03-04)
    - `PROD-02` launch device support policy finalized (lock pass complete 2026-03-04)
