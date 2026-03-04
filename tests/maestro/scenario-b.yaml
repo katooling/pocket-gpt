@@ -2,6 +2,9 @@ appId: com.pocketagent.android
 ---
 - launchApp
 - assertVisible: "Offline-first"
+- tapOn: "Tools"
+- tapOn: "Calculator (4*9)"
+- assertVisible: "Tool: calculator"
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
 - tapOn: "QWEN_0_8B"

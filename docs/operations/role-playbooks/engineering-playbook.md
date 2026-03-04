@@ -32,7 +32,6 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 
 - [ ] WP-12 backend production runtime closure
 - [ ] ENG-11 native-runtime truth gate execution (phase A complete; follow-on rollout checks in progress)
-- [ ] ENG-10B WP-11 UI gate completion support (device evidence completion + gate reconciliation)
 
 ## Lead Eng Dispatch (Now)
 
@@ -52,7 +51,7 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 | ENG-06 | Tool runtime strict schema validation | Done | ENG-04 | Platform Eng | `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md` |
 | ENG-07 | SQLite memory backend + pruning | Done | ENG-05 | Core Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md` |
 | ENG-08 | Image path production hardening | Done | ENG-07 | Runtime Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-08.md` |
-| ENG-10 | WP-11 Compose chat UX + runtime façade + session persistence + advanced controls | In Progress (gate completion) | WP-06 | Android Runtime Eng | `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
+| ENG-10 | WP-11 Compose chat UX + runtime façade + session persistence + advanced controls | Done | WP-06 | Android Runtime Eng | `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
 | ENG-WP07-SIGNOFF | WP-07 Stage-6 final engineering signoff for go/no-go packet | Done | QA-06, ENG-WP07-S6 | Engineering Lead | `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
 | ENG-11A | Native-runtime truth gate (block closure startup checks on `ADB_FALLBACK`) | Done | WP-11 | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md` |
 | ENG-12 | Model distribution implementation (bundle/download/sideload decision + checksum provenance) | Ready | ENG-11A | Runtime Eng | `docs/operations/execution-board.md` |

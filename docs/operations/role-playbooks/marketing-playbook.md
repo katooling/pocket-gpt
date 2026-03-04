@@ -34,7 +34,7 @@ Public launch copy/screens must remain blocked until both are true:
 1. `WP-07` is `Done`
 2. `WP-11` is `Done`
 
-Current state (2026-03-04): `WP-07` is `Done`, `WP-11` is reopened to `In Progress`; publish remains blocked until WP-11 closes again.
+Current state (2026-03-04): `WP-07` and `WP-11` are both `Done`; publish remains governed by WP-09 rollout sequencing.
 
 ## Task Queue
 

@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -110,6 +111,106 @@ class ChatViewModelTest {
         assertEquals("persisted-1", runtime.restoredTurns.first().first.value)
         assertEquals(2, runtime.restoredTurns.first().second.size)
     }
+
+    @Test
+    fun `session switch preserves per-session timeline state`() = runTest(dispatcher) {
+        val persistence = RecordingPersistence()
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = persistence,
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.onComposerChanged("session one message")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+        val firstSessionId = viewModel.uiState.value.activeSession!!.id
+
+        viewModel.createSession()
+        val secondSessionId = viewModel.uiState.value.activeSession!!.id
+        viewModel.onComposerChanged("session two message")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        viewModel.switchSession(firstSessionId)
+        val firstSession = viewModel.uiState.value.activeSession!!
+        assertTrue(firstSession.messages.any { it.content == "session one message" })
+        assertFalse(firstSession.messages.any { it.content == "session two message" })
+
+        viewModel.switchSession(secondSessionId)
+        val secondSession = viewModel.uiState.value.activeSession!!
+        assertTrue(secondSession.messages.any { it.content == "session two message" })
+    }
+
+    @Test
+    fun `attach image success appends image user message and assistant response`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.attachImage("/tmp/test-image.jpg")
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        assertTrue(active.messages.any { it.kind == MessageKind.IMAGE && it.role == MessageRole.USER })
+        assertTrue(active.messages.any { it.kind == MessageKind.IMAGE && it.role == MessageRole.ASSISTANT })
+    }
+
+    @Test
+    fun `attach image failure shows system error message`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(failImage = true)
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.attachImage("/tmp/bad-image.jpg")
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("Image analysis failed") })
+    }
+
+    @Test
+    fun `tool request success and failure are rendered in timeline`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.runTool("calculator", """{"expression":"4*9"}""")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.ASSISTANT && it.content.contains("tool:calculator") })
+
+        runtime.failTool = true
+        viewModel.runTool("calculator", """{"expression":"4*9"}""")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("Tool request failed") })
+    }
+
+    @Test
+    fun `routing mode and diagnostics export update runtime and timeline`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.setRoutingMode(RoutingMode.QWEN_2B)
+        viewModel.exportDiagnostics()
+        advanceUntilIdle()
+
+        assertEquals(RoutingMode.QWEN_2B, viewModel.uiState.value.runtime.routingMode)
+        assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("diag=ok") })
+    }
 }
 
 private class RecordingPersistence(
@@ -126,9 +227,12 @@ private class RecordingPersistence(
     }
 }
 
-private class RecordingRuntimeFacade : MvpRuntimeFacade {
+private class RecordingRuntimeFacade(
+    private val failImage: Boolean = false,
+) : MvpRuntimeFacade {
     private var sessionCounter = 0
     private var routingMode: RoutingMode = RoutingMode.AUTO
+    var failTool: Boolean = false
     val restoredTurns = mutableListOf<Pair<SessionId, List<Turn>>>()
 
     override fun createSession(): SessionId {
@@ -152,9 +256,19 @@ private class RecordingRuntimeFacade : MvpRuntimeFacade {
         )
     }
 
-    override fun runTool(toolName: String, jsonArgs: String): String = "tool:$toolName"
+    override fun runTool(toolName: String, jsonArgs: String): String {
+        if (failTool) {
+            error("simulated tool failure")
+        }
+        return "tool:$toolName"
+    }
 
-    override fun analyzeImage(imagePath: String, prompt: String): String = "image:$imagePath"
+    override fun analyzeImage(imagePath: String, prompt: String): String {
+        if (failImage) {
+            error("simulated image failure")
+        }
+        return "image:$imagePath"
+    }
 
     override fun exportDiagnostics(): String = "diag=ok"
 

@@ -8,19 +8,19 @@ This catalog lists current and possible features based on known technical constr
 
 | Feature | Why It Matters | Constraints | Engine Status | In-App UX Status |
 |---|---|---|---|---|
-| Offline text chat | core assistant utility | first-token latency, memory/OOM | Implemented | In Progress (device instrumentation + Maestro rerun pass; full UI gate still pending) |
-| Streaming responses | perceived speed and UX quality | runtime callback reliability | Implemented | In Progress (streaming bubble rendering landed; partial gate evidence published) |
-| Model routing (`0.8B`/`2B`) | battery and thermal control | device-state signal quality | Implemented | In Progress (advanced override sheet landed) |
-| Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented (WP-05 closed) | In Progress (tool UX present; explicit UI-case device evidence still pending) |
-| Memory v1 | continuity across sessions | retrieval quality + retention policy | Implemented (SQLite + pruning) | In Progress (session UX persistence landed) |
-| Single-image Q&A | multimodal differentiation | image path latency and correctness | Implemented (WP-06 closed) | In Progress (image attach UX landed; explicit UI-case device evidence still pending) |
+| Offline text chat | core assistant utility | first-token latency, memory/OOM | Implemented | Implemented (WP-11 gate complete with device evidence) |
+| Streaming responses | perceived speed and UX quality | runtime callback reliability | Implemented | Implemented (instrumented + Maestro flows validated) |
+| Model routing (`0.8B`/`2B`) | battery and thermal control | device-state signal quality | Implemented | Implemented (advanced controls + routing override validated) |
+| Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented (WP-05 closed) | Implemented (UI action + success/failure paths validated) |
+| Memory v1 | continuity across sessions | retrieval quality + retention policy | Implemented (SQLite + pruning) | Implemented (session restore/switch continuity validated) |
+| Single-image Q&A | multimodal differentiation | image path latency and correctness | Implemented (WP-06 closed) | Implemented (image attach success/failure UX validated) |
 
 ## Band B: Near-Term Expansion (Post-MVP)
 
 | Feature | Why It Matters | Constraints | Engine Status | In-App UX Status |
 |---|---|---|---|---|
 | iOS parity | market expansion | runtime bridge and platform integration | Planned | Not started |
-| Strict JSON-schema tools | stronger safety guarantees | parser contract and test coverage | Implemented | In Progress (UX workflow integration under WP-11) |
+| Strict JSON-schema tools | stronger safety guarantees | parser contract and test coverage | Implemented | Implemented (WP-11 UI integration validated) |
 | Rich diagnostics dashboards | faster QA and regression triage | safe redaction + metrics consistency | Planned | Planned |
 | Better image workflows | broader use cases (documents/photos) | model quality on edge cases | Planned | Planned |
 

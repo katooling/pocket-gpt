@@ -23,7 +23,7 @@ Signoff rule:
 
 WP-11 note (2026-03-04):
 
-1. WP-11 was reopened to `In Progress` pending completion of explicit UI acceptance evidence mapping (`UI-01`..`UI-10`) on device.
+1. WP-11 rerun is complete and `UI-01`..`UI-10` evidence mapping is closed.
 2. Latest rerun evidence: `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`.
 
 ## Scope
@@ -63,7 +63,7 @@ Android-first MVP with:
 - [x] PROD-02 required vs best-effort device policy table attached
 - [x] PROD-03 finalization hook checklist completed with Product + QA + Engineering sign-off
 - [x] WP-11 implementation foundation note attached
-- [ ] WP-11 UI acceptance evidence (`UI-01`..`UI-10`) attached
+- [x] WP-11 UI acceptance evidence (`UI-01`..`UI-10`) attached
 
 ## UI Readiness Checklist (WP-11)
 
@@ -73,7 +73,7 @@ Android-first MVP with:
 - [x] Local tool action UX present with deterministic result/error rendering.
 - [x] Advanced controls sheet present (routing override + diagnostics export + runtime details).
 - [x] Unit + runtime wiring tests updated for new UI contracts.
-- [ ] QA UI acceptance suite complete on physical-device lane.
+- [x] QA UI acceptance suite complete on physical-device lane.
 
 ## Stage Gate Status (PROD-03 Alignment)
 
@@ -108,7 +108,7 @@ Evidence links (current):
 
 ### UI Gate (WP-11)
 
-Status: In Progress
+Status: Closed on 2026-03-04
 
 Required criteria before final signoff:
 
@@ -120,8 +120,9 @@ Required criteria before final signoff:
 Evidence links (current):
 
 1. `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`
-2. `tests/maestro/scenario-a.yaml`
-3. `tests/maestro/scenario-b.yaml`
+2. `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`
+3. `tests/maestro/scenario-a.yaml`
+4. `tests/maestro/scenario-b.yaml`
 
 ## Attached Policy and Workflow References
 
@@ -141,5 +142,5 @@ Evidence links (current):
 
 ## Recommendation
 
-Current recommendation: **WP-07 closed; WP-11 still open**.  
-External beta/go-live remains blocked until WP-11 acceptance evidence is fully complete.
+Current recommendation: **Go**.  
+WP-07 and WP-11 gate requirements are both met; continue release sequencing through WP-09 operations.

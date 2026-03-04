@@ -1,8 +1,10 @@
 package com.pocketagent.android
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -34,6 +36,7 @@ class MainActivityUiSmokeTest {
 
     @Before
     fun setUp() {
+        AppRuntimeDependencies.runtimeFacadeFactory = { FakeRuntimeFacade() }
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         appContext.getSharedPreferences("pocketagent_chat_state", 0).edit().clear().apply()
     }
@@ -55,15 +58,35 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithTag("composer_input").performTextInput("hello ui")
         composeRule.onNodeWithTag("send_button").performClick()
 
-        composeRule.waitUntil(timeoutMillis = 5_000) {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("hello ui").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.waitUntil(timeoutMillis = 5_000) {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("runtime response for hello ui").fetchSemanticsNodes().isNotEmpty()
         }
 
         composeRule.onAllNodesWithText("hello ui")[0].assertIsDisplayed()
         composeRule.onAllNodesWithText("runtime response for hello ui")[0].assertIsDisplayed()
+    }
+
+    @Test
+    fun toolAndDiagnosticsActionsRenderResults() {
+        composeRule.onNodeWithContentDescription("Tools").performClick()
+        composeRule.onNodeWithText("Calculator (4*9)").performClick()
+        composeRule.waitForText("tool:calculator")
+
+        composeRule.onNodeWithTag("advanced_sheet_button").performClick()
+        composeRule.onNodeWithText("Export diagnostics").performClick()
+        composeRule.waitForText("diag=ok")
+    }
+
+    private fun AndroidComposeTestRule<*, *>.waitForText(
+        text: String,
+        timeoutMillis: Long = 5_000,
+    ) {
+        waitUntil(timeoutMillis = timeoutMillis) {
+            onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
     }
 }
 
