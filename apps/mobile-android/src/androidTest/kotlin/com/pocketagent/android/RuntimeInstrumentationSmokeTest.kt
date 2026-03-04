@@ -46,7 +46,7 @@ class RuntimeInstrumentationSmokeTest {
 private class AlwaysUnavailableNativeApi : AndroidLlamaCppRuntimeBridge.NativeApi {
     override fun initialize(): Boolean = false
 
-    override fun loadModel(modelId: String): Boolean = false
+    override fun loadModel(modelId: String, modelPath: String): Boolean = false
 
     override fun generate(prompt: String, maxTokens: Int): String = ""
 
@@ -63,7 +63,7 @@ private class AlwaysReadyFallbackBridge : LlamaCppRuntimeBridge {
         ModelCatalog.QWEN_3_5_2B_Q4,
     )
 
-    override fun loadModel(modelId: String): Boolean = true
+    override fun loadModel(modelId: String, modelPath: String?): Boolean = true
 
     override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
         onToken("smoke ")

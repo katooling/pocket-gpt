@@ -258,7 +258,9 @@ class ModelArtifactManager {
     fun verifyArtifactForLoad(
         modelId: String,
         version: String?,
-        payload: ByteArray?,
+        payload: ByteArray? = null,
+        payloadSha256: String? = null,
+        payloadPresent: Boolean = payload != null || !payloadSha256.isNullOrBlank(),
         provenanceIssuer: String,
         provenanceSignature: String,
         runtimeCompatibility: String,
@@ -284,7 +286,7 @@ class ModelArtifactManager {
                 modelId = modelId,
                 version = version,
                 expectedSha256 = null,
-                actualSha256 = payload?.let(::sha256Hex),
+                actualSha256 = resolveActualSha(payload = payload, payloadSha256 = payloadSha256),
                 expectedIssuer = null,
                 actualIssuer = provenanceIssuer,
                 expectedRuntimeCompatibility = null,
@@ -298,14 +300,15 @@ class ModelArtifactManager {
                 modelId = modelId,
                 version = version,
                 expectedSha256 = null,
-                actualSha256 = payload?.let(::sha256Hex),
+                actualSha256 = resolveActualSha(payload = payload, payloadSha256 = payloadSha256),
                 expectedIssuer = null,
                 actualIssuer = provenanceIssuer,
                 expectedRuntimeCompatibility = null,
                 actualRuntimeCompatibility = runtimeCompatibility,
             )
 
-        if (payload == null) {
+        val actualSha = resolveActualSha(payload = payload, payloadSha256 = payloadSha256)
+        if (!payloadPresent || actualSha == null) {
             val knownGood = lastKnownGoodArtifactByModelId[modelId]
             if (knownGood != null && knownGood.version == artifact.version) {
                 return ArtifactVerificationResult(
@@ -313,7 +316,7 @@ class ModelArtifactManager {
                     modelId = knownGood.modelId,
                     version = knownGood.version,
                     expectedSha256 = knownGood.expectedSha256,
-                    actualSha256 = null,
+                    actualSha256 = actualSha,
                     expectedIssuer = knownGood.provenanceIssuer,
                     actualIssuer = provenanceIssuer,
                     expectedRuntimeCompatibility = knownGood.runtimeCompatibility,
@@ -325,15 +328,13 @@ class ModelArtifactManager {
                 modelId = artifact.modelId,
                 version = artifact.version,
                 expectedSha256 = artifact.expectedSha256,
-                actualSha256 = null,
+                actualSha256 = actualSha,
                 expectedIssuer = artifact.provenanceIssuer,
                 actualIssuer = provenanceIssuer,
                 expectedRuntimeCompatibility = artifact.runtimeCompatibility,
                 actualRuntimeCompatibility = runtimeCompatibility,
             )
         }
-
-        val actualSha = sha256Hex(payload)
         if (!actualSha.equals(artifact.expectedSha256, ignoreCase = true)) {
             return ArtifactVerificationResult(
                 status = ArtifactVerificationStatus.CHECKSUM_MISMATCH,
@@ -410,6 +411,16 @@ class ModelArtifactManager {
         val builder = StringBuilder()
         digest.forEach { b -> builder.append("%02x".format(b)) }
         return builder.toString()
+    }
+
+    private fun resolveActualSha(payload: ByteArray?, payloadSha256: String?): String? {
+        val normalizedSha = payloadSha256
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        if (normalizedSha != null) {
+            return normalizedSha
+        }
+        return payload?.let(::sha256Hex)
     }
 
     private fun verifyChecksumResultInternal(

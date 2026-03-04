@@ -22,6 +22,7 @@ class AndroidLlamaCppInferenceModuleTest {
     fun `load generate unload delegates to runtime bridge`() {
         val bridge = FakeBridge()
         val module = AndroidLlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
 
         assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
         val tokens = mutableListOf<String>()
@@ -31,6 +32,7 @@ class AndroidLlamaCppInferenceModuleTest {
         assertEquals(1, bridge.loadCalls)
         assertEquals(1, bridge.generateCalls)
         assertEquals(1, bridge.unloadCalls)
+        assertEquals("/tmp/qwen-0.8b.gguf", bridge.lastModelPath)
         assertEquals(listOf("hello ", "from ", "llama "), tokens)
     }
 
@@ -61,6 +63,7 @@ private class FakeBridge(
     var loadCalls: Int = 0
     var generateCalls: Int = 0
     var unloadCalls: Int = 0
+    var lastModelPath: String? = null
 
     override fun isReady(): Boolean = true
 
@@ -69,8 +72,9 @@ private class FakeBridge(
         ModelCatalog.QWEN_3_5_2B_Q4,
     )
 
-    override fun loadModel(modelId: String): Boolean {
+    override fun loadModel(modelId: String, modelPath: String?): Boolean {
         loadCalls += 1
+        lastModelPath = modelPath
         return true
     }
 

@@ -19,7 +19,7 @@ class AndroidLlamaCppRuntimeBridgeTest {
 
         assertTrue(bridge.isReady())
         assertEquals(RuntimeBackend.NATIVE_JNI, bridge.runtimeBackend())
-        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         val tokens = mutableListOf<String>()
         assertTrue(bridge.generate("prompt", 16) { tokens.add(it) })
         bridge.unloadModel()
@@ -39,11 +39,12 @@ class AndroidLlamaCppRuntimeBridgeTest {
             nativeApi = nativeApi,
             libraryLoader = { _ -> error("missing native library") },
             fallbackBridge = fallback,
+            fallbackEnabled = true,
         )
 
         assertTrue(bridge.isReady())
         assertEquals(RuntimeBackend.ADB_FALLBACK, bridge.runtimeBackend())
-        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         val tokens = mutableListOf<String>()
         assertTrue(bridge.generate("prompt", 16) { tokens.add(it) })
         bridge.unloadModel()
@@ -59,11 +60,12 @@ class AndroidLlamaCppRuntimeBridgeTest {
             nativeApi = FakeNativeApi(initializeOk = false, loadOk = false, generatedText = ""),
             libraryLoader = { _ -> error("missing native library") },
             fallbackBridge = FakeFallbackBridge(ready = false),
+            fallbackEnabled = true,
         )
 
         assertFalse(bridge.isReady())
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
-        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
     }
 }
 
@@ -78,7 +80,7 @@ private class FakeNativeApi(
 
     override fun initialize(): Boolean = initializeOk
 
-    override fun loadModel(modelId: String): Boolean {
+    override fun loadModel(modelId: String, modelPath: String): Boolean {
         loadCalled = true
         return loadOk
     }
@@ -109,7 +111,7 @@ private class FakeFallbackBridge(
         ModelCatalog.QWEN_3_5_2B_Q4,
     )
 
-    override fun loadModel(modelId: String): Boolean {
+    override fun loadModel(modelId: String, modelPath: String?): Boolean {
         loadCalled = true
         return loadOk
     }

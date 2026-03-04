@@ -4,6 +4,13 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+fun String.isTruthyFlag(): Boolean = trim().lowercase() in setOf("1", "true", "yes")
+
+val nativeBuildEnabled = providers.gradleProperty("pocketgpt.enableNativeBuild")
+    .map { it.isTruthyFlag() }
+    .orElse(false)
+    .get()
+
 android {
     namespace = "com.pocketagent.android"
     compileSdk = 35
@@ -16,6 +23,36 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("boolean", "NATIVE_RUNTIME_LIBRARY_PACKAGED", nativeBuildEnabled.toString())
+    }
+
+    if (nativeBuildEnabled) {
+        val cmakePath = file("src/main/cpp/CMakeLists.txt")
+        if (!cmakePath.exists()) {
+            throw GradleException(
+                "Native build enabled but CMake file is missing at ${cmakePath.path}. " +
+                    "Add native sources or disable -Ppocketgpt.enableNativeBuild.",
+            )
+        }
+
+        defaultConfig {
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
+            externalNativeBuild {
+                cmake {
+                    arguments += listOf("-DANDROID_STL=c++_shared")
+                    cppFlags += listOf("-std=c++17", "-fexceptions", "-frtti")
+                }
+            }
+        }
+
+        externalNativeBuild {
+            cmake {
+                path = cmakePath
+            }
+        }
     }
 
     buildTypes {

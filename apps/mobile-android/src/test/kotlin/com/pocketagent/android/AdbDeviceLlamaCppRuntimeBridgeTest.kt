@@ -51,6 +51,15 @@ class AdbDeviceLlamaCppRuntimeBridgeTest {
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
         assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
     }
+
+    @Test
+    fun `command execution failure degrades to unavailable without crash`() {
+        val bridge = AdbDeviceLlamaCppRuntimeBridge(commandRunner = ThrowingCommandRunner())
+
+        assertFalse(bridge.isReady())
+        assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+    }
 }
 
 private class ScriptedCommandRunner(
@@ -63,5 +72,11 @@ private class ScriptedCommandRunner(
             stdout = "",
             stderr = "Unexpected command: $key",
         )
+    }
+}
+
+private class ThrowingCommandRunner : CommandRunner {
+    override fun run(command: List<String>): CommandResult {
+        error("simulated command runner failure")
     }
 }

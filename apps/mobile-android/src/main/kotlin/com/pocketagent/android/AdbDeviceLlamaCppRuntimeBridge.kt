@@ -28,7 +28,7 @@ class AdbDeviceLlamaCppRuntimeBridge(
 
     override fun listAvailableModels(): List<String> = supportedModels.sorted()
 
-    override fun loadModel(modelId: String): Boolean {
+    override fun loadModel(modelId: String, modelPath: String?): Boolean {
         if (!supportedModels.contains(modelId)) {
             return false
         }
@@ -42,7 +42,8 @@ class AdbDeviceLlamaCppRuntimeBridge(
         val serial = activeSerial ?: resolveSerial() ?: return false
         val model = activeModelId ?: return false
 
-        val shellOutput = commandRunner.run(
+        val shellOutput = runCatching {
+            commandRunner.run(
             listOf(
                 "adb",
                 "-s",
@@ -53,7 +54,8 @@ class AdbDeviceLlamaCppRuntimeBridge(
                 "model=$model",
                 "max_tokens=$maxTokens",
             ),
-        )
+            )
+        }.getOrElse { return false }
         if (shellOutput.exitCode != 0) {
             return false
         }
@@ -82,7 +84,9 @@ class AdbDeviceLlamaCppRuntimeBridge(
 
     private fun resolveSerial(): String? {
         val preferred = env["ADB_SERIAL"]?.trim()?.takeIf { it.isNotEmpty() }
-        val result = commandRunner.run(listOf("adb", "devices", "-l"))
+        val result = runCatching {
+            commandRunner.run(listOf("adb", "devices", "-l"))
+        }.getOrElse { return null }
         if (result.exitCode != 0) {
             return null
         }
@@ -106,16 +110,24 @@ class AdbDeviceLlamaCppRuntimeBridge(
 
 private class ProcessCommandRunner : CommandRunner {
     override fun run(command: List<String>): CommandResult {
-        val process = ProcessBuilder(command).start()
-        val stdoutBytes = ByteArrayOutputStream()
-        val stderrBytes = ByteArrayOutputStream()
-        process.inputStream.copyTo(stdoutBytes)
-        process.errorStream.copyTo(stderrBytes)
-        val exitCode = process.waitFor()
-        return CommandResult(
-            exitCode = exitCode,
-            stdout = stdoutBytes.toString(Charsets.UTF_8.name()),
-            stderr = stderrBytes.toString(Charsets.UTF_8.name()),
-        )
+        return runCatching {
+            val process = ProcessBuilder(command).start()
+            val stdoutBytes = ByteArrayOutputStream()
+            val stderrBytes = ByteArrayOutputStream()
+            process.inputStream.copyTo(stdoutBytes)
+            process.errorStream.copyTo(stderrBytes)
+            val exitCode = process.waitFor()
+            CommandResult(
+                exitCode = exitCode,
+                stdout = stdoutBytes.toString(Charsets.UTF_8.name()),
+                stderr = stderrBytes.toString(Charsets.UTF_8.name()),
+            )
+        }.getOrElse { error ->
+            CommandResult(
+                exitCode = 127,
+                stdout = "",
+                stderr = error.message ?: "Command execution failed.",
+            )
+        }
     }
 }

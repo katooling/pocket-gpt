@@ -452,7 +452,7 @@ private class BackendAwareTestBridge(
         ModelCatalog.QWEN_3_5_2B_Q4,
     )
 
-    override fun loadModel(modelId: String): Boolean = isReady()
+    override fun loadModel(modelId: String, modelPath: String?): Boolean = isReady()
 
     override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
         if (!isReady()) {

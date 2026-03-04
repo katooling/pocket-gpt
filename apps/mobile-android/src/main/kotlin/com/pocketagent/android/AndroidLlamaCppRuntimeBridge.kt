@@ -11,7 +11,8 @@ enum class RuntimeBackend {
 interface LlamaCppRuntimeBridge {
     fun isReady(): Boolean
     fun listAvailableModels(): List<String>
-    fun loadModel(modelId: String): Boolean
+    fun loadModel(modelId: String): Boolean = loadModel(modelId, null)
+    fun loadModel(modelId: String, modelPath: String?): Boolean
     fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean
     fun unloadModel()
     fun runtimeBackend(): RuntimeBackend
@@ -26,7 +27,7 @@ class AndroidLlamaCppRuntimeBridge(
         ModelCatalog.QWEN_3_5_2B_Q4,
     ),
     private val fallbackBridge: LlamaCppRuntimeBridge = AdbDeviceLlamaCppRuntimeBridge(),
-    private val fallbackEnabled: Boolean = true,
+    private val fallbackEnabled: Boolean = defaultFallbackEnabled(),
 ) : LlamaCppRuntimeBridge {
     private var initialized = false
     private var runtimeReady = false
@@ -39,15 +40,19 @@ class AndroidLlamaCppRuntimeBridge(
 
     override fun listAvailableModels(): List<String> = supportedModels.sorted()
 
-    override fun loadModel(modelId: String): Boolean {
+    override fun loadModel(modelId: String, modelPath: String?): Boolean {
         ensureRuntimeInitialized()
         if (!runtimeReady || !supportedModels.contains(modelId)) {
             return false
         }
         if (usingFallback) {
-            return fallbackBridge.loadModel(modelId)
+            return fallbackBridge.loadModel(modelId, modelPath)
         }
-        return runCatching { nativeApi.loadModel(modelId) }.getOrDefault(false)
+        val normalizedModelPath = modelPath?.trim().orEmpty()
+        if (normalizedModelPath.isBlank()) {
+            return false
+        }
+        return runCatching { nativeApi.loadModel(modelId, normalizedModelPath) }.getOrDefault(false)
     }
 
     override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
@@ -115,23 +120,35 @@ class AndroidLlamaCppRuntimeBridge(
 
     interface NativeApi {
         fun initialize(): Boolean
-        fun loadModel(modelId: String): Boolean
+        fun loadModel(modelId: String, modelPath: String): Boolean
         fun generate(prompt: String, maxTokens: Int): String
         fun unloadModel()
     }
 
     private class JniNativeApi : NativeApi {
         external fun nativeInitialize(): Boolean
-        external fun nativeLoadModel(modelId: String): Boolean
+        external fun nativeLoadModel(modelId: String, modelPath: String): Boolean
         external fun nativeGenerate(prompt: String, maxTokens: Int): String
         external fun nativeUnloadModel()
 
         override fun initialize(): Boolean = nativeInitialize()
 
-        override fun loadModel(modelId: String): Boolean = nativeLoadModel(modelId)
+        override fun loadModel(modelId: String, modelPath: String): Boolean = nativeLoadModel(modelId, modelPath)
 
         override fun generate(prompt: String, maxTokens: Int): String = nativeGenerate(prompt, maxTokens)
 
         override fun unloadModel() = nativeUnloadModel()
+    }
+
+    companion object {
+        const val ENABLE_ADB_FALLBACK_ENV: String = "POCKETGPT_ENABLE_ADB_FALLBACK"
+
+        private fun defaultFallbackEnabled(): Boolean {
+            val raw = System.getenv(ENABLE_ADB_FALLBACK_ENV)
+                ?.trim()
+                ?.lowercase()
+                ?: return false
+            return raw in setOf("1", "true", "yes")
+        }
     }
 }

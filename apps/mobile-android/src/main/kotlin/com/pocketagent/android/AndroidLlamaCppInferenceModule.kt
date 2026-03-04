@@ -7,6 +7,7 @@ class AndroidLlamaCppInferenceModule(
     private val runtimeBridge: LlamaCppRuntimeBridge = AndroidLlamaCppRuntimeBridge(),
 ) : InferenceModule {
     private var activeModelId: String? = null
+    private val modelPathById: MutableMap<String, String> = mutableMapOf()
 
     override fun listAvailableModels(): List<String> = runtimeBridge.listAvailableModels()
 
@@ -17,7 +18,7 @@ class AndroidLlamaCppInferenceModule(
         if (activeModelId != null && activeModelId != modelId) {
             runtimeBridge.unloadModel()
         }
-        val loaded = runtimeBridge.loadModel(modelId)
+        val loaded = runtimeBridge.loadModel(modelId, modelPathById[modelId])
         activeModelId = if (loaded) modelId else null
         return loaded
     }
@@ -38,4 +39,12 @@ class AndroidLlamaCppInferenceModule(
     }
 
     fun runtimeBackend(): RuntimeBackend = runtimeBridge.runtimeBackend()
+
+    fun registerModelPath(modelId: String, absolutePath: String) {
+        val normalizedPath = absolutePath.trim()
+        if (normalizedPath.isBlank()) {
+            return
+        }
+        modelPathById[modelId] = normalizedPath
+    }
 }

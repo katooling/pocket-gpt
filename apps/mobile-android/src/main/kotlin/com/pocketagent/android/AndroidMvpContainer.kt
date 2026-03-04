@@ -24,6 +24,8 @@ import com.pocketagent.memory.MemoryModule
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolCall
 import com.pocketagent.tools.ToolModule
+import java.io.BufferedInputStream
+import java.nio.file.LinkOption
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -45,6 +47,7 @@ class AndroidMvpContainer(
     private val toolModule: ToolModule = SafeLocalToolRuntime(),
     private val memoryModule: MemoryModule = AndroidNativeMemoryModule.ephemeralRuntimeModule(),
     private val artifactPayloadByModelId: Map<String, ByteArray> = defaultArtifactPayloadByModelId(),
+    private val artifactFilePathByModelId: Map<String, String> = defaultArtifactFilePathByModelId(),
     private val artifactSha256ByModelId: Map<String, String> = defaultArtifactSha256ByModelId(artifactPayloadByModelId),
     private val artifactProvenanceIssuerByModelId: Map<String, String> = defaultArtifactProvenanceIssuerByModelId(),
     private val artifactProvenanceSignatureByModelId: Map<String, String> = defaultArtifactProvenanceSignatureByModelId(
@@ -58,6 +61,7 @@ class AndroidMvpContainer(
     private val modelArtifactManager = ModelArtifactManager()
     private val imageInputModule = RuntimeImageInputModule(inferenceModule)
     private var routingMode: RoutingMode = RoutingMode.AUTO
+    private val artifactShaByFilePath: MutableMap<String, String> = mutableMapOf()
 
     init {
         registerArtifact(
@@ -68,6 +72,7 @@ class AndroidMvpContainer(
             modelId = ModelCatalog.QWEN_3_5_2B_Q4,
             fileName = "qwen3.5-2b-q4.gguf",
         )
+        registerRuntimeModelPaths()
         modelArtifactManager.setActiveModel(ModelCatalog.QWEN_3_5_0_8B_Q4)
     }
 
@@ -350,6 +355,28 @@ class AndroidMvpContainer(
     }
 
     private fun verifyArtifactForModel(modelId: String): ArtifactVerificationResult {
+        val filePath = artifactFilePathByModelId[modelId]
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        if (filePath != null) {
+            val path = Path.of(filePath)
+            val payloadPresent = Files.exists(path, LinkOption.NOFOLLOW_LINKS) && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+            val payloadSha256 = if (payloadPresent) {
+                sha256HexFromFile(path)
+            } else {
+                null
+            }
+            return modelArtifactManager.verifyArtifactForLoad(
+                modelId = modelId,
+                version = null,
+                payload = null,
+                payloadSha256 = payloadSha256,
+                payloadPresent = payloadPresent,
+                provenanceIssuer = artifactProvenanceIssuerByModelId[modelId].orEmpty(),
+                provenanceSignature = artifactProvenanceSignatureByModelId[modelId].orEmpty(),
+                runtimeCompatibility = runtimeCompatibilityTag,
+            )
+        }
         return modelArtifactManager.verifyArtifactForLoad(
             modelId = modelId,
             version = null,
@@ -414,6 +441,35 @@ class AndroidMvpContainer(
         return (inferenceModule as? AndroidLlamaCppInferenceModule)?.runtimeBackend()
     }
 
+    private fun registerRuntimeModelPaths() {
+        val nativeInferenceModule = inferenceModule as? AndroidLlamaCppInferenceModule ?: return
+        artifactFilePathByModelId.forEach { (modelId, rawPath) ->
+            val path = rawPath.trim()
+            if (path.isNotEmpty()) {
+                nativeInferenceModule.registerModelPath(modelId = modelId, absolutePath = path)
+            }
+        }
+    }
+
+    private fun sha256HexFromFile(path: Path): String {
+        val normalizedPath = path.toAbsolutePath().normalize().toString()
+        artifactShaByFilePath[normalizedPath]?.let { return it }
+        val digest = MessageDigest.getInstance("SHA-256")
+        BufferedInputStream(Files.newInputStream(path)).use { input ->
+            val buffer = ByteArray(DEFAULT_SHA_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) {
+                    break
+                }
+                digest.update(buffer, 0, read)
+            }
+        }
+        val result = digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+        artifactShaByFilePath[normalizedPath] = result
+        return result
+    }
+
     private fun redactDiagnostics(raw: String): String {
         return raw.split("|").joinToString("|") { section ->
             section.split(";").joinToString(";") { entry ->
@@ -438,8 +494,10 @@ class AndroidMvpContainer(
         const val MODEL_PROVENANCE_ISSUER_ENV: String = "POCKETGPT_MODEL_PROVENANCE_ISSUER"
         const val MODEL_RUNTIME_COMPATIBILITY_ENV: String = "POCKETGPT_MODEL_RUNTIME_COMPATIBILITY"
         const val REQUIRE_NATIVE_RUNTIME_STARTUP_ENV: String = "POCKETGPT_REQUIRE_NATIVE_RUNTIME_STARTUP"
+        const val ENABLE_ADB_FALLBACK_ENV: String = AndroidLlamaCppRuntimeBridge.ENABLE_ADB_FALLBACK_ENV
         private const val DEFAULT_PROVENANCE_ISSUER: String = "internal-release"
         private const val DEFAULT_RUNTIME_COMPATIBILITY_TAG: String = "android-arm64-v8a"
+        private const val DEFAULT_SHA_BUFFER_SIZE: Int = 1024 * 1024
         private val SENSITIVE_DIAGNOSTIC_KEYS = setOf(
             "user",
             "assistant",
@@ -461,16 +519,23 @@ class AndroidMvpContainer(
             ),
         )
 
+        private fun defaultArtifactFilePathByModelId(): Map<String, String> = mapOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4 to System.getenv(QWEN_0_8B_SIDELOAD_PATH_ENV).orEmpty(),
+            ModelCatalog.QWEN_3_5_2B_Q4 to System.getenv(QWEN_2B_SIDELOAD_PATH_ENV).orEmpty(),
+        )
+
         private fun defaultArtifactSha256ByModelId(
             payloadByModelId: Map<String, ByteArray>,
         ): Map<String, String> = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to resolveSha(
                 envValue = System.getenv(QWEN_0_8B_SHA256_ENV),
                 payload = payloadByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
+                sideLoadPath = System.getenv(QWEN_0_8B_SIDELOAD_PATH_ENV),
             ),
             ModelCatalog.QWEN_3_5_2B_Q4 to resolveSha(
                 envValue = System.getenv(QWEN_2B_SHA256_ENV),
                 payload = payloadByModelId.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
+                sideLoadPath = System.getenv(QWEN_2B_SIDELOAD_PATH_ENV),
             ),
         )
 
@@ -519,21 +584,27 @@ class AndroidMvpContainer(
         }
 
         private fun resolvePayload(sideLoadPathEnv: String, fallbackSeed: String): ByteArray {
-            val rawPath = System.getenv(sideLoadPathEnv)
+            val sideLoadDefined = System.getenv(sideLoadPathEnv)
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: return fallbackSeed.encodeToByteArray()
-            val path = Path.of(rawPath)
-            return if (Files.exists(path)) {
-                Files.readAllBytes(path)
-            } else {
-                fallbackSeed.encodeToByteArray()
-            }
+            // For real side-load artifacts we validate via streamed file SHA; avoid loading large GGUF into heap.
+            return "sideload-path:$sideLoadDefined".encodeToByteArray()
         }
 
-        private fun resolveSha(envValue: String?, payload: ByteArray): String {
+        private fun resolveSha(envValue: String?, payload: ByteArray, sideLoadPath: String?): String {
             val envSha = envValue?.trim()?.takeIf { it.isNotEmpty() }
-            return envSha ?: sha256Hex(payload)
+            if (envSha != null) {
+                return envSha
+            }
+            val filePath = sideLoadPath
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { Path.of(it) }
+            if (filePath != null && Files.exists(filePath) && Files.isRegularFile(filePath)) {
+                return sha256HexFromFilePath(filePath)
+            }
+            return sha256Hex(payload)
         }
 
         private fun resolveProvenanceSignature(
@@ -548,6 +619,21 @@ class AndroidMvpContainer(
             }
             val payloadSha = sha256Hex(payload)
             return sha256Hex("$issuer|$modelId|$payloadSha|v1".encodeToByteArray())
+        }
+
+        private fun sha256HexFromFilePath(path: Path): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            BufferedInputStream(Files.newInputStream(path)).use { input ->
+                val buffer = ByteArray(DEFAULT_SHA_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) {
+                        break
+                    }
+                    digest.update(buffer, 0, read)
+                }
+            }
+            return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
         }
 
         private fun sha256Hex(bytes: ByteArray): String {
