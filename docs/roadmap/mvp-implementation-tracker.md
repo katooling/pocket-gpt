@@ -62,8 +62,8 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 ## Stage 5 Checklist
 
 - [x] Validate memory retrieval relevance on follow-up prompts (AndroidMvpContainer test coverage, 2026-03-04)
-- [ ] Run image path Scenario C benchmarks
-- [ ] Record latency and output quality notes
+- [x] Run image path Scenario C benchmarks (QA-05 acceptance packet, 2026-03-04)
+- [x] Record latency and output quality notes (QA-05 acceptance packet, 2026-03-04)
 - [x] Back memory with SQLite persistence and retention pruning tests (ENG-07 closeout, 2026-03-04)
 - [x] Add deterministic image path contract tests (ENG-07 closeout, 2026-03-04)
 

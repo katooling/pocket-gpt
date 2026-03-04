@@ -23,6 +23,7 @@ Ensure performance, reliability, safety, and privacy quality gates are met with 
 - [x] QA-03 routing/policy boundary regression rerun executed and passed on incoming WP-04 state (`docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`)
 - [x] QA-04 tool safety adversarial regression rerun executed and passed on final WP-05 state (`docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`)
 - [x] QA-05 prep execution completed (baseline lanes + available memory/image-adjacent checks) with blocker map published (`docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md`)
+- [x] QA-05 Scenario C image + memory acceptance packet executed and passed (`docs/operations/evidence/wp-06/2026-03-04-qa-05.md`)
 
 ## What Is In Progress
 
@@ -36,7 +37,7 @@ Ensure performance, reliability, safety, and privacy quality gates are met with 
 | QA-02 | Run Scenario A/B with real Qwen model and evaluate thresholds | Done (Final closeout) | WP-03 | QA Engineer | `docs/feasibility/benchmark-protocol.md`, `docs/testing/stage-2-benchmark-runbook.md`, `docs/operations/evidence/wp-03/2026-03-03-qa-02-phase-b.md`, `docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md` |
 | QA-03 | Routing/policy boundary regression suite | Done (Rerun PASS logged 2026-03-04) | WP-04 | QA + Security | `docs/testing/test-strategy.md`, `docs/operations/evidence/wp-04/2026-03-04-qa-03.md`, `docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md` |
 | QA-04 | Tool safety adversarial regression suite | Done (Rerun PASS logged 2026-03-04) | WP-05 | QA + Security | `docs/testing/test-strategy.md`, `docs/operations/evidence/wp-05/2026-03-04-qa-04.md`, `docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md` |
-| QA-05 | Scenario C image and memory acceptance runs | Blocked (Prep complete; waiting ENG-07 WP-06 deliverables) | WP-06 | QA Engineer | `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md` |
+| QA-05 | Scenario C image and memory acceptance runs | Done (PASS packet logged 2026-03-04) | WP-06 | QA Engineer | `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md`, `docs/operations/evidence/wp-06/2026-03-04-qa-05.md` |
 | QA-06 | 30-minute soak and crash/OOM/ANR evidence pack | Backlog | WP-07 | QA Lead | `docs/roadmap/mvp-beta-go-no-go-packet.md` |
 | QA-07 | Voice STT/TTS quality benchmark framework (post-MVP) | Backlog | WP-10 | QA Lead | `docs/roadmap/product-roadmap.md` |
 

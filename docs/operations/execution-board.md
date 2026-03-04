@@ -40,13 +40,13 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### In Progress
 
-- [ ] WP-06 Memory + image productionization (ENG-07 closeout landed; QA-05 device acceptance pending, ENG-08 hardening in progress)
+- [ ] WP-06 Memory + image productionization (QA-05 acceptance complete; ENG-08 hardening in progress)
 - [ ] PROD-03 acceptance checklist finalization (aligned; final beta closeout pending Stage 5/6 evidence)
 - [ ] MKT-02 competitor external sourcing pass (optional enhancement; publishable Pocket GPT claim set already locked)
 
 ### Ready
 
-- [ ] QA-05 Scenario C image + memory acceptance run (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
+- [ ] None
 
 ### Blocked
 
@@ -68,6 +68,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] QA-04 tool safety adversarial regression rerun passed on final WP-05 state (`docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`)
 - [x] ENG-06 closeout gate: tool runtime schema safety productionization completed with package-level acceptance and deterministic error-contract stability checks (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 - [x] ENG-07 closeout gate: SQLite memory backend + retention/pruning tests + deterministic Scenario C image contract tests landed; QA-05 unblocked for device acceptance execution (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
+- [x] QA-05 Scenario C image + memory acceptance packet executed and passed (`docs/operations/evidence/wp-06/2026-03-04-qa-05.md`)
 - [x] WP-05 Tool runtime safety productionization package closeout complete (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 - [x] WP-04 package closeout complete (routing/policy/diagnostics hardening with engineering+QA evidence) (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`, `docs/operations/evidence/wp-04/2026-03-04-qa-03.md`)
 - [x] PM/Prod dispatch packet published for WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies (`docs/operations/evidence/wp-04/2026-03-04-pm-prod-dispatch-wp04-wp05.md`)
@@ -85,7 +86,7 @@ All teams should update status here first, then mirror updates in role playbooks
    - ENG-07 closeout landed for WP-06 memory productionization (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`); continue ENG-08 image-path production hardening
 2. QA - start immediately after ENG-04 closeout:
    - QA-02 closure refresh complete (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`); recommend WP-03 package close decision
-   - QA-03 rerun complete and PASS (`docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`); QA-04 rerun complete and PASS (`docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`)
+   - QA-03 rerun complete and PASS (`docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`); QA-04 rerun complete and PASS (`docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`); QA-05 Scenario C + memory acceptance complete and PASS (`docs/operations/evidence/wp-06/2026-03-04-qa-05.md`)
 3. Product - start now in draft mode, finalize after WP-03 Done:
    - `PROD-01` launch workflows finalized (lock pass complete 2026-03-04)
    - `PROD-02` launch device support policy finalized (lock pass complete 2026-03-04)
@@ -125,6 +126,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-06 (ENG-07 memory productionization kickoff): `docs/operations/evidence/wp-06/2026-03-04-eng-07.md`
 - WP-06 (ENG-07 memory productionization closeout + QA unblock): `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`
 - WP-06 (QA-05 prep and blocker map): `docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md`
+- WP-06 (QA-05 Scenario C image + memory acceptance PASS packet): `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`
 - WP-08 (Product lock pass: PROD-01/02 finalization + PROD-03 alignment): `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`
 - WP-08 (MKT-01 finalized messaging architecture with claim labels): `docs/operations/mkt-01-messaging-architecture-draft.md`
 - WP-08 (MKT-02 evidence-safe competitor matrix with claim-risk labels): `docs/operations/mkt-02-competitor-matrix-template-draft.md`
