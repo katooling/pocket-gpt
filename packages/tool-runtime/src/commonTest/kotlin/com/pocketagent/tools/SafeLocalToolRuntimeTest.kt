@@ -7,6 +7,14 @@ import kotlin.test.assertTrue
 
 class SafeLocalToolRuntimeTest {
     private val runtime = SafeLocalToolRuntime()
+    private val expectedValidationCodes = setOf(
+        "NOT_ALLOWLISTED",
+        "INVALID_JSON",
+        "MISSING_REQUIRED_FIELD",
+        "UNKNOWN_FIELD",
+        "INVALID_FIELD_TYPE",
+        "INVALID_FIELD_VALUE",
+    )
 
     @Test
     fun `calculator tool executes valid expression`() {
@@ -117,15 +125,51 @@ class SafeLocalToolRuntimeTest {
         )
     }
 
+    @Test
+    fun `validation error contract shape and code set remain stable`() {
+        val scenarios = listOf(
+            ToolCall("shell_exec", "{\"command\":\"ls\"}") to "NOT_ALLOWLISTED",
+            ToolCall("calculator", "{\"expression\":") to "INVALID_JSON",
+            ToolCall("local_search", "{}") to "MISSING_REQUIRED_FIELD",
+            ToolCall("date_time", "{\"timezone\":\"UTC\"}") to "UNKNOWN_FIELD",
+            ToolCall("calculator", "{\"expression\":123}") to "INVALID_FIELD_TYPE",
+            ToolCall("local_search", "{\"query\":\"exec rm -rf\"}") to "INVALID_FIELD_VALUE",
+        )
+        val observedCodes = mutableSetOf<String>()
+
+        scenarios.forEach { (call, expectedCode) ->
+            val parsed = parseValidationError(runtime.executeToolCall(call))
+            assertEquals(expectedCode, parsed.code)
+            observedCodes += parsed.code
+        }
+
+        assertEquals(expectedValidationCodes, observedCodes)
+    }
+
     private fun assertValidationError(
         result: ToolResult,
         expectedCode: String,
         expectedDetail: String,
     ) {
-        assertFalse(result.success)
-        assertEquals(
-            "TOOL_VALIDATION_ERROR:$expectedCode:$expectedDetail",
-            result.content,
-        )
+        val parsed = parseValidationError(result)
+        assertEquals(expectedCode, parsed.code)
+        assertEquals(expectedDetail, parsed.detail)
     }
+
+    private fun parseValidationError(result: ToolResult): ValidationErrorParts {
+        assertFalse(result.success)
+        val parts = result.content.split(":", limit = 3)
+        assertEquals(3, parts.size)
+        assertEquals("TOOL_VALIDATION_ERROR", parts[0])
+        val code = parts[1]
+        val detail = parts[2]
+        assertTrue(expectedValidationCodes.contains(code), "Unexpected validation code: $code")
+        assertTrue(detail.isNotBlank(), "Validation error detail must be non-blank.")
+        return ValidationErrorParts(code = code, detail = detail)
+    }
+
+    private data class ValidationErrorParts(
+        val code: String,
+        val detail: String,
+    )
 }

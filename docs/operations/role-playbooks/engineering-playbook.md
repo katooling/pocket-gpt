@@ -24,17 +24,18 @@ Deliver reliable local runtime capability and core feature implementation for MV
 - [x] ENG-OPS completed: engineering foundations simplification (strict PR gates, canonical docs, benchmark automation wrapper, Android app + host lane split) (`docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`)
 - [x] ENG-04 completed: artifact-manifest startup validation enforced, placeholder checksum removed from active Stage-2 path, QA handoff unblocked (`docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`)
 - [x] ENG-05 completed (engineering scope): routing matrix boundary tests, runtime policy enforcement checks, diagnostics redaction checks (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`)
+- [x] ENG-06 completed: tool runtime strict schema validation productionized with deterministic error-contract stability coverage and package-level CI/governance acceptance evidence (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 
 ## What Is In Progress
 
-- [ ] ENG-06 Tool runtime strict schema validation hardening (parallel CI-first scope; device-independent)
+- [ ] None
 
 ## Lead Eng Dispatch (Now)
 
 1. Run in parallel:
-   - ENG-06 package-close prep (keep tests/evidence current; package remains not-Done until WP-03 and package acceptance criteria are met)
+   - ENG-06 closeout complete; keep WP-04 coverage current while QA-03 rerun absorbs WP-04 deltas
 2. Handoff trigger:
-   - ENG-04 closeout evidence landed; QA is unblocked to execute final QA-02 closure refresh run
+   - QA-04 baseline is complete; rerun once any additional WP-05 deltas land
 
 ## Task Queue
 
@@ -45,7 +46,7 @@ Deliver reliable local runtime capability and core feature implementation for MV
 | ENG-03 | Integrate real Android `llama.cpp` runtime bridge | Done | WP-01 complete | Runtime Eng | `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md` |
 | ENG-04 | Artifact manifest/checksum/version lifecycle | Done | ENG-03 | Runtime Eng | `docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md` |
 | ENG-05 | Routing + policy hardening with boundary tests | Done | ENG-04 | Runtime Eng | `docs/operations/evidence/wp-04/2026-03-04-eng-05.md` |
-| ENG-06 | Tool runtime strict schema validation | In Progress | ENG-04 | Platform Eng | `docs/product/feature-catalog.md` |
+| ENG-06 | Tool runtime strict schema validation | Done | ENG-04 | Platform Eng | `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md` |
 | ENG-07 | SQLite memory backend + pruning | Backlog | ENG-05 | Core Eng | `docs/roadmap/mvp-implementation-tracker.md` |
 | ENG-08 | Image path production hardening | Backlog | ENG-07 | Runtime Eng | `docs/feasibility/benchmark-protocol.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
@@ -70,6 +71,7 @@ Deliver reliable local runtime capability and core feature implementation for MV
 - 2026-03-03: ENG-04 closeout evidence (active Stage-2 startup path enforces checksum metadata and removes placeholder ambiguity) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`
 - 2026-03-04: ENG-05 routing/policy/diagnostics hardening implementation evidence captured in `docs/operations/evidence/wp-04/2026-03-04-eng-05.md`
 - 2026-03-03: ENG-06 tool schema hardening evidence (parallel in progress) captured in `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
+- 2026-03-04: ENG-06 package closeout evidence (deterministic validation-contract stability + package-level CI/governance acceptance) captured in `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`
 - 2026-03-03: ENG-OPS engineering foundations simplification captured in `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`
 - 2026-03-03: ENG devctl DX consolidation (config-driven orchestrator + Maestro/Espresso lanes) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-devctl-dx-consolidation.md`
 - 2026-03-03: Platform governance hardening refresh with governance self-test coverage captured in `docs/operations/evidence/wp-03/2026-03-03-eng-platform-governance-refresh.md`

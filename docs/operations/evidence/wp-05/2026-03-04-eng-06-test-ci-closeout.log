@@ -1,0 +1,4 @@
+Evidence changed-file check skipped: not a pull_request event.
+Evidence check passed: ok.md
+Stage close gate not requested; skipping.
+[devctl] $ python3 -m unittest discover -s tools/devctl/tests

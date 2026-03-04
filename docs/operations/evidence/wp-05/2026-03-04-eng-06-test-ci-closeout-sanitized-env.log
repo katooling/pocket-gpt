@@ -1,0 +1,81 @@
+Evidence changed-file check skipped: not a pull_request event.
+Evidence check passed: ok.md
+Stage close gate not requested; skipping.
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.13/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :clean
+> Task :packages:memory:clean
+> Task :packages:memory:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:core-domain:clean
+> Task :packages:core-domain:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:tool-runtime:clean
+> Task :packages:tool-runtime:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :apps:mobile-android-host:clean
+> Task :packages:inference-adapters:clean
+> Task :apps:mobile-android-host:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:inference-adapters:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :apps:mobile-android-host:processResources NO-SOURCE
+> Task :packages:inference-adapters:processResources NO-SOURCE
+> Task :apps:mobile-android-host:processTestResources NO-SOURCE
+> Task :packages:inference-adapters:processTestResources NO-SOURCE
+> Task :apps:mobile-android:clean
+> Task :packages:core-domain:processResources NO-SOURCE
+> Task :packages:tool-runtime:processResources NO-SOURCE
+> Task :packages:memory:processResources NO-SOURCE
+> Task :packages:core-domain:processTestResources NO-SOURCE
+> Task :packages:memory:processTestResources NO-SOURCE
+> Task :packages:tool-runtime:processTestResources NO-SOURCE
+> Task :packages:memory:compileKotlin
+> Task :packages:core-domain:compileKotlin
+> Task :packages:memory:compileJava NO-SOURCE
+> Task :packages:core-domain:compileJava NO-SOURCE
+> Task :packages:core-domain:classes UP-TO-DATE
+> Task :packages:memory:classes UP-TO-DATE
+> Task :packages:tool-runtime:compileKotlin
+> Task :packages:tool-runtime:compileJava NO-SOURCE
+> Task :packages:tool-runtime:classes UP-TO-DATE
+> Task :packages:memory:jar
+> Task :packages:core-domain:jar
+> Task :packages:tool-runtime:jar
+> Task :packages:core-domain:compileTestKotlin
+> Task :packages:core-domain:compileTestJava NO-SOURCE
+> Task :packages:core-domain:testClasses UP-TO-DATE
+> Task :packages:memory:compileTestKotlin
+> Task :packages:memory:compileTestJava NO-SOURCE
+> Task :packages:memory:testClasses UP-TO-DATE
+> Task :packages:tool-runtime:compileTestKotlin
+> Task :packages:tool-runtime:compileTestJava NO-SOURCE
+> Task :packages:tool-runtime:testClasses UP-TO-DATE
+> Task :packages:core-domain:test
+> Task :packages:memory:test
+> Task :packages:tool-runtime:test
+> Task :packages:inference-adapters:compileKotlin
+> Task :packages:inference-adapters:compileJava NO-SOURCE
+> Task :packages:inference-adapters:classes UP-TO-DATE
+> Task :packages:inference-adapters:jar
+> Task :packages:inference-adapters:compileTestKotlin
+> Task :packages:inference-adapters:compileTestJava NO-SOURCE
+> Task :packages:inference-adapters:testClasses UP-TO-DATE
+> Task :packages:inference-adapters:test
+> Task :apps:mobile-android-host:compileKotlin
+> Task :apps:mobile-android-host:compileJava NO-SOURCE
+> Task :apps:mobile-android-host:classes UP-TO-DATE
+> Task :apps:mobile-android-host:jar
+> Task :apps:mobile-android-host:compileTestKotlin
+> Task :apps:mobile-android-host:compileTestJava NO-SOURCE
+> Task :apps:mobile-android-host:testClasses UP-TO-DATE
+> Task :apps:mobile-android-host:test
+
+[Incubating] Problems report is available at: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.13/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 11s
+27 actionable tasks: 27 executed
+[devctl] $ python3 -m unittest discover -s tools/devctl/tests
+[devctl] Android SDK not configured; running host/JVM test lane only.
+[devctl] $ ./gradlew --no-daemon clean :packages:core-domain:test :packages:inference-adapters:test :packages:tool-runtime:test :packages:memory:test :apps:mobile-android-host:test

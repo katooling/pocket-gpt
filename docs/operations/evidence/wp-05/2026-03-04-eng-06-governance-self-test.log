@@ -1,0 +1,7 @@
+Evidence check passed: /var/folders/12/tcy0cbvx1tj34gbl1l8w1d900000gp/T/devctl-gov-2odcyqw3/evidence-ok.md
+PR body validation passed.
+Stage close gate not requested; skipping.
+PR body validation passed.
+Evidence check passed: docs/operations/evidence/wp-03/2026-03-03-selftest.md
+Stage-close evidence gate passed.
+Governance self-test passed.
