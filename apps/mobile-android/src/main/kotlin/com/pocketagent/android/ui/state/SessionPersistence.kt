@@ -1,13 +1,22 @@
 package com.pocketagent.android.ui.state
 
 import android.content.Context
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 data class PersistedChatState(
     val sessions: List<ChatSessionUiModel> = emptyList(),
     val activeSessionId: String? = null,
     val routingMode: String = "AUTO",
+    val onboardingCompleted: Boolean = false,
 )
 
 interface SessionPersistence {
@@ -22,86 +31,138 @@ class AndroidSessionPersistence(
 
     override fun loadState(): PersistedChatState {
         val raw = prefs.getString(KEY_STATE, null) ?: return PersistedChatState()
-        return runCatching { parseState(raw) }.getOrElse { PersistedChatState() }
+        return runCatching { PersistedChatStateCodec.decode(raw) }.getOrElse { PersistedChatState() }
     }
 
     override fun saveState(state: PersistedChatState) {
-        prefs.edit().putString(KEY_STATE, encodeState(state)).apply()
-    }
-
-    private fun parseState(raw: String): PersistedChatState {
-        val root = JSONObject(raw)
-        val sessionsArray = root.optJSONArray("sessions") ?: JSONArray()
-        val sessions = mutableListOf<ChatSessionUiModel>()
-        for (index in 0 until sessionsArray.length()) {
-            val obj = sessionsArray.optJSONObject(index) ?: continue
-            sessions += parseSession(obj)
-        }
-        return PersistedChatState(
-            sessions = sessions,
-            activeSessionId = root.optString("activeSessionId").ifBlank { null },
-            routingMode = root.optString("routingMode", "AUTO"),
-        )
-    }
-
-    private fun parseSession(obj: JSONObject): ChatSessionUiModel {
-        val messagesArray = obj.optJSONArray("messages") ?: JSONArray()
-        val messages = mutableListOf<MessageUiModel>()
-        for (index in 0 until messagesArray.length()) {
-            val message = messagesArray.optJSONObject(index) ?: continue
-            messages += MessageUiModel(
-                id = message.optString("id"),
-                role = MessageRole.valueOf(message.optString("role", MessageRole.SYSTEM.name)),
-                content = message.optString("content"),
-                timestampEpochMs = message.optLong("timestampEpochMs"),
-                kind = MessageKind.valueOf(message.optString("kind", MessageKind.TEXT.name)),
-                imagePath = message.optString("imagePath").ifBlank { null },
-                toolName = message.optString("toolName").ifBlank { null },
-                isStreaming = message.optBoolean("isStreaming", false),
-            )
-        }
-        return ChatSessionUiModel(
-            id = obj.optString("id"),
-            title = obj.optString("title", "New chat"),
-            createdAtEpochMs = obj.optLong("createdAtEpochMs"),
-            updatedAtEpochMs = obj.optLong("updatedAtEpochMs"),
-            messages = messages,
-        )
-    }
-
-    private fun encodeState(state: PersistedChatState): String {
-        val root = JSONObject()
-        root.put("activeSessionId", state.activeSessionId)
-        root.put("routingMode", state.routingMode)
-        val sessionsArray = JSONArray()
-        state.sessions.forEach { session ->
-            val sessionObj = JSONObject()
-            sessionObj.put("id", session.id)
-            sessionObj.put("title", session.title)
-            sessionObj.put("createdAtEpochMs", session.createdAtEpochMs)
-            sessionObj.put("updatedAtEpochMs", session.updatedAtEpochMs)
-            val messagesArray = JSONArray()
-            session.messages.forEach { message ->
-                val messageObj = JSONObject()
-                messageObj.put("id", message.id)
-                messageObj.put("role", message.role.name)
-                messageObj.put("content", message.content)
-                messageObj.put("timestampEpochMs", message.timestampEpochMs)
-                messageObj.put("kind", message.kind.name)
-                messageObj.put("imagePath", message.imagePath)
-                messageObj.put("toolName", message.toolName)
-                messageObj.put("isStreaming", message.isStreaming)
-                messagesArray.put(messageObj)
-            }
-            sessionObj.put("messages", messagesArray)
-            sessionsArray.put(sessionObj)
-        }
-        root.put("sessions", sessionsArray)
-        return root.toString()
+        prefs.edit().putString(KEY_STATE, PersistedChatStateCodec.encode(state)).apply()
     }
 
     private companion object {
         const val PREFS_NAME = "pocketagent_chat_state"
-        const val KEY_STATE = "chat_state_v1"
+        const val KEY_STATE = "chat_state_v2"
     }
+}
+
+internal object PersistedChatStateCodec {
+    private val json = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = false
+    }
+
+    fun decode(raw: String): PersistedChatState {
+        val root = json.parseToJsonElement(raw).jsonObject
+        val sessions = root["sessions"]
+            ?.let { element -> parseSessions(element) }
+            ?: emptyList()
+        return PersistedChatState(
+            sessions = sessions,
+            activeSessionId = root.stringOrNull("activeSessionId"),
+            routingMode = root.stringOrDefault("routingMode", "AUTO"),
+            onboardingCompleted = root.booleanOrDefault("onboardingCompleted", false),
+        )
+    }
+
+    fun encode(state: PersistedChatState): String {
+        val root = buildJsonObject {
+            state.activeSessionId?.let { put("activeSessionId", JsonPrimitive(it)) }
+            put("routingMode", JsonPrimitive(state.routingMode))
+            put("onboardingCompleted", JsonPrimitive(state.onboardingCompleted))
+            put(
+                "sessions",
+                buildJsonArray {
+                    state.sessions.forEach { session ->
+                        add(
+                            buildJsonObject {
+                                put("id", JsonPrimitive(session.id))
+                                put("title", JsonPrimitive(session.title))
+                                put("createdAtEpochMs", JsonPrimitive(session.createdAtEpochMs))
+                                put("updatedAtEpochMs", JsonPrimitive(session.updatedAtEpochMs))
+                                put(
+                                    "messages",
+                                    buildJsonArray {
+                                        session.messages.forEach { message ->
+                                            add(
+                                                buildJsonObject {
+                                                    put("id", JsonPrimitive(message.id))
+                                                    put("role", JsonPrimitive(message.role.name))
+                                                    put("content", JsonPrimitive(message.content))
+                                                    put("timestampEpochMs", JsonPrimitive(message.timestampEpochMs))
+                                                    put("kind", JsonPrimitive(message.kind.name))
+                                                    message.imagePath?.let { put("imagePath", JsonPrimitive(it)) }
+                                                    message.toolName?.let { put("toolName", JsonPrimitive(it)) }
+                                                    put("isStreaming", JsonPrimitive(message.isStreaming))
+                                                },
+                                            )
+                                        }
+                                    },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+        }
+        return json.encodeToString(JsonObject.serializer(), root)
+    }
+
+    private fun parseSessions(element: JsonElement): List<ChatSessionUiModel> {
+        return element.jsonArray.mapNotNull { sessionElement ->
+            val obj = sessionElement.asObjectOrNull() ?: return@mapNotNull null
+            ChatSessionUiModel(
+                id = obj.stringOrDefault("id", ""),
+                title = obj.stringOrDefault("title", "New chat"),
+                createdAtEpochMs = obj.longOrDefault("createdAtEpochMs", 0L),
+                updatedAtEpochMs = obj.longOrDefault("updatedAtEpochMs", 0L),
+                messages = parseMessages(obj["messages"]),
+            )
+        }
+    }
+
+    private fun parseMessages(element: JsonElement?): List<MessageUiModel> {
+        val array = (element as? JsonArray) ?: return emptyList()
+        return array.mapNotNull { messageElement ->
+            val obj = messageElement.asObjectOrNull() ?: return@mapNotNull null
+            MessageUiModel(
+                id = obj.stringOrDefault("id", ""),
+                role = parseRole(obj.stringOrDefault("role", MessageRole.SYSTEM.name)),
+                content = obj.stringOrDefault("content", ""),
+                timestampEpochMs = obj.longOrDefault("timestampEpochMs", 0L),
+                kind = parseKind(obj.stringOrDefault("kind", MessageKind.TEXT.name)),
+                imagePath = obj.stringOrNull("imagePath"),
+                toolName = obj.stringOrNull("toolName"),
+                isStreaming = obj.booleanOrDefault("isStreaming", false),
+            )
+        }
+    }
+
+    private fun parseRole(raw: String): MessageRole {
+        return runCatching { MessageRole.valueOf(raw) }.getOrDefault(MessageRole.SYSTEM)
+    }
+
+    private fun parseKind(raw: String): MessageKind {
+        return runCatching { MessageKind.valueOf(raw) }.getOrDefault(MessageKind.TEXT)
+    }
+}
+
+private fun JsonElement.asObjectOrNull(): JsonObject? = this as? JsonObject
+
+private fun JsonObject.stringOrNull(key: String): String? {
+    val value = this[key] ?: return null
+    val content = runCatching { value.jsonPrimitive.content }.getOrNull()?.trim().orEmpty()
+    return content.ifBlank { null }
+}
+
+private fun JsonObject.stringOrDefault(key: String, default: String): String {
+    return stringOrNull(key) ?: default
+}
+
+private fun JsonObject.longOrDefault(key: String, default: Long): Long {
+    val value = this[key] ?: return default
+    return runCatching { value.jsonPrimitive.content.toLong() }.getOrDefault(default)
+}
+
+private fun JsonObject.booleanOrDefault(key: String, default: Boolean): Boolean {
+    val value = this[key] ?: return default
+    return runCatching { value.jsonPrimitive.content.toBooleanStrict() }.getOrDefault(default)
 }

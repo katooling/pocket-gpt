@@ -14,6 +14,9 @@ This catalog lists current and possible features based on known technical constr
 | Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented (WP-05 closed) | Implemented (UI action + success/failure paths validated) |
 | Memory v1 | continuity across sessions | retrieval quality + retention policy | Implemented (SQLite + pruning) | Implemented (session restore/switch continuity validated) |
 | Single-image Q&A | multimodal differentiation | image path latency and correctness | Implemented (WP-06 closed) | Implemented (image attach success/failure UX validated) |
+| Offline policy-aware network enforcement | trust and privacy claim integrity | strict runtime boundary wiring | Implemented (ENG-17) | Implemented (runtime startup checks + UX messaging) |
+| Resilience and startup guards | reduce crash/startup failure support load | guard correctness across OEM behavior | Implemented (WP-07 resilience closeout) | Implemented (runtime error banners + startup status) |
+| Structured UI error contracts | deterministic support and triage | stable error-code mapping | Implemented | Implemented (`UI-STARTUP-001`, `UI-IMG-VAL-001`, `UI-TOOL-SCHEMA-001`, `UI-RUNTIME-001`) |
 
 ## Band B: Near-Term Expansion (Post-MVP)
 

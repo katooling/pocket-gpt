@@ -12,6 +12,7 @@ out/
 .gradle/
 .gradle-home/
 **/build/
+**/.cxx/
 local.properties
 
 # Xcode

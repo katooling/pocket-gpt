@@ -35,6 +35,15 @@ Current week hardware state (2026-03-04):
 | UI-09 | Offline policy remains enforced in active UI paths | policy regression reference + instrumentation launch sanity | policy regression reference | QA + Security |
 | UI-10 | Long-run UI workflow stability (ANR/OOM/crash signal) | weekly soak packet reference + lane logs | fallback caveat note | QA |
 
+## WP-13 UX Extensions (Weekly)
+
+| UX Flow | Regression Objective | Required-tier Lane | Best-effort Lane | Owner |
+|---|---|---|---|---|
+| UX-ONBOARD-01 | First-run onboarding renders and can be completed/skipped | Instrumentation assertions | Instrumentation fallback | QA + Product |
+| UX-MODEL-01 | Runtime status is visible and consistent (`Not ready`/`Loading`/`Ready`/`Error`) | Instrumentation assertions + advanced-sheet check | Instrumentation fallback | QA + Eng |
+| UX-PRIVACY-01 | Privacy sheet opens and copy is visible | Instrumentation + Maestro sanity | Maestro fallback | QA + Product |
+| UX-TOOL-01 | Natural-language tool prompt path executes deterministic result | Instrumentation + Maestro | Maestro fallback | QA + Eng |
+
 ## Weekly Run Checklist
 
 1. Record build id/commit/date.
@@ -42,8 +51,9 @@ Current week hardware state (2026-03-04):
 3. Run `python3 tools/devctl/main.py lane android-instrumented`.
 4. Run `python3 tools/devctl/main.py lane maestro`.
 5. Record best-effort device execution or explicit fallback/caveat.
-6. Record fail/pass deltas and assign owners for any failures.
-7. Publish evidence note under `docs/operations/evidence/wp-09/`.
+6. Record explicit PASS/FAIL IDs for instrumentation and Maestro runs.
+7. Record fail/pass deltas and assign owners for any failures.
+8. Publish evidence note under `docs/operations/evidence/wp-09/`.
 
 ## Weekly Output Template
 

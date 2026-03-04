@@ -13,6 +13,7 @@ Foundation repository for an offline, privacy-first mobile AI product.
 ## Layout
 
 - `docs/`: product, architecture, feasibility, security, and roadmap docs
+- `docs/ux/`: onboarding, user journey, model UX, and listing specs
 - `apps/mobile-android/`: Android app module (`test` + `androidTest` lanes)
 - `apps/mobile-android-host/`: host/JVM smoke lane for fast iteration
 - `packages/core-domain/`: shared product/domain logic contracts

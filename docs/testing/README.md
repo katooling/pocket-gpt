@@ -6,6 +6,7 @@ Canonical ownership by concern:
 2. Test strategy, release gates, CI-vs-human boundary: `docs/testing/test-strategy.md`
 3. Android device lane execution details: `docs/testing/android-dx-and-test-playbook.md`
 4. Maestro flow assets: `tests/maestro/`
+5. Weekly QA UI regression matrix (WP-09 + WP-13 UX extension): `docs/testing/wp-09-ui-regression-matrix.md`
 
 Pointer-only companions:
 

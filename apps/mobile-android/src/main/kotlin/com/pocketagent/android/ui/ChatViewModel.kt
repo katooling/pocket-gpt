@@ -13,6 +13,7 @@ import com.pocketagent.android.ui.state.ComposerUiState
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
+import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
@@ -54,23 +55,15 @@ class ChatViewModel(
             return
         }
 
+        val toolIntent = parseToolIntent(prompt)
         val userMessage = createMessage(
             role = MessageRole.USER,
             content = prompt,
             kind = MessageKind.TEXT,
         )
-        val assistantMessageId = "assistant-stream-${System.currentTimeMillis()}"
-        val assistantPlaceholder = MessageUiModel(
-            id = assistantMessageId,
-            role = MessageRole.ASSISTANT,
-            content = "",
-            timestampEpochMs = System.currentTimeMillis(),
-            kind = MessageKind.TEXT,
-            isStreaming = true,
-        )
 
         updateActiveSession(activeSession.id) { session ->
-            val updatedMessages = session.messages + userMessage + assistantPlaceholder
+            val updatedMessages = session.messages + userMessage
             session.copy(
                 messages = updatedMessages,
                 updatedAtEpochMs = System.currentTimeMillis(),
@@ -80,10 +73,36 @@ class ChatViewModel(
         _uiState.update { state ->
             state.copy(
                 composer = ComposerUiState(text = "", isSending = true),
-                runtime = state.runtime.clearError(),
+                runtime = state.runtime
+                    .copy(
+                        modelRuntimeStatus = if (toolIntent == null) ModelRuntimeStatus.LOADING else state.runtime.modelRuntimeStatus,
+                        modelStatusDetail = if (toolIntent == null) "Loading runtime model..." else state.runtime.modelStatusDetail,
+                    )
+                    .clearError(),
             )
         }
         persistState()
+
+        if (toolIntent != null) {
+            executeToolIntent(sessionId = activeSession.id, toolIntent = toolIntent)
+            return
+        }
+
+        val assistantMessageId = "assistant-stream-${System.currentTimeMillis()}"
+        val assistantPlaceholder = MessageUiModel(
+            id = assistantMessageId,
+            role = MessageRole.ASSISTANT,
+            content = "",
+            timestampEpochMs = System.currentTimeMillis(),
+            kind = MessageKind.TEXT,
+            isStreaming = true,
+        )
+        updateActiveSession(activeSession.id) { session ->
+            session.copy(
+                messages = session.messages + assistantPlaceholder,
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+        }
 
         viewModelScope.launch(ioDispatcher) {
             runCatching {
@@ -115,6 +134,8 @@ class ChatViewModel(
                                 state.copy(
                                     composer = state.composer.copy(isSending = false),
                                     runtime = state.runtime.copy(
+                                        modelRuntimeStatus = ModelRuntimeStatus.READY,
+                                        modelStatusDetail = "Runtime model ready",
                                         activeModelId = event.response.modelId,
                                         lastFirstTokenLatencyMs = event.response.firstTokenLatencyMs,
                                         lastTotalLatencyMs = event.response.totalLatencyMs,
@@ -136,7 +157,12 @@ class ChatViewModel(
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime.withUiError(uiError),
+                        runtime = state.runtime
+                            .copy(
+                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                                modelStatusDetail = uiError.userMessage,
+                            )
+                            .withUiError(uiError),
                     )
                 }
                 persistState()
@@ -209,7 +235,10 @@ class ChatViewModel(
         _uiState.update {
             it.copy(
                 composer = it.composer.copy(isSending = true),
-                runtime = it.runtime.clearError(),
+                runtime = it.runtime.copy(
+                    modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+                    modelStatusDetail = "Loading runtime model...",
+                ).clearError(),
             )
         }
         persistState()
@@ -227,7 +256,10 @@ class ChatViewModel(
                     _uiState.update { state ->
                         state.copy(
                             composer = state.composer.copy(isSending = false),
-                            runtime = state.runtime.withUiError(mappedError),
+                            runtime = state.runtime.copy(
+                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                                modelStatusDetail = mappedError.userMessage,
+                            ).withUiError(mappedError),
                         )
                     }
                     persistState()
@@ -247,7 +279,10 @@ class ChatViewModel(
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime.clearError(),
+                        runtime = state.runtime.copy(
+                            modelRuntimeStatus = ModelRuntimeStatus.READY,
+                            modelStatusDetail = "Image analysis completed",
+                        ).clearError(),
                     )
                 }
                 persistState()
@@ -260,7 +295,10 @@ class ChatViewModel(
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime.withUiError(uiError),
+                        runtime = state.runtime.copy(
+                            modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                            modelStatusDetail = uiError.userMessage,
+                        ).withUiError(uiError),
                     )
                 }
                 persistState()
@@ -285,7 +323,10 @@ class ChatViewModel(
         _uiState.update {
             it.copy(
                 composer = it.composer.copy(isSending = true),
-                runtime = it.runtime.clearError(),
+                runtime = it.runtime.copy(
+                    modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+                    modelStatusDetail = "Preparing local tool...",
+                ).clearError(),
             )
         }
         persistState()
@@ -302,7 +343,10 @@ class ChatViewModel(
                         _uiState.update { state ->
                             state.copy(
                                 composer = state.composer.copy(isSending = false),
-                                runtime = state.runtime.withUiError(mappedError),
+                                runtime = state.runtime.copy(
+                                    modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                                    modelStatusDetail = mappedError.userMessage,
+                                ).withUiError(mappedError),
                             )
                         }
                         persistState()
@@ -323,7 +367,10 @@ class ChatViewModel(
                     _uiState.update { state ->
                         state.copy(
                             composer = state.composer.copy(isSending = false),
-                            runtime = state.runtime.clearError(),
+                            runtime = state.runtime.copy(
+                                modelRuntimeStatus = ModelRuntimeStatus.READY,
+                                modelStatusDetail = "Local tool completed",
+                            ).clearError(),
                         )
                     }
                     persistState()
@@ -337,7 +384,10 @@ class ChatViewModel(
                     _uiState.update { state ->
                         state.copy(
                             composer = state.composer.copy(isSending = false),
-                            runtime = state.runtime.withUiError(uiError),
+                            runtime = state.runtime.copy(
+                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                                modelStatusDetail = uiError.userMessage,
+                            ).withUiError(uiError),
                         )
                     }
                     persistState()
@@ -400,9 +450,44 @@ class ChatViewModel(
         _uiState.update { it.copy(isToolDialogOpen = isOpen) }
     }
 
+    fun setPrivacySheetOpen(isOpen: Boolean) {
+        _uiState.update { it.copy(isPrivacySheetOpen = isOpen) }
+    }
+
+    fun prefillComposer(text: String) {
+        _uiState.update { state ->
+            state.copy(
+                composer = state.composer.copy(text = text),
+                isToolDialogOpen = false,
+            )
+        }
+    }
+
+    fun nextOnboardingPage() {
+        _uiState.update { state ->
+            state.copy(onboardingPage = (state.onboardingPage + 1).coerceAtMost(ONBOARDING_LAST_PAGE))
+        }
+    }
+
+    fun completeOnboarding() {
+        _uiState.update { state ->
+            state.copy(
+                showOnboarding = false,
+                onboardingPage = ONBOARDING_LAST_PAGE,
+            )
+        }
+        persistState()
+    }
+
+    fun skipOnboarding() {
+        completeOnboarding()
+    }
+
     private fun bootstrapState() {
         val startupChecks = runtimeFacade.runStartupChecks()
         val startupError = UiErrorMapper.startupFailure(startupChecks)
+        val startupModelStatus = resolveModelStatusFromStartupChecks(startupChecks)
+        val startupDetail = startupChecks.firstOrNull()
         val persisted = sessionPersistence.loadState()
         val restoredRoutingMode = runCatching { RoutingMode.valueOf(persisted.routingMode) }
             .getOrDefault(runtimeFacade.getRoutingMode())
@@ -438,8 +523,11 @@ class ChatViewModel(
                 activeSessionId = newSessionId,
                 runtime = RuntimeUiState(
                     routingMode = restoredRoutingMode,
+                    modelRuntimeStatus = startupModelStatus,
+                    modelStatusDetail = startupDetail,
                     startupChecks = startupChecks,
                 ).withUiError(startupError),
+                showOnboarding = !persisted.onboardingCompleted,
             )
             persistState()
             return
@@ -454,8 +542,11 @@ class ChatViewModel(
             activeSessionId = activeSessionId,
             runtime = RuntimeUiState(
                 routingMode = restoredRoutingMode,
+                modelRuntimeStatus = startupModelStatus,
+                modelStatusDetail = startupDetail,
                 startupChecks = startupChecks,
             ).withUiError(startupError),
+            showOnboarding = !persisted.onboardingCompleted,
         )
     }
 
@@ -541,8 +632,130 @@ class ChatViewModel(
                 },
                 activeSessionId = state.activeSessionId,
                 routingMode = state.runtime.routingMode.name,
+                onboardingCompleted = !state.showOnboarding,
             ),
         )
+    }
+
+    private fun executeToolIntent(sessionId: String, toolIntent: ToolIntent) {
+        viewModelScope.launch(ioDispatcher) {
+            runCatching { runtimeFacade.runTool(toolName = toolIntent.name, jsonArgs = toolIntent.jsonArgs) }
+                .onSuccess { toolOutput ->
+                    val mappedError = UiErrorMapper.fromToolResult(toolOutput)
+                    if (mappedError != null) {
+                        appendSystemMessage(
+                            sessionId = sessionId,
+                            content = formatUserFacingError(mappedError),
+                        )
+                        _uiState.update { state ->
+                            state.copy(
+                                composer = state.composer.copy(isSending = false),
+                                runtime = state.runtime.copy(
+                                    modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                                    modelStatusDetail = mappedError.userMessage,
+                                ).withUiError(mappedError),
+                            )
+                        }
+                        persistState()
+                        return@onSuccess
+                    }
+                    val response = createMessage(
+                        role = MessageRole.ASSISTANT,
+                        content = toolOutput,
+                        kind = MessageKind.TOOL,
+                        toolName = toolIntent.name,
+                    )
+                    updateActiveSession(sessionId) { session ->
+                        session.copy(
+                            messages = session.messages + response,
+                            updatedAtEpochMs = System.currentTimeMillis(),
+                        )
+                    }
+                    _uiState.update { state ->
+                        state.copy(
+                            composer = state.composer.copy(isSending = false),
+                            runtime = state.runtime.copy(
+                                modelRuntimeStatus = ModelRuntimeStatus.READY,
+                                modelStatusDetail = "Local tool completed",
+                            ).clearError(),
+                        )
+                    }
+                    persistState()
+                }
+                .onFailure { error ->
+                    val uiError = UiErrorMapper.runtimeFailure(error.message ?: "Tool request failed.")
+                    appendSystemMessage(
+                        sessionId = sessionId,
+                        content = formatUserFacingError(uiError),
+                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            composer = state.composer.copy(isSending = false),
+                            runtime = state.runtime.copy(
+                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                                modelStatusDetail = uiError.userMessage,
+                            ).withUiError(uiError),
+                        )
+                    }
+                    persistState()
+                }
+        }
+    }
+
+    private fun parseToolIntent(prompt: String): ToolIntent? {
+        val normalized = prompt.trim()
+        val lowercase = normalized.lowercase()
+        val calcPrefix = listOf("calculate ", "calc ", "what is ")
+            .firstOrNull { lowercase.startsWith(it) }
+        if (calcPrefix != null) {
+            val expression = normalized.drop(calcPrefix.length).trim()
+            if (expression.matches(Regex("[0-9+\\-*/().\\s]{1,64}")) && expression.any { it.isDigit() }) {
+                return ToolIntent(name = "calculator", jsonArgs = """{"expression":"$expression"}""")
+            }
+        }
+        if (lowercase == "time" || lowercase == "date" || lowercase.contains("what time")) {
+            return ToolIntent(name = "date_time", jsonArgs = "{}")
+        }
+        if (lowercase.startsWith("search ")) {
+            val query = normalized.drop("search ".length).trim()
+            if (query.isNotEmpty()) {
+                return ToolIntent(name = "local_search", jsonArgs = """{"query":"${escapeJson(query)}"}""")
+            }
+        }
+        if (lowercase.startsWith("find notes ")) {
+            val query = normalized.drop("find notes ".length).trim()
+            if (query.isNotEmpty()) {
+                return ToolIntent(name = "notes_lookup", jsonArgs = """{"query":"${escapeJson(query)}"}""")
+            }
+        }
+        if (lowercase.startsWith("remind me to ")) {
+            val title = normalized.drop("remind me to ".length).trim()
+            if (title.isNotEmpty()) {
+                return ToolIntent(name = "reminder_create", jsonArgs = """{"title":"${escapeJson(title)}"}""")
+            }
+        }
+        return null
+    }
+
+    private fun escapeJson(value: String): String {
+        return value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+    }
+
+    private fun resolveModelStatusFromStartupChecks(startupChecks: List<String>): ModelRuntimeStatus {
+        if (startupChecks.isEmpty()) {
+            return ModelRuntimeStatus.READY
+        }
+        val startupSummary = startupChecks.joinToString(" ").lowercase()
+        return if (
+            startupSummary.contains("missing runtime model") ||
+            startupSummary.contains("artifact verification failed")
+        ) {
+            ModelRuntimeStatus.NOT_READY
+        } else {
+            ModelRuntimeStatus.ERROR
+        }
     }
 
     private fun resolveTaskType(prompt: String): String {
@@ -551,7 +764,11 @@ class ChatViewModel(
 
     private fun deriveSessionTitle(messages: List<MessageUiModel>): String {
         val firstUserMessage = messages.firstOrNull { it.role == MessageRole.USER } ?: return "New chat"
-        return firstUserMessage.content.take(TITLE_MAX_CHARS).ifBlank { "New chat" }
+        val normalized = firstUserMessage.content
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(TITLE_MAX_CHARS)
+        return normalized.ifBlank { "New chat" }
     }
 
     private fun createMessage(
@@ -576,6 +793,7 @@ class ChatViewModel(
     companion object {
         private const val TITLE_MAX_CHARS = 42
         private const val LONG_PROMPT_LENGTH = 160
+        private const val ONBOARDING_LAST_PAGE = 2
         private val DEFAULT_DEVICE_STATE = DeviceState(
             batteryPercent = 85,
             thermalLevel = 3,
@@ -583,6 +801,11 @@ class ChatViewModel(
         )
     }
 }
+
+private data class ToolIntent(
+    val name: String,
+    val jsonArgs: String,
+)
 
 private fun RuntimeUiState.clearError(): RuntimeUiState {
     return copy(

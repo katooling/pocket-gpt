@@ -34,6 +34,11 @@ Define QA-owned rollout quality checkpoints to support WP-09 distribution and be
 5. Release-promotion gate:
    - No unresolved `S0`/`S1` defects.
    - Product + QA review checkpoint logged with evidence links.
+6. UX quality extension gate (WP-13 aligned):
+   - Onboarding path regression status captured weekly.
+   - Runtime/model status clarity checks captured weekly.
+   - Privacy sheet and natural-language tool path checks captured weekly.
+   - Promotion notes include latest instrumentation + Maestro PASS run ids.
 
 ## QA Deliverables for WP-09 (Next)
 

@@ -34,6 +34,9 @@ All other docs should point to these for command/process details to avoid drift.
 - `roadmap/team-workstreams.md`
 - `operations/README.md`
 - `operations/execution-board.md`
+- `operations/wp-13-ux-quality-work-package.md`
+- `operations/wp-13-usability-gate-packet-template.md`
 - `operations/role-playbooks/`
 - `product/feature-catalog.md`
 - `product/open-questions-log.md`
+- `ux/README.md`

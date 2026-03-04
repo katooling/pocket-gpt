@@ -42,10 +42,8 @@ interface MvpRuntimeFacade {
     fun deleteSession(sessionId: SessionId): Boolean
 }
 
-class DefaultMvpRuntimeFacade(
-    private val container: AndroidMvpContainer = AndroidMvpContainer(
-        memoryModule = AndroidNativeMemoryModule.defaultRuntimeModule(),
-    ),
+internal class DefaultMvpRuntimeFacade(
+    private val container: RuntimeContainer = AndroidRuntimeContainer(),
 ) : MvpRuntimeFacade {
     override fun createSession(): SessionId = container.createSession()
 
@@ -94,4 +92,72 @@ class DefaultMvpRuntimeFacade(
     override fun deleteSession(sessionId: SessionId): Boolean {
         return container.deleteSession(sessionId)
     }
+}
+
+interface RuntimeContainer {
+    fun createSession(): SessionId
+    fun sendUserMessage(
+        sessionId: SessionId,
+        userText: String,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int,
+        onToken: (String) -> Unit,
+    ): ChatResponse
+    fun runTool(toolName: String, jsonArgs: String): String
+    fun analyzeImage(imagePath: String, prompt: String): String
+    fun exportDiagnostics(): String
+    fun setRoutingMode(mode: RoutingMode)
+    fun getRoutingMode(): RoutingMode
+    fun runStartupChecks(): List<String>
+    fun restoreSession(sessionId: SessionId, turns: List<Turn>)
+    fun deleteSession(sessionId: SessionId): Boolean
+}
+
+internal class AndroidRuntimeContainer(
+    private val container: AndroidMvpContainer = AndroidMvpContainer(
+        memoryModule = AndroidNativeMemoryModule.defaultRuntimeModule(),
+    ),
+) : RuntimeContainer {
+    override fun createSession(): SessionId = container.createSession()
+
+    override fun sendUserMessage(
+        sessionId: SessionId,
+        userText: String,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int,
+        onToken: (String) -> Unit,
+    ): ChatResponse {
+        return container.sendUserMessage(
+            sessionId = sessionId,
+            userText = userText,
+            taskType = taskType,
+            deviceState = deviceState,
+            maxTokens = maxTokens,
+            onToken = onToken,
+        )
+    }
+
+    override fun runTool(toolName: String, jsonArgs: String): String = container.runTool(toolName, jsonArgs)
+
+    override fun analyzeImage(imagePath: String, prompt: String): String {
+        return container.analyzeImage(imagePath = imagePath, prompt = prompt)
+    }
+
+    override fun exportDiagnostics(): String = container.exportDiagnostics()
+
+    override fun setRoutingMode(mode: RoutingMode) {
+        container.setRoutingMode(mode)
+    }
+
+    override fun getRoutingMode(): RoutingMode = container.getRoutingMode()
+
+    override fun runStartupChecks(): List<String> = container.runStartupChecks()
+
+    override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
+        container.restoreSession(sessionId = sessionId, turns = turns)
+    }
+
+    override fun deleteSession(sessionId: SessionId): Boolean = container.deleteSession(sessionId)
 }

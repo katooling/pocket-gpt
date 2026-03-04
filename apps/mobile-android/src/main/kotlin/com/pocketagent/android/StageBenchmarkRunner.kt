@@ -10,14 +10,16 @@ data class StageBenchmarkResult(
 )
 
 class StageBenchmarkRunner(
-    private val container: AndroidMvpContainer,
+    private val runtime: StageBenchmarkRuntime,
 ) {
+    constructor(container: AndroidMvpContainer) : this(AndroidStageBenchmarkRuntime(container))
+
     fun runScenarioA(sessionRuns: Int = 10): StageBenchmarkResult {
         val firstTokenList = mutableListOf<Long>()
         val decodeRateList = mutableListOf<Double>()
         repeat(sessionRuns) { idx ->
-            val session = container.createSession()
-            val response = container.sendUserMessage(
+            val session = runtime.createSession()
+            val response = runtime.sendUserMessage(
                 sessionId = session,
                 userText = "Short prompt run $idx",
                 taskType = "short_text",
@@ -37,8 +39,8 @@ class StageBenchmarkRunner(
         val firstTokenList = mutableListOf<Long>()
         val decodeRateList = mutableListOf<Double>()
         repeat(sessionRuns) { idx ->
-            val session = container.createSession()
-            val response = container.sendUserMessage(
+            val session = runtime.createSession()
+            val response = runtime.sendUserMessage(
                 sessionId = session,
                 userText = "Long prompt run $idx ".repeat(80),
                 taskType = "long_text",
@@ -59,7 +61,7 @@ class StageBenchmarkRunner(
         val decodeRateList = mutableListOf<Double>()
         repeat(sessionRuns) {
             val started = System.currentTimeMillis()
-            val text = container.analyzeImage(
+            val text = runtime.analyzeImage(
                 imagePath = "sample/document-photo.jpg",
                 prompt = "Summarize the document.",
             )
@@ -87,5 +89,43 @@ class StageBenchmarkRunner(
     private fun medianDouble(values: List<Double>): Double {
         val sorted = values.sorted()
         return sorted[sorted.size / 2]
+    }
+}
+
+interface StageBenchmarkRuntime {
+    fun createSession(): com.pocketagent.core.SessionId
+    fun sendUserMessage(
+        sessionId: com.pocketagent.core.SessionId,
+        userText: String,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int,
+    ): ChatResponse
+    fun analyzeImage(imagePath: String, prompt: String): String
+}
+
+private class AndroidStageBenchmarkRuntime(
+    private val container: AndroidMvpContainer,
+) : StageBenchmarkRuntime {
+    override fun createSession() = container.createSession()
+
+    override fun sendUserMessage(
+        sessionId: com.pocketagent.core.SessionId,
+        userText: String,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int,
+    ): ChatResponse {
+        return container.sendUserMessage(
+            sessionId = sessionId,
+            userText = userText,
+            taskType = taskType,
+            deviceState = deviceState,
+            maxTokens = maxTokens,
+        )
+    }
+
+    override fun analyzeImage(imagePath: String, prompt: String): String {
+        return container.analyzeImage(imagePath, prompt)
     }
 }

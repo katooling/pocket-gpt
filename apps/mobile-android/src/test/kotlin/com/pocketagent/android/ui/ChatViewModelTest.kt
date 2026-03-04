@@ -68,6 +68,44 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `natural language calculator prompt executes local tool path`() = runTest(dispatcher) {
+        val persistence = RecordingPersistence()
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = persistence,
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.onComposerChanged("calculate 4*9")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val messages = viewModel.uiState.value.activeSession!!.messages
+        assertTrue(messages.any { it.role == MessageRole.USER && it.content == "calculate 4*9" })
+        assertTrue(messages.any { it.role == MessageRole.ASSISTANT && it.toolName == "calculator" })
+    }
+
+    @Test
+    fun `onboarding state defaults visible and persists when completed`() = runTest(dispatcher) {
+        val persistence = RecordingPersistence()
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = persistence,
+            ioDispatcher = dispatcher,
+        )
+
+        assertTrue(viewModel.uiState.value.showOnboarding)
+
+        viewModel.completeOnboarding()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showOnboarding)
+        assertTrue(persistence.savedStates.last().onboardingCompleted)
+    }
+
+    @Test
     fun `stream token updates do not persist state on every token`() = runTest(dispatcher) {
         val persistence = RecordingPersistence()
         val runtime = RecordingRuntimeFacade(

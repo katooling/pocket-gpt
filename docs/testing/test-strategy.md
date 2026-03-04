@@ -22,6 +22,35 @@ Last updated: 2026-03-04
 4. Device validation tests (Scenario A/B/C + UI acceptance)
 5. Soak/reliability tests
 
+## Lane Architecture and Ownership Matrix
+
+| Lane | Owner | Goal | Cadence | Main Commands | Primary Artifacts |
+|---|---|---|---|---|---|
+| Dev fast lane | Engineering | Catch regressions before PR | every change | `bash scripts/dev/test.sh quick` | local test output |
+| Merge gate lane | Engineering + CI | enforce baseline quality gates | every PR | `python3 tools/devctl/main.py lane test ci` + governance checks | CI reports and artifacts |
+| QA device lane | QA | verify real-device UI/runtime behavior | weekly + pre-promotion | `python3 tools/devctl/main.py lane android-instrumented`, `python3 tools/devctl/main.py lane maestro`, `bash scripts/dev/device-test.sh` | weekly QA packets under `docs/operations/evidence/wp-09/` |
+| Runtime proof lane | Engineering + QA | closure-path native runtime evidence | ENG-13/WP-12 closure windows | `bash scripts/dev/bench.sh stage2 --device <id>` + evidence validator | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` |
+| Product usability lane | Product + QA + Design | release decision from usability signals | beta cohort windows | WP-13 usability packet workflow | `docs/operations/evidence/wp-13/...` |
+
+## Core Flow Coverage Matrix (Mandatory)
+
+| Core Flow | Unit/Module Coverage | Instrumented Coverage | Maestro Coverage | Device/Operational Coverage | Owner |
+|---|---|---|---|---|---|
+| Startup and launch status | `ChatViewModelTest`, startup-check mapping tests | launch smoke with runtime-status assertions | scenario launch step | stage checks baseline signal | Eng + QA |
+| Send and streaming response | ViewModel stream tests | send-message UI smoke | `tests/maestro/scenario-a.yaml` | weekly matrix run | Eng + QA |
+| Session create/switch/restore | ViewModel + persistence codec tests | drawer/session sanity checks | scenario continuity check (weekly extension) | weekly matrix run | Eng + QA |
+| Image attach success/failure | ViewModel/image module tests | image attach instrumentation checks | optional workflow in QA runs | required-tier weekly checks | Eng + QA |
+| Tool invocation + safety rejection | tool runtime/schema tests + ViewModel tool mapping | natural-language tool UI assertions | tool flow in `tests/maestro/scenario-b.yaml` | weekly matrix + security review | Eng + QA + Security |
+| Diagnostics export + redaction | diagnostics/redaction tests | diagnostics UI assertion | scenario-b diagnostics step | QA release promotion checklist | Eng + QA + Security |
+| Offline/network policy enforcement | policy/network tests | launch sanity in offline mode | n/a | WP-12/weekly policy references | Eng + QA + Security |
+| Runtime/model readiness transitions | ViewModel runtime state tests | status-chip and advanced-sheet checks | n/a | stage-2 and startup checks | Eng + QA |
+
+Coverage rule:
+
+1. Every core flow must have at least one deterministic unit/module assertion.
+2. User-visible critical flows must also have instrumentation or Maestro assertion.
+3. Runtime/performance assertions remain in device lanes only.
+
 ## Release Gates
 
 | Gate | Required For |
@@ -48,6 +77,11 @@ CI responsibilities:
 5. PR governance checks (template completion)
 6. Test report artifact upload
 
+CI note:
+
+1. Device-dependent lanes (`android-instrumented`, `maestro`, `stage2`) are intentionally not part of baseline CI.
+2. Promotion decisions must include latest QA device evidence links.
+
 ## UI Test Lanes
 
 1. Compose/ViewModel JVM tests: `./gradlew :apps:mobile-android:testDebugUnitTest`
@@ -55,6 +89,13 @@ CI responsibilities:
 3. Maestro E2E UI scenarios:
    - `tests/maestro/scenario-a.yaml`
    - `tests/maestro/scenario-b.yaml`
+
+## Runtime Lane Optimization Rules
+
+1. Prefer model-sweep execution that reuses a loaded model for Scenario A/B in one instrumentation invocation.
+2. For local iteration, use `POCKETGPT_STAGE2_SKIP_INSTALL=1` after APKs are already installed.
+3. Use low-run/token profile for rapid iteration; rerun closure packet with closure-approved profile before evidence signoff.
+4. Keep Stage-2 env contracts stable (`POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH`, `POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH`) across fast and closure profiles.
 
 ## Automation Boundary (CI vs Human)
 
@@ -86,3 +127,15 @@ Human-required checkpoints:
 
 1. Espresso instrumentation lane: `python3 tools/devctl/main.py lane android-instrumented`
 2. Maestro E2E lane: `python3 tools/devctl/main.py lane maestro`
+
+## Non-Blocking Sequencing Rule (ENG-13 Safe)
+
+1. Test improvements can proceed in parallel with ENG-13 as long as they do not change:
+   - Stage-2 command contracts
+   - runtime evidence validator rules
+   - side-load model env variable contracts
+2. During ENG-13 active execution, prioritize:
+   - unit and instrumentation assertions
+   - docs and checklist alignment
+   - QA/Product gate packet quality
+3. Defer runtime-lane contract changes until ENG-13 closure evidence is accepted.

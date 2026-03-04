@@ -8,6 +8,8 @@ Usage: Cohort expansion and release promotion gate
 
 - [ ] Candidate build id + commit hash recorded.
 - [ ] `bash scripts/dev/test.sh ci` latest result attached.
+- [ ] Latest `android-instrumented` run id and status attached.
+- [ ] Latest `maestro` run id and status attached.
 - [ ] No newly introduced `S0`/`S1` defects since prior promotion point.
 
 ## Gate B: Device and Reliability Signal
@@ -27,6 +29,13 @@ Usage: Cohort expansion and release promotion gate
 - [ ] Incident triage loop active with named on-call owners.
 - [ ] User feedback channel intake path active and monitored.
 - [ ] Rollback/hold procedure documented for this promotion step.
+
+## Gate E: WP-13 UX Promotion Readiness
+
+- [ ] Onboarding completion signal for current cohort window attached.
+- [ ] Runtime/model status confusion signal reviewed and within threshold.
+- [ ] Privacy comprehension signal reviewed and within threshold.
+- [ ] Natural-language tool path PASS evidence attached from latest QA matrix run.
 
 ## Promotion Decision
 

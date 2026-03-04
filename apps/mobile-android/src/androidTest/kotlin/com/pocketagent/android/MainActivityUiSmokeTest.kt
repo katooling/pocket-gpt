@@ -49,17 +49,34 @@ class MainActivityUiSmokeTest {
 
     @Test
     fun launchShowsComposerAndOfflineIndicator() {
+        composeRule.dismissOnboardingIfVisible()
         composeRule.onNodeWithTag("offline_indicator").assertIsDisplayed()
+        composeRule.onNodeWithText("Runtime: Ready").assertIsDisplayed()
         composeRule.onNodeWithTag("composer_input").assertIsDisplayed()
         composeRule.onNodeWithTag("send_button").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Sessions").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Tools").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Advanced").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Privacy").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Attach image").assertIsDisplayed()
     }
 
     @Test
+    fun onboardingFlowCanProgressAndComplete() {
+        composeRule.onNodeWithText("Welcome to Pocket GPT").assertIsDisplayed()
+        composeRule.onNodeWithText("Next").performClick()
+        composeRule.onNodeWithText("Step 2 of 3").assertIsDisplayed()
+        composeRule.onNodeWithText("Next").performClick()
+        composeRule.onNodeWithText("Step 3 of 3").assertIsDisplayed()
+        composeRule.onNodeWithText("Get started").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("Welcome to Pocket GPT").fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    @Test
     fun sendMessageShowsUserAndAssistantBubbles() {
+        composeRule.dismissOnboardingIfVisible()
         composeRule.onNodeWithTag("composer_input").performTextInput("hello ui")
         composeRule.onNodeWithTag("send_button").performClick()
 
@@ -73,13 +90,31 @@ class MainActivityUiSmokeTest {
 
     @Test
     fun toolAndDiagnosticsActionsRenderResults() {
+        composeRule.dismissOnboardingIfVisible()
         composeRule.onNodeWithContentDescription("Tools").performClick()
-        composeRule.onNodeWithText("Calculator (4*9)").performClick()
+        composeRule.onNodeWithText("calculate 4*9").performClick()
+        composeRule.onNodeWithTag("send_button").performClick()
         composeRule.waitForText("tool:calculator")
 
         composeRule.onNodeWithTag("advanced_sheet_button").performClick()
         composeRule.onNodeWithText("Export diagnostics").performClick()
         composeRule.waitForText("diag=ok")
+    }
+
+    @Test
+    fun privacySheetOpensWithExpectedCopy() {
+        composeRule.dismissOnboardingIfVisible()
+        composeRule.onNodeWithContentDescription("Privacy").performClick()
+        composeRule.onNodeWithText("Privacy and data controls").assertIsDisplayed()
+        composeRule.onNodeWithText("Chats and memory are stored locally on this device.").assertIsDisplayed()
+    }
+
+    @Test
+    fun naturalLanguageReminderPromptRendersToolResult() {
+        composeRule.dismissOnboardingIfVisible()
+        composeRule.onNodeWithTag("composer_input").performTextInput("remind me to run QA closeout")
+        composeRule.onNodeWithTag("send_button").performClick()
+        composeRule.waitForText("tool:reminder_create")
     }
 
     private fun AndroidComposeTestRule<*, *>.waitForText(
@@ -88,6 +123,15 @@ class MainActivityUiSmokeTest {
     ) {
         waitUntil(timeoutMillis = timeoutMillis) {
             onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun AndroidComposeTestRule<*, *>.dismissOnboardingIfVisible() {
+        waitForIdle()
+        val skipNodes = onAllNodesWithText("Skip").fetchSemanticsNodes()
+        if (skipNodes.isNotEmpty()) {
+            onNodeWithText("Skip").performClick()
+            waitForIdle()
         }
     }
 }

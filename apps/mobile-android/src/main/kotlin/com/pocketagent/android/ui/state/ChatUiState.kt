@@ -42,6 +42,8 @@ data class ComposerUiState(
 data class RuntimeUiState(
     val offlineOnly: Boolean = true,
     val routingMode: RoutingMode = RoutingMode.AUTO,
+    val modelRuntimeStatus: ModelRuntimeStatus = ModelRuntimeStatus.NOT_READY,
+    val modelStatusDetail: String? = null,
     val activeModelId: String? = null,
     val lastFirstTokenLatencyMs: Long? = null,
     val lastTotalLatencyMs: Long? = null,
@@ -52,6 +54,13 @@ data class RuntimeUiState(
     val lastError: String? = null,
 )
 
+enum class ModelRuntimeStatus {
+    NOT_READY,
+    LOADING,
+    READY,
+    ERROR,
+}
+
 data class ChatUiState(
     val sessions: List<ChatSessionUiModel> = emptyList(),
     val activeSessionId: String? = null,
@@ -60,6 +69,9 @@ data class ChatUiState(
     val isSessionDrawerOpen: Boolean = false,
     val isAdvancedSheetOpen: Boolean = false,
     val isToolDialogOpen: Boolean = false,
+    val isPrivacySheetOpen: Boolean = false,
+    val showOnboarding: Boolean = false,
+    val onboardingPage: Int = 0,
 ) {
     val activeSession: ChatSessionUiModel?
         get() = sessions.firstOrNull { it.id == activeSessionId }

@@ -6,18 +6,30 @@
     <string name="ui_no_sessions_yet">No sessions yet</string>
     <string name="ui_offline_first">Offline-first</string>
     <string name="ui_model_label">Model: %1$s</string>
+    <string name="ui_model_status_label">Runtime: %1$s</string>
+    <string name="ui_model_status_not_ready">Not ready</string>
+    <string name="ui_model_status_loading">Loading</string>
+    <string name="ui_model_status_ready">Ready</string>
+    <string name="ui_model_status_error">Error</string>
     <string name="ui_runtime_error_title">Runtime status</string>
     <string name="ui_runtime_error_with_code">%1$s (%2$s)</string>
     <string name="ui_no_session_selected">No session selected</string>
-    <string name="ui_chat_empty_state">Start chatting. Ask a question, attach an image, or run a local tool.</string>
+    <string name="ui_chat_empty_state">Start chatting locally. Try one of these prompts:</string>
+    <string name="ui_prompt_quick_answer">Summarize the key MVP blockers from today.</string>
+    <string name="ui_prompt_image_help">Attach an image and describe what is shown.</string>
+    <string name="ui_prompt_local_search">search launch checklist</string>
+    <string name="ui_prompt_reminder">remind me to run QA closeout</string>
     <string name="ui_image_message_label">Image: %1$s</string>
     <string name="ui_tool_message_label">Tool: %1$s</string>
     <string name="ui_composer_label">Message</string>
     <string name="ui_send_button">Send</string>
     <string name="ui_local_tools_title">Local tools</string>
-    <string name="ui_tool_calculator_label">Calculator (4*9)</string>
-    <string name="ui_tool_date_time_label">Date and Time</string>
-    <string name="ui_tool_local_search_label">Local Search</string>
+    <string name="ui_tool_prompt_helper">Tool execution now works through natural language prompts.</string>
+    <string name="ui_tool_calculator_prompt">calculate 4*9</string>
+    <string name="ui_tool_date_time_prompt">what time is it</string>
+    <string name="ui_tool_local_search_prompt">search launch checklist</string>
+    <string name="ui_tool_notes_prompt">find notes runtime gate</string>
+    <string name="ui_tool_reminder_prompt">remind me to run QA closeout</string>
     <string name="ui_close">Close</string>
     <string name="ui_advanced_controls_title">Advanced controls</string>
     <string name="ui_model_selection_title">Model selection</string>
@@ -28,6 +40,7 @@
     <string name="a11y_session_drawer_open">Sessions</string>
     <string name="a11y_tool_actions_open">Tools</string>
     <string name="a11y_advanced_controls_open">Advanced</string>
+    <string name="a11y_privacy_controls_open">Privacy</string>
     <string name="a11y_create_session">Create session</string>
     <string name="a11y_session_active">Active session</string>
     <string name="a11y_session_inactive">Inactive session</string>
@@ -38,5 +51,20 @@
     <string name="a11y_send_state_enabled">Ready to send</string>
     <string name="a11y_attach_image">Attach image</string>
     <string name="a11y_send_button">Send</string>
+    <string name="a11y_copy_message">Copy message</string>
     <string name="a11y_routing_mode">Routing mode %1$s</string>
+
+    <string name="ui_onboarding_title">Welcome to Pocket GPT</string>
+    <string name="ui_onboarding_page_1">Private by default: your chats and tool runs stay on your device.</string>
+    <string name="ui_onboarding_page_2">Use chat, image analysis, and local tools from one timeline.</string>
+    <string name="ui_onboarding_page_3">Check runtime status before heavy prompts to confirm models are ready.</string>
+    <string name="ui_onboarding_page_counter">Step %1$d of %2$d</string>
+    <string name="ui_onboarding_skip">Skip</string>
+    <string name="ui_onboarding_next">Next</string>
+    <string name="ui_onboarding_get_started">Get started</string>
+
+    <string name="ui_privacy_title">Privacy and data controls</string>
+    <string name="ui_privacy_item_1">Chats and memory are stored locally on this device.</string>
+    <string name="ui_privacy_item_2">Offline-only policy blocks network activity in runtime flows.</string>
+    <string name="ui_privacy_item_3">Diagnostics export redacts sensitive keys before sharing.</string>
 </resources>

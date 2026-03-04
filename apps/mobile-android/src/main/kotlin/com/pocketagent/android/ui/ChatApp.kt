@@ -3,6 +3,7 @@ package com.pocketagent.android.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,21 +18,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,17 +49,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -65,14 +71,20 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.RoutingMode
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.MessageRole
+import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -152,6 +164,15 @@ fun PocketAgentApp(
                                 contentDescription = stringResource(id = R.string.a11y_advanced_controls_open),
                             )
                         }
+                        IconButton(
+                            modifier = Modifier.testTag("privacy_sheet_button"),
+                            onClick = { viewModel.setPrivacySheetOpen(true) },
+                        ) {
+                            Icon(
+                                Icons.Default.PrivacyTip,
+                                contentDescription = stringResource(id = R.string.a11y_privacy_controls_open),
+                            )
+                        }
                     },
                 )
             },
@@ -167,6 +188,7 @@ fun PocketAgentApp(
         ) { innerPadding ->
             ChatScreenBody(
                 state = state,
+                onSuggestedPrompt = viewModel::prefillComposer,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -177,11 +199,18 @@ fun PocketAgentApp(
     if (state.isToolDialogOpen) {
         ToolDialog(
             onDismiss = { viewModel.setToolDialogOpen(false) },
-            onRunTool = { toolName, args ->
-                viewModel.runTool(toolName = toolName, jsonArgs = args)
-                viewModel.setToolDialogOpen(false)
-            },
+            onUsePrompt = viewModel::prefillComposer,
         )
+    }
+
+    if (state.isPrivacySheetOpen) {
+        val privacySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.setPrivacySheetOpen(false) },
+            sheetState = privacySheetState,
+        ) {
+            PrivacyInfoSheet(onClose = { viewModel.setPrivacySheetOpen(false) })
+        }
     }
 
     if (state.isAdvancedSheetOpen) {
@@ -196,6 +225,15 @@ fun PocketAgentApp(
                 onExportDiagnostics = viewModel::exportDiagnostics,
             )
         }
+    }
+
+    if (state.showOnboarding) {
+        OnboardingOverlay(
+            page = state.onboardingPage,
+            onNext = viewModel::nextOnboardingPage,
+            onSkip = viewModel::skipOnboarding,
+            onFinish = viewModel::completeOnboarding,
+        )
     }
 }
 
@@ -223,7 +261,7 @@ private fun SessionDrawer(
             Icon(Icons.Default.Add, contentDescription = createSessionDescription)
         }
     }
-    Divider()
+    HorizontalDivider()
     if (state.sessions.isEmpty()) {
         Text(
             text = stringResource(id = R.string.ui_no_sessions_yet),
@@ -285,6 +323,7 @@ private fun SessionDrawer(
 @Composable
 private fun ChatScreenBody(
     state: ChatUiState,
+    onSuggestedPrompt: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.padding(12.dp)) {
@@ -292,6 +331,7 @@ private fun ChatScreenBody(
         Spacer(modifier = Modifier.height(8.dp))
         MessageList(
             activeSession = state.activeSession,
+            onSuggestedPrompt = onSuggestedPrompt,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -302,6 +342,12 @@ private fun ChatScreenBody(
 
 @Composable
 private fun OfflineAndStatusHeader(state: ChatUiState) {
+    val modelStatusText = when (state.runtime.modelRuntimeStatus) {
+        ModelRuntimeStatus.NOT_READY -> stringResource(id = R.string.ui_model_status_not_ready)
+        ModelRuntimeStatus.LOADING -> stringResource(id = R.string.ui_model_status_loading)
+        ModelRuntimeStatus.READY -> stringResource(id = R.string.ui_model_status_ready)
+        ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -322,6 +368,17 @@ private fun OfflineAndStatusHeader(state: ChatUiState) {
                     text = stringResource(
                         id = R.string.ui_model_label,
                         state.runtime.routingMode.name,
+                    ),
+                )
+            },
+        )
+        AssistChip(
+            onClick = { },
+            label = {
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_model_status_label,
+                        modelStatusText,
                     ),
                 )
             },
@@ -378,8 +435,19 @@ private fun OfflineAndStatusHeader(state: ChatUiState) {
 @Composable
 private fun MessageList(
     activeSession: ChatSessionUiModel?,
+    onSuggestedPrompt: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val clipboardManager = LocalClipboardManager.current
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(activeSession?.messages?.size, activeSession?.messages?.lastOrNull()?.content) {
+        val messages = activeSession?.messages ?: return@LaunchedEffect
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(index = messages.lastIndex)
+        }
+    }
+
     if (activeSession == null) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text(
@@ -391,16 +459,38 @@ private fun MessageList(
     }
     if (activeSession.messages.isEmpty()) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text(
-                text = stringResource(id = R.string.ui_chat_empty_state),
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(id = R.string.ui_chat_empty_state),
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SuggestedPromptCard(
+                    prompt = stringResource(id = R.string.ui_prompt_quick_answer),
+                    onClick = onSuggestedPrompt,
+                )
+                SuggestedPromptCard(
+                    prompt = stringResource(id = R.string.ui_prompt_image_help),
+                    onClick = onSuggestedPrompt,
+                )
+                SuggestedPromptCard(
+                    prompt = stringResource(id = R.string.ui_prompt_local_search),
+                    onClick = onSuggestedPrompt,
+                )
+                SuggestedPromptCard(
+                    prompt = stringResource(id = R.string.ui_prompt_reminder),
+                    onClick = onSuggestedPrompt,
+                )
+            }
         }
         return
     }
 
     LazyColumn(
+        state = listState,
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -435,7 +525,6 @@ private fun MessageList(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
-
                             message.toolName != null -> {
                                 Text(
                                     text = stringResource(id = R.string.ui_tool_message_label, message.toolName),
@@ -445,13 +534,110 @@ private fun MessageList(
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
-                        Text(
-                            text = if (message.content.isBlank() && message.isStreaming) "…" else message.content,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        val content = if (message.content.isBlank() && message.isStreaming) {
+                            "..."
+                        } else {
+                            message.content
+                        }
+                        MarkdownMessageContent(content = content)
+                        if (message.content.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                IconButton(
+                                    onClick = { clipboardManager.setText(AnnotatedString(message.content)) },
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = stringResource(id = R.string.a11y_copy_message),
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SuggestedPromptCard(
+    prompt: String,
+    onClick: (String) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick(prompt) },
+    ) {
+        Text(
+            text = prompt,
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun MarkdownMessageContent(content: String) {
+    val codeFenceParts = remember(content) { content.split("```") }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        codeFenceParts.forEachIndexed { index, part ->
+            if (index % 2 == 1) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = part.trim(),
+                        modifier = Modifier.padding(10.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    )
+                }
+            } else {
+                part.lines().forEach { rawLine ->
+                    val line = rawLine.trimEnd()
+                    if (line.isBlank()) return@forEach
+                    val rendered = if (line.startsWith("- ") || line.startsWith("* ")) {
+                        "• ${line.drop(2)}"
+                    } else {
+                        line
+                    }
+                    Text(
+                        text = renderInlineBold(rendered),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun renderInlineBold(text: String): AnnotatedString {
+    val regex = Regex("\\*\\*(.+?)\\*\\*")
+    val matches = regex.findAll(text).toList()
+    if (matches.isEmpty()) {
+        return AnnotatedString(text)
+    }
+    return buildAnnotatedString {
+        var cursor = 0
+        matches.forEach { match ->
+            if (match.range.first > cursor) {
+                append(text.substring(cursor, match.range.first))
+            }
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append(match.groupValues[1])
+            }
+            cursor = match.range.last + 1
+        }
+        if (cursor < text.length) {
+            append(text.substring(cursor))
         }
     }
 }
@@ -509,30 +695,47 @@ private fun ComposerBar(
 @Composable
 private fun ToolDialog(
     onDismiss: () -> Unit,
-    onRunTool: (toolName: String, args: String) -> Unit,
+    onUsePrompt: (String) -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(id = R.string.ui_local_tools_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(id = R.string.ui_tool_prompt_helper),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Button(
-                    onClick = { onRunTool("calculator", "{\"expression\":\"4*9\"}") },
+                    onClick = { onUsePrompt("calculate 4*9") },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(id = R.string.ui_tool_calculator_label))
+                    Text(stringResource(id = R.string.ui_tool_calculator_prompt))
                 }
                 Button(
-                    onClick = { onRunTool("date_time", "{}") },
+                    onClick = { onUsePrompt("what time is it") },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(id = R.string.ui_tool_date_time_label))
+                    Text(stringResource(id = R.string.ui_tool_date_time_prompt))
                 }
                 Button(
-                    onClick = { onRunTool("local_search", "{\"query\":\"launch checklist\"}") },
+                    onClick = { onUsePrompt("search launch checklist") },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(id = R.string.ui_tool_local_search_label))
+                    Text(stringResource(id = R.string.ui_tool_local_search_prompt))
+                }
+                Button(
+                    onClick = { onUsePrompt("find notes runtime gate") },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(id = R.string.ui_tool_notes_prompt))
+                }
+                Button(
+                    onClick = { onUsePrompt("remind me to run QA closeout") },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(id = R.string.ui_tool_reminder_prompt))
                 }
             }
         },
@@ -540,6 +743,71 @@ private fun ToolDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(id = R.string.ui_close)) }
         },
     )
+}
+
+@Composable
+private fun OnboardingOverlay(
+    page: Int,
+    onNext: () -> Unit,
+    onSkip: () -> Unit,
+    onFinish: () -> Unit,
+) {
+    val pages = listOf(
+        stringResource(id = R.string.ui_onboarding_page_1),
+        stringResource(id = R.string.ui_onboarding_page_2),
+        stringResource(id = R.string.ui_onboarding_page_3),
+    )
+    AlertDialog(
+        onDismissRequest = { },
+        title = { Text(stringResource(id = R.string.ui_onboarding_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(pages[page.coerceIn(0, pages.lastIndex)])
+                Text(
+                    text = stringResource(id = R.string.ui_onboarding_page_counter, page + 1, pages.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onSkip) {
+                Text(stringResource(id = R.string.ui_onboarding_skip))
+            }
+        },
+        confirmButton = {
+            val isLast = page >= pages.lastIndex
+            TextButton(onClick = if (isLast) onFinish else onNext) {
+                Text(
+                    stringResource(
+                        id = if (isLast) R.string.ui_onboarding_get_started else R.string.ui_onboarding_next,
+                    ),
+                )
+            }
+        },
+    )
+}
+
+@Composable
+private fun PrivacyInfoSheet(onClose: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = stringResource(id = R.string.ui_privacy_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(stringResource(id = R.string.ui_privacy_item_1), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(id = R.string.ui_privacy_item_2), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(id = R.string.ui_privacy_item_3), style = MaterialTheme.typography.bodyMedium)
+        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(id = R.string.ui_close))
+        }
+    }
 }
 
 @Composable
@@ -582,7 +850,7 @@ private fun AdvancedSettingsSheet(
             }
         }
 
-        Divider()
+        HorizontalDivider()
 
         Button(
             modifier = Modifier.fillMaxWidth(),
@@ -591,6 +859,25 @@ private fun AdvancedSettingsSheet(
             Text(stringResource(id = R.string.ui_export_diagnostics))
         }
 
+        Text(
+            text = stringResource(
+                id = R.string.ui_model_status_label,
+                when (state.runtime.modelRuntimeStatus) {
+                    ModelRuntimeStatus.NOT_READY -> stringResource(id = R.string.ui_model_status_not_ready)
+                    ModelRuntimeStatus.LOADING -> stringResource(id = R.string.ui_model_status_loading)
+                    ModelRuntimeStatus.READY -> stringResource(id = R.string.ui_model_status_ready)
+                    ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
+                },
+            ),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        state.runtime.modelStatusDetail?.let { detail ->
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         state.runtime.activeModelId?.let { modelId ->
             Text(
                 text = stringResource(id = R.string.ui_active_model_label, modelId),
