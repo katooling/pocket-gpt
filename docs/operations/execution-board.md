@@ -48,7 +48,7 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### Ready
 
-- [ ] PM/Prod dispatch for WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies
+- [ ] None
 
 ### Blocked
 
@@ -67,6 +67,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-05 implementation scope landed: routing matrix tests, runtime policy enforcement checks, and diagnostics redaction checks (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`)
 - [x] ENG-06 closeout gate: tool runtime schema safety productionization completed with package-level acceptance and deterministic error-contract stability checks (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 - [x] WP-05 Tool runtime safety productionization package closeout complete (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
+- [x] PM/Prod dispatch packet published for WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies (`docs/operations/evidence/wp-04/2026-03-04-pm-prod-dispatch-wp04-wp05.md`)
 - [x] PROD-01 launch workflows lock pass complete (2026-03-04)
 - [x] PROD-02 launch device policy lock pass complete (2026-03-04)
 - [x] MKT-01 messaging architecture lock pass complete (evidence-mapped baseline retained)
@@ -110,6 +111,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-03 (PM owner-level assignment briefs): `docs/operations/evidence/wp-03/2026-03-03-pm-owner-briefs.md`
 - WP-04 (ENG-05 routing/policy/diagnostics hardening implementation): `docs/operations/evidence/wp-04/2026-03-04-eng-05.md`
 - WP-04 (QA-03 routing/policy boundary regression baseline): `docs/operations/evidence/wp-04/2026-03-04-qa-03.md`
+- WP-04 (PM/Prod dispatch packet for WP-04/WP-05 owner scope + acceptance + dependencies): `docs/operations/evidence/wp-04/2026-03-04-pm-prod-dispatch-wp04-wp05.md`
 - WP-05 (ENG-06 tool schema hardening baseline, parallel scope): `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
 - WP-05 (ENG-06 final package closeout): `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`
 - WP-05 (QA-04 tool safety adversarial regression baseline): `docs/operations/evidence/wp-05/2026-03-04-qa-04.md`

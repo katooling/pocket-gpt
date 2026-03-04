@@ -19,6 +19,7 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 - [x] Feature catalog and roadmap horizons documented
 - [x] PROD-01 launch workflow lock finalized (2026-03-04)
 - [x] PROD-02 launch device policy lock finalized (2026-03-04)
+- [x] PM/Prod dispatch packet published for WP-04/WP-05 owner-level scope, acceptance criteria, and dependency gates (`docs/operations/evidence/wp-04/2026-03-04-pm-prod-dispatch-wp04-wp05.md`)
 
 ## What Is In Progress
 
