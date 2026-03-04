@@ -44,13 +44,18 @@ class SqliteMemoryModule private constructor(
         if (limit <= 0) {
             return emptyList()
         }
-        val queryTokens = tokenize(query)
+        val queryTokens = MemoryRetrievalScorer.tokenize(query)
         if (queryTokens.isEmpty()) {
             return emptyList()
         }
 
         val ranked = loadAllChunks()
-            .map { chunk -> chunk to overlapScore(queryTokens, tokenize(chunk.content)) }
+            .map { chunk ->
+                chunk to MemoryRetrievalScorer.overlapScore(
+                    queryTokens,
+                    MemoryRetrievalScorer.tokenize(chunk.content),
+                )
+            }
             .filter { (_, score) -> score > 0 }
             .sortedWith(
                 compareByDescending<Pair<MemoryChunk, Int>> { it.second }
@@ -169,17 +174,6 @@ class SqliteMemoryModule private constructor(
                     error,
                 )
             }
-    }
-
-    private fun tokenize(text: String): Set<String> {
-        return text.lowercase()
-            .split(Regex("[^a-z0-9]+"))
-            .filter { it.isNotBlank() }
-            .toSet()
-    }
-
-    private fun overlapScore(a: Set<String>, b: Set<String>): Int {
-        return a.intersect(b).size
     }
 
     private fun <T> withConnection(block: (Connection) -> T): T {

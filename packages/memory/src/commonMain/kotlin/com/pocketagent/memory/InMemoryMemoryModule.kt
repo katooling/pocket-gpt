@@ -9,9 +9,14 @@ class InMemoryMemoryModule : MemoryModule {
     }
 
     override fun retrieveRelevantMemory(query: String, limit: Int): List<MemoryChunk> {
-        val queryTokens = tokenize(query)
+        val queryTokens = MemoryRetrievalScorer.tokenize(query)
         return chunks
-            .map { chunk -> chunk to overlapScore(queryTokens, tokenize(chunk.content)) }
+            .map { chunk ->
+                chunk to MemoryRetrievalScorer.overlapScore(
+                    queryTokens,
+                    MemoryRetrievalScorer.tokenize(chunk.content),
+                )
+            }
             .sortedByDescending { it.second }
             .filter { it.second > 0 }
             .take(limit.coerceAtLeast(0))
@@ -28,14 +33,4 @@ class InMemoryMemoryModule : MemoryModule {
         return toRemove
     }
 
-    private fun tokenize(text: String): Set<String> {
-        return text.lowercase()
-            .split(Regex("[^a-z0-9]+"))
-            .filter { it.isNotBlank() }
-            .toSet()
-    }
-
-    private fun overlapScore(a: Set<String>, b: Set<String>): Int {
-        return a.intersect(b).size
-    }
 }

@@ -1,4 +1,4 @@
-package com.pocketagent.android
+package com.pocketagent.core
 
 enum class RoutingMode {
     AUTO,

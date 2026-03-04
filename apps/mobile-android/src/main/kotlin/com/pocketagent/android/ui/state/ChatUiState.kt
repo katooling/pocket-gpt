@@ -1,6 +1,6 @@
 package com.pocketagent.android.ui.state
 
-import com.pocketagent.android.RoutingMode
+import com.pocketagent.core.RoutingMode
 
 enum class MessageRole {
     USER,
