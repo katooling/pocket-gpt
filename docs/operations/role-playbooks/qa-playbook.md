@@ -24,7 +24,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 
 ## What Is In Progress
 
-- [ ] None
+- [ ] QA-09 WP-09 rollout quality checkpoints and beta-ops QA support packet
 
 ## Task Queue
 
@@ -37,6 +37,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 | QA-05 | Scenario C image and memory acceptance runs | Done | WP-06 | QA Engineer | `docs/operations/evidence/wp-06/2026-03-04-qa-05.md` |
 | QA-06 | 30-minute soak and crash/OOM/ANR evidence pack | Done | WP-07 | QA Lead | `docs/operations/evidence/wp-07/2026-03-04-qa-06.md` |
 | QA-08 | WP-11 UI acceptance suite (`UI-01`..`UI-10`) | Done (closure approved 2026-03-04) | WP-11 first integrated slice | QA Engineer | `docs/prd/phase-0-prd.md`, `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md` |
+| QA-09 | WP-09 rollout quality checkpoints + beta operations QA support | In Progress | WP-07, WP-11 | QA Lead | `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md` |
 | QA-07 | Voice STT/TTS quality benchmark framework (post-MVP) | Backlog | WP-10 | QA Lead | `docs/roadmap/product-roadmap.md` |
 
 ## QA Definition of Done
