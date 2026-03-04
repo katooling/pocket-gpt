@@ -28,18 +28,19 @@ Deliver reliable local runtime capability and core feature implementation for MV
 
 ## What Is In Progress
 
-- [ ] ENG-08 Image path production hardening (deterministic Scenario C contract coverage landed; device acceptance pending)
+- [ ] None
 
 ## What Is Done (Recent)
 
 - [x] ENG-07 SQLite memory backend + pruning closeout complete; QA-05 unblocked (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
+- [x] ENG-08 image path production hardening closeout complete (`docs/operations/evidence/wp-06/2026-03-04-eng-08.md`)
 
 ## Lead Eng Dispatch (Now)
 
 1. Run in parallel:
-   - ENG-07 closeout complete; keep WP-06 delivery moving with ENG-08 image-path hardening and QA-05 handoff support
+   - WP-06 is closed (ENG-07 + ENG-08 + QA-05); support QA-led WP-07 Stage-6 hardening execution
 2. Handoff trigger:
-   - QA-05 execution can start now on current WP-06 code state
+   - Start QA-06 soak/go-no-go packet under WP-07
 
 ## Task Queue
 
@@ -52,7 +53,7 @@ Deliver reliable local runtime capability and core feature implementation for MV
 | ENG-05 | Routing + policy hardening with boundary tests | Done | ENG-04 | Runtime Eng | `docs/operations/evidence/wp-04/2026-03-04-eng-05.md` |
 | ENG-06 | Tool runtime strict schema validation | Done | ENG-04 | Platform Eng | `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md` |
 | ENG-07 | SQLite memory backend + pruning | Done | ENG-05 | Core Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md` |
-| ENG-08 | Image path production hardening | In Progress | ENG-07 | Runtime Eng | `docs/feasibility/benchmark-protocol.md`, `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md` |
+| ENG-08 | Image path production hardening | Done | ENG-07 | Runtime Eng | `docs/feasibility/benchmark-protocol.md`, `docs/operations/evidence/wp-06/2026-03-04-eng-08.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
 | ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
 
@@ -78,6 +79,7 @@ Deliver reliable local runtime capability and core feature implementation for MV
 - 2026-03-04: ENG-06 package closeout evidence (deterministic validation-contract stability + package-level CI/governance acceptance) captured in `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`
 - 2026-03-04: ENG-07 memory productionization kickoff evidence captured in `docs/operations/evidence/wp-06/2026-03-04-eng-07.md`
 - 2026-03-04: ENG-07 memory productionization closeout evidence (SQLite persistence + pruning + deterministic image contract tests) captured in `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`
+- 2026-03-04: ENG-08 image-path production hardening closeout evidence (runtime routing/model lifecycle integration + deterministic validation contract coverage) captured in `docs/operations/evidence/wp-06/2026-03-04-eng-08.md`
 - 2026-03-03: ENG-OPS engineering foundations simplification captured in `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`
 - 2026-03-03: ENG devctl DX consolidation (config-driven orchestrator + Maestro/Espresso lanes) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-devctl-dx-consolidation.md`
 - 2026-03-03: Platform governance hardening refresh with governance self-test coverage captured in `docs/operations/evidence/wp-03/2026-03-03-eng-platform-governance-refresh.md`

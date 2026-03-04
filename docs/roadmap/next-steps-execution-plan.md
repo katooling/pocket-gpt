@@ -94,7 +94,7 @@ Exit criteria:
 
 Goal: replace in-memory scaffolds with production-ready persistence and image path behavior.
 
-Status (2026-03-04): In progress. ENG-07 closeout landed for SQLite memory backend + pruning with deterministic image contract tests; QA-05 Scenario C device acceptance is now ready.
+Status (2026-03-04): Completed for WP-06. ENG-07 + ENG-08 closeout and QA-05 Scenario C acceptance PASS are all captured.
 
 Deliverables:
 

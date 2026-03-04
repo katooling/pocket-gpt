@@ -30,8 +30,8 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-03 | Artifact + benchmark reliability (A/B thresholds) | Engineering | QA, Product | 3 | Partial | WP-02 | Done | Week 2 |
 | WP-04 | Routing, policy, diagnostics hardening | Engineering | Security, QA | 4 | Yes | WP-03 | Done | Week 3 |
 | WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | Done | Week 3-4 |
-| WP-06 | Memory + image productionization | Engineering | QA, Product | 5 | Partial | WP-04 | In Progress | Week 4-5 |
-| WP-07 | Beta hardening and go/no-go packet | QA | Eng, Product | 6 | No | WP-05, WP-06 | Backlog | Week 6 |
+| WP-06 | Memory + image productionization | Engineering | QA, Product | 5 | Partial | WP-04 | Done | Week 4-5 |
+| WP-07 | Beta hardening and go/no-go packet | QA | Eng, Product | 6 | No | WP-05, WP-06 | Ready | Week 6 |
 | WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | Done | Week 4-6 |
 | WP-09 | Distribution plan and beta operations | Product | Marketing, QA | 6 | Yes | WP-07, WP-08 | Backlog | Week 6-7 |
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 7 | Yes | WP-07 | Backlog | Post-MVP |
@@ -40,12 +40,11 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### In Progress
 
-- [ ] WP-06 Memory + image productionization (QA-05 acceptance complete; ENG-08 hardening in progress)
 - [ ] PROD-03 acceptance checklist finalization (Stage 5 closed via WP-06 evidence; Stage 6 WP-07 soak/hardening signoff pending)
 
 ### Ready
 
-- [ ] None
+- [ ] WP-07 Beta hardening and go/no-go packet kickoff (QA owner; WP-05/WP-06 prerequisites complete)
 
 ### Blocked
 
@@ -68,6 +67,8 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-06 closeout gate: tool runtime schema safety productionization completed with package-level acceptance and deterministic error-contract stability checks (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 - [x] ENG-07 closeout gate: SQLite memory backend + retention/pruning tests + deterministic Scenario C image contract tests landed; QA-05 unblocked for device acceptance execution (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
 - [x] QA-05 Scenario C image + memory acceptance packet executed and passed (`docs/operations/evidence/wp-06/2026-03-04-qa-05.md`)
+- [x] ENG-08 closeout gate: runtime image flow integrated with routing/model lifecycle contracts plus deterministic image validation coverage (`docs/operations/evidence/wp-06/2026-03-04-eng-08.md`)
+- [x] WP-06 package closeout complete (ENG-07 + ENG-08 + QA-05 evidence aligned) (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`, `docs/operations/evidence/wp-06/2026-03-04-eng-08.md`, `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`)
 - [x] WP-05 Tool runtime safety productionization package closeout complete (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 - [x] WP-04 package closeout complete (routing/policy/diagnostics hardening with engineering+QA evidence) (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`, `docs/operations/evidence/wp-04/2026-03-04-qa-03.md`)
 - [x] WP-08 positioning and launch prep asset lock pass complete (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`, `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`)
@@ -81,9 +82,9 @@ All teams should update status here first, then mirror updates in role playbooks
 ## Immediate Assignments (Current Owners)
 
 1. Engineering (Lead/Core/Runtime):
-   - Continue WP-06 via `ENG-08` image-path production hardening; support Stage-6 readiness handoff.
+   - ENG-08 closeout landed and WP-06 is now `Done`; move to Stage-6 support mode for WP-07/QA-06.
 2. QA:
-   - QA-01 through QA-05 are complete; prepare QA-06 soak packet for execution once WP-07 opens.
+   - QA-01 through QA-05 are complete; start QA-06 soak packet execution under WP-07.
 3. Product:
    - Continue `PROD-03` final acceptance checklist closure; Stage-6 signoff remains pending WP-07 evidence.
 4. Marketing:
@@ -119,6 +120,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-05 (QA-04 tool safety adversarial regression rerun on final WP-05 state): `docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`
 - WP-06 (ENG-07 memory productionization kickoff): `docs/operations/evidence/wp-06/2026-03-04-eng-07.md`
 - WP-06 (ENG-07 memory productionization closeout + QA unblock): `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`
+- WP-06 (ENG-08 image-path production hardening closeout): `docs/operations/evidence/wp-06/2026-03-04-eng-08.md`
 - WP-06 (QA-05 prep and blocker map): `docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md`
 - WP-06 (QA-05 Scenario C image + memory acceptance PASS packet): `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`
 - WP-08 (Product lock pass: PROD-01/02 finalization + PROD-03 alignment): `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`
