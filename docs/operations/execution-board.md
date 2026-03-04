@@ -35,7 +35,7 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | Done | Week 4-6 |
 | WP-09 | Distribution plan and beta operations | Product | Marketing, QA | 7 | Yes | WP-07, WP-08, WP-11 | In Progress | Week 6-7 |
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 8 | Yes | WP-07 | Backlog | Post-MVP |
-| WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | Done | Week 6 |
+| WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | In Progress | Week 6 |
 | WP-12 | Backend production runtime closure (native inference, model distribution, Android-native data plane) | Engineering | QA, Product, Security | 7 | Yes | WP-07, WP-11 | In Progress | Week 7-8 |
 
 ## Current Sprint Board
@@ -48,6 +48,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
 - [ ] WP-12 backend production runtime closure kickoff + execution
 - [ ] ENG-11 native-runtime truth gate: startup checks block closure path on `ADB_FALLBACK` backend unless explicitly override-enabled for local scaffolding
+- [ ] WP-11 UI acceptance evidence completion (`UI-01`..`UI-10`) on physical device (`docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`)
 
 ### Ready
 
@@ -87,7 +88,6 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] QA-06 30-minute soak and crash/OOM/ANR evidence pack executed and passed (`docs/operations/evidence/wp-07/2026-03-04-qa-06.md`)
 - [x] WP-07 Engineering Stage-6 resilience support closeout landed (startup-check assessment + crash-recovery guard tests) (`docs/operations/evidence/wp-07/2026-03-04-eng-stage6-resilience-closeout.md`)
 - [x] WP-07 package closeout complete (final Product/QA/Engineering dated signatures recorded) (`docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`)
-- [x] WP-11 package closeout complete (Product/QA/Engineering closure signoff recorded) (`docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`)
 - [x] PROD-03 acceptance checklist finalization complete
 - [x] WP-08 positioning and launch prep asset lock pass complete (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`, `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`)
 - [x] ENG-11A runtime truth gate landed: startup checks classify `ADB_FALLBACK` as blocking for closure-path runs and publish backend identity in stage runner output (`docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`)
@@ -96,11 +96,14 @@ All teams should update status here first, then mirror updates in role playbooks
 ## Immediate Assignments (Current Owners)
 
 1. Engineering (Lead/Core/Runtime):
-   - WP-12 in progress. Complete ENG-12..ENG-17 while keeping WP-09 rollout stabilization support.
+   - WP-11 reopened to `In Progress` pending remaining UI acceptance evidence completion.
+   - Keep WP-12 in progress (ENG-12..ENG-17) while supporting QA on remaining WP-11 gate coverage.
 2. QA:
-   - QA-09 template packet delivered; execute weekly triage/promotion/signal reporting cadence for WP-09 and prepare validation matrix for WP-12 runtime truth/data-plane gates.
+   - Execute remaining WP-11 UI acceptance evidence (`UI-03/04/05/06/08/09/10`) and update closure decision only after full gate coverage.
+   - Continue QA-09 weekly triage/promotion/signal cadence and prepare validation matrix for WP-12 runtime truth/data-plane gates.
 3. Product:
-   - External beta signoff gate is clear; WP-09/PROD-06 kickoff published (`docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`). Provide model distribution decision input for ENG-12.
+   - External beta signoff remains blocked while WP-11 is `In Progress`.
+   - Continue WP-09 planning and provide model distribution decision input for ENG-12.
 4. Marketing:
    - Run real screenshot/video capture using `docs/operations/mkt-04-demo-asset-capture-runbook.md`.
    - Advance MKT-03/MKT-04 from draft toward publish-ready assets under release sequencing.
@@ -136,6 +139,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-08 (MKT-04 demo asset capture runbook): `docs/operations/mkt-04-demo-asset-capture-runbook.md`
 - WP-11 (UI foundation implementation + docs alignment): `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`
 - WP-11 (Product/QA/Engineering closure signoff): `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`
+- WP-11 (QA-08 device rerun with explicit UI-01..UI-10 status map): `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`
 - WP-09 (Product Ops kickoff for distribution + beta operations): `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`
 - WP-09 (MKT-03 launch channel test plan draft prework): `docs/operations/evidence/wp-09/2026-03-04-mkt-03-launch-channel-test-plan-draft.md`
 - WP-09 (QA rollout quality checkpoints initial packet): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`

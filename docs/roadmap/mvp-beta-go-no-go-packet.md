@@ -21,6 +21,11 @@ Signoff rule:
 2. QA Lead: `Go` (signed 2026-03-04; Stage-6 soak PASS evidence in `docs/operations/evidence/wp-07/2026-03-04-qa-06.md`)
 3. Engineering Lead: `Go` (signed 2026-03-04; Stage-6 resilience closeout in `docs/operations/evidence/wp-07/2026-03-04-eng-stage6-resilience-closeout.md`)
 
+WP-11 note (2026-03-04):
+
+1. WP-11 was reopened to `In Progress` pending completion of explicit UI acceptance evidence mapping (`UI-01`..`UI-10`) on device.
+2. Latest rerun evidence: `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`.
+
 ## Scope
 
 Android-first MVP with:
@@ -136,5 +141,5 @@ Evidence links (current):
 
 ## Recommendation
 
-Current recommendation: **Go for WP-07 closure**.  
-External beta/go-live remains gated by WP-11 UI acceptance closure.
+Current recommendation: **WP-07 closed; WP-11 still open**.  
+External beta/go-live remains blocked until WP-11 acceptance evidence is fully complete.

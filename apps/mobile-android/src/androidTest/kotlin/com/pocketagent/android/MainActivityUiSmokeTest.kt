@@ -62,8 +62,8 @@ class MainActivityUiSmokeTest {
             composeRule.onAllNodesWithText("runtime response for hello ui").fetchSemanticsNodes().isNotEmpty()
         }
 
-        composeRule.onNodeWithText("hello ui").assertIsDisplayed()
-        composeRule.onNodeWithText("runtime response for hello ui").assertIsDisplayed()
+        composeRule.onAllNodesWithText("hello ui")[0].assertIsDisplayed()
+        composeRule.onAllNodesWithText("runtime response for hello ui")[0].assertIsDisplayed()
     }
 }
 

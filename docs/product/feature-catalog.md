@@ -8,12 +8,12 @@ This catalog lists current and possible features based on known technical constr
 
 | Feature | Why It Matters | Constraints | Engine Status | In-App UX Status |
 |---|---|---|---|---|
-| Offline text chat | core assistant utility | first-token latency, memory/OOM | Implemented | In Progress (Compose chat timeline landed; QA UI acceptance pending) |
-| Streaming responses | perceived speed and UX quality | runtime callback reliability | Implemented | In Progress (streaming bubble rendering landed; acceptance suite pending) |
+| Offline text chat | core assistant utility | first-token latency, memory/OOM | Implemented | In Progress (device instrumentation + Maestro rerun pass; full UI gate still pending) |
+| Streaming responses | perceived speed and UX quality | runtime callback reliability | Implemented | In Progress (streaming bubble rendering landed; partial gate evidence published) |
 | Model routing (`0.8B`/`2B`) | battery and thermal control | device-state signal quality | Implemented | In Progress (advanced override sheet landed) |
-| Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented (WP-05 closed) | In Progress (tool action UX landed; QA UI acceptance pending) |
+| Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented (WP-05 closed) | In Progress (tool UX present; explicit UI-case device evidence still pending) |
 | Memory v1 | continuity across sessions | retrieval quality + retention policy | Implemented (SQLite + pruning) | In Progress (session UX persistence landed) |
-| Single-image Q&A | multimodal differentiation | image path latency and correctness | Implemented (WP-06 closed) | In Progress (image attach UX landed; acceptance suite pending) |
+| Single-image Q&A | multimodal differentiation | image path latency and correctness | Implemented (WP-06 closed) | In Progress (image attach UX landed; explicit UI-case device evidence still pending) |
 
 ## Band B: Near-Term Expansion (Post-MVP)
 

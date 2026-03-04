@@ -18,7 +18,7 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 | Package | Description | Owner | Status | Gate Rule |
 |---|---|---|---|---|
 | WP-07 | Beta hardening + go/no-go packet | QA + Product + Eng | Done | Must close for external beta |
-| WP-11 | Android MVP user experience (chat/session/image/tool UX) | Engineering + Product + QA | Done | Must close for external beta |
+| WP-11 | Android MVP user experience (chat/session/image/tool UX) | Engineering + Product + QA | In Progress | Must close for external beta |
 | WP-12 | Backend production runtime closure (native/runtime/data-plane hardening) | Engineering + QA + Product + Security | In Progress | Must close before production-claim hardening signoff |
 
 External beta signoff policy:
@@ -108,11 +108,12 @@ External beta signoff policy:
 - [x] Add advanced controls sheet (routing override + diagnostics export + runtime details).
 - [x] Add UI state + ViewModel tests (`ChatViewModelTest`) and runtime wiring tests (`AndroidMvpContainerTest` updates).
 - [x] Replace placeholder Maestro assertions with real UI flow assertions.
-- [x] Run QA UI acceptance suite (`UI-01` to `UI-10`) on connected device and attach evidence.
+- [ ] Run QA UI acceptance suite (`UI-01` to `UI-10`) on connected device and attach evidence.
+- [x] Re-run device instrumentation and Maestro lanes after assertion fix (`docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`).
 
 ## PROD-03 Finalization Hooks (post-WP-03)
 
-Status: Closed on 2026-03-04. Stage 5 + Stage 6 are signed off, and WP-11 closure approval is recorded.
+Status: Stage 5 and Stage 6 are signed off. WP-11 is reopened to complete explicit UI acceptance evidence.
 
 - [x] Confirm execution board still shows `WP-03 = Done`.
 - [x] Confirm PROD-01 workflow definition is finalized in PRD.
@@ -121,7 +122,7 @@ Status: Closed on 2026-03-04. Stage 5 + Stage 6 are signed off, and WP-11 closur
 - [x] Confirm PROD-02 policy table is attached in go/no-go packet.
 - [x] Confirm unresolved launch blockers list is empty or explicitly accepted by Product + QA (no remaining Product/QA gate blockers).
 - [x] Stamp go/no-go packet decision date and sign-off owners.
-- [x] Confirm WP-11 UI gate checklist and evidence are complete.
+- [ ] Confirm WP-11 UI gate checklist and evidence are complete.
 
 ## Stage 5 Gate (WP-06) - Closed
 
@@ -140,7 +141,7 @@ Required signoff criteria:
 3. No unresolved blocker defects or explicit risk acceptance.
 4. Product + QA + Engineering signatures recorded in go/no-go packet.
 
-## UI Gate (WP-11) - Closed
+## UI Gate (WP-11) - In Progress
 
 Required signoff criteria:
 
