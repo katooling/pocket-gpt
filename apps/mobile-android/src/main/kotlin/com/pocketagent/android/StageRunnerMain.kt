@@ -1,6 +1,7 @@
 package com.pocketagent.android
 
 import com.pocketagent.inference.DeviceState
+import kotlin.system.exitProcess
 
 fun main() {
     val container = AndroidMvpContainer()
@@ -13,7 +14,7 @@ fun main() {
         if (startup.recoverableChecks.isNotEmpty()) {
             println("Startup warnings: ${startup.recoverableChecks.joinToString(", ")}")
         }
-        return
+        exitProcess(1)
     }
     if (startup.recoverableChecks.isNotEmpty()) {
         println("Startup warnings: ${startup.recoverableChecks.joinToString(", ")}")
@@ -27,7 +28,7 @@ fun main() {
     )
     if (!canRun) {
         println("Task blocked by resilience guards.")
-        return
+        exitProcess(1)
     }
 
     val response = container.sendUserMessage(
