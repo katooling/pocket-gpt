@@ -17,6 +17,7 @@ Ensure performance, reliability, safety, and privacy quality gates are met with 
 - [x] Benchmark protocol and threshold scripts prepared
 - [x] Stage-by-stage QA gate structure documented
 - [x] Go/no-go packet template prepared
+- [x] QA-01 Stage 1 smoke loop on physical Android completed (`docs/operations/evidence/wp-02/2026-03-04-qa-01.md`)
 - [x] QA-02 Phase B real Scenario A/B run executed with threshold/logcat evidence (`docs/operations/evidence/wp-03/2026-03-03-qa-02-phase-b.md`)
 - [x] QA-02 final closeout rerun executed on artifact-validated runtime path with fresh Scenario A/B threshold PASS packet (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`)
 
@@ -29,7 +30,7 @@ Ensure performance, reliability, safety, and privacy quality gates are met with 
 
 | Task ID | Task | Status | Prerequisites | Owner | References |
 |---|---|---|---|---|---|
-| QA-01 | Validate Stage 1 smoke loop on physical Android | Ready | WP-02 | QA Engineer | `docs/testing/android-dx-and-test-playbook.md` |
+| QA-01 | Validate Stage 1 smoke loop on physical Android | Done | WP-02 | QA Engineer | `docs/testing/android-dx-and-test-playbook.md`, `docs/operations/evidence/wp-02/2026-03-04-qa-01.md` |
 | QA-02 | Run Scenario A/B with real Qwen model and evaluate thresholds | Done (Final closeout) | WP-03 | QA Engineer | `docs/feasibility/benchmark-protocol.md`, `docs/testing/stage-2-benchmark-runbook.md`, `docs/operations/evidence/wp-03/2026-03-03-qa-02-phase-b.md`, `docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md` |
 | QA-03 | Routing/policy boundary regression suite | In Progress (Baseline PASS logged 2026-03-04) | WP-04 | QA + Security | `docs/testing/test-strategy.md`, `docs/operations/evidence/wp-04/2026-03-04-qa-03.md` |
 | QA-04 | Tool safety adversarial regression suite | In Progress (Baseline PASS logged 2026-03-04) | WP-05 | QA + Security | `docs/testing/test-strategy.md`, `docs/operations/evidence/wp-05/2026-03-04-qa-04.md` |

@@ -59,6 +59,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] WP-00 Foundation docs and architecture baseline
 - [x] WP-01 Build/CI baseline
 - [x] WP-02 Real Android runtime slice
+- [x] QA-01 Stage 1 smoke loop on physical Android completed (`docs/operations/evidence/wp-02/2026-03-04-qa-01.md`)
 - [x] WP-03 Artifact + benchmark reliability (A/B thresholds)
 - [x] ENG-OPS Engineering foundations simplification (strict gates, single-source docs, Android module realignment scaffolding)
 - [x] QA-02 Phase B: real Scenario A/B device run + threshold report + logcat evidence
@@ -99,6 +100,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-02 (ENG-03 automation foundation update): `docs/operations/evidence/wp-02/2026-03-03-eng-03-automation-foundation.md`
 - WP-02 (ENG-03 device pass 01): `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-01.md`
 - WP-02 (ENG-03 device pass 02, acceptance met): `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`
+- WP-02 (QA-01 stage 1 smoke loop validation): `docs/operations/evidence/wp-02/2026-03-04-qa-01.md`
 - WP-03 (QA-02 prep only): `docs/operations/evidence/wp-03/2026-03-03-qa-02-prep.md`
 - WP-03 (QA-02 Phase B execution): `docs/operations/evidence/wp-03/2026-03-03-qa-02-phase-b.md`
 - WP-03 (QA-02 final closeout rerun on artifact-validated path): `docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`

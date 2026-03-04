@@ -1,0 +1,103 @@
+[1/5] Checking adb availability...
+Android Debug Bridge version 1.0.41
+Version 36.0.2-14143358
+Installed as /opt/homebrew/bin/adb
+Running on Darwin 25.3.0 (arm64)
+[2/5] Verifying one adb-ready device...
+Using device serial: RR8NB087YTF
+[3/5] Reading device identity...
+samsung
+SM-A515F
+13
+[4/5] Reading battery info...
+Current Battery Service state:
+  AC powered: false
+  USB powered: false
+  Wireless powered: false
+  Max charging current: 0
+  Max charging voltage: 0
+  Charge counter: 3063606
+  status: 3
+  health: 2
+  present: true
+  level: 80
+  scale: 100
+  voltage: 3926
+  temperature: 353
+  technology: Li-ion
+  batteryMiscEvent: 131072
+  batteryCurrentEvent: 65536
+  mSecPlugTypeSummary: 65536
+  LED Charging: true
+  LED Low Battery: true
+  current now: -291
+  charge counter: 3063606
+  Adaptive Fast Charging Settings: false
+  Super Fast Charging Settings: false
+FEATURE_WIRELESS_FAST_CHARGER_CONTROL: true
+[5/5] Reading thermal summary...
+IsStatusOverride: false
+ThermalEventListeners:
+	callbacks: 2
+	killed: false
+	broadcasts count: -1
+ThermalStatusListeners:
+	callbacks: 4
+	killed: false
+	broadcasts count: -1
+Thermal Status: 0
+Cached temperatures:
+	Temperature{mValue=35.1, mType=0, mName=AP, mStatus=0}
+	Temperature{mValue=35.3, mType=2, mName=BAT, mStatus=0}
+	Temperature{mValue=0.0, mType=4, mName=USB, mStatus=0}
+	Temperature{mValue=34.9, mType=3, mName=SKIN, mStatus=0}
+HAL Ready: true
+HAL connection:
+	ThermalHAL 2.0 connected: yes
+Current temperatures from HAL:
+	Temperature{mValue=35.1, mType=0, mName=AP, mStatus=0}
+	Temperature{mValue=35.3, mType=2, mName=BAT, mStatus=0}
+	Temperature{mValue=34.9, mType=3, mName=SKIN, mStatus=0}
+	Temperature{mValue=0.0, mType=4, mName=USB, mStatus=0}
+Current cooling devices from HAL:
+Temperature static thresholds from HAL:
+Stage check script completed.
+Saved baseline to scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/baseline-20260304-091744.txt
+Device: RR8NB087YTF
+stay_on_while_plugged_in=3
+window_animation_scale=0
+transition_animation_scale=0
+animator_duration_scale=0
+screen_off_timeout=1800000
+Device: RR8NB087YTF
+stay_on_while_plugged_in=0
+window_animation_scale=1
+transition_animation_scale=1
+animator_duration_scale=1
+screen_off_timeout=1800000
+[devctl] $ bash scripts/android/ensure_device.sh
+[devctl] $ adb -s RR8NB087YTF shell getprop ro.product.manufacturer
+[devctl] $ adb -s RR8NB087YTF shell getprop ro.product.model
+[devctl] $ adb -s RR8NB087YTF shell getprop ro.build.version.release
+[devctl] Resolved artifact output directory: /Users/mkamar/Non_Work/Projects/pocket-gpt/scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-01-smoke-20260304-091743
+[devctl] $ bash scripts/android/run_stage_checks.sh
+[devctl] $ bash scripts/android/capture_device_baseline.sh
+[devctl] $ bash scripts/android/configure_device_for_benchmark.sh apply
+[devctl] $ bash scripts/android/run_short_loop.sh --runs 10 --label qa-01-smoke -- ./gradlew --no-daemon :apps:mobile-android-host:run
+Running 10 loops on device RR8NB087YTF
+Output directory: scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-01-smoke-20260304-091747
+Command: ./gradlew --no-daemon :apps:mobile-android-host:run
+=== Run 1/10 ===
+=== Run 2/10 ===
+=== Run 3/10 ===
+=== Run 4/10 ===
+=== Run 5/10 ===
+=== Run 6/10 ===
+=== Run 7/10 ===
+=== Run 8/10 ===
+=== Run 9/10 ===
+=== Run 10/10 ===
+Run summary written to scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-01-smoke-20260304-091747/summary.csv
+[devctl] Skipping instrumentation lane: Android SDK not configured for instrumentation lane.
+[devctl] Skipping Maestro lane: Maestro CLI is not installed. Install with: curl -Ls https://get.maestro.mobile.dev | bash
+[devctl] $ bash scripts/android/configure_device_for_benchmark.sh reset
