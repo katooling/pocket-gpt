@@ -13,9 +13,10 @@ Prevent closure-path startup validation from passing on `ADB_FALLBACK` runtime, 
 1. Added explicit runtime backend contract (`NATIVE_JNI`, `ADB_FALLBACK`, `UNAVAILABLE`) to the Android runtime bridge layer.
 2. Wired backend reporting into `AndroidLlamaCppInferenceModule` and `AndroidMvpContainer` startup checks.
 3. Enforced startup-check failure when backend is not `NATIVE_JNI` (default behavior).
-4. Added local-scaffolding override env (`POCKETGPT_REQUIRE_NATIVE_RUNTIME_STARTUP=0`) to keep non-closure smoke lanes usable.
-5. Updated resilience guard signatures so runtime backend fallback/unavailable checks are classified as blocking.
-6. Expanded unit tests for runtime backend reporting and startup-check enforcement behavior.
+4. Enforced non-zero process exit on blocking startup checks so closure lanes fail hard instead of only logging warnings.
+5. Added local-scaffolding override env (`POCKETGPT_REQUIRE_NATIVE_RUNTIME_STARTUP=0`) to keep non-closure smoke lanes usable.
+6. Updated resilience guard signatures so runtime backend fallback/unavailable checks are classified as blocking.
+7. Expanded unit tests for runtime backend reporting and startup-check enforcement behavior.
 
 ## Commands Run and Outcomes
 
@@ -28,8 +29,8 @@ Prevent closure-path startup validation from passing on `ADB_FALLBACK` runtime, 
    - Notes: devctl tests + package tests + host/app unit lanes green.
 
 3. `POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa POCKETGPT_QWEN_3_5_2B_Q4_SHA256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ./gradlew --no-daemon :apps:mobile-android-host:run`
-   - Outcome: PASS (build)
-   - Runtime behavior outcome: startup checks fail fast on fallback backend with message:
+   - Outcome: FAIL (expected for fallback backend; task exits non-zero)
+   - Runtime behavior outcome: startup checks fail fast on fallback backend and terminate lane with message:
      - `Runtime backend: ADB_FALLBACK`
      - `Startup checks failed: Runtime backend is ADB_FALLBACK... Native JNI runtime is required for closure-path startup checks...`
 
