@@ -74,3 +74,18 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 - [ ] Finalize beta go/no-go packet
 - [ ] Add crash recovery tests and startup resiliency checks
 - [ ] Confirm release candidate checklist is fully green
+
+## PROD-03 Finalization Hooks (post-WP-03)
+
+Status: Lock-pass alignment updated on 2026-03-04. WP-03-dependent product decisions are finalized; final beta acceptance closeout remains gated by Stage 5/6 evidence completion.
+
+- [x] Confirm execution board still shows `WP-03 = Done` at final lock timestamp.
+- [x] Confirm PROD-01 workflow definition is finalized in PRD (`docs/prd/phase-0-prd.md`).
+- [x] Confirm PROD-02 device policy table is finalized (`docs/feasibility/device-matrix.md`).
+- [ ] Confirm PROD-01 workflow evidence is fully linked:
+  - Scenario A/B threshold PASS report
+  - tool safety regression PASS report
+  - Scenario C + memory persistence evidence
+- [ ] Confirm PROD-02 device policy table is copied into go/no-go packet with current tier classifications.
+- [ ] Confirm unresolved launch blockers list is empty or explicitly accepted by Product + QA.
+- [ ] Stamp go/no-go packet decision date and sign-off owners.

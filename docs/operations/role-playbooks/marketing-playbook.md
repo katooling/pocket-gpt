@@ -1,6 +1,6 @@
 # Marketing Playbook
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 ## Mission
 
@@ -16,6 +16,9 @@ Define and validate messaging, category positioning, and launch channel strategy
 
 - [x] Initial competitive framing and positioning direction captured
 - [x] Privacy-first and offline reliability narrative identified
+- [x] MKT-01 messaging architecture baseline completed and evidence-mapped
+- [x] MKT-02 competitor matrix finalized with claim-risk labels (validated/provisional/excluded)
+- [x] WP-08 lock-pass evidence note published (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`)
 
 ## What Is In Progress
 
@@ -34,8 +37,8 @@ Define and validate messaging, category positioning, and launch channel strategy
 
 | Task ID | Task | Status | Prerequisites | Owner | References |
 |---|---|---|---|---|---|
-| MKT-01 | Messaging architecture (privacy vs reliability vs utility) | Ready | WP-03 | Marketing Lead | `docs/product/open-questions-log.md` |
-| MKT-02 | Competitor matrix with evidence-safe claims | Ready | MKT-01 | Product Marketing | `docs/roadmap/product-roadmap.md` |
+| MKT-01 | Messaging architecture (privacy vs reliability vs utility) | Done | WP-03 | Marketing Lead | `docs/operations/mkt-01-messaging-architecture-draft.md` |
+| MKT-02 | Competitor matrix with evidence-safe claims | Done | MKT-01 | Product Marketing | `docs/operations/mkt-02-competitor-matrix-template-draft.md` |
 | MKT-03 | Launch channel test plan (communities, beta cohorts) | Backlog | MKT-01 | Growth Lead | `docs/roadmap/product-roadmap.md` |
 | MKT-04 | Landing page and launch copy v1 | Backlog | WP-07 | Content Lead | `docs/product/feature-catalog.md` |
 | MKT-05 | Voice horizon narrative (STT/TTS roadmap messaging) | Backlog | PROD-05 | Product Marketing | `docs/roadmap/product-roadmap.md` |
@@ -51,6 +54,9 @@ Define and validate messaging, category positioning, and launch channel strategy
 ## Marketing References
 
 - `docs/operations/execution-board.md`
+- `docs/operations/mkt-01-messaging-architecture-draft.md`
+- `docs/operations/mkt-02-competitor-matrix-template-draft.md`
+- `docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`
 - `docs/roadmap/product-roadmap.md`
 - `docs/product/feature-catalog.md`
 - `docs/product/open-questions-log.md`

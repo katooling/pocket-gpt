@@ -34,6 +34,9 @@ Android-first MVP with:
 - [ ] diagnostics export samples
 - [ ] soak test report
 - [ ] risk register review update
+- [ ] PROD-01 workflow lock evidence attached (A/B/C workflow acceptance checks)
+- [ ] PROD-02 required vs best-effort device policy table attached
+- [ ] PROD-03 finalization hook checklist completed with Product + QA sign-off
 
 ## Open Risks and Owners
 

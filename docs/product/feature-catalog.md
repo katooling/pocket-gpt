@@ -1,6 +1,6 @@
 # Feature Catalog and Feasibility Bands
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 This catalog lists current and possible features based on known technical constraints (mobile RAM/thermal limits, model/runtime maturity, and privacy requirements).
 
@@ -11,7 +11,7 @@ This catalog lists current and possible features based on known technical constr
 | Offline text chat | core assistant utility | first-token latency, memory/OOM | In active implementation |
 | Streaming responses | perceived speed and UX quality | runtime callback reliability | In active implementation |
 | Model routing (`0.8B`/`2B`) | battery and thermal control | device-state signal quality | In active implementation |
-| Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | In active implementation |
+| Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented for current MVP scope (WP-05 closed 2026-03-04) |
 | Memory v1 | continuity across sessions | retrieval quality + retention policy | In active implementation |
 | Single-image Q&A | multimodal differentiation | image path latency and correctness | In active implementation |
 
@@ -21,7 +21,7 @@ This catalog lists current and possible features based on known technical constr
 |---|---|---|---|
 | iOS parity | market expansion | runtime bridge and platform integration | Planned |
 | SQLite-backed memory | durable reliability | migrations and pruning correctness | Planned |
-| Strict JSON-schema tools | stronger safety guarantees | parser contract and test coverage | In active implementation (ENG-06 parallel) |
+| Strict JSON-schema tools | stronger safety guarantees | parser contract and test coverage | Implemented (ENG-06 closeout 2026-03-04) |
 | Rich diagnostics dashboards | faster QA and regression triage | safe redaction + metrics consistency | Planned |
 | Better image workflows | broader use cases (documents/photos) | model quality on edge cases | Planned |
 

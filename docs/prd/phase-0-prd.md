@@ -55,6 +55,40 @@ Included:
 4. Model routing between `0.8B` and `2B` quantized tiers based on capability rules
 5. Rolling context + summarization memory
 
+## Launch Workflow Lock (PROD-01)
+
+Status: Finalized lock pass on 2026-03-04 (WP-03 confirmed Done on execution board).
+
+Top launch workflows (must be excellent at MVP launch):
+
+1. Workflow A - Offline Quick Answer (text-only)
+   - User intent: get a useful answer without network dependency.
+   - Entry conditions: offline mode enabled or no connectivity.
+   - Testable acceptance:
+     - Scenario A threshold report = PASS on required launch devices.
+     - Crash/OOM rate <= 5% across 10-run short loop.
+     - No network call made during workflow execution (policy/log validation).
+2. Workflow B - Offline Task Assist (safe local tools)
+   - User intent: complete deterministic utility actions (calculator/date-time/notes/reminder) locally.
+   - Entry conditions: supported tool request with allowlisted tool name and schema-valid payload.
+   - Testable acceptance:
+     - 100% rejection of malformed/non-allowlisted tool calls in tool safety test suite.
+     - 100% deterministic success for positive allowlisted fixtures.
+     - Zero policy bypass findings in adversarial tool regression tests.
+3. Workflow C - Context Follow-up (memory + image-aware continuity)
+   - User intent: ask follow-up questions with prior context and optional single-image input.
+   - Entry conditions: prior chat context exists; optional image is provided.
+   - Testable acceptance:
+     - Scenario C benchmark evidence produced for required launch devices.
+     - Memory survives app restart in persistence validation tests.
+     - Quality rubric notes for image workflow recorded with no blocker defects.
+
+Final lock gate for PROD-01:
+
+1. `WP-03` status is `Done` on `docs/operations/execution-board.md`.
+2. Workflow A/B/C evidence links are attached in the MVP beta go/no-go packet.
+3. Product + QA both mark the launch workflow checklist as complete (PROD-03 handoff).
+
 Excluded (non-MVP):
 
 1. Broad video analysis workflows

@@ -1,6 +1,6 @@
 # Product Playbook
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 ## Mission
 
@@ -17,20 +17,22 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 - [x] Phase 0 PRD and MVP boundary documented
 - [x] MVP stage plan, tracker, and go/no-go structure defined
 - [x] Feature catalog and roadmap horizons documented
+- [x] PROD-01 launch workflow lock finalized (2026-03-04)
+- [x] PROD-02 launch device policy lock finalized (2026-03-04)
 
 ## What Is In Progress
 
-- [ ] No active product task currently marked in-progress
+- [x] PROD-03 checklist alignment completed for current validated scope; release-close checks remain gated by Stage 5/6 evidence
 
 ## Product Dispatch Timing
 
 1. Start now (draft/prep only):
-   - draft `PROD-01` and `PROD-02` outputs with unresolved assumptions clearly marked
+   - draft `PROD-01` and `PROD-02` outputs with unresolved assumptions clearly marked (completed 2026-03-04)
 2. Finalize immediately after WP-03 is marked Done:
-   - lock top launch workflows (`PROD-01`)
-   - lock required vs best-effort device support policy (`PROD-02`)
+   - lock top launch workflows (`PROD-01`) (completed 2026-03-04)
+   - lock required vs best-effort device support policy (`PROD-02`) (completed 2026-03-04)
 3. After `PROD-01` is locked:
-   - execute `PROD-03` final acceptance checklist consolidation with QA
+   - execute `PROD-03` final acceptance checklist consolidation with QA (in progress; final beta closeout gated by Stage 5/6 evidence)
 
 ## Immediate PM Dispatch
 
@@ -41,9 +43,9 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 
 | Task ID | Task | Status | Prerequisites | Owner | References |
 |---|---|---|---|---|---|
-| PROD-01 | Lock launch workflows (top 2-3 user journeys) | Ready | WP-03 | Product Lead | `docs/prd/phase-0-prd.md` |
-| PROD-02 | Define launch device support policy (required vs best-effort) | Ready | WP-03 | Product Lead | `docs/feasibility/device-matrix.md` |
-| PROD-03 | Finalize MVP acceptance checklist by stage | Ready | PROD-01 | Product + QA | `docs/roadmap/mvp-implementation-tracker.md` |
+| PROD-01 | Lock launch workflows (top 2-3 user journeys) | Done | WP-03 | Product Lead | `docs/prd/phase-0-prd.md` |
+| PROD-02 | Define launch device support policy (required vs best-effort) | Done | WP-03 | Product Lead | `docs/feasibility/device-matrix.md` |
+| PROD-03 | Finalize MVP acceptance checklist by stage | In Progress (Aligned; awaiting Stage 5/6 evidence for final beta closeout) | PROD-01 | Product + QA | `docs/roadmap/mvp-implementation-tracker.md` |
 | PROD-04 | Monetization scope and pricing hypothesis | Backlog | PROD-01 | Product Lead | `docs/product/open-questions-log.md` |
 | PROD-05 | Post-MVP voice product requirements (STT/TTS) | Backlog | WP-07 | Product Lead | `docs/roadmap/product-roadmap.md` |
 | PROD-06 | Beta rollout process and user feedback loop | Backlog | WP-07, WP-08 | Product Ops | `docs/roadmap/mvp-beta-go-no-go-packet.md` |
