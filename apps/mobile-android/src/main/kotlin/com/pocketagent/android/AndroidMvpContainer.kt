@@ -9,20 +9,24 @@ import com.pocketagent.core.PolicyModule
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.AdaptiveRoutingPolicy
+import com.pocketagent.inference.ArtifactDistributionChannel
+import com.pocketagent.inference.ArtifactVerificationResult
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.ModelArtifact
 import com.pocketagent.inference.ModelArtifactManager
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.inference.RuntimeImageInputModule
 import com.pocketagent.inference.RoutingModule
-import com.pocketagent.inference.SmokeImageInputModule
-import com.pocketagent.memory.InMemoryMemoryModule
 import com.pocketagent.memory.MemoryChunk
 import com.pocketagent.memory.MemoryModule
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolCall
 import com.pocketagent.tools.ToolModule
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
 
 data class ChatResponse(
     val sessionId: SessionId,
@@ -39,12 +43,20 @@ class AndroidMvpContainer(
     private val policyModule: PolicyModule = DefaultPolicyModule(offlineOnly = true),
     private val observabilityModule: ObservabilityModule = InMemoryObservabilityModule(),
     private val toolModule: ToolModule = SafeLocalToolRuntime(),
-    private val memoryModule: MemoryModule = InMemoryMemoryModule(),
-    private val artifactSha256ByModelId: Map<String, String> = defaultArtifactSha256ByModelId(),
+    private val memoryModule: MemoryModule = AndroidNativeMemoryModule.ephemeralRuntimeModule(),
+    private val artifactPayloadByModelId: Map<String, ByteArray> = defaultArtifactPayloadByModelId(),
+    private val artifactSha256ByModelId: Map<String, String> = defaultArtifactSha256ByModelId(artifactPayloadByModelId),
+    private val artifactProvenanceIssuerByModelId: Map<String, String> = defaultArtifactProvenanceIssuerByModelId(),
+    private val artifactProvenanceSignatureByModelId: Map<String, String> = defaultArtifactProvenanceSignatureByModelId(
+        artifactPayloadByModelId,
+        artifactProvenanceIssuerByModelId,
+    ),
+    private val runtimeCompatibilityTag: String = defaultRuntimeCompatibilityTag(),
     private val requireNativeRuntimeForStartupChecks: Boolean = defaultRequireNativeRuntimeForStartupChecks(),
+    private val networkPolicyClient: PolicyAwareNetworkClient = PolicyAwareNetworkClient(policyModule),
 ) {
     private val modelArtifactManager = ModelArtifactManager()
-    private val imageInputModule = SmokeImageInputModule()
+    private val imageInputModule = RuntimeImageInputModule(inferenceModule)
     private var routingMode: RoutingMode = RoutingMode.AUTO
 
     init {
@@ -91,11 +103,12 @@ class AndroidMvpContainer(
             failureMessage = "Policy module rejected routing event type.",
         )
         val modelId = selectModelId(taskType = taskType, deviceState = deviceState)
-        check(inferenceModule.loadModel(modelId)) {
-            "Failed to load runtime model: $modelId"
-        }
         check(modelArtifactManager.setActiveModel(modelId)) {
             "Model artifact not registered for runtime model: $modelId"
+        }
+        verifyArtifactOrThrow(modelId)
+        check(inferenceModule.loadModel(modelId)) {
+            "Failed to load runtime model: $modelId"
         }
 
         conversationModule.appendUserTurn(sessionId, userText)
@@ -155,7 +168,13 @@ class AndroidMvpContainer(
             return "Tool error: Policy module rejected tool event type."
         }
         val result = toolModule.executeToolCall(ToolCall(toolName, jsonArgs))
-        return if (result.success) result.content else "Tool error: ${result.content}"
+        if (result.success) {
+            return result.content
+        }
+        if (result.content.startsWith("TOOL_VALIDATION_ERROR:")) {
+            return result.content
+        }
+        return "Tool error: ${result.content}"
     }
 
     fun analyzeImage(
@@ -168,11 +187,12 @@ class AndroidMvpContainer(
             failureMessage = "Policy module rejected image routing event type.",
         )
         val modelId = selectModelId(taskType = "image", deviceState = deviceState)
-        check(inferenceModule.loadModel(modelId)) {
-            "Failed to load runtime model for image analysis: $modelId"
-        }
         check(modelArtifactManager.setActiveModel(modelId)) {
             "Model artifact not registered for image runtime model: $modelId"
+        }
+        verifyArtifactOrThrow(modelId)
+        check(inferenceModule.loadModel(modelId)) {
+            "Failed to load runtime model for image analysis: $modelId"
         }
 
         val startedMs = System.currentTimeMillis()
@@ -213,6 +233,21 @@ class AndroidMvpContainer(
             return checks
         }
 
+        val requiredModels = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
+        requiredModels.forEach { modelId ->
+            if (!modelArtifactManager.setActiveModel(modelId)) {
+                checks.add("Artifact manifest missing required model registration: $modelId.")
+                return@forEach
+            }
+            val verification = verifyArtifactForModel(modelId)
+            if (!verification.passed) {
+                checks.add("Artifact verification failed for $modelId: ${artifactVerificationFailureMessage(verification)}")
+            }
+        }
+        if (checks.isNotEmpty()) {
+            return checks
+        }
+
         val runtimeBackend = detectRuntimeBackend()
         if (requireNativeRuntimeForStartupChecks &&
             runtimeBackend != null &&
@@ -227,8 +262,7 @@ class AndroidMvpContainer(
         }
 
         val available = inferenceModule.listAvailableModels().toSet()
-        val required = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
-        val missing = required.minus(available)
+        val missing = requiredModels.minus(available)
         if (missing.isNotEmpty()) {
             checks.add("Missing runtime model(s): ${missing.joinToString(", ")}.")
         } else {
@@ -240,6 +274,11 @@ class AndroidMvpContainer(
         }
         if (!policyModule.enforceDataBoundary("inference.startup_check")) {
             checks.add("Policy module rejected startup event type.")
+        }
+        checks.addAll(networkPolicyClient.startupChecks())
+        val networkProbe = networkPolicyClient.enforce("runtime.offline_probe")
+        if (networkProbe.allowed) {
+            checks.add("Network policy wiring invalid: offline-only mode unexpectedly allowed runtime.offline_probe.")
         }
         return checks
     }
@@ -303,6 +342,47 @@ class AndroidMvpContainer(
         }.take(contextBudget * 4)
     }
 
+    private fun verifyArtifactOrThrow(modelId: String) {
+        val result = verifyArtifactForModel(modelId)
+        check(result.passed) {
+            artifactVerificationFailureMessage(result)
+        }
+    }
+
+    private fun verifyArtifactForModel(modelId: String): ArtifactVerificationResult {
+        return modelArtifactManager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = null,
+            payload = artifactPayloadByModelId[modelId],
+            provenanceIssuer = artifactProvenanceIssuerByModelId[modelId].orEmpty(),
+            provenanceSignature = artifactProvenanceSignatureByModelId[modelId].orEmpty(),
+            runtimeCompatibility = runtimeCompatibilityTag,
+        )
+    }
+
+    private fun artifactVerificationFailureMessage(result: ArtifactVerificationResult): String {
+        return buildString {
+            append("MODEL_ARTIFACT_VERIFICATION_ERROR:")
+            append(result.status.name)
+            append(":model=")
+            append(result.modelId)
+            append(";version=")
+            append(result.version ?: "none")
+            append(";expected_sha=")
+            append(result.expectedSha256 ?: "none")
+            append(";actual_sha=")
+            append(result.actualSha256 ?: "none")
+            append(";expected_issuer=")
+            append(result.expectedIssuer ?: "none")
+            append(";actual_issuer=")
+            append(result.actualIssuer ?: "none")
+            append(";expected_runtime=")
+            append(result.expectedRuntimeCompatibility ?: "none")
+            append(";actual_runtime=")
+            append(result.actualRuntimeCompatibility ?: "none")
+        }
+    }
+
     private fun registerArtifact(modelId: String, fileName: String) {
         modelArtifactManager.registerArtifact(
             ModelArtifact(
@@ -310,6 +390,10 @@ class AndroidMvpContainer(
                 version = "1",
                 fileName = fileName,
                 expectedSha256 = artifactSha256ByModelId[modelId]?.trim().orEmpty(),
+                distributionChannel = ArtifactDistributionChannel.SIDE_LOAD_MANUAL_INTERNAL,
+                provenanceIssuer = artifactProvenanceIssuerByModelId[modelId].orEmpty(),
+                provenanceSignature = artifactProvenanceSignatureByModelId[modelId].orEmpty(),
+                runtimeCompatibility = runtimeCompatibilityTag,
             ),
         )
     }
@@ -347,7 +431,15 @@ class AndroidMvpContainer(
     companion object {
         const val QWEN_0_8B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256"
         const val QWEN_2B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_SHA256"
+        const val QWEN_0_8B_SIDELOAD_PATH_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH"
+        const val QWEN_2B_SIDELOAD_PATH_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH"
+        const val QWEN_0_8B_PROVENANCE_SIG_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_PROVENANCE_SIGNATURE"
+        const val QWEN_2B_PROVENANCE_SIG_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_PROVENANCE_SIGNATURE"
+        const val MODEL_PROVENANCE_ISSUER_ENV: String = "POCKETGPT_MODEL_PROVENANCE_ISSUER"
+        const val MODEL_RUNTIME_COMPATIBILITY_ENV: String = "POCKETGPT_MODEL_RUNTIME_COMPATIBILITY"
         const val REQUIRE_NATIVE_RUNTIME_STARTUP_ENV: String = "POCKETGPT_REQUIRE_NATIVE_RUNTIME_STARTUP"
+        private const val DEFAULT_PROVENANCE_ISSUER: String = "internal-release"
+        private const val DEFAULT_RUNTIME_COMPATIBILITY_TAG: String = "android-arm64-v8a"
         private val SENSITIVE_DIAGNOSTIC_KEYS = setOf(
             "user",
             "assistant",
@@ -358,10 +450,65 @@ class AndroidMvpContainer(
             "tool_args",
         )
 
-        private fun defaultArtifactSha256ByModelId(): Map<String, String> = mapOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4 to System.getenv(QWEN_0_8B_SHA256_ENV).orEmpty(),
-            ModelCatalog.QWEN_3_5_2B_Q4 to System.getenv(QWEN_2B_SHA256_ENV).orEmpty(),
+        private fun defaultArtifactPayloadByModelId(): Map<String, ByteArray> = mapOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4 to resolvePayload(
+                sideLoadPathEnv = QWEN_0_8B_SIDELOAD_PATH_ENV,
+                fallbackSeed = "sideload:${ModelCatalog.QWEN_3_5_0_8B_Q4}:v1",
+            ),
+            ModelCatalog.QWEN_3_5_2B_Q4 to resolvePayload(
+                sideLoadPathEnv = QWEN_2B_SIDELOAD_PATH_ENV,
+                fallbackSeed = "sideload:${ModelCatalog.QWEN_3_5_2B_Q4}:v1",
+            ),
         )
+
+        private fun defaultArtifactSha256ByModelId(
+            payloadByModelId: Map<String, ByteArray>,
+        ): Map<String, String> = mapOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4 to resolveSha(
+                envValue = System.getenv(QWEN_0_8B_SHA256_ENV),
+                payload = payloadByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
+            ),
+            ModelCatalog.QWEN_3_5_2B_Q4 to resolveSha(
+                envValue = System.getenv(QWEN_2B_SHA256_ENV),
+                payload = payloadByModelId.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
+            ),
+        )
+
+        private fun defaultArtifactProvenanceIssuerByModelId(): Map<String, String> {
+            val issuer = System.getenv(MODEL_PROVENANCE_ISSUER_ENV)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: DEFAULT_PROVENANCE_ISSUER
+            return mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to issuer,
+                ModelCatalog.QWEN_3_5_2B_Q4 to issuer,
+            )
+        }
+
+        private fun defaultArtifactProvenanceSignatureByModelId(
+            payloadByModelId: Map<String, ByteArray>,
+            issuerByModelId: Map<String, String>,
+        ): Map<String, String> = mapOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4 to resolveProvenanceSignature(
+                envValue = System.getenv(QWEN_0_8B_PROVENANCE_SIG_ENV),
+                issuer = issuerByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
+                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                payload = payloadByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
+            ),
+            ModelCatalog.QWEN_3_5_2B_Q4 to resolveProvenanceSignature(
+                envValue = System.getenv(QWEN_2B_PROVENANCE_SIG_ENV),
+                issuer = issuerByModelId.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
+                modelId = ModelCatalog.QWEN_3_5_2B_Q4,
+                payload = payloadByModelId.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
+            ),
+        )
+
+        private fun defaultRuntimeCompatibilityTag(): String {
+            return System.getenv(MODEL_RUNTIME_COMPATIBILITY_ENV)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: DEFAULT_RUNTIME_COMPATIBILITY_TAG
+        }
 
         private fun defaultRequireNativeRuntimeForStartupChecks(): Boolean {
             val raw = System.getenv(REQUIRE_NATIVE_RUNTIME_STARTUP_ENV)
@@ -369,6 +516,45 @@ class AndroidMvpContainer(
                 ?.lowercase()
                 ?: return true
             return raw !in setOf("0", "false", "no")
+        }
+
+        private fun resolvePayload(sideLoadPathEnv: String, fallbackSeed: String): ByteArray {
+            val rawPath = System.getenv(sideLoadPathEnv)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: return fallbackSeed.encodeToByteArray()
+            val path = Path.of(rawPath)
+            return if (Files.exists(path)) {
+                Files.readAllBytes(path)
+            } else {
+                fallbackSeed.encodeToByteArray()
+            }
+        }
+
+        private fun resolveSha(envValue: String?, payload: ByteArray): String {
+            val envSha = envValue?.trim()?.takeIf { it.isNotEmpty() }
+            return envSha ?: sha256Hex(payload)
+        }
+
+        private fun resolveProvenanceSignature(
+            envValue: String?,
+            issuer: String,
+            modelId: String,
+            payload: ByteArray,
+        ): String {
+            val envSig = envValue?.trim()?.takeIf { it.isNotEmpty() }
+            if (envSig != null) {
+                return envSig
+            }
+            val payloadSha = sha256Hex(payload)
+            return sha256Hex("$issuer|$modelId|$payloadSha|v1".encodeToByteArray())
+        }
+
+        private fun sha256Hex(bytes: ByteArray): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+            val builder = StringBuilder()
+            digest.forEach { b -> builder.append("%02x".format(b)) }
+            return builder.toString()
         }
     }
 }

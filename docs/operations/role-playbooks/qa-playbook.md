@@ -25,7 +25,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 ## What Is In Progress
 
 - [ ] WP-09 rollout quality execution support (weekly cadence)
-- [ ] QA-WP12 closeout planning for backend runtime closure packet (execute after ENG-12..ENG-17 evidence lands)
+- [ ] QA-WP12 rerun planning pending ENG-13 native JNI closure evidence
 
 ## Task Queue
 
@@ -40,7 +40,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 | QA-08 | WP-11 UI acceptance suite (`UI-01`..`UI-10`) | Done (rerun complete; gate closed 2026-03-04) | WP-11 first integrated slice | QA Engineer | `docs/prd/phase-0-prd.md`, `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
 | QA-09 | WP-09 rollout quality checkpoints + beta operations QA support | Done (template packet delivered 2026-03-04) | WP-07, WP-11 | QA Lead | `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md` |
 | QA-10 | Weekly UI regression matrix execution for beta operations | Ready | WP-11, QA-08 | QA Lead | `docs/operations/ui-ux-handoff-ticket-pack.md`, `docs/testing/android-dx-and-test-playbook.md` |
-| QA-WP12 | Validate backend production runtime closure packet (ENG-12..ENG-17) | Ready (start after ENG notes land) | ENG-12, ENG-13, ENG-14, ENG-15, ENG-16, ENG-17 evidence notes | QA Engineer | `docs/operations/wp-12-handover-ticket-packet.md`, `docs/testing/android-dx-and-test-playbook.md`, `docs/testing/test-strategy.md` |
+| QA-WP12 | Validate backend production runtime closure packet (ENG-12..ENG-17) | Done (executed 2026-03-04; recommendation: do not close WP-12 until ENG-13 blocker is resolved) | ENG-12, ENG-13, ENG-14, ENG-15, ENG-16, ENG-17 evidence notes | QA Engineer | `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`, `docs/testing/android-dx-and-test-playbook.md`, `docs/testing/test-strategy.md` |
 | QA-07 | Voice STT/TTS quality benchmark framework (post-MVP) | Backlog | WP-10 | QA Lead | `docs/roadmap/product-roadmap.md` |
 
 ## QA Definition of Done

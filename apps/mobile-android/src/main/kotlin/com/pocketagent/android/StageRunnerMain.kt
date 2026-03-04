@@ -4,7 +4,9 @@ import com.pocketagent.inference.DeviceState
 import kotlin.system.exitProcess
 
 fun main() {
-    val container = AndroidMvpContainer()
+    val container = AndroidMvpContainer(
+        memoryModule = AndroidNativeMemoryModule.defaultRuntimeModule(),
+    )
     println("Runtime backend: ${container.runtimeBackend() ?: "unknown"}")
     val guards = ResilienceGuards()
     val checks = container.runStartupChecks()

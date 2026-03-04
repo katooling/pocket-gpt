@@ -116,6 +116,31 @@ class SafeLocalToolRuntimeTest {
     }
 
     @Test
+    fun `notes lookup and local search return real store-backed results`() {
+        val notesResult = runtime.executeToolCall(ToolCall("notes_lookup", "{\"query\":\"runtime gate\"}"))
+        val searchResult = runtime.executeToolCall(ToolCall("local_search", "{\"query\":\"schema safety\"}"))
+
+        assertTrue(notesResult.success)
+        assertTrue(notesResult.content.startsWith("notes_lookup:"))
+        assertFalse(notesResult.content.contains("placeholder"))
+
+        assertTrue(searchResult.success)
+        assertTrue(searchResult.content.startsWith("local_search:"))
+        assertFalse(searchResult.content.contains("placeholder"))
+    }
+
+    @Test
+    fun `reminder create persists deterministic local ids`() {
+        val first = runtime.executeToolCall(ToolCall("reminder_create", "{\"title\":\"ship wp12 packet\"}"))
+        val second = runtime.executeToolCall(ToolCall("reminder_create", "{\"title\":\"run qa closeout\"}"))
+
+        assertTrue(first.success)
+        assertTrue(second.success)
+        assertTrue(first.content.contains("reminder_create:id=rem-1"))
+        assertTrue(second.content.contains("reminder_create:id=rem-2"))
+    }
+
+    @Test
     fun `date_time rejects extra schema fields`() {
         val result = runtime.executeToolCall(ToolCall("date_time", "{\"timezone\":\"UTC\"}"))
         assertValidationError(

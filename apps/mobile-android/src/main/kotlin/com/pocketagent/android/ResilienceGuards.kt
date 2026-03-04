@@ -71,10 +71,15 @@ class ResilienceGuards(
     companion object {
         private val BLOCKING_STARTUP_SIGNATURES = listOf(
             "artifact manifest invalid",
+            "artifact verification failed",
+            "model_artifact_verification_error",
             "missing runtime model",
             "failed to load baseline runtime model",
             "runtime backend is adb_fallback",
             "runtime backend is unavailable",
+            "network policy wiring invalid",
+            "network security config invalid",
+            "network security config missing",
         )
         private val RUNTIME_RESET_SIGNATURES = listOf(
             "runtime returned no tokens",

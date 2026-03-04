@@ -92,12 +92,18 @@ External beta signoff policy:
 
 - [x] Runtime backend identity (`NATIVE_JNI` vs `ADB_FALLBACK`) surfaced in stage runner output.
 - [x] Startup checks block closure-path execution on fallback runtime by default.
+- [x] Product decision approved for model distribution path/provenance policy (`ENG-12`): side-load/manual-internal only + strict verify-before-load contract.
 - [ ] Native Android ARM `llama.cpp` compile + real inference proof packet on target device.
-- [ ] Model distribution strategy implemented with artifact provenance validation.
-- [ ] Android-native memory backend active on runtime path (no JVM JDBC dependency).
-- [ ] Tool data integrations remove placeholder runtime responses.
-- [ ] Real multimodal image path replaces smoke contract on production lane.
-- [ ] Platform network policy enforcement verified in runtime lane evidence.
+- [x] Model distribution strategy implemented with artifact provenance validation (`docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`).
+- [x] Android-native memory backend active on runtime path (no JVM JDBC dependency) (`docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md`).
+- [x] Tool data integrations remove placeholder runtime responses (`docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md`).
+- [x] Real multimodal image path replaces smoke contract on production lane (`docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md`).
+- [x] Platform network policy enforcement verified in runtime lane evidence (`docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`).
+
+Current blocker:
+
+- `ENG-13` remains blocked on native backend proof (`NATIVE_JNI`) and full `0.8B`/`2B` + memory/PSS packet completion (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`).
+- QA closeout has been triggered and recommends holding WP-12 closure until ENG-13 is resolved (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`).
 
 ## WP-11 UI Gate Checklist
 

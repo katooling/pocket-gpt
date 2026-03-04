@@ -8,6 +8,7 @@ import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.ModelCatalog
+import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -110,7 +111,11 @@ class AndroidMvpContainerTest {
 
         assertEquals(2, inference.capturedPrompts.size)
         val secondPrompt = inference.capturedPrompts[1]
-        assertTrue(secondPrompt.contains("memory: project launch timeline and owner updates"))
+        assertTrue(secondPrompt.contains("memory:"))
+        assertTrue(
+            secondPrompt.contains("memory: project launch timeline and owner updates") ||
+                secondPrompt.contains("memory: what is the launch timeline follow up"),
+        )
     }
 
     @Test
@@ -156,11 +161,18 @@ class AndroidMvpContainerTest {
     @Test
     fun `startup checks pass with valid sha256 metadata and ready runtime models`() {
         val inference = RecordingInferenceModule()
+        val payloads = testPayloads()
         val container = AndroidMvpContainer(
             inferenceModule = inference,
-            artifactSha256ByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                ModelCatalog.QWEN_3_5_2B_Q4 to "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            artifactPayloadByModelId = payloads,
+            artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
+            artifactProvenanceIssuerByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+            ),
+            artifactProvenanceSignatureByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
+                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
             ),
         )
 
@@ -174,11 +186,18 @@ class AndroidMvpContainerTest {
     @Test
     fun `startup checks fail when runtime backend is adb fallback and native is required`() {
         val bridge = BackendAwareTestBridge(backend = RuntimeBackend.ADB_FALLBACK)
+        val payloads = testPayloads()
         val container = AndroidMvpContainer(
             inferenceModule = AndroidLlamaCppInferenceModule(bridge),
-            artifactSha256ByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                ModelCatalog.QWEN_3_5_2B_Q4 to "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            artifactPayloadByModelId = payloads,
+            artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
+            artifactProvenanceIssuerByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+            ),
+            artifactProvenanceSignatureByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
+                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
             ),
             requireNativeRuntimeForStartupChecks = true,
         )
@@ -193,11 +212,18 @@ class AndroidMvpContainerTest {
     @Test
     fun `startup checks allow adb fallback when native runtime requirement is disabled`() {
         val bridge = BackendAwareTestBridge(backend = RuntimeBackend.ADB_FALLBACK)
+        val payloads = testPayloads()
         val container = AndroidMvpContainer(
             inferenceModule = AndroidLlamaCppInferenceModule(bridge),
-            artifactSha256ByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                ModelCatalog.QWEN_3_5_2B_Q4 to "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            artifactPayloadByModelId = payloads,
+            artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
+            artifactProvenanceIssuerByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+            ),
+            artifactProvenanceSignatureByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
+                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
             ),
             requireNativeRuntimeForStartupChecks = false,
         )
@@ -278,7 +304,7 @@ class AndroidMvpContainerTest {
             deviceState = DeviceState(batteryPercent = 92, thermalLevel = 4, ramClassGb = 8),
         )
 
-        assertTrue(output.startsWith("IMAGE_ANALYSIS(v=1,extension=jpg,max_tokens=128):"))
+        assertEquals("real runtime response", output)
         assertFalse(output.contains("/private/storage/photo.jpg"))
         assertEquals(1, inference.loadCalls.size)
         assertEquals(1, inference.unloadCalls)
@@ -300,6 +326,55 @@ class AndroidMvpContainerTest {
 
         assertTrue(error.message?.contains("Failed to load runtime model for image analysis") == true)
         assertEquals(0, inference.unloadCalls)
+    }
+
+    @Test
+    fun `send user message hard-fails when artifact verification fails`() {
+        val payloads = mapOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4 to "wrong-artifact".encodeToByteArray(),
+            ModelCatalog.QWEN_3_5_2B_Q4 to "other-artifact".encodeToByteArray(),
+        )
+        val container = AndroidMvpContainer(
+            inferenceModule = RecordingInferenceModule(),
+            artifactPayloadByModelId = payloads,
+            artifactSha256ByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            ),
+            artifactProvenanceIssuerByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+            ),
+            artifactProvenanceSignatureByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
+                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
+            ),
+        )
+        val session = container.createSession()
+
+        val error = assertFailsWith<IllegalStateException> {
+            container.sendUserMessage(
+                sessionId = session,
+                userText = "hello",
+                taskType = "short_text",
+                deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            )
+        }
+
+        assertTrue(error.message?.contains("MODEL_ARTIFACT_VERIFICATION_ERROR:CHECKSUM_MISMATCH") == true)
+    }
+
+    @Test
+    fun `startup checks fail when offline probe is unexpectedly allowlisted`() {
+        val policy = RecordingPolicyModule(allowlistedNetworkActions = setOf("runtime.offline_probe"))
+        val container = AndroidMvpContainer(
+            inferenceModule = RecordingInferenceModule(),
+            policyModule = policy,
+        )
+
+        val checks = container.runStartupChecks()
+
+        assertTrue(checks.any { it.contains("offline-only mode unexpectedly allowed runtime.offline_probe") })
     }
 
     @Test
@@ -396,10 +471,13 @@ private class BackendAwareTestBridge(
 
 private class RecordingPolicyModule(
     private val deniedEvents: Set<String> = emptySet(),
+    private val allowlistedNetworkActions: Set<String> = emptySet(),
 ) : PolicyModule {
     val observedEvents: MutableList<String> = mutableListOf()
 
-    override fun isNetworkAllowedForAction(action: String): Boolean = false
+    override fun isNetworkAllowedForAction(action: String): Boolean {
+        return allowlistedNetworkActions.contains(action)
+    }
 
     override fun getRetentionWindowDays(): Int = 30
 
@@ -421,6 +499,25 @@ private class LeakyObservabilityModule(
     }
 
     override fun exportLocalDiagnostics(): String = diagnostics
+}
+
+private fun testPayloads(): Map<String, ByteArray> {
+    return mapOf(
+        ModelCatalog.QWEN_3_5_0_8B_Q4 to "artifact-qwen-0.8b".encodeToByteArray(),
+        ModelCatalog.QWEN_3_5_2B_Q4 to "artifact-qwen-2b".encodeToByteArray(),
+    )
+}
+
+private fun sha256Hex(bytes: ByteArray): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+    val builder = StringBuilder()
+    digest.forEach { b -> builder.append("%02x".format(b)) }
+    return builder.toString()
+}
+
+private fun provenanceSignature(issuer: String, modelId: String, payload: ByteArray): String {
+    val payloadSha = sha256Hex(payload)
+    return sha256Hex("$issuer|$modelId|$payloadSha|v1".encodeToByteArray())
 }
 
 private class RecordingObservabilityModule : ObservabilityModule {

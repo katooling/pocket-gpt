@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-04
 Owner: Product Lead
-Status: Ready for dispatch
+Status: Active execution (ENG-12/14/15/16/17 complete, ENG-13 blocked)
 
 ## Summary
 
@@ -51,7 +51,7 @@ This packet splits WP-12 execution into decision-complete tickets so owners can 
 ## Ticket 1: ENG-12 Implementation (Runtime Eng)
 
 - Title: `ENG-12 | Side-load model distribution + strict provenance hard-block policy`
-- Status: In Progress
+- Status: Done
 - Owner: Runtime Eng
 - Prereq: `ENG-11A`, product decision note approved
 
@@ -95,7 +95,7 @@ Implement one production model distribution path: manual/internal side-load with
 ## Ticket 2: ENG-13 Runtime Proof (Runtime Eng + QA Support)
 
 - Title: `ENG-13 | Native JNI inference proof on Samsung + perf/memory characterization (0.8B/2B)`
-- Status: In Progress
+- Status: Blocked (`NATIVE_JNI` evidence pending; current closure lane reports `ADB_FALLBACK`)
 - Owner: Runtime Eng
 - Support: QA
 
@@ -136,7 +136,7 @@ Produce real-device proof that native JNI runtime executes real inference and ca
 ## Ticket 3: ENG-14 Android-Native Memory Backend (Core Eng)
 
 - Title: `ENG-14 | Replace JVM-JDBC memory path with Android-native SQLite backend`
-- Status: Ready
+- Status: Done
 - Owner: Core Eng
 - Prereq: `ENG-12` artifact-path contract stable
 
@@ -170,7 +170,7 @@ Ensure runtime memory persistence on Android does not rely on JVM-only JDBC assu
 ## Ticket 4: ENG-15 Real Tool Data Stores (Platform Eng)
 
 - Title: `ENG-15 | Replace placeholder notes/search/reminder responses with real local stores`
-- Status: Ready
+- Status: Done
 - Owner: Platform Eng
 - Prereq: `ENG-12` artifact-path contract stable
 
@@ -204,7 +204,7 @@ Move tool runtime from placeholder strings to real on-device data operations.
 ## Ticket 5: ENG-16 Real Multimodal Image Path (Runtime Eng)
 
 - Title: `ENG-16 | Replace smoke image adapter with production multimodal runtime path`
-- Status: Ready
+- Status: Done
 - Owner: Runtime Eng
 - Prereq: `ENG-12` artifact-path contract stable
 
@@ -238,7 +238,7 @@ Remove smoke-only image analysis from the production lane and wire a real runtim
 ## Ticket 6: ENG-17 Platform Network Policy Wiring (Security Eng)
 
 - Title: `ENG-17 | Wire policy module to Android platform network behavior + regressions`
-- Status: Ready
+- Status: Done
 - Owner: Security Eng
 - Support: Runtime Eng
 - Prereq: Runtime/data path integration from `ENG-12..ENG-16`
@@ -273,7 +273,7 @@ Close the gap between policy checks and Android platform-level network enforceme
 ## Ticket 7: QA-WP12 Closeout Packet (QA Engineer)
 
 - Title: `QA-WP12 | Validate backend production runtime closure packet (ENG-12..ENG-17)`
-- Status: Ready (execute after ENG notes land)
+- Status: Done (executed 2026-03-04; recommendation: hold WP-12 closure pending ENG-13)
 - Owner: QA Engineer
 - Prereq: Evidence notes for `ENG-12..ENG-17`
 

@@ -47,25 +47,18 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
 - [ ] WP-12 backend production runtime closure kickoff + execution
-- [ ] ENG-12 model distribution implementation (decision locked: side-load/manual-internal only + strict checksum/provenance validation)
-- [ ] ENG-13 native JNI runtime proof on Samsung + perf/memory characterization for 0.8B and 2B (parallel kickoff with ENG-12 per WP-12 packet)
 
 ### Ready
 
 - [ ] PROD-04 monetization scope and pricing hypothesis kickoff
 - [ ] PROD-08 UX feedback taxonomy + intake policy for beta operations (`docs/operations/ui-ux-handoff-ticket-pack.md`)
-- [ ] ENG-14 Android-native SQLite memory backend migration (start once ENG-12 artifact-path contracts are stable)
-- [ ] ENG-15 notes/search/reminder integration against real on-device stores (start once ENG-12 artifact-path contracts are stable)
-- [ ] ENG-16 real multimodal image analysis runtime path (start once ENG-12 artifact-path contracts are stable)
-- [ ] ENG-17 platform network policy enforcement wiring + regression checks (run after ENG-12..ENG-16 runtime/data integration)
-- [ ] QA-WP12 closeout packet for backend production runtime closure (execute after ENG-12..ENG-17 evidence notes land)
 - [ ] ENG-18 UI accessibility + error-state hardening for beta rollout (`docs/operations/ui-ux-handoff-ticket-pack.md`)
 - [ ] QA-10 weekly UI regression matrix execution for rollout operations (`docs/operations/ui-ux-handoff-ticket-pack.md`)
 - [ ] MKT-07 UI proof-based messaging and asset-selection pass (`docs/operations/ui-ux-handoff-ticket-pack.md`)
 
 ### Blocked
 
-- [ ] None
+- [ ] ENG-13 native JNI runtime proof on Samsung + perf/memory characterization for 0.8B and 2B (`NATIVE_JNI` proof lane unresolved; current closure path reports `ADB_FALLBACK`) (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`)
 
 ### Done
 
@@ -96,23 +89,30 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] WP-08 positioning and launch prep asset lock pass complete (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`, `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`)
 - [x] ENG-11A runtime truth gate landed: startup checks classify `ADB_FALLBACK` as blocking for closure-path runs and publish backend identity in stage runner output (`docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`)
 - [x] WP-12 handover ticket packet published for `ENG-12..ENG-17` and `QA-WP12` execution sequencing (`docs/operations/evidence/wp-12/2026-03-04-prod-wp12-handover-ticket-packet.md`)
+- [x] ENG-12 model distribution implementation landed (side-load/manual-internal only + strict manifest/SHA/provenance/runtime verification hard-block policy) (`docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`)
+- [x] ENG-14 Android-native runtime memory backend landed (JDBC-independent runtime path + parity tests) (`docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md`)
+- [x] ENG-15 local tool data-store integration landed (`notes_lookup`/`local_search`/`reminder_create` no longer placeholder responses) (`docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md`)
+- [x] ENG-16 production runtime-backed image path landed (`SmokeImageInputModule` removed from production lane) (`docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md`)
+- [x] ENG-17 Android platform network policy wiring/regression checks landed (`docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`)
+- [x] QA-WP12 closeout validation packet executed (recommendation: do not close WP-12 until ENG-13 native JNI blocker is resolved) (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`)
 - [x] MKT-02 external competitor snapshot sourced (ChatGPT/Gemini/Claude) (`docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`)
 
 ## Immediate Assignments (Current Owners)
 
 1. Engineering (Lead/Core/Runtime):
    - WP-11 gate is closed with QA-08 evidence pack.
-   - Execute WP-12 with decision-locked ticket packet: run `ENG-12` and `ENG-13` in parallel, then sequence `ENG-14/15/16`, then `ENG-17`.
-   - Use `docs/operations/wp-12-handover-ticket-packet.md` as execution contract and evidence checklist.
+   - WP-12 implementation tickets `ENG-12`, `ENG-14`, `ENG-15`, `ENG-16`, and `ENG-17` are complete with dated evidence.
+   - Resolve `ENG-13` native JNI blocker (`NATIVE_JNI` backend proof + 0.8B/2B + memory/PSS packet) before QA closeout trigger.
    - New UI hardening handoff ticket ready: `ENG-18` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
 2. QA:
    - QA-08 acceptance gate is complete; continue QA-09 weekly triage/promotion/signal cadence.
-   - Execute `QA-WP12` closeout after `ENG-12..ENG-17` evidence notes are landed; validate only from real run artifacts.
+   - `QA-WP12` closeout packet is executed with recommendation to keep WP-12 open.
+   - Re-run QA closeout after `ENG-13` native JNI proof is landed.
    - New UI operations ticket ready: `QA-10` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
 3. Product:
    - External beta signoff dependency on WP-11 is cleared; continue WP-09 planning.
    - ENG-12 model distribution decision is approved (side-load/manual-internal only + strict provenance checks) and unblocked (`docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`).
-   - WP-12 handover packet is published for zero-context execution (`docs/operations/wp-12-handover-ticket-packet.md`).
+   - WP-12 acceptance/signoff remains pending `ENG-13` blocker resolution.
    - New UX operations ticket ready: `PROD-08` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
 4. Marketing:
    - Run real screenshot/video capture using `docs/operations/mkt-04-demo-asset-capture-runbook.md`.
@@ -159,6 +159,13 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-09 (QA release promotion checklist): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`
 - WP-09 (QA weekly rollout summary template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md`
 - WP-12 (ENG-11 runtime truth gate): `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`
+- WP-12 (ENG-12 side-load distribution + strict provenance/runtime verification hard-block): `docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`
+- WP-12 (ENG-13 native runtime proof attempt; blocked on `NATIVE_JNI` closure evidence): `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`
+- WP-12 (ENG-14 Android-native runtime memory backend): `docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md`
+- WP-12 (ENG-15 local tool store integration): `docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md`
+- WP-12 (ENG-16 production runtime image path): `docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md`
+- WP-12 (ENG-17 platform network policy wiring): `docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`
+- WP-12 (QA closeout validation packet; recommendation hold pending ENG-13): `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`
 - WP-12 (Product ENG-12 model distribution path + provenance decision): `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
 - WP-12 (Handover ticket packet for ENG-12..ENG-17 + QA closeout): `docs/operations/wp-12-handover-ticket-packet.md`
 - WP-12 (Product dispatch evidence for handover ticket packet sync): `docs/operations/evidence/wp-12/2026-03-04-prod-wp12-handover-ticket-packet.md`

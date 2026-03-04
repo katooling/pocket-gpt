@@ -10,7 +10,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 
-class SafeLocalToolRuntime : ToolModule {
+class SafeLocalToolRuntime(
+    private val notesStore: NotesStore = InMemoryNotesStore(),
+    private val searchStore: LocalSearchStore = InMemoryLocalSearchStore(),
+    private val reminderStore: ReminderStore = InMemoryReminderStore(),
+) : ToolModule {
     private val allowlistedTools = setOf(
         "calculator",
         "date_time",
@@ -85,9 +89,9 @@ class SafeLocalToolRuntime : ToolModule {
         return when (call.name) {
             "calculator" -> runCalculator(args.getValue("expression"))
             "date_time" -> currentDateTime()
-            "notes_lookup" -> ToolResult(true, "notes_lookup placeholder for query='${args.getValue("query")}'.")
-            "local_search" -> ToolResult(true, "local_search placeholder for query='${args.getValue("query")}'.")
-            "reminder_create" -> ToolResult(true, "reminder_create accepted for '${args.getValue("title")}'.")
+            "notes_lookup" -> runNotesLookup(args.getValue("query"))
+            "local_search" -> runLocalSearch(args.getValue("query"))
+            "reminder_create" -> runReminderCreate(args.getValue("title"))
             else -> ToolResult(false, "Unknown tool.")
         }
     }
@@ -116,6 +120,36 @@ class SafeLocalToolRuntime : ToolModule {
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withZone(ZoneId.systemDefault())
         return ToolResult(true, formatter.format(now))
+    }
+
+    private fun runNotesLookup(query: String): ToolResult {
+        val results = notesStore.lookup(query)
+        if (results.isEmpty()) {
+            return ToolResult(true, "notes_lookup:0 results")
+        }
+        val encoded = results.joinToString(separator = "|") { note ->
+            "${note.id}:${note.title.take(40)}"
+        }
+        return ToolResult(true, "notes_lookup:${results.size} results:$encoded")
+    }
+
+    private fun runLocalSearch(query: String): ToolResult {
+        val hits = searchStore.search(query)
+        if (hits.isEmpty()) {
+            return ToolResult(true, "local_search:0 hits")
+        }
+        val encoded = hits.joinToString(separator = "|") { hit ->
+            "${hit.id}:${hit.title.take(40)}:${hit.score}"
+        }
+        return ToolResult(true, "local_search:${hits.size} hits:$encoded")
+    }
+
+    private fun runReminderCreate(title: String): ToolResult {
+        val reminder = reminderStore.create(title)
+        return ToolResult(
+            true,
+            "reminder_create:id=${reminder.id},title=${reminder.title},created_at=${reminder.createdAtIso}",
+        )
     }
 
     private fun validateToolCallDetailed(call: ToolCall): ToolValidationResult {
@@ -279,6 +313,95 @@ class SafeLocalToolRuntime : ToolModule {
         }
     }
 
+    data class NoteRecord(
+        val id: String,
+        val title: String,
+        val body: String,
+    )
+
+    data class SearchHit(
+        val id: String,
+        val title: String,
+        val score: Int,
+    )
+
+    data class ReminderRecord(
+        val id: String,
+        val title: String,
+        val createdAtIso: String,
+    )
+
+    interface NotesStore {
+        fun lookup(query: String): List<NoteRecord>
+    }
+
+    interface LocalSearchStore {
+        fun search(query: String): List<SearchHit>
+    }
+
+    interface ReminderStore {
+        fun create(title: String): ReminderRecord
+    }
+
+    private class InMemoryNotesStore : NotesStore {
+        private val notes: List<NoteRecord> = listOf(
+            NoteRecord(id = "note-1", title = "Launch checklist", body = "Finalize QA matrix and release notes."),
+            NoteRecord(id = "note-2", title = "Runtime gate", body = "Verify startup checks and backend identity."),
+            NoteRecord(id = "note-3", title = "Ops sync", body = "Update execution board and evidence packet."),
+        )
+
+        override fun lookup(query: String): List<NoteRecord> {
+            val tokens = tokenize(query)
+            if (tokens.isEmpty()) {
+                return emptyList()
+            }
+            return notes
+                .map { note ->
+                    val haystack = "${note.title} ${note.body}"
+                    note to overlapScore(tokens, tokenize(haystack))
+                }
+                .filter { it.second > 0 }
+                .sortedWith(
+                    compareByDescending<Pair<NoteRecord, Int>> { it.second }
+                        .thenBy { it.first.id },
+                )
+                .map { it.first }
+        }
+    }
+
+    private class InMemoryLocalSearchStore : LocalSearchStore {
+        private val docs: List<Pair<String, String>> = listOf(
+            "doc-1" to "WP-12 handover packet and ENG ticket sequencing",
+            "doc-2" to "Android runtime truth gate and startup checks",
+            "doc-3" to "Tool runtime schema safety and deterministic contracts",
+        )
+
+        override fun search(query: String): List<SearchHit> {
+            val tokens = tokenize(query)
+            if (tokens.isEmpty()) {
+                return emptyList()
+            }
+            return docs
+                .map { (id, title) ->
+                    SearchHit(id = id, title = title, score = overlapScore(tokens, tokenize(title)))
+                }
+                .filter { it.score > 0 }
+                .sortedWith(compareByDescending<SearchHit> { it.score }.thenBy { it.id })
+        }
+    }
+
+    private class InMemoryReminderStore : ReminderStore {
+        private val reminders: MutableList<ReminderRecord> = mutableListOf()
+
+        override fun create(title: String): ReminderRecord {
+            val id = "rem-${reminders.size + 1}"
+            val created = Instant.now().toString()
+            val record = ReminderRecord(id = id, title = title, createdAtIso = created)
+            reminders.add(record)
+            return record
+        }
+    }
+
     private companion object {
         val COMMON_DENIED_FRAGMENTS = setOf(
             "exec",
@@ -290,5 +413,16 @@ class SafeLocalToolRuntime : ToolModule {
             "../",
             "..\\",
         )
+
+        fun tokenize(text: String): Set<String> {
+            return text.lowercase()
+                .split(Regex("[^a-z0-9]+"))
+                .filter { it.isNotBlank() }
+                .toSet()
+        }
+
+        fun overlapScore(a: Set<String>, b: Set<String>): Int {
+            return a.intersect(b).size
+        }
     }
 }

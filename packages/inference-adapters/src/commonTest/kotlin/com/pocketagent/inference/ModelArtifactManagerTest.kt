@@ -157,6 +157,107 @@ class ModelArtifactManagerTest {
     }
 
     @Test
+    fun `artifact verification enforces checksum provenance and runtime compatibility`() {
+        val manager = ModelArtifactManager()
+        val payload = "verified-payload".encodeToByteArray()
+        val modelId = "model-verify"
+        val issuer = "internal-release"
+        val signature = manager.sha256Hex("$issuer|$modelId|${manager.sha256Hex(payload)}|v1".encodeToByteArray())
+        manager.registerArtifact(
+            ModelArtifact(
+                modelId = modelId,
+                version = "1.0.0",
+                fileName = "model-verify.gguf",
+                expectedSha256 = manager.sha256Hex(payload),
+                provenanceIssuer = issuer,
+                provenanceSignature = signature,
+                runtimeCompatibility = "android-arm64-v8a",
+            ),
+        )
+
+        val checksumMismatch = manager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = "1.0.0",
+            payload = "corrupt".encodeToByteArray(),
+            provenanceIssuer = issuer,
+            provenanceSignature = signature,
+            runtimeCompatibility = "android-arm64-v8a",
+        )
+        assertEquals(ArtifactVerificationStatus.CHECKSUM_MISMATCH, checksumMismatch.status)
+
+        val issuerMismatch = manager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = "1.0.0",
+            payload = payload,
+            provenanceIssuer = "external",
+            provenanceSignature = signature,
+            runtimeCompatibility = "android-arm64-v8a",
+        )
+        assertEquals(ArtifactVerificationStatus.PROVENANCE_ISSUER_MISMATCH, issuerMismatch.status)
+
+        val runtimeMismatch = manager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = "1.0.0",
+            payload = payload,
+            provenanceIssuer = issuer,
+            provenanceSignature = signature,
+            runtimeCompatibility = "android-x86",
+        )
+        assertEquals(ArtifactVerificationStatus.RUNTIME_INCOMPATIBLE, runtimeMismatch.status)
+
+        val pass = manager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = "1.0.0",
+            payload = payload,
+            provenanceIssuer = issuer,
+            provenanceSignature = signature,
+            runtimeCompatibility = "android-arm64-v8a",
+        )
+        assertEquals(ArtifactVerificationStatus.PASS, pass.status)
+    }
+
+    @Test
+    fun `missing payload uses last known good artifact when previously verified`() {
+        val manager = ModelArtifactManager()
+        val payload = "known-good".encodeToByteArray()
+        val modelId = "model-lkg"
+        val issuer = "internal-release"
+        val signature = manager.sha256Hex("$issuer|$modelId|${manager.sha256Hex(payload)}|v1".encodeToByteArray())
+        manager.registerArtifact(
+            ModelArtifact(
+                modelId = modelId,
+                version = "1.0.0",
+                fileName = "model-lkg.gguf",
+                expectedSha256 = manager.sha256Hex(payload),
+                provenanceIssuer = issuer,
+                provenanceSignature = signature,
+                runtimeCompatibility = "android-arm64-v8a",
+            ),
+        )
+
+        val first = manager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = "1.0.0",
+            payload = payload,
+            provenanceIssuer = issuer,
+            provenanceSignature = signature,
+            runtimeCompatibility = "android-arm64-v8a",
+        )
+        assertEquals(ArtifactVerificationStatus.PASS, first.status)
+
+        val fallback = manager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = "1.0.0",
+            payload = null,
+            provenanceIssuer = issuer,
+            provenanceSignature = signature,
+            runtimeCompatibility = "android-arm64-v8a",
+        )
+        assertEquals(ArtifactVerificationStatus.PASS_LAST_KNOWN_GOOD, fallback.status)
+        assertEquals("1.0.0", manager.getLastKnownGoodArtifact(modelId)?.version)
+    }
+
+    @Test
     fun `manifest validation flags invalid checksum format`() {
         val manager = ModelArtifactManager()
         manager.registerArtifact(

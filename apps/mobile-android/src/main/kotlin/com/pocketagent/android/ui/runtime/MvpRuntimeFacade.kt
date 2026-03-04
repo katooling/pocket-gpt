@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui.runtime
 
+import com.pocketagent.android.AndroidNativeMemoryModule
 import com.pocketagent.android.AndroidMvpContainer
 import com.pocketagent.android.ChatResponse
 import com.pocketagent.android.RoutingMode
@@ -42,7 +43,9 @@ interface MvpRuntimeFacade {
 }
 
 class DefaultMvpRuntimeFacade(
-    private val container: AndroidMvpContainer = AndroidMvpContainer(),
+    private val container: AndroidMvpContainer = AndroidMvpContainer(
+        memoryModule = AndroidNativeMemoryModule.defaultRuntimeModule(),
+    ),
 ) : MvpRuntimeFacade {
     override fun createSession(): SessionId = container.createSession()
 

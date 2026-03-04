@@ -2,11 +2,19 @@ package com.pocketagent.inference
 
 import java.security.MessageDigest
 
+enum class ArtifactDistributionChannel {
+    SIDE_LOAD_MANUAL_INTERNAL,
+}
+
 data class ModelArtifact(
     val modelId: String,
     val version: String,
     val fileName: String,
     val expectedSha256: String,
+    val distributionChannel: ArtifactDistributionChannel = ArtifactDistributionChannel.SIDE_LOAD_MANUAL_INTERNAL,
+    val provenanceIssuer: String = "internal-release",
+    val provenanceSignature: String = "internal-signature-v1",
+    val runtimeCompatibility: String = "android-arm64-v8a",
 )
 
 data class ModelArtifactManifest(
@@ -46,10 +54,39 @@ data class ArtifactValidationIssue(
     val message: String,
 )
 
+enum class ArtifactVerificationStatus {
+    PASS,
+    PASS_LAST_KNOWN_GOOD,
+    MANIFEST_INVALID,
+    UNKNOWN_MODEL,
+    UNKNOWN_VERSION,
+    MISSING_PAYLOAD,
+    CHECKSUM_MISMATCH,
+    PROVENANCE_ISSUER_MISMATCH,
+    PROVENANCE_SIGNATURE_MISMATCH,
+    RUNTIME_INCOMPATIBLE,
+}
+
+data class ArtifactVerificationResult(
+    val status: ArtifactVerificationStatus,
+    val modelId: String,
+    val version: String?,
+    val expectedSha256: String?,
+    val actualSha256: String?,
+    val expectedIssuer: String?,
+    val actualIssuer: String?,
+    val expectedRuntimeCompatibility: String?,
+    val actualRuntimeCompatibility: String?,
+) {
+    val passed: Boolean
+        get() = status == ArtifactVerificationStatus.PASS || status == ArtifactVerificationStatus.PASS_LAST_KNOWN_GOOD
+}
+
 class ModelArtifactManager {
     private val manifests: MutableMap<String, MutableMap<String, ModelArtifact>> = mutableMapOf()
     private var activeModelId: String = ModelCatalog.QWEN_3_5_0_8B_Q4
     private var pinnedActiveVersion: String? = null
+    private val lastKnownGoodArtifactByModelId: MutableMap<String, ModelArtifact> = mutableMapOf()
 
     fun registerArtifact(artifact: ModelArtifact) {
         val versions = manifests.getOrPut(artifact.modelId) { mutableMapOf() }
@@ -171,9 +208,197 @@ class ModelArtifactManager {
                         ),
                     )
                 }
+                if (artifact.distributionChannel != ArtifactDistributionChannel.SIDE_LOAD_MANUAL_INTERNAL) {
+                    issues.add(
+                        ArtifactValidationIssue(
+                            modelId = modelId,
+                            version = version,
+                            code = "UNSUPPORTED_DISTRIBUTION_CHANNEL",
+                            message = "Only side-load/manual-internal distribution is allowed in this phase.",
+                        ),
+                    )
+                }
+                if (artifact.provenanceIssuer.isBlank()) {
+                    issues.add(
+                        ArtifactValidationIssue(
+                            modelId = modelId,
+                            version = version,
+                            code = "EMPTY_PROVENANCE_ISSUER",
+                            message = "Artifact provenance issuer must not be blank.",
+                        ),
+                    )
+                }
+                if (artifact.provenanceSignature.isBlank()) {
+                    issues.add(
+                        ArtifactValidationIssue(
+                            modelId = modelId,
+                            version = version,
+                            code = "EMPTY_PROVENANCE_SIGNATURE",
+                            message = "Artifact provenance signature must not be blank.",
+                        ),
+                    )
+                }
+                if (artifact.runtimeCompatibility.isBlank()) {
+                    issues.add(
+                        ArtifactValidationIssue(
+                            modelId = modelId,
+                            version = version,
+                            code = "EMPTY_RUNTIME_COMPATIBILITY",
+                            message = "Artifact runtime compatibility tag must not be blank.",
+                        ),
+                    )
+                }
             }
         }
         return issues
+    }
+
+    fun getLastKnownGoodArtifact(modelId: String): ModelArtifact? = lastKnownGoodArtifactByModelId[modelId]
+
+    fun verifyArtifactForLoad(
+        modelId: String,
+        version: String?,
+        payload: ByteArray?,
+        provenanceIssuer: String,
+        provenanceSignature: String,
+        runtimeCompatibility: String,
+    ): ArtifactVerificationResult {
+        val manifestIssues = validateManifest()
+        if (manifestIssues.isNotEmpty()) {
+            return ArtifactVerificationResult(
+                status = ArtifactVerificationStatus.MANIFEST_INVALID,
+                modelId = modelId,
+                version = version,
+                expectedSha256 = null,
+                actualSha256 = null,
+                expectedIssuer = null,
+                actualIssuer = provenanceIssuer,
+                expectedRuntimeCompatibility = null,
+                actualRuntimeCompatibility = runtimeCompatibility,
+            )
+        }
+
+        if (!manifests.containsKey(modelId)) {
+            return ArtifactVerificationResult(
+                status = ArtifactVerificationStatus.UNKNOWN_MODEL,
+                modelId = modelId,
+                version = version,
+                expectedSha256 = null,
+                actualSha256 = payload?.let(::sha256Hex),
+                expectedIssuer = null,
+                actualIssuer = provenanceIssuer,
+                expectedRuntimeCompatibility = null,
+                actualRuntimeCompatibility = runtimeCompatibility,
+            )
+        }
+
+        val artifact = resolveArtifact(modelId, version)
+            ?: return ArtifactVerificationResult(
+                status = ArtifactVerificationStatus.UNKNOWN_VERSION,
+                modelId = modelId,
+                version = version,
+                expectedSha256 = null,
+                actualSha256 = payload?.let(::sha256Hex),
+                expectedIssuer = null,
+                actualIssuer = provenanceIssuer,
+                expectedRuntimeCompatibility = null,
+                actualRuntimeCompatibility = runtimeCompatibility,
+            )
+
+        if (payload == null) {
+            val knownGood = lastKnownGoodArtifactByModelId[modelId]
+            if (knownGood != null && knownGood.version == artifact.version) {
+                return ArtifactVerificationResult(
+                    status = ArtifactVerificationStatus.PASS_LAST_KNOWN_GOOD,
+                    modelId = knownGood.modelId,
+                    version = knownGood.version,
+                    expectedSha256 = knownGood.expectedSha256,
+                    actualSha256 = null,
+                    expectedIssuer = knownGood.provenanceIssuer,
+                    actualIssuer = provenanceIssuer,
+                    expectedRuntimeCompatibility = knownGood.runtimeCompatibility,
+                    actualRuntimeCompatibility = runtimeCompatibility,
+                )
+            }
+            return ArtifactVerificationResult(
+                status = ArtifactVerificationStatus.MISSING_PAYLOAD,
+                modelId = artifact.modelId,
+                version = artifact.version,
+                expectedSha256 = artifact.expectedSha256,
+                actualSha256 = null,
+                expectedIssuer = artifact.provenanceIssuer,
+                actualIssuer = provenanceIssuer,
+                expectedRuntimeCompatibility = artifact.runtimeCompatibility,
+                actualRuntimeCompatibility = runtimeCompatibility,
+            )
+        }
+
+        val actualSha = sha256Hex(payload)
+        if (!actualSha.equals(artifact.expectedSha256, ignoreCase = true)) {
+            return ArtifactVerificationResult(
+                status = ArtifactVerificationStatus.CHECKSUM_MISMATCH,
+                modelId = artifact.modelId,
+                version = artifact.version,
+                expectedSha256 = artifact.expectedSha256,
+                actualSha256 = actualSha,
+                expectedIssuer = artifact.provenanceIssuer,
+                actualIssuer = provenanceIssuer,
+                expectedRuntimeCompatibility = artifact.runtimeCompatibility,
+                actualRuntimeCompatibility = runtimeCompatibility,
+            )
+        }
+        if (provenanceIssuer != artifact.provenanceIssuer) {
+            return ArtifactVerificationResult(
+                status = ArtifactVerificationStatus.PROVENANCE_ISSUER_MISMATCH,
+                modelId = artifact.modelId,
+                version = artifact.version,
+                expectedSha256 = artifact.expectedSha256,
+                actualSha256 = actualSha,
+                expectedIssuer = artifact.provenanceIssuer,
+                actualIssuer = provenanceIssuer,
+                expectedRuntimeCompatibility = artifact.runtimeCompatibility,
+                actualRuntimeCompatibility = runtimeCompatibility,
+            )
+        }
+        if (provenanceSignature != artifact.provenanceSignature) {
+            return ArtifactVerificationResult(
+                status = ArtifactVerificationStatus.PROVENANCE_SIGNATURE_MISMATCH,
+                modelId = artifact.modelId,
+                version = artifact.version,
+                expectedSha256 = artifact.expectedSha256,
+                actualSha256 = actualSha,
+                expectedIssuer = artifact.provenanceIssuer,
+                actualIssuer = provenanceIssuer,
+                expectedRuntimeCompatibility = artifact.runtimeCompatibility,
+                actualRuntimeCompatibility = runtimeCompatibility,
+            )
+        }
+        if (runtimeCompatibility != artifact.runtimeCompatibility) {
+            return ArtifactVerificationResult(
+                status = ArtifactVerificationStatus.RUNTIME_INCOMPATIBLE,
+                modelId = artifact.modelId,
+                version = artifact.version,
+                expectedSha256 = artifact.expectedSha256,
+                actualSha256 = actualSha,
+                expectedIssuer = artifact.provenanceIssuer,
+                actualIssuer = provenanceIssuer,
+                expectedRuntimeCompatibility = artifact.runtimeCompatibility,
+                actualRuntimeCompatibility = runtimeCompatibility,
+            )
+        }
+
+        lastKnownGoodArtifactByModelId[modelId] = artifact
+        return ArtifactVerificationResult(
+            status = ArtifactVerificationStatus.PASS,
+            modelId = artifact.modelId,
+            version = artifact.version,
+            expectedSha256 = artifact.expectedSha256,
+            actualSha256 = actualSha,
+            expectedIssuer = artifact.provenanceIssuer,
+            actualIssuer = provenanceIssuer,
+            expectedRuntimeCompatibility = artifact.runtimeCompatibility,
+            actualRuntimeCompatibility = runtimeCompatibility,
+        )
     }
 
     fun verifyChecksum(modelId: String, bytes: ByteArray): Boolean {
