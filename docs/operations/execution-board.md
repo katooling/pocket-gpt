@@ -50,7 +50,7 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### Blocked
 
-- [ ] None
+- [ ] QA-05 Scenario C image + memory acceptance run is blocked pending ENG-07 WP-06 deliverables (SQLite persistence + retention/pruning + Scenario C contract path) (`docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md`)
 
 ### Done
 
@@ -122,6 +122,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-05 (QA-04 tool safety adversarial regression baseline): `docs/operations/evidence/wp-05/2026-03-04-qa-04.md`
 - WP-05 (QA-04 tool safety adversarial regression rerun on final WP-05 state): `docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`
 - WP-06 (ENG-07 memory productionization kickoff): `docs/operations/evidence/wp-06/2026-03-04-eng-07.md`
+- WP-06 (QA-05 prep and blocker map): `docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md`
 - WP-08 (Product lock pass: PROD-01/02 finalization + PROD-03 alignment): `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`
 - WP-08 (MKT-01 finalized messaging architecture with claim labels): `docs/operations/mkt-01-messaging-architecture-draft.md`
 - WP-08 (MKT-02 evidence-safe competitor matrix with claim-risk labels): `docs/operations/mkt-02-competitor-matrix-template-draft.md`
