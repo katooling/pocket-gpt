@@ -172,6 +172,42 @@ class AndroidMvpContainerTest {
     }
 
     @Test
+    fun `startup checks fail when runtime backend is adb fallback and native is required`() {
+        val bridge = BackendAwareTestBridge(backend = RuntimeBackend.ADB_FALLBACK)
+        val container = AndroidMvpContainer(
+            inferenceModule = AndroidLlamaCppInferenceModule(bridge),
+            artifactSha256ByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            ),
+            requireNativeRuntimeForStartupChecks = true,
+        )
+
+        val checks = container.runStartupChecks()
+
+        assertEquals(1, checks.size)
+        assertTrue(checks.first().contains("Runtime backend is ADB_FALLBACK"))
+        assertTrue(checks.first().contains(AndroidMvpContainer.REQUIRE_NATIVE_RUNTIME_STARTUP_ENV))
+    }
+
+    @Test
+    fun `startup checks allow adb fallback when native runtime requirement is disabled`() {
+        val bridge = BackendAwareTestBridge(backend = RuntimeBackend.ADB_FALLBACK)
+        val container = AndroidMvpContainer(
+            inferenceModule = AndroidLlamaCppInferenceModule(bridge),
+            artifactSha256ByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            ),
+            requireNativeRuntimeForStartupChecks = false,
+        )
+
+        val checks = container.runStartupChecks()
+
+        assertEquals(emptyList(), checks)
+    }
+
+    @Test
     fun `send user message fails when policy rejects inference event`() {
         val policy = RecordingPolicyModule(deniedEvents = setOf("inference.generate"))
         val container = AndroidMvpContainer(
@@ -329,6 +365,33 @@ private class RecordingInferenceModule(
     override fun unloadModel() {
         unloadCalls += 1
     }
+}
+
+private class BackendAwareTestBridge(
+    private val backend: RuntimeBackend,
+) : LlamaCppRuntimeBridge {
+    override fun isReady(): Boolean = backend != RuntimeBackend.UNAVAILABLE
+
+    override fun listAvailableModels(): List<String> = listOf(
+        ModelCatalog.QWEN_3_5_0_8B_Q4,
+        ModelCatalog.QWEN_3_5_2B_Q4,
+    )
+
+    override fun loadModel(modelId: String): Boolean = isReady()
+
+    override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
+        if (!isReady()) {
+            return false
+        }
+        onToken("token ")
+        return true
+    }
+
+    override fun unloadModel() {
+        // no-op
+    }
+
+    override fun runtimeBackend(): RuntimeBackend = backend
 }
 
 private class RecordingPolicyModule(

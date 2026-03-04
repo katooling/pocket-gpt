@@ -41,6 +41,7 @@ class AndroidMvpContainer(
     private val toolModule: ToolModule = SafeLocalToolRuntime(),
     private val memoryModule: MemoryModule = InMemoryMemoryModule(),
     private val artifactSha256ByModelId: Map<String, String> = defaultArtifactSha256ByModelId(),
+    private val requireNativeRuntimeForStartupChecks: Boolean = defaultRequireNativeRuntimeForStartupChecks(),
 ) {
     private val modelArtifactManager = ModelArtifactManager()
     private val imageInputModule = SmokeImageInputModule()
@@ -212,6 +213,19 @@ class AndroidMvpContainer(
             return checks
         }
 
+        val runtimeBackend = detectRuntimeBackend()
+        if (requireNativeRuntimeForStartupChecks &&
+            runtimeBackend != null &&
+            runtimeBackend != RuntimeBackend.NATIVE_JNI
+        ) {
+            checks.add(
+                "Runtime backend is $runtimeBackend. " +
+                    "Native JNI runtime is required for closure-path startup checks. " +
+                    "Set ${REQUIRE_NATIVE_RUNTIME_STARTUP_ENV}=0 only for local scaffolding lanes.",
+            )
+            return checks
+        }
+
         val available = inferenceModule.listAvailableModels().toSet()
         val required = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
         val missing = required.minus(available)
@@ -263,6 +277,8 @@ class AndroidMvpContainer(
 
     fun getRoutingMode(): RoutingMode = routingMode
 
+    fun runtimeBackend(): RuntimeBackend? = detectRuntimeBackend()
+
     private fun buildPrompt(
         userText: String,
         sessionId: SessionId,
@@ -310,6 +326,10 @@ class AndroidMvpContainer(
         }
     }
 
+    private fun detectRuntimeBackend(): RuntimeBackend? {
+        return (inferenceModule as? AndroidLlamaCppInferenceModule)?.runtimeBackend()
+    }
+
     private fun redactDiagnostics(raw: String): String {
         return raw.split("|").joinToString("|") { section ->
             section.split(";").joinToString(";") { entry ->
@@ -327,6 +347,7 @@ class AndroidMvpContainer(
     companion object {
         const val QWEN_0_8B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256"
         const val QWEN_2B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_SHA256"
+        const val REQUIRE_NATIVE_RUNTIME_STARTUP_ENV: String = "POCKETGPT_REQUIRE_NATIVE_RUNTIME_STARTUP"
         private val SENSITIVE_DIAGNOSTIC_KEYS = setOf(
             "user",
             "assistant",
@@ -341,5 +362,13 @@ class AndroidMvpContainer(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to System.getenv(QWEN_0_8B_SHA256_ENV).orEmpty(),
             ModelCatalog.QWEN_3_5_2B_Q4 to System.getenv(QWEN_2B_SHA256_ENV).orEmpty(),
         )
+
+        private fun defaultRequireNativeRuntimeForStartupChecks(): Boolean {
+            val raw = System.getenv(REQUIRE_NATIVE_RUNTIME_STARTUP_ENV)
+                ?.trim()
+                ?.lowercase()
+                ?: return true
+            return raw !in setOf("0", "false", "no")
+        }
     }
 }

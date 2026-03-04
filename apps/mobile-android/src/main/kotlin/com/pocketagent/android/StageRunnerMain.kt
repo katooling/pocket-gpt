@@ -4,6 +4,7 @@ import com.pocketagent.inference.DeviceState
 
 fun main() {
     val container = AndroidMvpContainer()
+    println("Runtime backend: ${container.runtimeBackend() ?: "unknown"}")
     val guards = ResilienceGuards()
     val checks = container.runStartupChecks()
     val startup = guards.assessStartupChecks(checks)

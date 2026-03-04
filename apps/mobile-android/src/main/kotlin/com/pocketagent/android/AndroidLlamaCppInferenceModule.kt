@@ -36,4 +36,6 @@ class AndroidLlamaCppInferenceModule(
         runtimeBridge.unloadModel()
         activeModelId = null
     }
+
+    fun runtimeBackend(): RuntimeBackend = runtimeBridge.runtimeBackend()
 }

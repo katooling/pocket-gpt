@@ -73,4 +73,6 @@ private class AlwaysReadyFallbackBridge : LlamaCppRuntimeBridge {
     override fun unloadModel() {
         // no-op
     }
+
+    override fun runtimeBackend(): RuntimeBackend = RuntimeBackend.ADB_FALLBACK
 }

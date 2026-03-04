@@ -76,6 +76,10 @@ class AdbDeviceLlamaCppRuntimeBridge(
         activeModelId = null
     }
 
+    override fun runtimeBackend(): RuntimeBackend {
+        return if (isReady()) RuntimeBackend.ADB_FALLBACK else RuntimeBackend.UNAVAILABLE
+    }
+
     private fun resolveSerial(): String? {
         val preferred = env["ADB_SERIAL"]?.trim()?.takeIf { it.isNotEmpty() }
         val result = commandRunner.run(listOf("adb", "devices", "-l"))

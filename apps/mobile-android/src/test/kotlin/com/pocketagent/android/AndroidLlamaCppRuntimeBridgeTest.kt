@@ -18,6 +18,7 @@ class AndroidLlamaCppRuntimeBridgeTest {
         )
 
         assertTrue(bridge.isReady())
+        assertEquals(RuntimeBackend.NATIVE_JNI, bridge.runtimeBackend())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
         val tokens = mutableListOf<String>()
         assertTrue(bridge.generate("prompt", 16) { tokens.add(it) })
@@ -41,6 +42,7 @@ class AndroidLlamaCppRuntimeBridgeTest {
         )
 
         assertTrue(bridge.isReady())
+        assertEquals(RuntimeBackend.ADB_FALLBACK, bridge.runtimeBackend())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
         val tokens = mutableListOf<String>()
         assertTrue(bridge.generate("prompt", 16) { tokens.add(it) })
@@ -60,6 +62,7 @@ class AndroidLlamaCppRuntimeBridgeTest {
         )
 
         assertFalse(bridge.isReady())
+        assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
         assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
     }
 }
@@ -123,5 +126,9 @@ private class FakeFallbackBridge(
 
     override fun unloadModel() {
         unloadCalled = true
+    }
+
+    override fun runtimeBackend(): RuntimeBackend {
+        return if (ready) RuntimeBackend.ADB_FALLBACK else RuntimeBackend.UNAVAILABLE
     }
 }

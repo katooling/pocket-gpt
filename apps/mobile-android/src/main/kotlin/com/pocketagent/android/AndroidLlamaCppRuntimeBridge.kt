@@ -2,12 +2,19 @@ package com.pocketagent.android
 
 import com.pocketagent.inference.ModelCatalog
 
+enum class RuntimeBackend {
+    NATIVE_JNI,
+    ADB_FALLBACK,
+    UNAVAILABLE,
+}
+
 interface LlamaCppRuntimeBridge {
     fun isReady(): Boolean
     fun listAvailableModels(): List<String>
     fun loadModel(modelId: String): Boolean
     fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean
     fun unloadModel()
+    fun runtimeBackend(): RuntimeBackend
 }
 
 class AndroidLlamaCppRuntimeBridge(
@@ -71,6 +78,14 @@ class AndroidLlamaCppRuntimeBridge(
             return
         }
         runCatching { nativeApi.unloadModel() }
+    }
+
+    override fun runtimeBackend(): RuntimeBackend {
+        ensureRuntimeInitialized()
+        if (!runtimeReady) {
+            return RuntimeBackend.UNAVAILABLE
+        }
+        return if (usingFallback) RuntimeBackend.ADB_FALLBACK else RuntimeBackend.NATIVE_JNI
     }
 
     private fun ensureRuntimeInitialized() {

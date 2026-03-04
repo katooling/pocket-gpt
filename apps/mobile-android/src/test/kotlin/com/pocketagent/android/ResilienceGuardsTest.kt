@@ -45,14 +45,16 @@ class ResilienceGuardsTest {
         val assessment = guards.assessStartupChecks(
             listOf(
                 "Artifact manifest invalid: qwen@1:MISSING_SHA256",
+                "Runtime backend is ADB_FALLBACK. Native runtime required.",
                 "Policy module rejected startup event type.",
             ),
         )
 
         assertFalse(assessment.canProceed)
-        assertEquals(1, assessment.blockingChecks.size)
+        assertEquals(2, assessment.blockingChecks.size)
         assertEquals(1, assessment.recoverableChecks.size)
         assertTrue(assessment.blockingChecks.first().contains("Artifact manifest invalid"))
+        assertTrue(assessment.blockingChecks.any { it.contains("Runtime backend is ADB_FALLBACK") })
         assertTrue(assessment.recoverableChecks.first().contains("Policy module rejected startup event type"))
     }
 

@@ -46,10 +46,17 @@ class AndroidLlamaCppInferenceModuleTest {
         }
         assertTrue(error.message?.contains("generation failed") == true)
     }
+
+    @Test
+    fun `runtime backend delegates to bridge`() {
+        val module = AndroidLlamaCppInferenceModule(FakeBridge(backend = RuntimeBackend.ADB_FALLBACK))
+        assertEquals(RuntimeBackend.ADB_FALLBACK, module.runtimeBackend())
+    }
 }
 
 private class FakeBridge(
     private val generateOk: Boolean = true,
+    private val backend: RuntimeBackend = RuntimeBackend.NATIVE_JNI,
 ) : LlamaCppRuntimeBridge {
     var loadCalls: Int = 0
     var generateCalls: Int = 0
@@ -81,4 +88,6 @@ private class FakeBridge(
     override fun unloadModel() {
         unloadCalls += 1
     }
+
+    override fun runtimeBackend(): RuntimeBackend = backend
 }

@@ -26,6 +26,7 @@ class AdbDeviceLlamaCppRuntimeBridgeTest {
         val bridge = AdbDeviceLlamaCppRuntimeBridge(commandRunner = runner)
 
         assertTrue(bridge.isReady())
+        assertEquals(RuntimeBackend.ADB_FALLBACK, bridge.runtimeBackend())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
 
         val tokens = mutableListOf<String>()
@@ -47,6 +48,7 @@ class AdbDeviceLlamaCppRuntimeBridgeTest {
         val bridge = AdbDeviceLlamaCppRuntimeBridge(commandRunner = runner)
 
         assertFalse(bridge.isReady())
+        assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
         assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
     }
 }

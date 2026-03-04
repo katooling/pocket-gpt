@@ -73,6 +73,8 @@ class ResilienceGuards(
             "artifact manifest invalid",
             "missing runtime model",
             "failed to load baseline runtime model",
+            "runtime backend is adb_fallback",
+            "runtime backend is unavailable",
         )
         private val RUNTIME_RESET_SIGNATURES = listOf(
             "runtime returned no tokens",
