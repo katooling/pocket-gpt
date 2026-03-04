@@ -2,7 +2,7 @@
 
 ## Decision Date
 
-TBD
+2026-03-04
 
 ## Decision Owners and Signoff
 
@@ -17,9 +17,9 @@ Signoff rule:
 
 ## Current Signoff State (2026-03-04)
 
-1. Product Lead: `Conditional Go` (pending remaining closure items)
-2. QA Lead: Stage-6 soak gate PASS recorded (`docs/operations/evidence/wp-07/2026-03-04-qa-06.md`)
-3. Engineering Lead: pending final packet signoff
+1. Product Lead: `Go` (signed 2026-03-04)
+2. QA Lead: `Go` (signed 2026-03-04; Stage-6 soak PASS evidence in `docs/operations/evidence/wp-07/2026-03-04-qa-06.md`)
+3. Engineering Lead: `Go` (signed 2026-03-04; Stage-6 resilience closeout in `docs/operations/evidence/wp-07/2026-03-04-eng-stage6-resilience-closeout.md`)
 
 ## Scope
 
@@ -56,7 +56,7 @@ Android-first MVP with:
 - [x] risk register review update
 - [x] PROD-01 workflow lock evidence attached (A/B/C workflow acceptance checks)
 - [x] PROD-02 required vs best-effort device policy table attached
-- [ ] PROD-03 finalization hook checklist completed with Product + QA + Engineering sign-off
+- [x] PROD-03 finalization hook checklist completed with Product + QA + Engineering sign-off
 - [x] WP-11 implementation foundation note attached
 - [ ] WP-11 UI acceptance evidence (`UI-01`..`UI-10`) attached
 
@@ -84,7 +84,7 @@ Evidence links:
 
 ### Stage 6 Gate (WP-07)
 
-Status: In Progress
+Status: Closed on 2026-03-04
 
 Required criteria before final signoff:
 
@@ -98,6 +98,8 @@ Evidence links (current):
 1. `docs/operations/evidence/wp-07/2026-03-04-qa-06.md`
 2. `docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`
 3. `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`
+4. `docs/operations/evidence/wp-07/2026-03-04-eng-stage6-resilience-closeout.md`
+5. `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`
 
 ### UI Gate (WP-11)
 
@@ -134,4 +136,5 @@ Evidence links (current):
 
 ## Recommendation
 
-Current recommendation: **Conditional Go** pending closure of remaining Stage-6 and WP-11 UI acceptance items, plus final three-owner signoff stamp.
+Current recommendation: **Go for WP-07 closure**.  
+External beta/go-live remains gated by WP-11 UI acceptance closure.

@@ -31,4 +31,4 @@ Record final dated owner signatures for the WP-07 Stage-6 go/no-go packet after 
 ## Decision
 
 1. `WP-07` is marked `Done` for Stage-6 beta hardening + go/no-go packet scope.
-2. External beta/go-live dual-track gate is clear with `WP-11` closure signoff recorded.
+2. External beta/go-live remains gated by `WP-11` closure per dual-track policy.
