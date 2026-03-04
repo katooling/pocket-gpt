@@ -4,6 +4,8 @@ import android.os.Debug
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.pocketagent.core.ChatResponse
+import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
 import java.io.File
@@ -44,7 +46,11 @@ class NativeStage2BenchmarkInstrumentationTest {
         configureContainerForModel(container = container, modelId = modelId)
 
         val backend = container.runtimeBackend()
-        assertEquals("Expected NATIVE_JNI backend for ENG-13 closure lane", RuntimeBackend.NATIVE_JNI, backend)
+        assertEquals(
+            "Expected NATIVE_JNI backend for ENG-13 closure lane",
+            com.pocketagent.nativebridge.RuntimeBackend.NATIVE_JNI,
+            backend,
+        )
 
         // Prime model load and one short generation so measured first-token values capture steady-state latency.
         if (warmupMaxTokens > 0) {
@@ -101,7 +107,11 @@ class NativeStage2BenchmarkInstrumentationTest {
         configureContainerForModel(container = container, modelId = modelId)
 
         val backend = container.runtimeBackend()
-        assertEquals("Expected NATIVE_JNI backend for ENG-13 closure lane", RuntimeBackend.NATIVE_JNI, backend)
+        assertEquals(
+            "Expected NATIVE_JNI backend for ENG-13 closure lane",
+            com.pocketagent.nativebridge.RuntimeBackend.NATIVE_JNI,
+            backend,
+        )
 
         if (warmupMaxTokens > 0) {
             runWarmup(
@@ -129,7 +139,7 @@ class NativeStage2BenchmarkInstrumentationTest {
 
     private fun executeScenario(
         container: AndroidMvpContainer,
-        backend: RuntimeBackend?,
+        backend: com.pocketagent.nativebridge.RuntimeBackend?,
         scenario: String,
         modelId: String,
         runs: Int,
@@ -199,7 +209,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         }
 
         return buildMetricLine(
-            backend = backend?.name ?: RuntimeBackend.UNAVAILABLE.name,
+            backend = backend?.name ?: com.pocketagent.nativebridge.RuntimeBackend.UNAVAILABLE.name,
             scenario = scenario,
             modelId = modelId,
             firstTokenMs = medianLong(firstTokenSamples),

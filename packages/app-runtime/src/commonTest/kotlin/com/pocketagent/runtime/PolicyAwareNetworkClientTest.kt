@@ -1,4 +1,4 @@
-package com.pocketagent.android
+package com.pocketagent.runtime
 
 import com.pocketagent.core.PolicyModule
 import kotlin.test.Test

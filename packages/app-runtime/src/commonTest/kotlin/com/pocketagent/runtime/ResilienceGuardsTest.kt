@@ -1,4 +1,4 @@
-package com.pocketagent.android
+package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
 import kotlin.test.Test
@@ -9,26 +9,26 @@ import kotlin.test.assertTrue
 class ResilienceGuardsTest {
     @Test
     fun `validate prompt truncates to configured max length`() {
-        val guards = ResilienceGuards(maxPromptChars = 5)
+        val guard = TaskGuard(maxPromptChars = 5)
 
-        val prompt = guards.validatePrompt("123456789")
+        val prompt = guard.validatePrompt("123456789")
 
         assertEquals("12345", prompt)
     }
 
     @Test
     fun `can run long task only when battery is above threshold and thermal is safe`() {
-        val guards = ResilienceGuards(minBatteryForLongTasks = 20)
+        val guard = TaskGuard(minBatteryForLongTasks = 20)
 
-        val lowBattery = guards.canRunTask(
+        val lowBattery = guard.canRunTask(
             taskType = "long_text",
             deviceState = DeviceState(batteryPercent = 10, thermalLevel = 3, ramClassGb = 8),
         )
-        val highThermal = guards.canRunTask(
+        val highThermal = guard.canRunTask(
             taskType = "short_text",
             deviceState = DeviceState(batteryPercent = 80, thermalLevel = 8, ramClassGb = 8),
         )
-        val safe = guards.canRunTask(
+        val safe = guard.canRunTask(
             taskType = "long_text",
             deviceState = DeviceState(batteryPercent = 55, thermalLevel = 4, ramClassGb = 8),
         )
@@ -40,9 +40,9 @@ class ResilienceGuardsTest {
 
     @Test
     fun `startup check assessment separates blocking and recoverable checks`() {
-        val guards = ResilienceGuards()
+        val assessor = StartupAssessor()
 
-        val assessment = guards.assessStartupChecks(
+        val assessment = assessor.assessStartupChecks(
             listOf(
                 "Artifact manifest invalid: qwen@1:MISSING_SHA256",
                 "Runtime backend is ADB_FALLBACK. Native runtime required.",
@@ -60,17 +60,17 @@ class ResilienceGuardsTest {
 
     @Test
     fun `session reset is triggered by repeated failures or fatal signatures`() {
-        val guards = ResilienceGuards(maxConsecutiveRuntimeFailures = 2)
+        val policy = SessionRecoveryPolicy(maxConsecutiveRuntimeFailures = 2)
 
-        val repeatedFailure = guards.shouldResetSessionAfterFailure(
+        val repeatedFailure = policy.shouldResetSessionAfterFailure(
             consecutiveFailures = 2,
             errorMessage = "some transient error",
         )
-        val fatalFailure = guards.shouldResetSessionAfterFailure(
+        val fatalFailure = policy.shouldResetSessionAfterFailure(
             consecutiveFailures = 1,
             errorMessage = "Runtime returned no tokens.",
         )
-        val recoverable = guards.shouldResetSessionAfterFailure(
+        val recoverable = policy.shouldResetSessionAfterFailure(
             consecutiveFailures = 1,
             errorMessage = "temporary timeout",
         )

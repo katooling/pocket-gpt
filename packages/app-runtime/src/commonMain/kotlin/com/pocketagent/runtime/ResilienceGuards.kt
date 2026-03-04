@@ -1,37 +1,16 @@
-package com.pocketagent.android
+package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
 
-class ResilienceGuards(
-    private val maxPromptChars: Int = 8000,
-    private val minBatteryForLongTasks: Int = 20,
-    private val maxConsecutiveRuntimeFailures: Int = 2,
+data class StartupCheckAssessment(
+    val blockingChecks: List<String>,
+    val recoverableChecks: List<String>,
 ) {
-    data class StartupCheckAssessment(
-        val blockingChecks: List<String>,
-        val recoverableChecks: List<String>,
-    ) {
-        val canProceed: Boolean
-            get() = blockingChecks.isEmpty()
-    }
+    val canProceed: Boolean
+        get() = blockingChecks.isEmpty()
+}
 
-    fun validatePrompt(prompt: String): String {
-        if (prompt.length <= maxPromptChars) {
-            return prompt
-        }
-        return prompt.take(maxPromptChars)
-    }
-
-    fun canRunTask(taskType: String, deviceState: DeviceState): Boolean {
-        if (taskType == "long_text" && deviceState.batteryPercent < minBatteryForLongTasks) {
-            return false
-        }
-        if (deviceState.thermalLevel >= 8) {
-            return false
-        }
-        return true
-    }
-
+class StartupAssessor {
     fun assessStartupChecks(checks: List<String>): StartupCheckAssessment {
         if (checks.isEmpty()) {
             return StartupCheckAssessment(blockingChecks = emptyList(), recoverableChecks = emptyList())
@@ -53,17 +32,6 @@ class ResilienceGuards(
         )
     }
 
-    fun shouldResetSessionAfterFailure(
-        consecutiveFailures: Int,
-        errorMessage: String?,
-    ): Boolean {
-        if (consecutiveFailures >= maxConsecutiveRuntimeFailures) {
-            return true
-        }
-        val message = errorMessage?.lowercase().orEmpty()
-        return RUNTIME_RESET_SIGNATURES.any { message.contains(it) }
-    }
-
     private fun isBlockingStartupCheck(normalizedCheck: String): Boolean {
         return BLOCKING_STARTUP_SIGNATURES.any { normalizedCheck.contains(it) }
     }
@@ -81,6 +49,46 @@ class ResilienceGuards(
             "network security config invalid",
             "network security config missing",
         )
+    }
+}
+
+class TaskGuard(
+    private val maxPromptChars: Int = 8000,
+    private val minBatteryForLongTasks: Int = 20,
+) {
+    fun validatePrompt(prompt: String): String {
+        if (prompt.length <= maxPromptChars) {
+            return prompt
+        }
+        return prompt.take(maxPromptChars)
+    }
+
+    fun canRunTask(taskType: String, deviceState: DeviceState): Boolean {
+        if (taskType == "long_text" && deviceState.batteryPercent < minBatteryForLongTasks) {
+            return false
+        }
+        if (deviceState.thermalLevel >= 8) {
+            return false
+        }
+        return true
+    }
+}
+
+class SessionRecoveryPolicy(
+    private val maxConsecutiveRuntimeFailures: Int = 2,
+) {
+    fun shouldResetSessionAfterFailure(
+        consecutiveFailures: Int,
+        errorMessage: String?,
+    ): Boolean {
+        if (consecutiveFailures >= maxConsecutiveRuntimeFailures) {
+            return true
+        }
+        val message = errorMessage?.lowercase().orEmpty()
+        return RUNTIME_RESET_SIGNATURES.any { message.contains(it) }
+    }
+
+    companion object {
         private val RUNTIME_RESET_SIGNATURES = listOf(
             "runtime returned no tokens",
             "failed to load runtime model",

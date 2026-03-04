@@ -12,12 +12,15 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.pocketagent.android.ui.runtime.ChatStreamEvent
-import com.pocketagent.android.ui.runtime.MvpRuntimeFacade
-import com.pocketagent.android.ui.runtime.StreamUserMessageRequest
+import com.pocketagent.core.ChatResponse
+import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.DefaultMvpRuntimeFacade
+import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.junit.After
@@ -29,7 +32,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MainActivityUiSmokeTest {
     @Suppress("unused")
-    private val installFakeRuntimeFactory: () -> com.pocketagent.android.ui.runtime.MvpRuntimeFacade =
+    private val installFakeRuntimeFactory: () -> MvpRuntimeFacade =
         { FakeRuntimeFacade() }.also { AppRuntimeDependencies.runtimeFacadeFactory = it }
 
     @get:Rule
@@ -44,7 +47,7 @@ class MainActivityUiSmokeTest {
 
     @After
     fun tearDown() {
-        AppRuntimeDependencies.runtimeFacadeFactory = { com.pocketagent.android.ui.runtime.DefaultMvpRuntimeFacade() }
+        AppRuntimeDependencies.runtimeFacadeFactory = { DefaultMvpRuntimeFacade() }
     }
 
     @Test
@@ -150,7 +153,7 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
         emit(ChatStreamEvent.Token("response ", "runtime response"))
         emit(
             ChatStreamEvent.Completed(
-                response = com.pocketagent.android.ChatResponse(
+                response = ChatResponse(
                     sessionId = request.sessionId,
                     modelId = when (mode) {
                         RoutingMode.AUTO -> "auto"

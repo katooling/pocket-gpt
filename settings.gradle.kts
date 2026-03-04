@@ -23,4 +23,6 @@ include(
     ":packages:inference-adapters",
     ":packages:tool-runtime",
     ":packages:memory",
+    ":packages:native-bridge",
+    ":packages:app-runtime",
 )

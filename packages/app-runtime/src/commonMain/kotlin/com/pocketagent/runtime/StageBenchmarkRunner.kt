@@ -1,5 +1,7 @@
-package com.pocketagent.android
+package com.pocketagent.runtime
 
+import com.pocketagent.core.ChatResponse
+import com.pocketagent.core.SessionId
 import com.pocketagent.inference.DeviceState
 
 data class StageBenchmarkResult(
@@ -12,7 +14,7 @@ data class StageBenchmarkResult(
 class StageBenchmarkRunner(
     private val runtime: StageBenchmarkRuntime,
 ) {
-    constructor(container: AndroidMvpContainer) : this(AndroidStageBenchmarkRuntime(container))
+    constructor(orchestrator: RuntimeOrchestrator) : this(RuntimeContainerBenchmarkRuntime(orchestrator))
 
     fun runScenarioA(sessionRuns: Int = 10): StageBenchmarkResult {
         val firstTokenList = mutableListOf<Long>()
@@ -93,9 +95,9 @@ class StageBenchmarkRunner(
 }
 
 interface StageBenchmarkRuntime {
-    fun createSession(): com.pocketagent.core.SessionId
+    fun createSession(): SessionId
     fun sendUserMessage(
-        sessionId: com.pocketagent.core.SessionId,
+        sessionId: SessionId,
         userText: String,
         taskType: String,
         deviceState: DeviceState,
@@ -104,28 +106,30 @@ interface StageBenchmarkRuntime {
     fun analyzeImage(imagePath: String, prompt: String): String
 }
 
-private class AndroidStageBenchmarkRuntime(
-    private val container: AndroidMvpContainer,
+private class RuntimeContainerBenchmarkRuntime(
+    private val orchestrator: RuntimeOrchestrator,
 ) : StageBenchmarkRuntime {
-    override fun createSession() = container.createSession()
+    override fun createSession(): SessionId = orchestrator.createSession()
 
     override fun sendUserMessage(
-        sessionId: com.pocketagent.core.SessionId,
+        sessionId: SessionId,
         userText: String,
         taskType: String,
         deviceState: DeviceState,
         maxTokens: Int,
     ): ChatResponse {
-        return container.sendUserMessage(
+        return orchestrator.sendUserMessage(
             sessionId = sessionId,
             userText = userText,
             taskType = taskType,
             deviceState = deviceState,
             maxTokens = maxTokens,
+            keepModelLoaded = false,
+            onToken = {},
         )
     }
 
     override fun analyzeImage(imagePath: String, prompt: String): String {
-        return container.analyzeImage(imagePath, prompt)
+        return orchestrator.analyzeImage(imagePath, prompt)
     }
 }

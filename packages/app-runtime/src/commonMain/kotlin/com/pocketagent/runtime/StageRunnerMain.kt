@@ -1,16 +1,18 @@
-package com.pocketagent.android
+package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.memory.FileBackedMemoryModule
 import kotlin.system.exitProcess
 
 fun main() {
-    val container = AndroidMvpContainer(
-        memoryModule = AndroidNativeMemoryModule.defaultRuntimeModule(),
+    val orchestrator = RuntimeOrchestrator(
+        memoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
     )
-    println("Runtime backend: ${container.runtimeBackend() ?: "unknown"}")
-    val guards = ResilienceGuards()
-    val checks = container.runStartupChecks()
-    val startup = guards.assessStartupChecks(checks)
+    println("Runtime backend: ${orchestrator.runtimeBackend() ?: "unknown"}")
+    val startupAssessor = StartupAssessor()
+    val taskGuard = TaskGuard()
+    val checks = orchestrator.runStartupChecks()
+    val startup = startupAssessor.assessStartupChecks(checks)
     if (!startup.canProceed) {
         println("Startup checks failed: ${startup.blockingChecks.joinToString(", ")}")
         if (startup.recoverableChecks.isNotEmpty()) {
@@ -22,9 +24,9 @@ fun main() {
         println("Startup warnings: ${startup.recoverableChecks.joinToString(", ")}")
     }
 
-    val session = container.createSession()
-    val prompt = guards.validatePrompt("hello from stage1 runtime test")
-    val canRun = guards.canRunTask(
+    val session = orchestrator.createSession()
+    val prompt = taskGuard.validatePrompt("hello from stage1 runtime test")
+    val canRun = taskGuard.canRunTask(
         taskType = "short_text",
         deviceState = DeviceState(batteryPercent = 70, thermalLevel = 3, ramClassGb = 8),
     )
@@ -33,19 +35,21 @@ fun main() {
         exitProcess(1)
     }
 
-    val response = container.sendUserMessage(
+    val response = orchestrator.sendUserMessage(
         sessionId = session,
         userText = prompt,
         taskType = "short_text",
         deviceState = DeviceState(batteryPercent = 70, thermalLevel = 3, ramClassGb = 8),
         maxTokens = 64,
+        keepModelLoaded = false,
+        onToken = {},
     )
     println("Model: ${response.modelId}")
     println("Response: ${response.text}")
     println("First token latency: ${response.firstTokenLatencyMs}ms")
     println("Total latency: ${response.totalLatencyMs}ms")
 
-    val benchmark = StageBenchmarkRunner(container)
+    val benchmark = StageBenchmarkRunner(orchestrator)
     val scenarioA = benchmark.runScenarioA()
     val scenarioB = benchmark.runScenarioB()
     val scenarioC = benchmark.runScenarioC()
@@ -53,7 +57,7 @@ fun main() {
     println("Scenario B: $scenarioB")
     println("Scenario C: $scenarioC")
 
-    println("Tool test: " + container.runTool("calculator", "{\"expression\":\"1+2\"}"))
-    println("Image test: " + container.analyzeImage("photo.jpg", "What is in this image?"))
-    println("Diagnostics: " + container.exportDiagnostics())
+    println("Tool test: " + orchestrator.runTool("calculator", "{\"expression\":\"1+2\"}"))
+    println("Image test: " + orchestrator.analyzeImage("photo.jpg", "What is in this image?"))
+    println("Diagnostics: " + orchestrator.exportDiagnostics())
 }

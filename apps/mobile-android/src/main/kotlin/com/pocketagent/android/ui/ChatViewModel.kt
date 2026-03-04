@@ -3,10 +3,6 @@ package com.pocketagent.android.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.pocketagent.android.RoutingMode
-import com.pocketagent.android.ui.runtime.ChatStreamEvent
-import com.pocketagent.android.ui.runtime.MvpRuntimeFacade
-import com.pocketagent.android.ui.runtime.StreamUserMessageRequest
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ComposerUiState
@@ -19,9 +15,13 @@ import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.UiError
 import com.pocketagent.android.ui.state.UiErrorMapper
+import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

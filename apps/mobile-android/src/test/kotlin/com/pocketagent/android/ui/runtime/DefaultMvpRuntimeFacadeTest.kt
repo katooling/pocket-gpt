@@ -1,7 +1,7 @@
-package com.pocketagent.android.ui.runtime
+package com.pocketagent.runtime
 
-import com.pocketagent.android.ChatResponse
-import com.pocketagent.android.RoutingMode
+import com.pocketagent.core.ChatResponse
+import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
@@ -75,6 +75,7 @@ private class FakeRuntimeContainer : RuntimeContainer {
         taskType: String,
         deviceState: DeviceState,
         maxTokens: Int,
+        keepModelLoaded: Boolean,
         onToken: (String) -> Unit,
     ): ChatResponse {
         lastUserText = userText

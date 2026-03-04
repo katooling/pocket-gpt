@@ -1,0 +1,144 @@
+package com.pocketagent.runtime
+
+import com.pocketagent.inference.ArtifactDistributionChannel
+import com.pocketagent.inference.ArtifactVerificationResult
+import com.pocketagent.inference.ModelArtifact
+import com.pocketagent.inference.ModelArtifactManager
+import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import java.io.BufferedInputStream
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.security.MessageDigest
+
+class ArtifactVerifier(
+    private val config: RuntimeConfig,
+    private val modelArtifactManager: ModelArtifactManager = ModelArtifactManager(),
+) {
+    private val artifactShaByFilePath: MutableMap<String, String> = mutableMapOf()
+
+    init {
+        registerArtifact(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            fileName = "qwen3.5-0.8b-q4.gguf",
+        )
+        registerArtifact(
+            modelId = ModelCatalog.QWEN_3_5_2B_Q4,
+            fileName = "qwen3.5-2b-q4.gguf",
+        )
+        modelArtifactManager.setActiveModel(ModelCatalog.QWEN_3_5_0_8B_Q4)
+    }
+
+    fun manager(): ModelArtifactManager = modelArtifactManager
+
+    fun registerRuntimeModelPaths(inferenceModule: LlamaCppInferenceModule) {
+        config.artifactFilePathByModelId.forEach { (modelId, rawPath) ->
+            val path = rawPath.trim()
+            if (path.isNotEmpty()) {
+                inferenceModule.registerModelPath(modelId = modelId, absolutePath = path)
+            }
+        }
+    }
+
+    fun verifyArtifactOrThrow(modelId: String) {
+        val result = verifyArtifactForModel(modelId)
+        check(result.passed) {
+            artifactVerificationFailureMessage(result)
+        }
+    }
+
+    fun verifyArtifactForModel(modelId: String): ArtifactVerificationResult {
+        val filePath = config.artifactFilePathByModelId[modelId]
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        if (filePath != null) {
+            val path = Path.of(filePath)
+            val payloadPresent = Files.exists(path, LinkOption.NOFOLLOW_LINKS) && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+            val payloadSha256 = if (payloadPresent) {
+                sha256HexFromFile(path)
+            } else {
+                null
+            }
+            return modelArtifactManager.verifyArtifactForLoad(
+                modelId = modelId,
+                version = null,
+                payload = null,
+                payloadSha256 = payloadSha256,
+                payloadPresent = payloadPresent,
+                provenanceIssuer = config.artifactProvenanceIssuerByModelId[modelId].orEmpty(),
+                provenanceSignature = config.artifactProvenanceSignatureByModelId[modelId].orEmpty(),
+                runtimeCompatibility = config.runtimeCompatibilityTag,
+            )
+        }
+        return modelArtifactManager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = null,
+            payload = config.artifactPayloadByModelId[modelId],
+            provenanceIssuer = config.artifactProvenanceIssuerByModelId[modelId].orEmpty(),
+            provenanceSignature = config.artifactProvenanceSignatureByModelId[modelId].orEmpty(),
+            runtimeCompatibility = config.runtimeCompatibilityTag,
+        )
+    }
+
+    fun artifactVerificationFailureMessage(result: ArtifactVerificationResult): String {
+        return buildString {
+            append("MODEL_ARTIFACT_VERIFICATION_ERROR:")
+            append(result.status.name)
+            append(":model=")
+            append(result.modelId)
+            append(";version=")
+            append(result.version ?: "none")
+            append(";expected_sha=")
+            append(result.expectedSha256 ?: "none")
+            append(";actual_sha=")
+            append(result.actualSha256 ?: "none")
+            append(";expected_issuer=")
+            append(result.expectedIssuer ?: "none")
+            append(";actual_issuer=")
+            append(result.actualIssuer ?: "none")
+            append(";expected_runtime=")
+            append(result.expectedRuntimeCompatibility ?: "none")
+            append(";actual_runtime=")
+            append(result.actualRuntimeCompatibility ?: "none")
+        }
+    }
+
+    private fun registerArtifact(modelId: String, fileName: String) {
+        modelArtifactManager.registerArtifact(
+            ModelArtifact(
+                modelId = modelId,
+                version = "1",
+                fileName = fileName,
+                expectedSha256 = config.artifactSha256ByModelId[modelId]?.trim().orEmpty(),
+                distributionChannel = ArtifactDistributionChannel.SIDE_LOAD_MANUAL_INTERNAL,
+                provenanceIssuer = config.artifactProvenanceIssuerByModelId[modelId].orEmpty(),
+                provenanceSignature = config.artifactProvenanceSignatureByModelId[modelId].orEmpty(),
+                runtimeCompatibility = config.runtimeCompatibilityTag,
+            ),
+        )
+    }
+
+    private fun sha256HexFromFile(path: Path): String {
+        val normalizedPath = path.toAbsolutePath().normalize().toString()
+        artifactShaByFilePath[normalizedPath]?.let { return it }
+        val digest = MessageDigest.getInstance("SHA-256")
+        BufferedInputStream(Files.newInputStream(path)).use { input ->
+            val buffer = ByteArray(DEFAULT_SHA_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) {
+                    break
+                }
+                digest.update(buffer, 0, read)
+            }
+        }
+        val result = digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+        artifactShaByFilePath[normalizedPath] = result
+        return result
+    }
+
+    companion object {
+        private const val DEFAULT_SHA_BUFFER_SIZE: Int = 1024 * 1024
+    }
+}

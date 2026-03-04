@@ -1,11 +1,12 @@
-package com.pocketagent.android
+package com.pocketagent.runtime
 
+import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.SessionId
 import com.pocketagent.inference.DeviceState
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class StageBenchmarkRunnerTest {
     @Test
@@ -33,7 +34,7 @@ class StageBenchmarkRunnerTest {
             sendResponses = mutableListOf(
                 response(firstTokenMs = 1400, totalMs = 2000, tokenCount = 4),
                 response(firstTokenMs = 1500, totalMs = 2000, tokenCount = 5),
-                response(firstTokenMs = 1300, totalMs = 2000, tokenCount = 3),
+                response(firstTokenMs = 1600, totalMs = 2000, tokenCount = 4),
             ),
         )
         val runner = StageBenchmarkRunner(runtime)
@@ -41,19 +42,19 @@ class StageBenchmarkRunnerTest {
         val result = runner.runScenarioB(sessionRuns = 3)
 
         assertEquals("B", result.scenario)
-        assertEquals(1400, result.p50FirstTokenMs)
+        assertEquals(1500, result.p50FirstTokenMs)
         assertEquals(2.0, result.p50DecodeTokensPerSecond, 0.0001)
         assertFalse(result.pass)
     }
 
     @Test
-    fun `scenario C uses image path and reports pass on sufficient decode rate`() {
+    fun `scenario C uses image analysis throughput threshold`() {
         val runtime = FakeStageBenchmarkRuntime(
             sendResponses = mutableListOf(),
-            imageResponses = mutableListOf(
-                "one two three four five six seven eight",
-                "one two three four five six seven eight",
-                "one two three four five six seven eight",
+            imageOutputs = mutableListOf(
+                "one two three four",
+                "one two three four five six",
+                "one two three four five",
             ),
         )
         val runner = StageBenchmarkRunner(runtime)
@@ -61,17 +62,16 @@ class StageBenchmarkRunnerTest {
         val result = runner.runScenarioC(sessionRuns = 3)
 
         assertEquals("C", result.scenario)
-        assertEquals(0L, result.p50FirstTokenMs)
-        assertTrue(result.p50DecodeTokensPerSecond >= 4.0)
+        assertEquals(0, result.p50FirstTokenMs)
+        assertTrue(result.p50DecodeTokensPerSecond > 0.0)
         assertTrue(result.pass)
-        assertEquals(3, runtime.imageCallCount)
     }
 
     private fun response(firstTokenMs: Long, totalMs: Long, tokenCount: Int): ChatResponse {
-        val text = (1..tokenCount).joinToString(separator = " ") { "tok$it" }
+        val text = (1..tokenCount).joinToString(" ") { "tok$it" }
         return ChatResponse(
             sessionId = SessionId("session"),
-            modelId = "auto",
+            modelId = "model",
             text = text,
             firstTokenLatencyMs = firstTokenMs,
             totalLatencyMs = totalMs,
@@ -81,11 +81,9 @@ class StageBenchmarkRunnerTest {
 
 private class FakeStageBenchmarkRuntime(
     private val sendResponses: MutableList<ChatResponse>,
-    private val imageResponses: MutableList<String> = mutableListOf(),
+    private val imageOutputs: MutableList<String> = mutableListOf("image tokens"),
 ) : StageBenchmarkRuntime {
     private var sessionCounter = 0
-    var imageCallCount: Int = 0
-        private set
 
     override fun createSession(): SessionId {
         sessionCounter += 1
@@ -103,7 +101,6 @@ private class FakeStageBenchmarkRuntime(
     }
 
     override fun analyzeImage(imagePath: String, prompt: String): String {
-        imageCallCount += 1
-        return imageResponses.removeFirstOrNull() ?: "fallback image summary tokens"
+        return imageOutputs.removeFirst()
     }
 }

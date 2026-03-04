@@ -2,12 +2,14 @@ package com.pocketagent.android
 
 import com.pocketagent.core.ObservabilityModule
 import com.pocketagent.core.PolicyModule
+import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -185,10 +187,10 @@ class AndroidMvpContainerTest {
 
     @Test
     fun `startup checks fail when runtime backend is adb fallback and native is required`() {
-        val bridge = BackendAwareTestBridge(backend = RuntimeBackend.ADB_FALLBACK)
+        val bridge = BackendAwareTestBridge(backend = com.pocketagent.nativebridge.RuntimeBackend.ADB_FALLBACK)
         val payloads = testPayloads()
         val container = AndroidMvpContainer(
-            inferenceModule = AndroidLlamaCppInferenceModule(bridge),
+            inferenceModule = LlamaCppInferenceModule(bridge),
             artifactPayloadByModelId = payloads,
             artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
             artifactProvenanceIssuerByModelId = mapOf(
@@ -211,10 +213,10 @@ class AndroidMvpContainerTest {
 
     @Test
     fun `startup checks allow adb fallback when native runtime requirement is disabled`() {
-        val bridge = BackendAwareTestBridge(backend = RuntimeBackend.ADB_FALLBACK)
+        val bridge = BackendAwareTestBridge(backend = com.pocketagent.nativebridge.RuntimeBackend.ADB_FALLBACK)
         val payloads = testPayloads()
         val container = AndroidMvpContainer(
-            inferenceModule = AndroidLlamaCppInferenceModule(bridge),
+            inferenceModule = LlamaCppInferenceModule(bridge),
             artifactPayloadByModelId = payloads,
             artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
             artifactProvenanceIssuerByModelId = mapOf(
@@ -443,9 +445,9 @@ private class RecordingInferenceModule(
 }
 
 private class BackendAwareTestBridge(
-    private val backend: RuntimeBackend,
-) : LlamaCppRuntimeBridge {
-    override fun isReady(): Boolean = backend != RuntimeBackend.UNAVAILABLE
+    private val backend: com.pocketagent.nativebridge.RuntimeBackend,
+) : com.pocketagent.nativebridge.LlamaCppRuntimeBridge {
+    override fun isReady(): Boolean = backend != com.pocketagent.nativebridge.RuntimeBackend.UNAVAILABLE
 
     override fun listAvailableModels(): List<String> = listOf(
         ModelCatalog.QWEN_3_5_0_8B_Q4,
@@ -466,7 +468,7 @@ private class BackendAwareTestBridge(
         // no-op
     }
 
-    override fun runtimeBackend(): RuntimeBackend = backend
+    override fun runtimeBackend(): com.pocketagent.nativebridge.RuntimeBackend = backend
 }
 
 private class RecordingPolicyModule(

@@ -1,10 +1,7 @@
 package com.pocketagent.android.ui
 
-import com.pocketagent.android.ChatResponse
-import com.pocketagent.android.RoutingMode
-import com.pocketagent.android.ui.runtime.ChatStreamEvent
-import com.pocketagent.android.ui.runtime.MvpRuntimeFacade
-import com.pocketagent.android.ui.runtime.StreamUserMessageRequest
+import com.pocketagent.core.ChatResponse
+import com.pocketagent.core.RoutingMode
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
@@ -13,6 +10,9 @@ import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
+import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow

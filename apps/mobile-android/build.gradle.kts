@@ -89,6 +89,8 @@ dependencies {
     implementation(project(":packages:inference-adapters"))
     implementation(project(":packages:tool-runtime"))
     implementation(project(":packages:memory"))
+    implementation(project(":packages:native-bridge"))
+    implementation(project(":packages:app-runtime"))
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
