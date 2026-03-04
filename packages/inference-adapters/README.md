@@ -24,7 +24,10 @@ Runtime abstraction and adapter contracts.
   - checksum verification result semantics (`verifyChecksumResult`)
   - CI-safe artifact validation hook (`validateManifest`)
 - `AdaptiveRoutingPolicy`: stage-3 battery/thermal/device-aware selection
-- `SmokeImageInputModule`: stage-5 image path placeholder for local integration
+- `SmokeImageInputModule`: stage-5 image path adapter with deterministic contract behavior:
+  - validation error contract (`IMAGE_VALIDATION_ERROR:<code>:<detail>`)
+  - normalized success contract (`IMAGE_ANALYSIS(v=1,extension=...,max_tokens=...): ...`)
+  - extension allowlist + prompt/path validation guards
 
 Android runtime bridge wiring is implemented in the app layer with:
 

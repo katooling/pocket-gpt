@@ -164,8 +164,11 @@ class AndroidMvpContainerTest {
 
     @Test
     fun `analyze image fails when policy rejects image event`() {
+        val inference = RecordingInferenceModule()
+        val policy = RecordingPolicyModule(deniedEvents = setOf("inference.image_analyze"))
         val container = AndroidMvpContainer(
-            policyModule = RecordingPolicyModule(deniedEvents = setOf("inference.image_analyze")),
+            inferenceModule = inference,
+            policyModule = policy,
         )
 
         val error = assertFailsWith<IllegalStateException> {
@@ -173,6 +176,50 @@ class AndroidMvpContainerTest {
         }
 
         assertTrue(error.message?.contains("Policy module rejected image analysis event type") == true)
+        assertTrue(policy.observedEvents.contains("routing.image_model_select"))
+        assertTrue(policy.observedEvents.contains("inference.image_analyze"))
+        assertEquals(1, inference.unloadCalls)
+    }
+
+    @Test
+    fun `analyze image runs routing and model lifecycle with diagnostics metric`() {
+        val inference = RecordingInferenceModule()
+        val observability = RecordingObservabilityModule()
+        val policy = RecordingPolicyModule()
+        val container = AndroidMvpContainer(
+            inferenceModule = inference,
+            observabilityModule = observability,
+            policyModule = policy,
+        )
+
+        val output = container.analyzeImage(
+            imagePath = "/private/storage/photo.jpg",
+            prompt = "Describe this photo",
+            deviceState = DeviceState(batteryPercent = 92, thermalLevel = 4, ramClassGb = 8),
+        )
+
+        assertTrue(output.startsWith("IMAGE_ANALYSIS(v=1,extension=jpg,max_tokens=128):"))
+        assertFalse(output.contains("/private/storage/photo.jpg"))
+        assertEquals(1, inference.loadCalls.size)
+        assertEquals(1, inference.unloadCalls)
+        assertTrue(policy.observedEvents.contains("routing.image_model_select"))
+        assertTrue(policy.observedEvents.contains("inference.image_analyze"))
+        assertTrue(policy.observedEvents.contains("observability.record_runtime_metrics"))
+        assertTrue(observability.recordedLatencyMetrics.keys.contains("inference.image.total_ms"))
+        assertEquals(4, observability.recordedThermalLevels.last())
+    }
+
+    @Test
+    fun `analyze image fails when runtime image model cannot load`() {
+        val inference = RecordingInferenceModule(allowLoad = false)
+        val container = AndroidMvpContainer(inferenceModule = inference)
+
+        val error = assertFailsWith<IllegalStateException> {
+            container.analyzeImage("photo.jpg", "describe this image")
+        }
+
+        assertTrue(error.message?.contains("Failed to load runtime model for image analysis") == true)
+        assertEquals(0, inference.unloadCalls)
     }
 
     @Test
@@ -267,4 +314,21 @@ private class LeakyObservabilityModule(
     }
 
     override fun exportLocalDiagnostics(): String = diagnostics
+}
+
+private class RecordingObservabilityModule : ObservabilityModule {
+    val recordedLatencyMetrics: MutableMap<String, Double> = linkedMapOf()
+    val recordedThermalLevels: MutableList<Int> = mutableListOf()
+
+    override fun recordLatencyMetric(name: String, valueMs: Double) {
+        recordedLatencyMetrics[name] = valueMs
+    }
+
+    override fun recordThermalSnapshot(level: Int) {
+        recordedThermalLevels.add(level)
+    }
+
+    override fun exportLocalDiagnostics(): String {
+        return recordedLatencyMetrics.entries.joinToString(",") { "${it.key}=${it.value}" }
+    }
 }

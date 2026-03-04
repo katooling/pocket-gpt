@@ -136,18 +136,48 @@ class AndroidMvpContainer(
         return if (result.success) result.content else "Tool error: ${result.content}"
     }
 
-    fun analyzeImage(imagePath: String, prompt: String): String {
+    fun analyzeImage(
+        imagePath: String,
+        prompt: String,
+        deviceState: DeviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+    ): String {
         requirePolicyEvent(
-            eventType = "inference.image_analyze",
-            failureMessage = "Policy module rejected image analysis event type.",
+            eventType = "routing.image_model_select",
+            failureMessage = "Policy module rejected image routing event type.",
         )
-        return imageInputModule.analyzeImage(
-            com.pocketagent.inference.ImageRequest(
-                imagePath = imagePath,
-                prompt = prompt,
-                maxTokens = 128,
-            ),
+        val modelId = routingModule.selectModel(taskType = "image", deviceState = deviceState)
+        check(inferenceModule.loadModel(modelId)) {
+            "Failed to load runtime model for image analysis: $modelId"
+        }
+        check(modelArtifactManager.setActiveModel(modelId)) {
+            "Model artifact not registered for image runtime model: $modelId"
+        }
+
+        val startedMs = System.currentTimeMillis()
+        val imageResult = try {
+            requirePolicyEvent(
+                eventType = "inference.image_analyze",
+                failureMessage = "Policy module rejected image analysis event type.",
+            )
+            imageInputModule.analyzeImage(
+                com.pocketagent.inference.ImageRequest(
+                    imagePath = imagePath,
+                    prompt = prompt,
+                    maxTokens = 128,
+                ),
+            )
+        } finally {
+            inferenceModule.unloadModel()
+        }
+
+        val totalLatency = System.currentTimeMillis() - startedMs
+        requirePolicyEvent(
+            eventType = "observability.record_runtime_metrics",
+            failureMessage = "Policy module rejected diagnostics metric event type.",
         )
+        observabilityModule.recordLatencyMetric("inference.image.total_ms", totalLatency.toDouble())
+        observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
+        return imageResult
     }
 
     fun runStartupChecks(): List<String> {
