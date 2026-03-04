@@ -19,7 +19,8 @@ class DefaultPolicyModule(
         return eventType.startsWith("inference.") ||
             eventType.startsWith("routing.") ||
             eventType.startsWith("tool.") ||
-            eventType.startsWith("memory.")
+            eventType.startsWith("memory.") ||
+            eventType.startsWith("observability.")
     }
 }
 

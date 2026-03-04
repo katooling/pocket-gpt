@@ -65,6 +65,10 @@ class AndroidMvpContainer(
         deviceState: DeviceState,
         maxTokens: Int = 128,
     ): ChatResponse {
+        requirePolicyEvent(
+            eventType = "routing.model_select",
+            failureMessage = "Policy module rejected routing event type.",
+        )
         val modelId = routingModule.selectModel(taskType, deviceState)
         check(inferenceModule.loadModel(modelId)) {
             "Failed to load runtime model: $modelId"
@@ -74,6 +78,10 @@ class AndroidMvpContainer(
         }
 
         conversationModule.appendUserTurn(sessionId, userText)
+        requirePolicyEvent(
+            eventType = "memory.write_user_turn",
+            failureMessage = "Policy module rejected memory write event type.",
+        )
         memoryModule.saveMemoryChunk(
             MemoryChunk(
                 id = "mem-${System.currentTimeMillis()}",
@@ -83,6 +91,10 @@ class AndroidMvpContainer(
         )
 
         val prompt = buildPrompt(userText, sessionId, taskType, deviceState)
+        requirePolicyEvent(
+            eventType = "inference.generate",
+            failureMessage = "Policy module rejected inference event type.",
+        )
         val startedMs = System.currentTimeMillis()
         var firstTokenLatencyMs = -1L
         val builder = StringBuilder()
@@ -98,6 +110,10 @@ class AndroidMvpContainer(
         }
         check(firstTokenLatencyMs >= 0) { "Runtime returned no tokens." }
         val totalLatency = System.currentTimeMillis() - startedMs
+        requirePolicyEvent(
+            eventType = "observability.record_runtime_metrics",
+            failureMessage = "Policy module rejected diagnostics metric event type.",
+        )
         observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
         observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
         observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
@@ -113,11 +129,18 @@ class AndroidMvpContainer(
     }
 
     fun runTool(toolName: String, jsonArgs: String): String {
+        if (!policyModule.enforceDataBoundary("tool.execute")) {
+            return "Tool error: Policy module rejected tool event type."
+        }
         val result = toolModule.executeToolCall(ToolCall(toolName, jsonArgs))
         return if (result.success) result.content else "Tool error: ${result.content}"
     }
 
     fun analyzeImage(imagePath: String, prompt: String): String {
+        requirePolicyEvent(
+            eventType = "inference.image_analyze",
+            failureMessage = "Policy module rejected image analysis event type.",
+        )
         return imageInputModule.analyzeImage(
             com.pocketagent.inference.ImageRequest(
                 imagePath = imagePath,
@@ -156,7 +179,13 @@ class AndroidMvpContainer(
         return checks
     }
 
-    fun exportDiagnostics(): String = observabilityModule.exportLocalDiagnostics()
+    fun exportDiagnostics(): String {
+        requirePolicyEvent(
+            eventType = "observability.export",
+            failureMessage = "Policy module rejected diagnostics export event type.",
+        )
+        return redactDiagnostics(observabilityModule.exportLocalDiagnostics())
+    }
 
     private fun buildPrompt(
         userText: String,
@@ -193,9 +222,36 @@ class AndroidMvpContainer(
         )
     }
 
+    private fun requirePolicyEvent(eventType: String, failureMessage: String) {
+        check(policyModule.enforceDataBoundary(eventType)) { failureMessage }
+    }
+
+    private fun redactDiagnostics(raw: String): String {
+        return raw.split("|").joinToString("|") { section ->
+            section.split(";").joinToString(";") { entry ->
+                val trimmed = entry.trim()
+                val key = trimmed.substringBefore("=").substringBefore(":").trim().lowercase()
+                if (SENSITIVE_DIAGNOSTIC_KEYS.contains(key)) {
+                    "${key}=[REDACTED]"
+                } else {
+                    entry
+                }
+            }
+        }
+    }
+
     companion object {
         const val QWEN_0_8B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256"
         const val QWEN_2B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_SHA256"
+        private val SENSITIVE_DIAGNOSTIC_KEYS = setOf(
+            "user",
+            "assistant",
+            "prompt",
+            "memory",
+            "content",
+            "jsonargs",
+            "tool_args",
+        )
 
         private fun defaultArtifactSha256ByModelId(): Map<String, String> = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to System.getenv(QWEN_0_8B_SHA256_ENV).orEmpty(),
