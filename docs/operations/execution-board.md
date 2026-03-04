@@ -56,7 +56,7 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### Blocked
 
-- [ ] ENG-13 native JNI runtime proof on Samsung + perf/memory characterization for 0.8B and 2B (`NATIVE_JNI` proof lane unresolved; current closure path reports `ADB_FALLBACK`) (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`)
+- [ ] ENG-13 native JNI runtime proof on Samsung + perf/memory characterization for 0.8B and 2B (native build/lane wiring landed; blocked on missing side-load model path env provisioning for real device run) (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`)
 
 ### Done
 
@@ -104,7 +104,7 @@ All teams should update status here first, then mirror updates in role playbooks
 1. Engineering (Lead/Core/Runtime):
    - WP-11 gate is closed with QA-08 evidence pack.
    - WP-12 implementation tickets `ENG-12`, `ENG-14`, `ENG-15`, `ENG-16`, and `ENG-17` are complete with dated evidence.
-   - Resolve `ENG-13` native JNI blocker (`NATIVE_JNI` backend proof + 0.8B/2B + memory/PSS packet) before QA closeout trigger.
+   - Resolve `ENG-13` closure blocker by provisioning side-load model paths and executing the now-wired native Stage-2 lane (`NATIVE_JNI` backend proof + 0.8B/2B + memory/PSS packet) before QA closeout trigger.
    - `ENG-18` is complete with accessibility/error-state hardening evidence (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`).
 2. QA:
    - QA-08 acceptance gate is complete; continue QA-09 weekly triage/promotion/signal cadence.
@@ -172,7 +172,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-12 (Stage-2 native runtime evidence validator): `scripts/benchmarks/validate_stage2_runtime_evidence.py`
 - WP-12 (ENG-11 runtime truth gate): `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`
 - WP-12 (ENG-12 side-load distribution + strict provenance/runtime verification hard-block): `docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`
-- WP-12 (ENG-13 native runtime proof attempt; blocked on `NATIVE_JNI` closure evidence): `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`
+- WP-12 (ENG-13 native runtime proof in progress; native packaging + lane wiring landed, awaiting side-load model path provisioning for closure run): `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`
 - WP-12 (ENG-14 Android-native runtime memory backend): `docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md`
 - WP-12 (ENG-15 local tool store integration): `docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md`
 - WP-12 (ENG-16 production runtime image path): `docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md`

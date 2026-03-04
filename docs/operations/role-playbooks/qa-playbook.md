@@ -26,7 +26,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 ## What Is In Progress
 
 - [ ] WP-09 rollout quality execution support (weekly cadence)
-- [ ] QA-WP12 rerun planning pending ENG-13 native JNI closure evidence
+- [ ] QA-WP12 rerun planning pending ENG-13 closure run (native lane wired; waiting side-load model path provisioning + fresh `NATIVE_JNI` packet)
 
 ## Task Queue
 

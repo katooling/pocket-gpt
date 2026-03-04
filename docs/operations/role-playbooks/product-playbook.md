@@ -29,7 +29,7 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 - [x] PROD-06 beta rollout process and user feedback loop kickoff
 - [x] WP-12/ENG-12 product input delivered: model distribution path + provenance policy decision published
 - [x] PROD-04 monetization scope and pricing hypothesis kickoff (v0 draft published)
-- [ ] WP-12 package acceptance/signoff is pending `ENG-13` native JNI closure evidence (QA-WP12 executed with hold recommendation)
+- [ ] WP-12 package acceptance/signoff is pending `ENG-13` closure run artifacts (native lane wired; side-load model path provisioning + fresh `NATIVE_JNI` evidence still required)
 
 ## Product Dispatch Timing
 
@@ -47,7 +47,7 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 | PROD-03 | Finalize MVP acceptance checklist by stage | Done | PROD-01 | Product + QA + Engineering | `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
 | PROD-07 | WP-11 UI story and acceptance governance | Done | WP-06 | Product Lead | `docs/prd/phase-0-prd.md`, `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
 | PROD-WP12-HANDOFF | Publish WP-12 decision-complete ticket packet and owner sequencing | Done | ENG-11A, PROD ENG-12 decision note | Product Lead | `docs/operations/wp-12-handover-ticket-packet.md`, `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md` |
-| PROD-WP12-SIGNOFF | Final WP-12 acceptance/signoff | Blocked (waiting ENG-13 `NATIVE_JNI` closure packet; QA-WP12 recommends hold) | ENG-12..ENG-17, QA-WP12 | Product Lead | `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`, `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md` |
+| PROD-WP12-SIGNOFF | Final WP-12 acceptance/signoff | Blocked (waiting ENG-13 closure packet after side-load model path provisioning and fresh `NATIVE_JNI` run evidence; QA-WP12 recommends hold) | ENG-12..ENG-17, QA-WP12 | Product Lead | `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`, `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md` |
 | PROD-04 | Monetization scope and pricing hypothesis | In Progress (v0 hypothesis drafted) | PROD-01 | Product Lead | `docs/operations/prod-04-monetization-hypothesis-v0.md`, `docs/product/open-questions-log.md` |
 | PROD-08 | UX feedback taxonomy + intake policy for beta operations | Done | WP-11, PROD-06 | Product Ops | `docs/operations/evidence/wp-09/2026-03-04-prod-08-ux-feedback-taxonomy-pilot.md`, `docs/operations/wp-09-ux-feedback-taxonomy-intake-policy.md` |
 | PROD-05 | Post-MVP voice product requirements (STT/TTS) | Backlog | WP-07 | Product Lead | `docs/roadmap/product-roadmap.md` |

@@ -242,7 +242,9 @@ verify_model_path_on_device "${MODEL_2B_PATH}"
 
 adb -s "${DEVICE}" get-state >/dev/null
 
-./gradlew --no-daemon :apps:mobile-android:installDebug :apps:mobile-android:installDebugAndroidTest
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true \
+  :apps:mobile-android:installDebug \
+  :apps:mobile-android:installDebugAndroidTest
 
 run_case "0-8b-scenario-a" "${MODEL_0_8B_ID}" "A" 128
 run_case "0-8b-scenario-b" "${MODEL_0_8B_ID}" "B" 256
