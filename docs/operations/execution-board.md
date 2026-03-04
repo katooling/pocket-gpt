@@ -28,11 +28,11 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-01 | Build/CI baseline (wrapper, CI jobs, test command) | Engineering | QA | 1 | No | WP-00 | Done | Week 1 |
 | WP-02 | Real Android runtime slice (`llama.cpp`) | Engineering | QA | 2 | No | WP-01 | Done | Week 1-2 |
 | WP-03 | Artifact + benchmark reliability (A/B thresholds) | Engineering | QA, Product | 3 | Partial | WP-02 | Done | Week 2 |
-| WP-04 | Routing, policy, diagnostics hardening | Engineering | Security, QA | 4 | Yes | WP-03 | Ready | Week 3 |
+| WP-04 | Routing, policy, diagnostics hardening | Engineering | Security, QA | 4 | Yes | WP-03 | In Progress | Week 3 |
 | WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | In Progress | Week 3-4 |
 | WP-06 | Memory + image productionization | Engineering | QA, Product | 5 | Partial | WP-04 | Backlog | Week 4-5 |
 | WP-07 | Beta hardening and go/no-go packet | QA | Eng, Product | 6 | No | WP-05, WP-06 | Backlog | Week 6 |
-| WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | Backlog | Week 4-6 |
+| WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | In Progress | Week 4-6 |
 | WP-09 | Distribution plan and beta operations | Product | Marketing, QA | 6 | Yes | WP-07, WP-08 | Backlog | Week 6-7 |
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 7 | Yes | WP-07 | Backlog | Post-MVP |
 
@@ -40,12 +40,16 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### In Progress
 
+- [ ] WP-04 Routing, policy, diagnostics hardening
 - [ ] WP-05 Tool runtime safety productionization
 - [ ] ENG-06 Tool runtime strict schema validation hardening (parallel CI-first scope; no physical-device dependency)
+- [ ] QA-03 routing/policy boundary regression suite (baseline execution PASS logged 2026-03-04; rerun pending incoming WP-04 deltas)
+- [ ] QA-04 tool safety adversarial regression suite (baseline execution PASS logged 2026-03-04; rerun pending final WP-05 merge set)
+- [ ] PROD-03 acceptance checklist finalization (aligned; final beta closeout pending Stage 5/6 evidence)
+- [ ] MKT-02 competitor external sourcing pass (optional enhancement; publishable Pocket GPT claim set already locked)
 
 ### Ready
 
-- [ ] WP-04 Routing, policy, diagnostics hardening
 - [ ] PM/Prod dispatch for WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies
 
 ### Blocked
@@ -62,6 +66,12 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] QA-02 Phase B: real Scenario A/B device run + threshold report + logcat evidence
 - [x] ENG-04 closeout gate: artifact-manifest startup validation active, placeholder checksum removed from active Stage-2 path, and QA unblocked for final QA-02 rerun
 - [x] QA-02 closeout rerun: artifact-validated Stage-2 Scenario A/B packet refreshed with threshold PASS + logcat (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`)
+- [x] ENG-05 implementation scope landed: routing matrix tests, runtime policy enforcement checks, and diagnostics redaction checks (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`)
+- [x] PROD-01 launch workflows lock pass complete (2026-03-04)
+- [x] PROD-02 launch device policy lock pass complete (2026-03-04)
+- [x] MKT-01 messaging architecture lock pass complete (evidence-mapped baseline retained)
+- [x] MKT-02 competitor matrix lock pass complete with claim-risk labels and dependency tags (`docs/operations/mkt-02-competitor-matrix-template-draft.md`)
+- [x] WP-08 marketing lock-pass evidence note published (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`)
 
 ## Immediate Assignments (PM Dispatch)
 
@@ -71,11 +81,13 @@ All teams should update status here first, then mirror updates in role playbooks
 2. QA - start immediately after ENG-04 closeout:
    - QA-02 closure refresh complete (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`); recommend WP-03 package close decision
 3. Product - start now in draft mode, finalize after WP-03 Done:
-   - `PROD-01` launch workflows
-   - `PROD-02` launch device support policy
+   - `PROD-01` launch workflows finalized (lock pass complete 2026-03-04)
+   - `PROD-02` launch device support policy finalized (lock pass complete 2026-03-04)
+   - `PROD-03` acceptance checklist aligned to current validated scope; final beta closeout gated by Stage 5/6 evidence
 4. Marketing - start now in draft mode, finalize after WP-03 Done:
-   - `MKT-01` messaging architecture
-   - `MKT-02` evidence-safe competitor matrix (after MKT-01 draft)
+   - `MKT-01` messaging architecture finalized (`docs/operations/mkt-01-messaging-architecture-draft.md`)
+   - `MKT-02` evidence-safe competitor matrix finalized with validated/provisional/excluded labeling (`docs/operations/mkt-02-competitor-matrix-template-draft.md`)
+   - lock-pass evidence note published (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`)
 
 ## Evidence Log
 
@@ -95,7 +107,14 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-03 (Platform governance hardening refresh + self-test coverage): `docs/operations/evidence/wp-03/2026-03-03-eng-platform-governance-refresh.md`
 - WP-03 (PM post-reconciliation next-step dispatch): `docs/operations/evidence/wp-03/2026-03-03-pm-next-steps-dispatch.md`
 - WP-03 (PM owner-level assignment briefs): `docs/operations/evidence/wp-03/2026-03-03-pm-owner-briefs.md`
+- WP-04 (ENG-05 routing/policy/diagnostics hardening implementation): `docs/operations/evidence/wp-04/2026-03-04-eng-05.md`
+- WP-04 (QA-03 routing/policy boundary regression baseline): `docs/operations/evidence/wp-04/2026-03-04-qa-03.md`
 - WP-05 (ENG-06 tool schema hardening, parallel in progress): `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
+- WP-05 (QA-04 tool safety adversarial regression baseline): `docs/operations/evidence/wp-05/2026-03-04-qa-04.md`
+- WP-08 (Product lock pass: PROD-01/02 finalization + PROD-03 alignment): `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`
+- WP-08 (MKT-01 finalized messaging architecture with claim labels): `docs/operations/mkt-01-messaging-architecture-draft.md`
+- WP-08 (MKT-02 evidence-safe competitor matrix with claim-risk labels): `docs/operations/mkt-02-competitor-matrix-template-draft.md`
+- WP-08 (MKT lock-pass evidence note): `docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`
 
 ## Dependency Flow
 
