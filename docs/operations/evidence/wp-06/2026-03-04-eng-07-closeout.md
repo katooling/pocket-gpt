@@ -26,6 +26,8 @@ Land Stage-5 memory productionization core deliverables required to unblock QA-0
    - `packages/inference-adapters/src/commonTest/kotlin/com/pocketagent/inference/SmokeImageInputModuleTest.kt`
 5. Fixed quick-lane environment-determinism bug uncovered during closeout verification:
    - `tools/devctl/doctor.py` (`env={}` now respected as explicit env input)
+6. Added runtime follow-up memory relevance regression coverage:
+   - `apps/mobile-android/src/test/kotlin/com/pocketagent/android/AndroidMvpContainerTest.kt`
 
 ## Behavior Validated
 
@@ -47,6 +49,9 @@ Land Stage-5 memory productionization core deliverables required to unblock QA-0
 3. `bash scripts/dev/test.sh quick`
    - Outcome: PASS (`BUILD SUCCESSFUL`)
    - Log: `scripts/benchmarks/runs/2026-03-04/ci-host/eng-07-closeout/03-test-quick.log`
+4. `./gradlew --no-daemon :apps:mobile-android:testDebugUnitTest --tests "com.pocketagent.android.AndroidMvpContainerTest"`
+   - Outcome: PASS (`BUILD SUCCESSFUL`)
+   - Log: `docs/operations/evidence/wp-06/2026-03-04-eng-07-androidmvp-test.log`
 
 ## Raw Artifacts
 

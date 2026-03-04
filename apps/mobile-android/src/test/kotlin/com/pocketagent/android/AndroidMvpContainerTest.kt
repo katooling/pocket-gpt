@@ -71,6 +71,30 @@ class AndroidMvpContainerTest {
     }
 
     @Test
+    fun `follow-up prompt includes relevant memory snippet`() {
+        val inference = RecordingInferenceModule()
+        val container = AndroidMvpContainer(inferenceModule = inference)
+        val session = container.createSession()
+
+        container.sendUserMessage(
+            sessionId = session,
+            userText = "project launch timeline and owner updates",
+            taskType = "short_text",
+            deviceState = DeviceState(batteryPercent = 90, thermalLevel = 3, ramClassGb = 8),
+        )
+        container.sendUserMessage(
+            sessionId = session,
+            userText = "what is the launch timeline follow up",
+            taskType = "short_text",
+            deviceState = DeviceState(batteryPercent = 90, thermalLevel = 3, ramClassGb = 8),
+        )
+
+        assertEquals(2, inference.capturedPrompts.size)
+        val secondPrompt = inference.capturedPrompts[1]
+        assertTrue(secondPrompt.contains("memory: project launch timeline and owner updates"))
+    }
+
+    @Test
     fun `startup checks fail when artifact checksum metadata is missing`() {
         val container = AndroidMvpContainer(
             inferenceModule = RecordingInferenceModule(),
@@ -191,6 +215,7 @@ private class RecordingInferenceModule(
     private val tokensToEmit: List<String> = listOf("real ", "runtime ", "response "),
 ) : InferenceModule {
     val loadCalls = mutableListOf<String>()
+    val capturedPrompts = mutableListOf<String>()
     var unloadCalls: Int = 0
     var generateCalls: Int = 0
 
@@ -206,6 +231,7 @@ private class RecordingInferenceModule(
 
     override fun generateStream(request: InferenceRequest, onToken: (String) -> Unit) {
         generateCalls += 1
+        capturedPrompts.add(request.prompt)
         tokensToEmit.forEach(onToken)
     }
 
