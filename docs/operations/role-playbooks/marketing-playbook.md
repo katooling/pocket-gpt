@@ -44,6 +44,7 @@ Current state (2026-03-04): `WP-07` and `WP-11` are both `Done`; publish remains
 | MKT-02 | Competitor matrix with evidence-safe claims | Done | MKT-01 | Product Marketing | `docs/operations/mkt-02-competitor-matrix-template-draft.md` |
 | MKT-03 | Launch channel test plan (communities, beta cohorts) | In Progress (draft complete; execution enabled) | MKT-01 | Growth Lead | `docs/operations/mkt-03-launch-channel-test-plan-draft.md` |
 | MKT-04 | Landing page and launch copy v1 | In Progress (copy draft + demo capture lane active) | WP-07, WP-11 | Content Lead | `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md` |
+| MKT-07 | UI proof-based messaging + asset-selection pass | Ready | WP-11, MKT-04 | Marketing Lead | `docs/operations/ui-ux-handoff-ticket-pack.md`, `docs/product/feature-catalog.md` |
 | MKT-05 | Voice horizon narrative (STT/TTS roadmap messaging) | Backlog | PROD-05 | Product Marketing | `docs/roadmap/product-roadmap.md` |
 | MKT-06 | Distribution partnership list and outreach strategy | Backlog | WP-09 | Marketing Ops | `docs/product/open-questions-log.md` |
 

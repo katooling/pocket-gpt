@@ -48,16 +48,20 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
 - [ ] WP-12 backend production runtime closure kickoff + execution
 - [ ] ENG-11 native-runtime truth gate: startup checks block closure path on `ADB_FALLBACK` backend unless explicitly override-enabled for local scaffolding
+- [ ] ENG-12 model distribution implementation (decision locked: side-load/manual-internal only + strict checksum/provenance validation)
 
 ### Ready
 
 - [ ] PROD-04 monetization scope and pricing hypothesis kickoff
-- [ ] ENG-12 model distribution implementation decision + execution (`PAD` vs first-launch download vs side-load) with checksum/provenance contract
+- [ ] PROD-08 UX feedback taxonomy + intake policy for beta operations (`docs/operations/ui-ux-handoff-ticket-pack.md`)
 - [ ] ENG-13 physical-device performance/memory characterization for real Qwen 0.8B and 2B (`first_token`, `decode_tps`, `PSS`, OOM risk)
 - [ ] ENG-14 Android-native SQLite memory backend migration (remove JVM-JDBC dependency from Android runtime path)
 - [ ] ENG-15 notes/search/reminder integration against real on-device stores (remove placeholder responses from production flow)
 - [ ] ENG-16 real multimodal image analysis runtime path (replace smoke image contract on production path)
 - [ ] ENG-17 platform network policy enforcement wiring + regression checks (manifest/security config + runtime client gate)
+- [ ] ENG-18 UI accessibility + error-state hardening for beta rollout (`docs/operations/ui-ux-handoff-ticket-pack.md`)
+- [ ] QA-10 weekly UI regression matrix execution for rollout operations (`docs/operations/ui-ux-handoff-ticket-pack.md`)
+- [ ] MKT-07 UI proof-based messaging and asset-selection pass (`docs/operations/ui-ux-handoff-ticket-pack.md`)
 
 ### Blocked
 
@@ -98,13 +102,18 @@ All teams should update status here first, then mirror updates in role playbooks
 1. Engineering (Lead/Core/Runtime):
    - WP-11 gate is closed with QA-08 evidence pack.
    - Keep WP-12 in progress (ENG-12..ENG-17) while supporting WP-09 rollout stabilization.
+   - New UI hardening handoff ticket ready: `ENG-18` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
 2. QA:
    - QA-08 acceptance gate is complete; continue QA-09 weekly triage/promotion/signal cadence and prepare validation matrix for WP-12 runtime truth/data-plane gates.
+   - New UI operations ticket ready: `QA-10` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
 3. Product:
-   - External beta signoff dependency on WP-11 is cleared; continue WP-09 planning and provide model distribution decision input for ENG-12.
+   - External beta signoff dependency on WP-11 is cleared; continue WP-09 planning.
+   - ENG-12 model distribution decision is approved (side-load/manual-internal only + strict provenance checks) and unblocked (`docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`).
+   - New UX operations ticket ready: `PROD-08` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
 4. Marketing:
    - Run real screenshot/video capture using `docs/operations/mkt-04-demo-asset-capture-runbook.md`.
    - Advance MKT-03/MKT-04 from draft toward publish-ready assets under release sequencing.
+   - New UX messaging ticket ready: `MKT-07` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
 
 ## Evidence Log
 
@@ -139,12 +148,14 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-11 (Product/QA/Engineering closure signoff): `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`
 - WP-11 (QA-08 closeout rerun with explicit UI-01..UI-10 status map + 10-run UI soak): `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`
 - WP-09 (Product Ops kickoff for distribution + beta operations): `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`
+- WP-09 (UI/UX next-wave ticket pack dispatch): `docs/operations/evidence/wp-09/2026-03-04-prod-ui-ux-handoff-ticket-pack.md`
 - WP-09 (MKT-03 launch channel test plan draft prework): `docs/operations/evidence/wp-09/2026-03-04-mkt-03-launch-channel-test-plan-draft.md`
 - WP-09 (QA rollout quality checkpoints initial packet): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`
 - WP-09 (QA incident triage template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`
 - WP-09 (QA release promotion checklist): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`
 - WP-09 (QA weekly rollout summary template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md`
 - WP-12 (ENG-11 runtime truth gate): `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`
+- WP-12 (Product ENG-12 model distribution path + provenance decision): `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
 
 ## Dependency Flow
 

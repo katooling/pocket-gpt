@@ -60,6 +60,7 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 | ENG-15 | Real data-store integration for notes/search/reminder tools | Ready | ENG-11A | Platform Eng | `packages/tool-runtime` |
 | ENG-16 | Real multimodal image runtime path integration | Ready | ENG-11A | Runtime Eng | `packages/inference-adapters` |
 | ENG-17 | Platform network policy enforcement wiring + regressions | Ready | ENG-11A | Security Eng | `docs/security/privacy-model.md` |
+| ENG-18 | UI accessibility + error-state hardening for beta rollout | Ready | WP-11 | Android Eng | `docs/operations/ui-ux-handoff-ticket-pack.md`, `docs/testing/test-strategy.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
 | ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
 

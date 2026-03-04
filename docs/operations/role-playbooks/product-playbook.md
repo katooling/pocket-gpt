@@ -25,6 +25,7 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 ## What Is In Progress
 
 - [x] PROD-06 beta rollout process and user feedback loop kickoff
+- [x] WP-12/ENG-12 product input delivered: model distribution path + provenance policy decision published
 
 ## Product Dispatch Timing
 
@@ -41,6 +42,7 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 | PROD-03 | Finalize MVP acceptance checklist by stage | Done | PROD-01 | Product + QA + Engineering | `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
 | PROD-07 | WP-11 UI story and acceptance governance | Done | WP-06 | Product Lead | `docs/prd/phase-0-prd.md`, `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
 | PROD-04 | Monetization scope and pricing hypothesis | Backlog | PROD-01 | Product Lead | `docs/product/open-questions-log.md` |
+| PROD-08 | UX feedback taxonomy + intake policy for beta operations | Ready | WP-11, PROD-06 | Product Ops | `docs/operations/ui-ux-handoff-ticket-pack.md`, `docs/roadmap/mvp-beta-go-no-go-packet.md` |
 | PROD-05 | Post-MVP voice product requirements (STT/TTS) | Backlog | WP-07 | Product Lead | `docs/roadmap/product-roadmap.md` |
 | PROD-06 | Beta rollout process and user feedback loop | In Progress | WP-07, WP-08, WP-11 | Product Ops | `docs/roadmap/mvp-beta-go-no-go-packet.md` |
 
