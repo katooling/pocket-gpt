@@ -44,7 +44,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] MKT-03 launch channel test plan draft (execution now unblocked by gate closure)
 - [ ] MKT-04 landing page + launch copy v1 prep draft (publish-readiness now unblocked by gate closure)
 - [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
-- [ ] QA WP-09 rollout quality checkpoints packet in progress (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`)
+- [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
 
 ### Ready
 
@@ -87,7 +87,7 @@ All teams should update status here first, then mirror updates in role playbooks
 1. Engineering (Lead/Core/Runtime):
    - WP-07 and WP-11 closure gates are signed; support WP-09 rollout readiness and stabilization backlog.
 2. QA:
-   - WP-09 rollout quality checkpoint packet initiated; continue incident-triage and promotion-gate QA templates.
+   - QA-09 template packet delivered; execute weekly triage/promotion/signal reporting cadence for WP-09.
 3. Product:
    - External beta signoff gate is clear; WP-09/PROD-06 kickoff published (`docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`).
 4. Marketing:
@@ -123,6 +123,9 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-11 (Product/QA/Engineering closure signoff): `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`
 - WP-09 (Product Ops kickoff for distribution + beta operations): `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`
 - WP-09 (QA rollout quality checkpoints initial packet): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`
+- WP-09 (QA incident triage template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`
+- WP-09 (QA release promotion checklist): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`
+- WP-09 (QA weekly rollout summary template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md`
 
 ## Dependency Flow
 

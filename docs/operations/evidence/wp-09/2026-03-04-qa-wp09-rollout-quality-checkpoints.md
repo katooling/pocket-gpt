@@ -2,7 +2,7 @@
 
 Date: 2026-03-04  
 Owner: QA Lead  
-Status: In Progress
+Status: Completed (initial QA-09 deliverable set)
 
 ## Objective
 
@@ -27,7 +27,7 @@ Define QA-owned rollout quality checkpoints to support WP-09 distribution and be
    - Best-effort-tier caveats explicitly documented in rollout notes.
 3. Incident triage loop:
    - Severity buckets (`S0`/`S1`/`S2`/`S3`) mapped to owner + response SLA.
-   - Crash/OOM/ANR evidence path convention enforced (`scripts/benchmarks/runs/YYYY-MM-DD/<device>/...`).
+   - Crash/OOM/ANR evidence path convention enforced (for example: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-06-soak-20260304-095133/`).
 4. Beta feedback quality gate:
    - Reproduction template includes app version, device model, Android version, prompt/workflow, and observed behavior.
    - Reports missing reproducibility fields are marked `Needs-Info`.
@@ -37,11 +37,12 @@ Define QA-owned rollout quality checkpoints to support WP-09 distribution and be
 
 ## QA Deliverables for WP-09 (Next)
 
-1. Beta incident triage template (severity + ownership + evidence links).
-2. QA release-promotion checklist for cohort expansion decisions.
-3. Weekly QA rollout quality summary format (defect trends + device class impact).
+1. Beta incident triage template (severity + ownership + evidence links): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`
+2. QA release-promotion checklist for cohort expansion decisions: `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`
+3. Weekly QA rollout quality summary format (defect trends + device class impact): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md`
 
 ## Current QA Decision
 
 1. WP-09 QA support is active and unblocked.
 2. No remaining QA blocker from WP-07/WP-11 gate dependencies.
+3. Initial QA-09 template packet is complete; execution now proceeds through weekly operations cadence.
