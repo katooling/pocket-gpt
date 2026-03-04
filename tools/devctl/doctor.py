@@ -74,7 +74,7 @@ def _check_device(env: Mapping[str, str]) -> tuple[bool, str, str]:
 
 
 def run_doctor(env: Mapping[str, str] | None = None, repo_root: Path = REPO_ROOT) -> DoctorReport:
-    effective_env = dict(env or os.environ)
+    effective_env = dict(os.environ if env is None else env)
     checks: list[DoctorCheck] = []
 
     py_ok = os.sys.version_info >= (3, 10)

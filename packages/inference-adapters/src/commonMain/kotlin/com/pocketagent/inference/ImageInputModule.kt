@@ -12,7 +12,23 @@ interface ImageInputModule {
 
 class SmokeImageInputModule : ImageInputModule {
     override fun analyzeImage(request: ImageRequest): String {
-        val extension = request.imagePath.substringAfterLast('.', missingDelimiterValue = "unknown")
-        return "IMAGE_ANALYSIS(extension=$extension): ${request.prompt.take(120)}"
+        val extension = normalizeExtension(request.imagePath)
+        val promptSummary = request.prompt
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(MAX_PROMPT_CHARS)
+        val tokenCap = request.maxTokens.coerceAtLeast(0)
+        return "IMAGE_ANALYSIS(v=1,extension=$extension,max_tokens=$tokenCap): $promptSummary"
+    }
+
+    private fun normalizeExtension(imagePath: String): String {
+        val extension = imagePath.substringAfterLast('.', missingDelimiterValue = "")
+            .lowercase()
+            .filter { it.isLetterOrDigit() }
+        return if (extension.isBlank()) "unknown" else extension
+    }
+
+    companion object {
+        private const val MAX_PROMPT_CHARS = 120
     }
 }

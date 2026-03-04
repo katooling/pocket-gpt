@@ -15,4 +15,17 @@ class InMemoryMemoryModuleTest {
         assertTrue(result.isNotEmpty())
         assertEquals("1", result.first().id)
     }
+
+    @Test
+    fun `prunes oldest memories first`() {
+        memory.saveMemoryChunk(MemoryChunk("1", "one", 1))
+        memory.saveMemoryChunk(MemoryChunk("2", "two", 2))
+        memory.saveMemoryChunk(MemoryChunk("3", "three", 3))
+
+        val removed = memory.pruneMemory(maxChunks = 2)
+
+        assertEquals(1, removed)
+        val result = memory.retrieveRelevantMemory("one two three", limit = 10)
+        assertEquals(listOf("2", "3"), result.map { it.id }.sorted())
+    }
 }

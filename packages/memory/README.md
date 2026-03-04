@@ -19,3 +19,7 @@ Local memory and retrieval contracts.
   - chunk save
   - overlap-based retrieval
   - bounded pruning
+- `SqliteMemoryModule` (JVM SQLite via JDBC):
+  - persisted chunk storage (`memory_chunks`)
+  - overlap-based retrieval from persisted rows
+  - deterministic oldest-first pruning
