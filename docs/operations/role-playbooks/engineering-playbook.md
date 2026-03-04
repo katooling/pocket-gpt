@@ -25,18 +25,16 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 - [x] ENG-06 completed: strict schema-safe tool runtime productionization
 - [x] ENG-07 completed: SQLite memory backend + pruning
 - [x] ENG-08 completed: runtime image path hardening
+- [x] ENG-10 completed: WP-11 Compose MVP UI implementation and closure support
 
 ## What Is In Progress
 
-- [ ] ENG-10 WP-11 Compose MVP UI implementation (runtime façade + chat/session/image/tool UX + advanced controls)
+- [ ] None
 
 ## Lead Eng Dispatch (Now)
 
-1. Run in parallel:
-   - support WP-07 closure (Stage-6 hardening packet)
-   - execute WP-11 UI implementation and integration tests
-2. Handoff trigger:
-   - QA starts QA-08 once first integrated UI slice lands
+1. Support WP-09 rollout readiness and stabilization backlog.
+2. Keep regression/lane stability for external beta.
 
 ## Task Queue
 
@@ -50,7 +48,8 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 | ENG-06 | Tool runtime strict schema validation | Done | ENG-04 | Platform Eng | `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md` |
 | ENG-07 | SQLite memory backend + pruning | Done | ENG-05 | Core Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md` |
 | ENG-08 | Image path production hardening | Done | ENG-07 | Runtime Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-08.md` |
-| ENG-10 | WP-11 Compose chat UX + runtime façade + session persistence + advanced controls | In Progress | WP-06 | Android Runtime Eng | `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md` |
+| ENG-10 | WP-11 Compose chat UX + runtime façade + session persistence + advanced controls | Done | WP-06 | Android Runtime Eng | `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`, `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md` |
+| ENG-WP07-SIGNOFF | WP-07 Stage-6 final engineering signoff for go/no-go packet | Done | QA-06, ENG-WP07-S6 | Engineering Lead | `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
 | ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
 

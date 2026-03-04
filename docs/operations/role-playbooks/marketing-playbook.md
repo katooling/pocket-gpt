@@ -22,8 +22,8 @@ Define and validate messaging, category positioning, and launch channel strategy
 
 ## What Is In Progress
 
-- [x] MKT-03 launch channel test plan draft started (execution gated by release gates)
-- [x] MKT-04 prep draft started (publish blocked until dual-track gate closes)
+- [x] MKT-03 launch channel test plan draft started (execution lane unblocked)
+- [x] MKT-04 prep draft started (publish-readiness lane unblocked)
 
 ## Launch Publishing Rule
 
@@ -31,6 +31,8 @@ Public launch copy/screens must remain blocked until both are true:
 
 1. `WP-07` is `Done`
 2. `WP-11` is `Done`
+
+Current state (2026-03-04): both prerequisites are now `Done`; release sequencing is now governed by WP-09 planning.
 
 ## Task Queue
 

@@ -31,25 +31,23 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-04 | Routing, policy, diagnostics hardening | Engineering | Security, QA | 4 | Yes | WP-03 | Done | Week 3 |
 | WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | Done | Week 3-4 |
 | WP-06 | Memory + image productionization | Engineering | QA, Product | 5 | Partial | WP-04 | Done | Week 4-5 |
-| WP-07 | Beta hardening and go/no-go packet | QA | Eng, Product | 6 | No | WP-05, WP-06 | In Progress | Week 6 |
+| WP-07 | Beta hardening and go/no-go packet | QA | Eng, Product | 6 | No | WP-05, WP-06 | Done | Week 6 |
 | WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | Done | Week 4-6 |
-| WP-09 | Distribution plan and beta operations | Product | Marketing, QA | 7 | Yes | WP-07, WP-08, WP-11 | Backlog | Week 6-7 |
+| WP-09 | Distribution plan and beta operations | Product | Marketing, QA | 7 | Yes | WP-07, WP-08, WP-11 | In Progress | Week 6-7 |
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 8 | Yes | WP-07 | Backlog | Post-MVP |
-| WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | In Progress | Week 6 |
+| WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | Done | Week 6 |
 
 ## Current Sprint Board
 
 ### In Progress
 
-- [ ] WP-07 Beta hardening and go/no-go packet (QA-06 soak evidence + Engineering Stage-6 resilience closeout landed; final packet signoff pending)
-- [ ] WP-11 Android MVP user experience implementation (Compose shell + runtime façade + session persistence + advanced controls)
-- [ ] PROD-03 acceptance checklist finalization (external beta signoff now gated by `WP-07 Done` + `WP-11 Done`; Engineering Stage-6 support evidence attached)
-- [ ] MKT-03 launch channel test plan draft (execution gated by external beta signoff)
-- [ ] MKT-04 landing page + launch copy v1 prep draft (validated claims only; publish blocked until `WP-07` + `WP-11` close)
+- [ ] MKT-03 launch channel test plan draft (execution now unblocked by gate closure)
+- [ ] MKT-04 landing page + launch copy v1 prep draft (publish-readiness now unblocked by gate closure)
+- [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
 
 ### Ready
 
-- [ ] QA-08 UI acceptance suite kickoff for WP-11 (Compose/instrumentation/Maestro) on first integrated UI slice
+- [ ] PROD-04 monetization scope and pricing hypothesis kickoff
 
 ### Blocked
 
@@ -78,21 +76,21 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] WP-04 package closeout complete (routing/policy/diagnostics hardening with engineering+QA evidence)
 - [x] QA-06 30-minute soak and crash/OOM/ANR evidence pack executed and passed (`docs/operations/evidence/wp-07/2026-03-04-qa-06.md`)
 - [x] WP-07 Engineering Stage-6 resilience support closeout landed (startup-check assessment + crash-recovery guard tests) (`docs/operations/evidence/wp-07/2026-03-04-eng-stage6-resilience-closeout.md`)
+- [x] WP-07 package closeout complete (final Product/QA/Engineering dated signatures recorded) (`docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`)
+- [x] WP-11 package closeout complete (Product/QA/Engineering closure signoff recorded) (`docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`)
+- [x] PROD-03 acceptance checklist finalization complete
 - [x] WP-08 positioning and launch prep asset lock pass complete (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`, `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`)
 
 ## Immediate Assignments (Current Owners)
 
 1. Engineering (Lead/Core/Runtime):
-   - Stage-6 resilience support closeout is complete for WP-07 (`docs/operations/evidence/wp-07/2026-03-04-eng-stage6-resilience-closeout.md`); remain on blocker-fix standby for final packet signoff.
-   - Continue WP-11 implementation to close UI acceptance criteria (chat timeline, session UX, image/tool UX, advanced controls, diagnostics UX).
-   - Keep module boundaries aligned with runtime contracts and keep host lane compatibility.
+   - WP-07 and WP-11 closure gates are signed; support WP-09 rollout readiness and stabilization backlog.
 2. QA:
-   - WP-07 final packet support in progress.
-   - Start QA-08 UI acceptance suite for WP-11 (Compose/instrumentation/Maestro) and publish evidence in `docs/operations/evidence/wp-11/`.
+   - WP-07/WP-11 approvals are recorded; shift to WP-09 rollout quality checkpoints.
 3. Product:
-   - Continue `PROD-03` finalization; external beta signoff is blocked until both `WP-07` and `WP-11` are `Done`.
+   - External beta signoff gate is clear; WP-09/PROD-06 kickoff published (`docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`).
 4. Marketing:
-   - Keep MKT-03/MKT-04 drafts evidence-safe; no public release until `WP-07` and `WP-11` close.
+   - Advance MKT-03/MKT-04 from draft toward publish-ready assets under release sequencing.
 
 ## Evidence Log
 
@@ -117,9 +115,12 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-06 (QA-05 acceptance): `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`
 - WP-07 (QA-06 soak evidence): `docs/operations/evidence/wp-07/2026-03-04-qa-06.md`
 - WP-07 (Engineering Stage-6 resilience support closeout): `docs/operations/evidence/wp-07/2026-03-04-eng-stage6-resilience-closeout.md`
+- WP-07 (PROD-03 final dated owner signatures + package closeout): `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`
 - WP-08 (MKT lock pass): `docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`
 - WP-08 (Product lock pass): `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`
 - WP-11 (UI foundation implementation + docs alignment): `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`
+- WP-11 (Product/QA/Engineering closure signoff): `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`
+- WP-09 (Product Ops kickoff for distribution + beta operations): `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`
 
 ## Dependency Flow
 
