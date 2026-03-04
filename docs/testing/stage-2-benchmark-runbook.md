@@ -19,9 +19,11 @@ Required files:
 2. `scenario-b.csv`
 3. `stage-2-threshold-input.csv`
 4. `model-2b-metrics.csv`
-5. `threshold-report.txt`
-6. `logcat.txt`
-7. `notes.md`
+5. `meminfo-*.txt`
+6. `threshold-report.txt`
+7. `runtime-evidence-validation.txt`
+8. `logcat.txt`
+9. `notes.md`
 
 ## Recommended Execution
 
@@ -29,13 +31,11 @@ Required files:
 bash scripts/dev/bench.sh stage2 --device <device-id>
 ```
 
-To use measured scenario files:
+Required environment:
 
 ```bash
-bash scripts/dev/bench.sh stage2 \
-  --device <device-id> \
-  --scenario-a <path-to-scenario-a.csv> \
-  --scenario-b <path-to-scenario-b.csv>
+export POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-0.8b-q4.gguf
+export POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-2b-q4.gguf
 ```
 
 After run completion, add a human evidence note in `docs/operations/evidence/wp-03/` linking the generated run directory.

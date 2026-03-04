@@ -82,7 +82,14 @@ Examples:
 ## Stage-2 Benchmark Wrapper
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id> [--date YYYY-MM-DD] [--scenario-a <file>] [--scenario-b <file>]
+bash scripts/dev/bench.sh stage2 --device <device-id> [--date YYYY-MM-DD]
+```
+
+Required environment (device file paths for side-loaded models):
+
+```bash
+export POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-0.8b-q4.gguf
+export POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-2b-q4.gguf
 ```
 
 Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
@@ -91,10 +98,12 @@ Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
 2. `scenario-b.csv`
 3. `stage-2-threshold-input.csv`
 4. `model-2b-metrics.csv` (required for WP-12/ENG-13 closure evidence)
-5. `threshold-report.txt`
-6. `logcat.txt`
-7. `notes.md`
-8. `summary.json`
+5. `meminfo-*.txt` (PSS snapshots per scenario/model)
+6. `threshold-report.txt`
+7. `runtime-evidence-validation.txt`
+8. `logcat.txt`
+9. `notes.md`
+10. `summary.json`
 
 Evidence integrity gate:
 

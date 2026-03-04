@@ -410,68 +410,35 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
     run_dir = REPO_ROOT / lane_cfg.artifacts.output_dir_template.format(date=args.date, device=args.device)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    notes_template = REPO_ROOT / stage2_cfg.templates.notes
-    scenario_a_template = REPO_ROOT / stage2_cfg.templates.scenario_a
-    scenario_b_template = REPO_ROOT / stage2_cfg.templates.scenario_b
-    for path in (notes_template, scenario_a_template, scenario_b_template):
-        if not path.exists():
-            raise DevctlError("CONFIG_ERROR", f"Missing template file: {path}")
-
-    notes_path = run_dir / "notes.md"
     scenario_a_path = run_dir / "scenario-a.csv"
     scenario_b_path = run_dir / "scenario-b.csv"
     threshold_input_path = run_dir / "stage-2-threshold-input.csv"
+    model_2b_metrics_path = run_dir / "model-2b-metrics.csv"
     threshold_report_path = run_dir / "threshold-report.txt"
+    runtime_validation_report_path = run_dir / "runtime-evidence-validation.txt"
     logcat_path = run_dir / "logcat.txt"
+    notes_path = run_dir / "notes.md"
     summary_path = run_dir / "summary.json"
 
-    shutil.copy2(notes_template, notes_path)
-    shutil.copy2(scenario_a_template, scenario_a_path)
-    shutil.copy2(scenario_b_template, scenario_b_path)
+    if args.scenario_a or args.scenario_b:
+        print_step("stage2 --scenario-a/--scenario-b overrides are ignored in native closure mode.")
 
-    if args.scenario_a:
-        shutil.copy2(REPO_ROOT / args.scenario_a, scenario_a_path)
-    if args.scenario_b:
-        shutil.copy2(REPO_ROOT / args.scenario_b, scenario_b_path)
-
-    with scenario_a_path.open("r", encoding="utf-8") as handle_a, threshold_input_path.open("w", encoding="utf-8") as handle_out:
-        rows = handle_a.readlines()
-        if not rows:
-            raise DevctlError("SCHEMA_ERROR", f"Empty scenario A CSV: {scenario_a_path}")
-        handle_out.write(rows[0])
-        for row in rows[1:]:
-            handle_out.write(row)
-
-    with scenario_b_path.open("r", encoding="utf-8") as handle_b, threshold_input_path.open("a", encoding="utf-8") as handle_out:
-        rows = handle_b.readlines()
-        for row in rows[1:]:
-            handle_out.write(row)
+    context.run(
+        [
+            "bash",
+            "scripts/android/run_stage2_native.sh",
+            "--device",
+            args.device,
+            "--date",
+            args.date,
+            "--run-dir",
+            str(run_dir),
+        ],
+        check=True,
+        env=context.env,
+    )
 
     validate_threshold_columns(threshold_input_path, stage2_cfg.threshold_csv.columns)
-
-    if shutil.which("adb"):
-        try:
-            logcat_result = context.run(
-                ["adb", "-s", args.device, "logcat", "-d"],
-                check=False,
-                capture_output=True,
-                env=context.env,
-                timeout_seconds=float(stage2_cfg.adb_logcat_timeout_seconds),
-            )
-            if logcat_result.returncode == 0:
-                logcat_path.write_text(logcat_result.stdout or "", encoding="utf-8")
-            else:
-                logcat_path.write_text(
-                    f"adb logcat collection failed for {args.device}\n{logcat_result.stderr or ''}",
-                    encoding="utf-8",
-                )
-        except DevctlError as exc:
-            logcat_path.write_text(
-                f"adb logcat collection timed out or failed for {args.device}\n{exc.code}: {exc.message}\n",
-                encoding="utf-8",
-            )
-    else:
-        logcat_path.write_text("adb not found on host\n", encoding="utf-8")
 
     threshold_result = context.run(
         [*lane_cfg.threshold_command, str(threshold_input_path)],
@@ -481,6 +448,17 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
     )
     threshold_report_path.write_text((threshold_result.stdout or "") + (threshold_result.stderr or ""), encoding="utf-8")
 
+    runtime_validation_result = context.run(
+        ["python3", "scripts/benchmarks/validate_stage2_runtime_evidence.py", str(run_dir)],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    runtime_validation_report_path.write_text(
+        (runtime_validation_result.stdout or "") + (runtime_validation_result.stderr or ""),
+        encoding="utf-8",
+    )
+
     summary_data = {
         "stage": "stage2",
         "device_id": args.device,
@@ -489,11 +467,14 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
         "scenario_a_csv": str(scenario_a_path.relative_to(REPO_ROOT)),
         "scenario_b_csv": str(scenario_b_path.relative_to(REPO_ROOT)),
         "threshold_input_csv": str(threshold_input_path.relative_to(REPO_ROOT)),
+        "model_2b_metrics_csv": str(model_2b_metrics_path.relative_to(REPO_ROOT)),
         "threshold_report": str(threshold_report_path.relative_to(REPO_ROOT)),
+        "runtime_evidence_validation_report": str(runtime_validation_report_path.relative_to(REPO_ROOT)),
         "logcat": str(logcat_path.relative_to(REPO_ROOT)),
         "notes": str(notes_path.relative_to(REPO_ROOT)),
         "summary_json": str(summary_path.relative_to(REPO_ROOT)),
         "threshold_exit_code": threshold_result.returncode,
+        "runtime_evidence_exit_code": runtime_validation_result.returncode,
     }
     filtered = {field: summary_data[field] for field in stage2_cfg.summary_json.fields if field in summary_data}
     summary_path.write_text(json.dumps(filtered, indent=2) + "\n", encoding="utf-8")
@@ -501,6 +482,13 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
     missing_files = [name for name in stage2_cfg.required_files if not (run_dir / name).exists()]
     if missing_files:
         raise DevctlError("SCHEMA_ERROR", f"stage2 lane did not produce required file(s): {', '.join(missing_files)}")
+
+    if runtime_validation_result.returncode != 0:
+        raise DevctlError(
+            "THRESHOLD_FAIL",
+            f"Runtime evidence validation failed with exit code {runtime_validation_result.returncode}. "
+            f"See {runtime_validation_report_path}",
+        )
 
     if threshold_result.returncode != 0:
         raise DevctlError(

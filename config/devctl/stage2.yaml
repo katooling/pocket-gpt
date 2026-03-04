@@ -2,7 +2,13 @@ required_files:
   - scenario-a.csv
   - scenario-b.csv
   - stage-2-threshold-input.csv
+  - model-2b-metrics.csv
+  - meminfo-0-8b-scenario-a.txt
+  - meminfo-0-8b-scenario-b.txt
+  - meminfo-2b-scenario-a.txt
+  - meminfo-2b-scenario-b.txt
   - threshold-report.txt
+  - runtime-evidence-validation.txt
   - logcat.txt
   - notes.md
   - summary.json
@@ -22,11 +28,14 @@ summary_json:
     - scenario_a_csv
     - scenario_b_csv
     - threshold_input_csv
+    - model_2b_metrics_csv
     - threshold_report
+    - runtime_evidence_validation_report
     - logcat
     - notes
     - summary_json
     - threshold_exit_code
+    - runtime_evidence_exit_code
 
 adb_logcat_timeout_seconds: 15
 

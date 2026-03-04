@@ -83,14 +83,23 @@ def _validate_metrics_csv(path: Path, expect_scenarios: set[str] | None = None) 
 
 def _validate_model_2b(path: Path) -> None:
     _, rows = _read_csv_rows(path)
+    seen_scenarios: set[str] = set()
     for idx, row in enumerate(rows, start=2):
         model = (row.get("model") or row.get("model_id") or "").strip().lower()
         if "2b" not in model:
             raise ValidationError(f"model-2b-metrics row is not a 2B model in {path}:{idx}")
+        scenario = (row.get("scenario") or "").strip().upper()
+        if scenario:
+            seen_scenarios.add(scenario)
+    missing = sorted({"A", "B"} - seen_scenarios)
+    if missing:
+        raise ValidationError(f"model-2b-metrics.csv missing required scenario rows: {', '.join(missing)}")
 
 
 def _validate_logcat(path: Path) -> None:
     text = path.read_text(encoding="utf-8", errors="replace")
+    if "NATIVE_JNI" not in text:
+        raise ValidationError("logcat does not contain NATIVE_JNI evidence")
     if "ADB_FALLBACK" in text:
         raise ValidationError("logcat contains ADB_FALLBACK; closure evidence must be native JNI")
 
@@ -102,6 +111,9 @@ def validate_run_dir(run_dir: Path) -> None:
     missing_files = [name for name in REQUIRED_FILES if not (run_dir / name).exists()]
     if missing_files:
         raise ValidationError(f"Missing required artifact files: {', '.join(missing_files)}")
+    meminfo_files = sorted(run_dir.glob("meminfo-*.txt"))
+    if not meminfo_files:
+        raise ValidationError("Missing required meminfo snapshots (expected meminfo-*.txt)")
 
     _validate_metrics_csv(run_dir / "scenario-a.csv", expect_scenarios={"A"})
     _validate_metrics_csv(run_dir / "scenario-b.csv", expect_scenarios={"B"})

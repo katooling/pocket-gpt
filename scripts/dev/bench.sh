@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 stage2 --device <id> [--date YYYY-MM-DD] [--scenario-a <file>] [--scenario-b <file>]" >&2
+  echo "Usage: $0 stage2 --device <id> [--date YYYY-MM-DD]" >&2
 }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

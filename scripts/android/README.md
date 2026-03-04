@@ -13,6 +13,7 @@ These scripts support repeatable Android device testing for MVP stages.
 - `capture_device_baseline.sh`: captures device + battery + thermal + memory baseline
 - `configure_device_for_benchmark.sh`: benchmark-friendly device settings (`status|apply|reset`)
 - `run_short_loop.sh`: runs any command `N` times and captures crash/OOM signals from logcat
+- `run_stage2_native.sh`: executes real Stage-2 native JNI benchmark runs on-device (0.8B + 2B + meminfo/logcat artifacts)
 
 ## Usage
 
@@ -24,6 +25,7 @@ bash scripts/android/capture_device_baseline.sh
 bash scripts/android/configure_device_for_benchmark.sh status
 bash scripts/android/configure_device_for_benchmark.sh apply
 bash scripts/android/run_short_loop.sh --runs 10 --label wp02 -- bash scripts/dev/verify.sh
+bash scripts/android/run_stage2_native.sh --device <device-id>
 ```
 
 The second parameter in `collect_logcat.sh` is capture duration in seconds.
