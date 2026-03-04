@@ -4,14 +4,21 @@ import com.pocketagent.inference.DeviceState
 
 fun main() {
     val container = AndroidMvpContainer()
+    val guards = ResilienceGuards()
     val checks = container.runStartupChecks()
-    if (checks.isNotEmpty()) {
-        println("Startup checks failed: ${checks.joinToString(", ")}")
+    val startup = guards.assessStartupChecks(checks)
+    if (!startup.canProceed) {
+        println("Startup checks failed: ${startup.blockingChecks.joinToString(", ")}")
+        if (startup.recoverableChecks.isNotEmpty()) {
+            println("Startup warnings: ${startup.recoverableChecks.joinToString(", ")}")
+        }
         return
+    }
+    if (startup.recoverableChecks.isNotEmpty()) {
+        println("Startup warnings: ${startup.recoverableChecks.joinToString(", ")}")
     }
 
     val session = container.createSession()
-    val guards = ResilienceGuards()
     val prompt = guards.validatePrompt("hello from stage1 runtime test")
     val canRun = guards.canRunTask(
         taskType = "short_text",
