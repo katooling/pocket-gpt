@@ -29,7 +29,7 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-02 | Real Android runtime slice (`llama.cpp`) | Engineering | QA | 2 | No | WP-01 | Done | Week 1-2 |
 | WP-03 | Artifact + benchmark reliability (A/B thresholds) | Engineering | QA, Product | 3 | Partial | WP-02 | Done | Week 2 |
 | WP-04 | Routing, policy, diagnostics hardening | Engineering | Security, QA | 4 | Yes | WP-03 | In Progress | Week 3 |
-| WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | Done | Week 3-4 |
+| WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | In Progress | Week 3-4 |
 | WP-06 | Memory + image productionization | Engineering | QA, Product | 5 | Partial | WP-04 | Backlog | Week 4-5 |
 | WP-07 | Beta hardening and go/no-go packet | QA | Eng, Product | 6 | No | WP-05, WP-06 | Backlog | Week 6 |
 | WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | In Progress | Week 4-6 |
@@ -41,6 +41,8 @@ All teams should update status here first, then mirror updates in role playbooks
 ### In Progress
 
 - [ ] WP-04 Routing, policy, diagnostics hardening
+- [ ] WP-05 Tool runtime safety productionization
+- [ ] ENG-06 Tool runtime strict schema validation hardening (parallel CI-first scope; no physical-device dependency)
 - [ ] QA-03 routing/policy boundary regression suite (baseline execution PASS logged 2026-03-04; rerun pending incoming WP-04 deltas)
 - [ ] QA-04 tool safety adversarial regression suite (baseline execution PASS logged 2026-03-04; rerun pending final WP-05 merge set)
 - [ ] PROD-03 acceptance checklist finalization (aligned; final beta closeout pending Stage 5/6 evidence)
@@ -65,8 +67,6 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-04 closeout gate: artifact-manifest startup validation active, placeholder checksum removed from active Stage-2 path, and QA unblocked for final QA-02 rerun
 - [x] QA-02 closeout rerun: artifact-validated Stage-2 Scenario A/B packet refreshed with threshold PASS + logcat (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`)
 - [x] ENG-05 implementation scope landed: routing matrix tests, runtime policy enforcement checks, and diagnostics redaction checks (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`)
-- [x] ENG-06 closeout gate: tool runtime schema safety productionization completed with package-level acceptance and deterministic error-contract stability checks (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
-- [x] WP-05 Tool runtime safety productionization package closeout complete (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 - [x] PROD-01 launch workflows lock pass complete (2026-03-04)
 - [x] PROD-02 launch device policy lock pass complete (2026-03-04)
 - [x] MKT-01 messaging architecture lock pass complete (evidence-mapped baseline retained)
@@ -77,10 +77,9 @@ All teams should update status here first, then mirror updates in role playbooks
 
 1. Lead Eng - start now:
    - ENG-04 gate for WP-03 is closed (`docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`)
-   - ENG-06 package closeout complete; WP-05 is now marked Done (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
+   - keep ENG-06 package-close prep running in parallel (do not claim WP-05 Done yet)
 2. QA - start immediately after ENG-04 closeout:
    - QA-02 closure refresh complete (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`); recommend WP-03 package close decision
-   - QA-03/QA-04 baseline regression sweeps executed (`docs/operations/evidence/wp-04/2026-03-04-qa-03.md`, `docs/operations/evidence/wp-05/2026-03-04-qa-04.md`); rerun on final WP-04/WP-05 merge sets before package-close recommendation
 3. Product - start now in draft mode, finalize after WP-03 Done:
    - `PROD-01` launch workflows finalized (lock pass complete 2026-03-04)
    - `PROD-02` launch device support policy finalized (lock pass complete 2026-03-04)
@@ -110,8 +109,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-03 (PM owner-level assignment briefs): `docs/operations/evidence/wp-03/2026-03-03-pm-owner-briefs.md`
 - WP-04 (ENG-05 routing/policy/diagnostics hardening implementation): `docs/operations/evidence/wp-04/2026-03-04-eng-05.md`
 - WP-04 (QA-03 routing/policy boundary regression baseline): `docs/operations/evidence/wp-04/2026-03-04-qa-03.md`
-- WP-05 (ENG-06 tool schema hardening baseline, parallel scope): `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
-- WP-05 (ENG-06 final package closeout): `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`
+- WP-05 (ENG-06 tool schema hardening, parallel in progress): `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
 - WP-05 (QA-04 tool safety adversarial regression baseline): `docs/operations/evidence/wp-05/2026-03-04-qa-04.md`
 - WP-08 (Product lock pass: PROD-01/02 finalization + PROD-03 alignment): `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`
 - WP-08 (MKT-01 finalized messaging architecture with claim labels): `docs/operations/mkt-01-messaging-architecture-draft.md`
