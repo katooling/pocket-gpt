@@ -21,6 +21,7 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 - [x] PROD-02 launch device policy lock finalized (2026-03-04)
 - [x] PROD-03 Stage 6 final acceptance packet signed and closed (2026-03-04)
 - [x] PROD-07 WP-11 UI story + acceptance governance closed (rerun evidence complete)
+- [x] WP-12 handover ticket packet published for `ENG-12..ENG-17` + `QA-WP12` dispatch
 
 ## What Is In Progress
 
@@ -31,7 +32,8 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 
 1. WP-07 and WP-11 gates are closed with complete evidence.
 2. Continue WP-09/PROD-06 planning and rollout sequencing.
-3. Keep launch claims/evidence synchronized as distribution operations advance.
+3. WP-12 decision gate for ENG-12 is closed; product responsibility is acceptance/signoff against ENG+QA evidence.
+4. Keep launch claims/evidence synchronized as distribution operations advance.
 
 ## Task Queue
 
@@ -41,6 +43,7 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 | PROD-02 | Define launch device support policy (required vs best-effort) | Done | WP-03 | Product Lead | `docs/feasibility/device-matrix.md` |
 | PROD-03 | Finalize MVP acceptance checklist by stage | Done | PROD-01 | Product + QA + Engineering | `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
 | PROD-07 | WP-11 UI story and acceptance governance | Done | WP-06 | Product Lead | `docs/prd/phase-0-prd.md`, `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
+| PROD-WP12-HANDOFF | Publish WP-12 decision-complete ticket packet and owner sequencing | Done | ENG-11A, PROD ENG-12 decision note | Product Lead | `docs/operations/wp-12-handover-ticket-packet.md`, `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md` |
 | PROD-04 | Monetization scope and pricing hypothesis | Backlog | PROD-01 | Product Lead | `docs/product/open-questions-log.md` |
 | PROD-08 | UX feedback taxonomy + intake policy for beta operations | Ready | WP-11, PROD-06 | Product Ops | `docs/operations/ui-ux-handoff-ticket-pack.md`, `docs/roadmap/mvp-beta-go-no-go-packet.md` |
 | PROD-05 | Post-MVP voice product requirements (STT/TTS) | Backlog | WP-07 | Product Lead | `docs/roadmap/product-roadmap.md` |
