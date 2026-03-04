@@ -20,8 +20,34 @@ Foundation repository for an offline, privacy-first mobile AI product.
 - `packages/inference-adapters/`: runtime adapter interfaces and policy routing
 - `packages/tool-runtime/`: local tool execution and schema validation contracts
 - `packages/memory/`: memory and retrieval contracts
+- `packages/native-bridge/`: JNI + ADB runtime bridge and inference runtime adapter
+- `packages/app-runtime/`: orchestration layer (runtime facade, startup guards, benchmark harness)
 - `scripts/benchmarks/`: benchmark harness docs and scripts
 - `scripts/dev/`: canonical test/dev entrypoints
 - `tools/devctl/`: config-driven lane orchestrator backing `scripts/dev/*`
 - `config/devctl/`: lane/device/stage2 manifests for orchestrator behavior
 - `tests/maestro/`: mobile E2E flow assets
+
+## Module dependency graph
+
+```mermaid
+flowchart LR
+  CoreDomain["packages/core-domain"]
+  InferenceAdapters["packages/inference-adapters"]
+  ToolRuntime["packages/tool-runtime"]
+  MemoryPkg["packages/memory"]
+  NativeBridge["packages/native-bridge"]
+  AppRuntime["packages/app-runtime"]
+  MobileAndroid["apps/mobile-android"]
+  MobileHost["apps/mobile-android-host"]
+
+  InferenceAdapters --> CoreDomain
+  NativeBridge --> InferenceAdapters
+  AppRuntime --> CoreDomain
+  AppRuntime --> InferenceAdapters
+  AppRuntime --> ToolRuntime
+  AppRuntime --> MemoryPkg
+  AppRuntime --> NativeBridge
+  MobileAndroid --> AppRuntime
+  MobileHost --> AppRuntime
+```
