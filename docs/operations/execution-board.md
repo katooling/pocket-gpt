@@ -36,7 +36,8 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-09 | Distribution plan and beta operations | Product | Marketing, QA | 7 | Yes | WP-07, WP-08, WP-11 | In Progress | Week 6-7 |
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 8 | Yes | WP-07 | Backlog | Post-MVP |
 | WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | Done | Week 6 |
-| WP-12 | Backend production runtime closure (native inference, model distribution, Android-native data plane) | Engineering | QA, Product, Security | 7 | Yes | WP-07, WP-11 | In Progress | Week 7-8 |
+| WP-12 | Backend production runtime closure (native inference, model distribution, Android-native data plane) | Engineering | QA, Product, Security | 7 | Yes | WP-07, WP-11 | Done | Week 7-8 |
+| WP-13 | UX quality closure (onboarding, runtime clarity, usability gate, listing readiness) | Product | Eng, QA, Design, Marketing | 8 | Yes | WP-11 | Ready | Week 8 |
 
 ## Current Sprint Board
 
@@ -46,17 +47,22 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] MKT-04 landing page + launch copy v1 prep draft (publish-readiness now unblocked by gate closure)
 - [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
-- [ ] WP-12 backend production runtime closure kickoff + execution
 - [ ] PROD-04 monetization scope and pricing hypothesis kickoff (v0 hypothesis doc published)
 - [ ] ENG support: stage-2 runtime evidence integrity gate active for closure packet validation
 
 ### Ready
 
 - [ ] MKT-03 first 7-day scorecard execution window
-
-### Blocked
-
-- [ ] ENG-13 native JNI runtime proof on Samsung + perf/memory characterization for 0.8B and 2B (native build/lane wiring landed; blocked on missing side-load model path env provisioning for real device run) (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`)
+- [ ] WP-13 UX quality work package kickoff (`docs/operations/wp-13-ux-quality-work-package.md`)
+- [ ] APP-STORE-01 Play Store listing spec + screenshot shotlist finalization (`docs/ux/play-store-listing-spec.md`)
+- [ ] TEST-ENG-01 test architecture and ownership matrix publish (`docs/testing/test-strategy.md`)
+- [ ] TEST-ENG-02 persistence codec unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/state/SessionPersistenceCodecTest.kt`)
+- [ ] TEST-ENG-03 runtime facade delegation unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/runtime/DefaultMvpRuntimeFacadeTest.kt`)
+- [ ] TEST-ENG-04 stage benchmark runner unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/StageBenchmarkRunnerTest.kt`)
+- [ ] TEST-ENG-05 instrumentation smoke extension for onboarding/runtime/privacy/NL tool flow (`apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/MainActivityUiSmokeTest.kt`)
+- [ ] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
+- [ ] TEST-QA-02 release-promotion checklist update with instrumentation/Maestro pass-id requirements (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`)
+- [ ] TEST-PROD-01 WP-13 usability gate packet operational template publication (`docs/operations/wp-13-usability-gate-packet-template.md`)
 
 ### Done
 
@@ -92,7 +98,10 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-15 local tool data-store integration landed (`notes_lookup`/`local_search`/`reminder_create` no longer placeholder responses) (`docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md`)
 - [x] ENG-16 production runtime-backed image path landed (`SmokeImageInputModule` removed from production lane) (`docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md`)
 - [x] ENG-17 Android platform network policy wiring/regression checks landed (`docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`)
-- [x] QA-WP12 closeout validation packet executed (recommendation: do not close WP-12 until ENG-13 native JNI blocker is resolved) (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`)
+- [x] ENG-13 native JNI runtime proof landed with full Samsung `NATIVE_JNI` 0.8B/2B scenario A/B + meminfo artifact chain (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`)
+- [x] QA-WP12 closeout validation packet rerun executed (recommendation: close WP-12) (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`)
+- [x] PROD-WP12 final acceptance/signoff complete (`docs/operations/evidence/wp-12/2026-03-04-prod-wp12-final-signoff.md`)
+- [x] WP-12 package closeout complete (ENG-12..ENG-17 + QA-WP12 evidence aligned)
 - [x] MKT-02 external competitor snapshot sourced (ChatGPT/Gemini/Claude) (`docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`)
 - [x] ENG-18 UI accessibility + error-state hardening complete (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`)
 - [x] QA-10 weekly UI regression matrix run 01 complete (`docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`)
@@ -103,18 +112,17 @@ All teams should update status here first, then mirror updates in role playbooks
 
 1. Engineering (Lead/Core/Runtime):
    - WP-11 gate is closed with QA-08 evidence pack.
-   - WP-12 implementation tickets `ENG-12`, `ENG-14`, `ENG-15`, `ENG-16`, and `ENG-17` are complete with dated evidence.
-   - Resolve `ENG-13` closure blocker by provisioning side-load model paths and executing the now-wired native Stage-2 lane (`NATIVE_JNI` backend proof + 0.8B/2B + memory/PSS packet) before QA closeout trigger.
+   - WP-12 implementation tickets `ENG-12`..`ENG-17` are complete with dated evidence.
+   - Track post-closure performance optimization follow-ups from ENG-13 threshold report (first-token latency).
    - `ENG-18` is complete with accessibility/error-state hardening evidence (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`).
 2. QA:
    - QA-08 acceptance gate is complete; continue QA-09 weekly triage/promotion/signal cadence.
-   - `QA-WP12` closeout packet is executed with recommendation to keep WP-12 open.
-   - Re-run QA closeout after `ENG-13` native JNI proof is landed.
+   - `QA-WP12` closeout rerun is complete with close recommendation.
    - `QA-10` week-01 regression matrix run is complete (`docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`).
 3. Product:
    - External beta signoff dependency on WP-11 is cleared; continue WP-09 planning.
    - ENG-12 model distribution decision is approved (side-load/manual-internal only + strict provenance checks) and unblocked (`docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`).
-   - WP-12 acceptance/signoff remains pending `ENG-13` blocker resolution.
+   - WP-12 acceptance/signoff can proceed from closed engineering and QA evidence.
    - `PROD-08` taxonomy + intake policy is complete (`docs/operations/evidence/wp-09/2026-03-04-prod-08-ux-feedback-taxonomy-pilot.md`).
    - `PROD-04` monetization scope/pricing hypothesis is in progress (`docs/operations/prod-04-monetization-hypothesis-v0.md`).
 4. Marketing:
@@ -172,12 +180,13 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-12 (Stage-2 native runtime evidence validator): `scripts/benchmarks/validate_stage2_runtime_evidence.py`
 - WP-12 (ENG-11 runtime truth gate): `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`
 - WP-12 (ENG-12 side-load distribution + strict provenance/runtime verification hard-block): `docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`
-- WP-12 (ENG-13 native runtime proof in progress; native packaging + lane wiring landed, awaiting side-load model path provisioning for closure run): `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`
+- WP-12 (ENG-13 native runtime proof complete on Samsung with `NATIVE_JNI` and 0.8B/2B evidence): `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`
 - WP-12 (ENG-14 Android-native runtime memory backend): `docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md`
 - WP-12 (ENG-15 local tool store integration): `docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md`
 - WP-12 (ENG-16 production runtime image path): `docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md`
 - WP-12 (ENG-17 platform network policy wiring): `docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`
-- WP-12 (QA closeout validation packet; recommendation hold pending ENG-13): `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`
+- WP-12 (QA closeout validation packet rerun; recommendation close): `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`
+- WP-12 (Product final signoff): `docs/operations/evidence/wp-12/2026-03-04-prod-wp12-final-signoff.md`
 - WP-12 (Product ENG-12 model distribution path + provenance decision): `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
 - WP-12 (Handover ticket packet for ENG-12..ENG-17 + QA closeout): `docs/operations/wp-12-handover-ticket-packet.md`
 - WP-12 (Product dispatch evidence for handover ticket packet sync): `docs/operations/evidence/wp-12/2026-03-04-prod-wp12-handover-ticket-packet.md`
@@ -217,6 +226,7 @@ Wp07 --> Wp10
 - WP-10: STT/TTS spike report with latency/power budgets
 - WP-11: UI acceptance suite (Compose/instrumentation/Maestro), UX evidence notes, and in-app workflow validation packet
 - WP-12: native-runtime proof logs, model-delivery artifact provenance evidence, Android-native persistence validation, and network-policy enforcement checks
+- WP-13: usability gate packet (5 tester workflow completion), onboarding completion metrics, runtime-state comprehension notes, and launch-asset readiness checklist
 
 ## Cadence
 

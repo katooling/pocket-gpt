@@ -1,0 +1,2 @@
+Stage-2 Runtime Evidence Validation: PASS
+Run directory: /Users/mkamar/Non_Work/Projects/pocket-gpt/scripts/benchmarks/runs/2026-03-04/RR8NB087YTF

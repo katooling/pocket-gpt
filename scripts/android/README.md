@@ -13,7 +13,8 @@ These scripts support repeatable Android device testing for MVP stages.
 - `capture_device_baseline.sh`: captures device + battery + thermal + memory baseline
 - `configure_device_for_benchmark.sh`: benchmark-friendly device settings (`status|apply|reset`)
 - `run_short_loop.sh`: runs any command `N` times and captures crash/OOM signals from logcat
-- `run_stage2_native.sh`: executes real Stage-2 native JNI benchmark runs on-device (0.8B + 2B + meminfo/logcat artifacts)
+- `run_stage2_native.sh`: executes real Stage-2 native JNI benchmark runs on-device (model-sweep path keeps a model loaded across Scenario A/B per sweep; cleans stale Stage-2 artifacts; deduplicates metrics; emits 0.8B + 2B + meminfo/logcat artifacts)
+- `provision_sideload_models.sh`: pushes local GGUF models to device storage and prints export-ready side-load env vars
 
 ## Usage
 
@@ -25,8 +26,18 @@ bash scripts/android/capture_device_baseline.sh
 bash scripts/android/configure_device_for_benchmark.sh status
 bash scripts/android/configure_device_for_benchmark.sh apply
 bash scripts/android/run_short_loop.sh --runs 10 --label wp02 -- bash scripts/dev/verify.sh
+bash scripts/android/provision_sideload_models.sh --device <device-id> --model-0-8b-local <host-path> --model-2b-local <host-path>
 bash scripts/android/run_stage2_native.sh --device <device-id>
 ```
+
+Fast-iteration runtime controls:
+
+- `POCKETGPT_STAGE2_SKIP_INSTALL=1`
+- `POCKETGPT_STAGE2_RUNS=<n>`
+- `POCKETGPT_STAGE2_MAX_TOKENS_A=<n>`
+- `POCKETGPT_STAGE2_MAX_TOKENS_B=<n>`
+- `POCKETGPT_STAGE2_MIN_TOKENS=<n>`
+- `POCKETGPT_STAGE2_WARMUP_MAX_TOKENS=<n>`
 
 The second parameter in `collect_logcat.sh` is capture duration in seconds.
 

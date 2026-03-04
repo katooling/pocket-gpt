@@ -94,8 +94,9 @@ CI note:
 
 1. Prefer model-sweep execution that reuses a loaded model for Scenario A/B in one instrumentation invocation.
 2. For local iteration, use `POCKETGPT_STAGE2_SKIP_INSTALL=1` after APKs are already installed.
-3. Use low-run/token profile for rapid iteration; rerun closure packet with closure-approved profile before evidence signoff.
+3. Use low-run/token profile for rapid iteration (`RUNS=1`, `MAX_TOKENS_A/B=4`, `WARMUP_MAX_TOKENS=0`); rerun closure packet with closure-approved profile before evidence signoff.
 4. Keep Stage-2 env contracts stable (`POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH`, `POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH`) across fast and closure profiles.
+5. Run directory must be fresh/clean per invocation to prevent stale artifact contamination in validator outcomes.
 
 ## Automation Boundary (CI vs Human)
 

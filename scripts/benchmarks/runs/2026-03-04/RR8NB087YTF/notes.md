@@ -1,20 +1,22 @@
-# Stage-2 Run Notes
+# Stage-2 Native Runtime Notes
 
 - Date: 2026-03-04
-- Device: RR8NB087YTF (Samsung SM-A515F, Android 13)
-- Build SHA: local workspace (QA closeout rerun after ENG-04 closeout)
-- Model artifact: qwen3.5-0.8b-q4 (artifact-manifest startup validation path active)
-- Runtime: llama.cpp bridge via Android host runtime lane
-- Scenario A run count: 1
-- Scenario B run count: 1
-- Battery start/end: stage-check level 85% (USB powered during run)
-- Thermal baseline: stage-check status 0; AP 35.3C, BAT 34.0C, SKIN 34.6C
-- Notable observations: initial host run failed until checksum env vars were set; rerun succeeded with startup checks passing and Stage A/B PASS metrics.
-- Crash/OOM observed: none
-
-Run metadata
-- Source stage log: scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-02-closeout-20260304-000113/stage-run.log
-- Scenario A first_token_ms: 65
-- Scenario A decode_tps: 64.51612903225806
-- Scenario B first_token_ms: 62
-- Scenario B decode_tps: 65.57377049180327
+- Device: RR8NB087YTF
+- Build SHA: a4bfd47
+- Runtime: NATIVE_JNI
+- 0.8B model path: /data/user/0/com.pocketagent.android/files/models/Qwen3.5-0.8B-UD-IQ2_XXS.gguf
+- 2B model path: /data/user/0/com.pocketagent.android/files/models/Qwen3.5-2B-UD-IQ2_XXS.gguf
+- Runs per scenario: 1
+- Max tokens A/B: 4/4
+- Min tokens override: 1
+- Warmup max tokens: 0
+- Scenario A rows: 1
+- Scenario B rows: 1
+- 2B metrics rows: 2
+- Meminfo snapshots:
+- /Users/mkamar/Non_Work/Projects/pocket-gpt/scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-0-8b-scenario-a.txt
+- /Users/mkamar/Non_Work/Projects/pocket-gpt/scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-0-8b-scenario-b.txt
+- /Users/mkamar/Non_Work/Projects/pocket-gpt/scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-0-8b-sweep.txt
+- /Users/mkamar/Non_Work/Projects/pocket-gpt/scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-2b-scenario-a.txt
+- /Users/mkamar/Non_Work/Projects/pocket-gpt/scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-2b-scenario-b.txt
+- /Users/mkamar/Non_Work/Projects/pocket-gpt/scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-2b-sweep.txt
