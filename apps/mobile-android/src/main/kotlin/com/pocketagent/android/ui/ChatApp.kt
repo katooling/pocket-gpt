@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -58,9 +57,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.pocketagent.android.R
 import com.pocketagent.android.RoutingMode
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
@@ -105,7 +113,12 @@ fun PocketAgentApp(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Pocket GPT") },
+                    title = {
+                        Text(
+                            text = stringResource(id = R.string.ui_app_title),
+                            modifier = Modifier.semantics { heading() },
+                        )
+                    },
                     navigationIcon = {
                         IconButton(
                             modifier = Modifier.testTag("session_drawer_button"),
@@ -114,18 +127,30 @@ fun PocketAgentApp(
                                 scope.launch { drawerState.open() }
                             },
                         ) {
-                            Icon(Icons.Default.Menu, contentDescription = "Sessions")
+                            Icon(
+                                Icons.Default.Menu,
+                                contentDescription = stringResource(id = R.string.a11y_session_drawer_open),
+                            )
                         }
                     },
                     actions = {
-                        IconButton(onClick = { viewModel.setToolDialogOpen(true) }) {
-                            Icon(Icons.Default.Build, contentDescription = "Tools")
+                        IconButton(
+                            modifier = Modifier.testTag("tool_dialog_button"),
+                            onClick = { viewModel.setToolDialogOpen(true) },
+                        ) {
+                            Icon(
+                                Icons.Default.Build,
+                                contentDescription = stringResource(id = R.string.a11y_tool_actions_open),
+                            )
                         }
                         IconButton(
                             modifier = Modifier.testTag("advanced_sheet_button"),
                             onClick = { viewModel.setAdvancedSheetOpen(true) },
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Advanced")
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = stringResource(id = R.string.a11y_advanced_controls_open),
+                            )
                         }
                     },
                 )
@@ -181,6 +206,7 @@ private fun SessionDrawer(
     onSwitchSession: (String) -> Unit,
     onDeleteSession: (String) -> Unit,
 ) {
+    val createSessionDescription = stringResource(id = R.string.a11y_create_session)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -188,38 +214,69 @@ private fun SessionDrawer(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Sessions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = stringResource(id = R.string.ui_sessions_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
         IconButton(onClick = onCreateSession) {
-            Icon(Icons.Default.Add, contentDescription = "Create session")
+            Icon(Icons.Default.Add, contentDescription = createSessionDescription)
         }
     }
     Divider()
     if (state.sessions.isEmpty()) {
         Text(
-            text = "No sessions yet",
+            text = stringResource(id = R.string.ui_no_sessions_yet),
             modifier = Modifier.padding(16.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
     state.sessions.forEach { session ->
         val isActive = session.id == state.activeSessionId
+        val activeStateDescription = if (isActive) {
+            stringResource(id = R.string.a11y_session_active)
+        } else {
+            stringResource(id = R.string.a11y_session_inactive)
+        }
+        val switchSessionDescription = stringResource(
+            id = R.string.a11y_switch_session,
+            session.title,
+        )
+        val deleteSessionDescription = stringResource(
+            id = R.string.a11y_delete_session,
+            session.title,
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(if (isActive) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                .semantics {
+                    selected = isActive
+                    stateDescription = activeStateDescription
+                }
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = { onSwitchSession(session.id) }) {
+            TextButton(
+                modifier = Modifier.semantics {
+                    contentDescription = switchSessionDescription
+                },
+                onClick = { onSwitchSession(session.id) },
+            ) {
                 Text(
                     text = session.title,
                     maxLines = 1,
                     color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
                 )
             }
-            IconButton(onClick = { onDeleteSession(session.id) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete session")
+            IconButton(
+                modifier = Modifier.semantics {
+                    contentDescription = deleteSessionDescription
+                },
+                onClick = { onDeleteSession(session.id) },
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null)
             }
         }
     }
@@ -252,7 +309,7 @@ private fun OfflineAndStatusHeader(state: ChatUiState) {
         AssistChip(
             modifier = Modifier.testTag("offline_indicator"),
             onClick = { },
-            label = { Text("Offline-first") },
+            label = { Text(stringResource(id = R.string.ui_offline_first)) },
             colors = AssistChipDefaults.assistChipColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -260,24 +317,42 @@ private fun OfflineAndStatusHeader(state: ChatUiState) {
         )
         AssistChip(
             onClick = { },
-            label = { Text("Model: ${state.runtime.routingMode.name}") },
+            label = {
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_model_label,
+                        state.runtime.routingMode.name,
+                    ),
+                )
+            },
         )
     }
 
-    if (state.runtime.startupChecks.isNotEmpty()) {
+    if (state.runtime.lastErrorUserMessage != null && state.runtime.lastErrorCode != null) {
         Spacer(modifier = Modifier.height(8.dp))
-        Card {
+        Card(modifier = Modifier.testTag("runtime_error_banner")) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
-                    text = "Startup checks",
+                    text = stringResource(id = R.string.ui_runtime_error_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                state.runtime.startupChecks.forEach { check ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_runtime_error_with_code,
+                        state.runtime.lastErrorUserMessage,
+                        state.runtime.lastErrorCode,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                state.runtime.lastErrorTechnicalDetail?.let { detail ->
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "- $check",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        text = detail,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -285,6 +360,9 @@ private fun OfflineAndStatusHeader(state: ChatUiState) {
     }
 
     state.runtime.lastError?.let { error ->
+        if (state.runtime.lastErrorUserMessage != null) {
+            return@let
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Card {
             Text(
@@ -304,14 +382,17 @@ private fun MessageList(
 ) {
     if (activeSession == null) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text("No session selected", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = stringResource(id = R.string.ui_no_session_selected),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         return
     }
     if (activeSession.messages.isEmpty()) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text(
-                text = "Start chatting. Ask a question, attach an image, or run a local tool.",
+                text = stringResource(id = R.string.ui_chat_empty_state),
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -323,7 +404,11 @@ private fun MessageList(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(activeSession.messages, key = { it.id }) { message ->
+        items(
+            items = activeSession.messages,
+            key = { it.id },
+            contentType = { it.kind },
+        ) { message ->
             val isUser = message.role == MessageRole.USER
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -344,7 +429,7 @@ private fun MessageList(
                         when {
                             message.imagePath != null -> {
                                 Text(
-                                    text = "Image: ${message.imagePath}",
+                                    text = stringResource(id = R.string.ui_image_message_label, message.imagePath),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -353,7 +438,7 @@ private fun MessageList(
 
                             message.toolName != null -> {
                                 Text(
-                                    text = "Tool: ${message.toolName}",
+                                    text = stringResource(id = R.string.ui_tool_message_label, message.toolName),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -379,6 +464,13 @@ private fun ComposerBar(
     onSend: () -> Unit,
     onAttachImage: () -> Unit,
 ) {
+    val sendStateDescription = when {
+        isSending -> stringResource(id = R.string.a11y_send_state_sending)
+        text.isBlank() -> stringResource(id = R.string.a11y_send_state_disabled)
+        else -> stringResource(id = R.string.a11y_send_state_enabled)
+    }
+    val attachImageDescription = stringResource(id = R.string.a11y_attach_image)
+    val sendButtonDescription = stringResource(id = R.string.a11y_send_button)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -387,7 +479,7 @@ private fun ComposerBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         IconButton(onClick = onAttachImage) {
-            Icon(Icons.Default.Image, contentDescription = "Attach image")
+            Icon(Icons.Default.Image, contentDescription = attachImageDescription)
         }
         OutlinedTextField(
             value = text,
@@ -395,16 +487,21 @@ private fun ComposerBar(
             modifier = Modifier
                 .weight(1f)
                 .testTag("composer_input"),
-            label = { Text("Message") },
+            label = { Text(stringResource(id = R.string.ui_composer_label)) },
             enabled = !isSending,
             maxLines = 4,
         )
-        IconButton(
-            modifier = Modifier.testTag("send_button"),
+        Button(
+            modifier = Modifier
+                .testTag("send_button")
+                .semantics {
+                    contentDescription = sendButtonDescription
+                    stateDescription = sendStateDescription
+                },
             onClick = onSend,
             enabled = text.isNotBlank() && !isSending,
         ) {
-            Icon(Icons.Default.Send, contentDescription = "Send")
+            Text(stringResource(id = R.string.ui_send_button))
         }
     }
 }
@@ -416,31 +513,31 @@ private fun ToolDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Local tools") },
+        title = { Text(stringResource(id = R.string.ui_local_tools_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { onRunTool("calculator", "{\"expression\":\"4*9\"}") },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Calculator (4*9)")
+                    Text(stringResource(id = R.string.ui_tool_calculator_label))
                 }
                 Button(
                     onClick = { onRunTool("date_time", "{}") },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Date and Time")
+                    Text(stringResource(id = R.string.ui_tool_date_time_label))
                 }
                 Button(
                     onClick = { onRunTool("local_search", "{\"query\":\"launch checklist\"}") },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Local Search")
+                    Text(stringResource(id = R.string.ui_tool_local_search_label))
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text(stringResource(id = R.string.ui_close)) }
         },
     )
 }
@@ -457,12 +554,23 @@ private fun AdvancedSettingsSheet(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Advanced controls", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text("Model selection", style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = stringResource(id = R.string.ui_advanced_controls_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(stringResource(id = R.string.ui_model_selection_title), style = MaterialTheme.typography.labelLarge)
 
         RoutingMode.entries.forEach { mode ->
+            val routingDescription = stringResource(id = R.string.a11y_routing_mode, mode.name)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        role = Role.RadioButton
+                        selected = state.runtime.routingMode == mode
+                        contentDescription = routingDescription
+                    },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(
@@ -476,18 +584,30 @@ private fun AdvancedSettingsSheet(
 
         Divider()
 
-        Button(onClick = onExportDiagnostics, modifier = Modifier.fillMaxWidth()) {
-            Text("Export diagnostics")
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onExportDiagnostics,
+        ) {
+            Text(stringResource(id = R.string.ui_export_diagnostics))
         }
 
         state.runtime.activeModelId?.let { modelId ->
-            Text("Active model: $modelId", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = stringResource(id = R.string.ui_active_model_label, modelId),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         state.runtime.lastFirstTokenLatencyMs?.let { latency ->
-            Text("Last first-token latency: ${latency}ms", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = stringResource(id = R.string.ui_first_token_latency_label, latency),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         state.runtime.lastTotalLatencyMs?.let { latency ->
-            Text("Last total latency: ${latency}ms", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = stringResource(id = R.string.ui_total_latency_label, latency),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }

@@ -2,6 +2,7 @@ appId: com.pocketagent.android
 ---
 - launchApp
 - assertVisible: "Offline-first"
+- assertVisible: "Model: AUTO"
 - tapOn: "Tools"
 - tapOn: "Calculator (4*9)"
 - assertVisible: "Tool: calculator"

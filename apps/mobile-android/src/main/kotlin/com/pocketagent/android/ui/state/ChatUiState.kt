@@ -46,6 +46,9 @@ data class RuntimeUiState(
     val lastFirstTokenLatencyMs: Long? = null,
     val lastTotalLatencyMs: Long? = null,
     val startupChecks: List<String> = emptyList(),
+    val lastErrorCode: String? = null,
+    val lastErrorUserMessage: String? = null,
+    val lastErrorTechnicalDetail: String? = null,
     val lastError: String? = null,
 )
 

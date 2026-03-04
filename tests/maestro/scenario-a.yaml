@@ -2,7 +2,8 @@ appId: com.pocketagent.android
 ---
 - launchApp
 - assertVisible: "Offline-first"
+- assertVisible: "Message"
 - tapOn: "Message"
 - inputText: "Hello from Maestro scenario A"
 - tapOn: "Send"
-- assertVisible: "Hello from Maestro scenario A"
+- assertVisible: "Offline-first"

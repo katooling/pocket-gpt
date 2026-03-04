@@ -1,4 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PocketAgent</string>
+    <string name="ui_app_title">Pocket GPT</string>
+    <string name="ui_sessions_title">Sessions</string>
+    <string name="ui_no_sessions_yet">No sessions yet</string>
+    <string name="ui_offline_first">Offline-first</string>
+    <string name="ui_model_label">Model: %1$s</string>
+    <string name="ui_runtime_error_title">Runtime status</string>
+    <string name="ui_runtime_error_with_code">%1$s (%2$s)</string>
+    <string name="ui_no_session_selected">No session selected</string>
+    <string name="ui_chat_empty_state">Start chatting. Ask a question, attach an image, or run a local tool.</string>
+    <string name="ui_image_message_label">Image: %1$s</string>
+    <string name="ui_tool_message_label">Tool: %1$s</string>
+    <string name="ui_composer_label">Message</string>
+    <string name="ui_send_button">Send</string>
+    <string name="ui_local_tools_title">Local tools</string>
+    <string name="ui_tool_calculator_label">Calculator (4*9)</string>
+    <string name="ui_tool_date_time_label">Date and Time</string>
+    <string name="ui_tool_local_search_label">Local Search</string>
+    <string name="ui_close">Close</string>
+    <string name="ui_advanced_controls_title">Advanced controls</string>
+    <string name="ui_model_selection_title">Model selection</string>
+    <string name="ui_export_diagnostics">Export diagnostics</string>
+    <string name="ui_active_model_label">Active model: %1$s</string>
+    <string name="ui_first_token_latency_label">Last first-token latency: %1$dms</string>
+    <string name="ui_total_latency_label">Last total latency: %1$dms</string>
+    <string name="a11y_session_drawer_open">Sessions</string>
+    <string name="a11y_tool_actions_open">Tools</string>
+    <string name="a11y_advanced_controls_open">Advanced</string>
+    <string name="a11y_create_session">Create session</string>
+    <string name="a11y_session_active">Active session</string>
+    <string name="a11y_session_inactive">Inactive session</string>
+    <string name="a11y_switch_session">Switch to session %1$s</string>
+    <string name="a11y_delete_session">Delete session %1$s</string>
+    <string name="a11y_send_state_sending">Sending</string>
+    <string name="a11y_send_state_disabled">Disabled</string>
+    <string name="a11y_send_state_enabled">Ready to send</string>
+    <string name="a11y_attach_image">Attach image</string>
+    <string name="a11y_send_button">Send</string>
+    <string name="a11y_routing_mode">Routing mode %1$s</string>
 </resources>

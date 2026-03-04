@@ -16,10 +16,12 @@ import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
+import com.pocketagent.android.ui.state.UiError
+import com.pocketagent.android.ui.state.UiErrorMapper
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
-import kotlinx.coroutines.CoroutineDispatcher
 import com.pocketagent.inference.DeviceState
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,7 +80,7 @@ class ChatViewModel(
         _uiState.update { state ->
             state.copy(
                 composer = ComposerUiState(text = "", isSending = true),
-                runtime = state.runtime.copy(lastError = null),
+                runtime = state.runtime.clearError(),
             )
         }
         persistState()
@@ -116,25 +118,25 @@ class ChatViewModel(
                                         activeModelId = event.response.modelId,
                                         lastFirstTokenLatencyMs = event.response.firstTokenLatencyMs,
                                         lastTotalLatencyMs = event.response.totalLatencyMs,
-                                        lastError = null,
-                                    ),
+                                    ).clearError(),
                                 )
                             }
+                            persistState()
                         }
                     }
-                    persistState()
                 }
             }.onFailure { error ->
+                val uiError = UiErrorMapper.runtimeFailure(error.message)
                 finalizeStreamingMessage(
                     sessionId = activeSession.id,
                     messageId = assistantMessageId,
-                    finalText = "Request failed: ${error.message ?: "Unknown runtime error."}",
+                    finalText = formatUserFacingError(uiError),
                     role = MessageRole.SYSTEM,
                 )
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime.copy(lastError = error.message ?: "Request failed."),
+                        runtime = state.runtime.withUiError(uiError),
                     )
                 }
                 persistState()
@@ -204,13 +206,33 @@ class ChatViewModel(
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
         }
-        _uiState.update { state -> state.copy(composer = state.composer.copy(isSending = true)) }
+        _uiState.update {
+            it.copy(
+                composer = it.composer.copy(isSending = true),
+                runtime = it.runtime.clearError(),
+            )
+        }
         persistState()
 
         viewModelScope.launch(ioDispatcher) {
             runCatching {
                 runtimeFacade.analyzeImage(imagePath = imagePath, prompt = "Describe this image.")
             }.onSuccess { result ->
+                val mappedError = UiErrorMapper.fromImageResult(result)
+                if (mappedError != null) {
+                    appendSystemMessage(
+                        sessionId = activeSession.id,
+                        content = formatUserFacingError(mappedError),
+                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            composer = state.composer.copy(isSending = false),
+                            runtime = state.runtime.withUiError(mappedError),
+                        )
+                    }
+                    persistState()
+                    return@onSuccess
+                }
                 val assistant = createMessage(
                     role = MessageRole.ASSISTANT,
                     content = result,
@@ -225,19 +247,20 @@ class ChatViewModel(
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime.copy(lastError = null),
+                        runtime = state.runtime.clearError(),
                     )
                 }
                 persistState()
             }.onFailure { error ->
+                val uiError = UiErrorMapper.runtimeFailure(error.message ?: "Image analysis failed.")
                 appendSystemMessage(
                     sessionId = activeSession.id,
-                    content = "Image analysis failed: ${error.message ?: "Unknown error."}",
+                    content = formatUserFacingError(uiError),
                 )
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime.copy(lastError = error.message ?: "Image analysis failed."),
+                        runtime = state.runtime.withUiError(uiError),
                     )
                 }
                 persistState()
@@ -259,12 +282,32 @@ class ChatViewModel(
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
         }
-        _uiState.update { state -> state.copy(composer = state.composer.copy(isSending = true)) }
+        _uiState.update {
+            it.copy(
+                composer = it.composer.copy(isSending = true),
+                runtime = it.runtime.clearError(),
+            )
+        }
         persistState()
 
         viewModelScope.launch(ioDispatcher) {
             runCatching { runtimeFacade.runTool(toolName = toolName, jsonArgs = jsonArgs) }
                 .onSuccess { toolOutput ->
+                    val mappedError = UiErrorMapper.fromToolResult(toolOutput)
+                    if (mappedError != null) {
+                        appendSystemMessage(
+                            sessionId = activeSession.id,
+                            content = formatUserFacingError(mappedError),
+                        )
+                        _uiState.update { state ->
+                            state.copy(
+                                composer = state.composer.copy(isSending = false),
+                                runtime = state.runtime.withUiError(mappedError),
+                            )
+                        }
+                        persistState()
+                        return@onSuccess
+                    }
                     val response = createMessage(
                         role = MessageRole.ASSISTANT,
                         content = toolOutput,
@@ -280,20 +323,21 @@ class ChatViewModel(
                     _uiState.update { state ->
                         state.copy(
                             composer = state.composer.copy(isSending = false),
-                            runtime = state.runtime.copy(lastError = null),
+                            runtime = state.runtime.clearError(),
                         )
                     }
                     persistState()
                 }
                 .onFailure { error ->
+                    val uiError = UiErrorMapper.runtimeFailure(error.message ?: "Tool request failed.")
                     appendSystemMessage(
                         sessionId = activeSession.id,
-                        content = "Tool request failed: ${error.message ?: "Unknown error."}",
+                        content = formatUserFacingError(uiError),
                     )
                     _uiState.update { state ->
                         state.copy(
                             composer = state.composer.copy(isSending = false),
-                            runtime = state.runtime.copy(lastError = error.message ?: "Tool request failed."),
+                            runtime = state.runtime.withUiError(uiError),
                         )
                     }
                     persistState()
@@ -318,17 +362,18 @@ class ChatViewModel(
                         )
                     }
                     _uiState.update { state ->
-                        state.copy(runtime = state.runtime.copy(lastError = null))
+                        state.copy(runtime = state.runtime.clearError())
                     }
                     persistState()
                 }
                 .onFailure { error ->
+                    val uiError = UiErrorMapper.runtimeFailure(error.message ?: "Diagnostics export failed.")
                     appendSystemMessage(
                         sessionId = activeSession.id,
-                        content = "Diagnostics export failed: ${error.message ?: "Unknown error."}",
+                        content = formatUserFacingError(uiError),
                     )
                     _uiState.update { state ->
-                        state.copy(runtime = state.runtime.copy(lastError = error.message ?: "Diagnostics export failed."))
+                        state.copy(runtime = state.runtime.withUiError(uiError))
                     }
                     persistState()
                 }
@@ -357,6 +402,7 @@ class ChatViewModel(
 
     private fun bootstrapState() {
         val startupChecks = runtimeFacade.runStartupChecks()
+        val startupError = UiErrorMapper.startupFailure(startupChecks)
         val persisted = sessionPersistence.loadState()
         val restoredRoutingMode = runCatching { RoutingMode.valueOf(persisted.routingMode) }
             .getOrDefault(runtimeFacade.getRoutingMode())
@@ -393,7 +439,7 @@ class ChatViewModel(
                 runtime = RuntimeUiState(
                     routingMode = restoredRoutingMode,
                     startupChecks = startupChecks,
-                ),
+                ).withUiError(startupError),
             )
             persistState()
             return
@@ -409,7 +455,7 @@ class ChatViewModel(
             runtime = RuntimeUiState(
                 routingMode = restoredRoutingMode,
                 startupChecks = startupChecks,
-            ),
+            ).withUiError(startupError),
         )
     }
 
@@ -536,6 +582,31 @@ class ChatViewModel(
             ramClassGb = 8,
         )
     }
+}
+
+private fun RuntimeUiState.clearError(): RuntimeUiState {
+    return copy(
+        lastErrorCode = null,
+        lastErrorUserMessage = null,
+        lastErrorTechnicalDetail = null,
+        lastError = null,
+    )
+}
+
+private fun RuntimeUiState.withUiError(error: UiError?): RuntimeUiState {
+    if (error == null) {
+        return clearError()
+    }
+    return copy(
+        lastErrorCode = error.code,
+        lastErrorUserMessage = error.userMessage,
+        lastErrorTechnicalDetail = error.technicalDetail,
+        lastError = error.technicalDetail ?: error.userMessage,
+    )
+}
+
+private fun formatUserFacingError(error: UiError): String {
+    return "${error.userMessage} (${error.code})"
 }
 
 class ChatViewModelFactory(

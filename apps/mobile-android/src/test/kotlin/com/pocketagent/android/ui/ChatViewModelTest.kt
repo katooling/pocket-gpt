@@ -64,6 +64,27 @@ class ChatViewModelTest {
         assertTrue(activeSession.messages.any { it.role == MessageRole.ASSISTANT && it.content.contains("response for hello ui") })
         assertEquals("auto", state.runtime.activeModelId)
         assertTrue(persistence.savedStates.isNotEmpty())
+        assertEquals(null, state.runtime.lastErrorCode)
+    }
+
+    @Test
+    fun `stream token updates do not persist state on every token`() = runTest(dispatcher) {
+        val persistence = RecordingPersistence()
+        val runtime = RecordingRuntimeFacade(
+            streamTokens = List(40) { "tok$it " },
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = persistence,
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.onComposerChanged("long stream")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        // bootstrap + send start + completed persist path should stay bounded.
+        assertTrue(persistence.savedStates.size <= 6)
     }
 
     @Test
@@ -173,11 +194,29 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         val active = viewModel.uiState.value.activeSession!!
-        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("Image analysis failed") })
+        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-RUNTIME-001") })
+        assertEquals("UI-RUNTIME-001", viewModel.uiState.value.runtime.lastErrorCode)
     }
 
     @Test
-    fun `tool request success and failure are rendered in timeline`() = runTest(dispatcher) {
+    fun `image validation error maps to deterministic ui code`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(returnImageValidationError = true)
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.attachImage("/tmp/invalid.tiff")
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-IMG-VAL-001") })
+        assertEquals("UI-IMG-VAL-001", viewModel.uiState.value.runtime.lastErrorCode)
+    }
+
+    @Test
+    fun `tool request success and failures are rendered in timeline`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade()
         val viewModel = ChatViewModel(
             runtimeFacade = runtime,
@@ -192,7 +231,31 @@ class ChatViewModelTest {
         runtime.failTool = true
         viewModel.runTool("calculator", """{"expression":"4*9"}""")
         advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("Tool request failed") })
+        assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-RUNTIME-001") })
+        assertEquals("UI-RUNTIME-001", viewModel.uiState.value.runtime.lastErrorCode)
+
+        runtime.failTool = false
+        runtime.returnToolValidationError = true
+        viewModel.runTool("calculator", """{"expression":"4*9"}""")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-TOOL-SCHEMA-001") })
+        assertEquals("UI-TOOL-SCHEMA-001", viewModel.uiState.value.runtime.lastErrorCode)
+    }
+
+    @Test
+    fun `startup checks are mapped to startup ui error code`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupChecks = listOf("Missing runtime model(s): qwen"),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+
+        advanceUntilIdle()
+        assertEquals("UI-STARTUP-001", viewModel.uiState.value.runtime.lastErrorCode)
+        assertTrue(viewModel.uiState.value.runtime.lastErrorUserMessage?.contains("Model startup is unavailable") == true)
     }
 
     @Test
@@ -229,10 +292,14 @@ private class RecordingPersistence(
 
 private class RecordingRuntimeFacade(
     private val failImage: Boolean = false,
+    private val returnImageValidationError: Boolean = false,
+    private val startupChecks: List<String> = emptyList(),
+    private val streamTokens: List<String> = listOf("stream ", "token "),
 ) : MvpRuntimeFacade {
     private var sessionCounter = 0
     private var routingMode: RoutingMode = RoutingMode.AUTO
     var failTool: Boolean = false
+    var returnToolValidationError: Boolean = false
     val restoredTurns = mutableListOf<Pair<SessionId, List<Turn>>>()
 
     override fun createSession(): SessionId {
@@ -241,8 +308,11 @@ private class RecordingRuntimeFacade(
     }
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = flow {
-        emit(ChatStreamEvent.Token(token = "stream ", accumulatedText = "stream"))
-        emit(ChatStreamEvent.Token(token = "token ", accumulatedText = "stream token"))
+        val builder = StringBuilder()
+        streamTokens.forEach { token ->
+            builder.append(token)
+            emit(ChatStreamEvent.Token(token = token, accumulatedText = builder.toString().trim()))
+        }
         emit(
             ChatStreamEvent.Completed(
                 response = ChatResponse(
@@ -257,6 +327,9 @@ private class RecordingRuntimeFacade(
     }
 
     override fun runTool(toolName: String, jsonArgs: String): String {
+        if (returnToolValidationError) {
+            return "TOOL_VALIDATION_ERROR:INVALID_FIELD_VALUE:Field 'expression' has disallowed characters."
+        }
         if (failTool) {
             error("simulated tool failure")
         }
@@ -264,6 +337,9 @@ private class RecordingRuntimeFacade(
     }
 
     override fun analyzeImage(imagePath: String, prompt: String): String {
+        if (returnImageValidationError) {
+            return "IMAGE_VALIDATION_ERROR:UNSUPPORTED_EXTENSION:extension 'tiff' is not supported"
+        }
         if (failImage) {
             error("simulated image failure")
         }
@@ -278,7 +354,7 @@ private class RecordingRuntimeFacade(
 
     override fun getRoutingMode(): RoutingMode = routingMode
 
-    override fun runStartupChecks(): List<String> = emptyList()
+    override fun runStartupChecks(): List<String> = startupChecks
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         restoredTurns += sessionId to turns
