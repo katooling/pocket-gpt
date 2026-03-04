@@ -2,15 +2,17 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "llama.h"
 
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
-constexpr int DEFAULT_CONTEXT_SIZE = 2048;
+constexpr int DEFAULT_CONTEXT_SIZE = 512;
 constexpr int DEFAULT_BATCH_SIZE = 512;
 
 std::mutex g_mutex;
@@ -129,6 +131,11 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     context_params.n_ctx = DEFAULT_CONTEXT_SIZE;
     context_params.n_batch = DEFAULT_BATCH_SIZE;
     context_params.n_ubatch = DEFAULT_BATCH_SIZE;
+    const auto hardware_threads = std::thread::hardware_concurrency();
+    const int32_t runtime_threads = static_cast<int32_t>(
+        std::max(2u, std::min(hardware_threads == 0 ? 4u : hardware_threads, 8u)));
+    context_params.n_threads = runtime_threads;
+    context_params.n_threads_batch = runtime_threads;
     g_context = llama_init_from_model(g_model, context_params);
     if (g_context == nullptr) {
         log_error("nativeLoadModel failed: llama_init_from_model returned null");
@@ -175,21 +182,32 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     llama_sampler_reset(g_sampler);
     llama_memory_clear(llama_get_memory(g_context), false);
 
+    const int safe_max_tokens = std::max(1, static_cast<int>(maxTokens));
     std::vector<llama_token> prompt_tokens = tokenize_prompt(vocab, prompt_text);
     if (prompt_tokens.empty()) {
         log_error("nativeGenerate failed: prompt tokenization returned zero tokens");
         return env->NewStringUTF("");
     }
 
-    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), static_cast<int32_t>(prompt_tokens.size()));
-    if (llama_decode(g_context, batch) != 0) {
-        log_error("nativeGenerate failed: llama_decode failed on prompt batch");
-        return env->NewStringUTF("");
+    const int max_prompt_tokens = std::max(1, DEFAULT_CONTEXT_SIZE - safe_max_tokens - 1);
+    if (static_cast<int>(prompt_tokens.size()) > max_prompt_tokens) {
+        const size_t trim_count = prompt_tokens.size() - static_cast<size_t>(max_prompt_tokens);
+        prompt_tokens.erase(prompt_tokens.begin(), prompt_tokens.begin() + static_cast<std::ptrdiff_t>(trim_count));
+    }
+
+    for (size_t offset = 0; offset < prompt_tokens.size(); offset += static_cast<size_t>(DEFAULT_BATCH_SIZE)) {
+        const size_t remaining = prompt_tokens.size() - offset;
+        const int32_t chunk_size = static_cast<int32_t>(std::min(remaining, static_cast<size_t>(DEFAULT_BATCH_SIZE)));
+        llama_batch prompt_batch = llama_batch_get_one(prompt_tokens.data() + offset, chunk_size);
+        if (llama_decode(g_context, prompt_batch) != 0) {
+            log_error("nativeGenerate failed: llama_decode failed on prompt batch");
+            return env->NewStringUTF("");
+        }
     }
 
     std::string output;
-    output.reserve(static_cast<size_t>(std::max(1, maxTokens)) * 4);
-    const int safe_max_tokens = std::max(1, static_cast<int>(maxTokens));
+    output.reserve(static_cast<size_t>(safe_max_tokens) * 4);
+    llama_batch batch{};
     for (int index = 0; index < safe_max_tokens; ++index) {
         const llama_token token = llama_sampler_sample(g_sampler, g_context, -1);
         if (llama_vocab_is_eog(vocab, token)) {

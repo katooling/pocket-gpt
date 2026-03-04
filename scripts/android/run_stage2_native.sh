@@ -5,7 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   bash scripts/android/run_stage2_native.sh --device <serial> [--date YYYY-MM-DD] [--run-dir <path>] [--runs <n>] \
-    [--model-0-8b-path <device-abs-path>] [--model-2b-path <device-abs-path>]
+    [--max-tokens-a <n>] [--max-tokens-b <n>] [--model-0-8b-path <device-abs-path>] [--model-2b-path <device-abs-path>]
 USAGE
 }
 
@@ -16,7 +16,12 @@ cd "${REPO_ROOT}"
 DEVICE=""
 DATE_VALUE="$(date +%F)"
 RUN_DIR=""
-RUNS=3
+RUNS="${POCKETGPT_STAGE2_RUNS:-3}"
+MAX_TOKENS_A="${POCKETGPT_STAGE2_MAX_TOKENS_A:-128}"
+MAX_TOKENS_B="${POCKETGPT_STAGE2_MAX_TOKENS_B:-256}"
+MIN_TOKENS="${POCKETGPT_STAGE2_MIN_TOKENS:-16}"
+WARMUP_MAX_TOKENS="${POCKETGPT_STAGE2_WARMUP_MAX_TOKENS:-8}"
+SKIP_INSTALL="${POCKETGPT_STAGE2_SKIP_INSTALL:-0}"
 MODEL_0_8B_PATH="${POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH:-}"
 MODEL_2B_PATH="${POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH:-}"
 
@@ -36,6 +41,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --runs)
       RUNS="${2:-}"
+      shift 2
+      ;;
+    --max-tokens-a)
+      MAX_TOKENS_A="${2:-}"
+      shift 2
+      ;;
+    --max-tokens-b)
+      MAX_TOKENS_B="${2:-}"
       shift 2
       ;;
     --model-0-8b-path)
@@ -69,8 +82,38 @@ if [[ -z "${RUN_DIR}" ]]; then
 fi
 mkdir -p "${RUN_DIR}"
 
+# Clear prior Stage-2 artifacts in the reused date/device run directory so
+# validator results always reflect the current invocation only.
+find "${RUN_DIR}" -maxdepth 1 -type f \
+  \( -name 'instrument-*.txt' -o -name 'logcat-*.txt' -o -name 'meminfo-*.txt' \
+     -o -name 'scenario-a.csv' -o -name 'scenario-b.csv' -o -name 'model-2b-metrics.csv' \
+     -o -name 'stage-2-threshold-input.csv' -o -name 'threshold-report.txt' \
+     -o -name 'runtime-evidence-validation.txt' -o -name 'summary.json' \
+     -o -name 'notes.md' -o -name 'logcat.txt' \) \
+  -delete
+
 if ! [[ "${RUNS}" =~ ^[0-9]+$ ]] || [[ "${RUNS}" -le 0 ]]; then
   echo "--runs must be a positive integer" >&2
+  exit 1
+fi
+if ! [[ "${MAX_TOKENS_A}" =~ ^[0-9]+$ ]] || [[ "${MAX_TOKENS_A}" -le 0 ]]; then
+  echo "--max-tokens-a must be a positive integer" >&2
+  exit 1
+fi
+if ! [[ "${MAX_TOKENS_B}" =~ ^[0-9]+$ ]] || [[ "${MAX_TOKENS_B}" -le 0 ]]; then
+  echo "--max-tokens-b must be a positive integer" >&2
+  exit 1
+fi
+if ! [[ "${MIN_TOKENS}" =~ ^[0-9]+$ ]] || [[ "${MIN_TOKENS}" -le 0 ]]; then
+  echo "POCKETGPT_STAGE2_MIN_TOKENS must be a positive integer" >&2
+  exit 1
+fi
+if ! [[ "${WARMUP_MAX_TOKENS}" =~ ^[0-9]+$ ]]; then
+  echo "POCKETGPT_STAGE2_WARMUP_MAX_TOKENS must be a non-negative integer" >&2
+  exit 1
+fi
+if [[ "${SKIP_INSTALL}" != "0" && "${SKIP_INSTALL}" != "1" ]]; then
+  echo "POCKETGPT_STAGE2_SKIP_INSTALL must be 0 or 1" >&2
   exit 1
 fi
 
@@ -88,7 +131,7 @@ MODEL_0_8B_ID="qwen3.5-0.8b-q4"
 MODEL_2B_ID="qwen3.5-2b-q4"
 PACKAGE_NAME="com.pocketagent.android"
 TEST_RUNNER="com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner"
-TEST_CLASS="com.pocketagent.android.NativeStage2BenchmarkInstrumentationTest#runConfiguredScenario"
+TEST_CLASS_SWEEP="com.pocketagent.android.NativeStage2BenchmarkInstrumentationTest#runConfiguredModelSweep"
 CSV_HEADER="date,platform,device_class,device_name,backend,runtime,model,scenario,first_token_ms,decode_tps,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom"
 
 SCENARIO_A_CSV="${RUN_DIR}/scenario-a.csv"
@@ -128,9 +171,34 @@ to_mb() {
   awk -v value="${kb}" 'BEGIN { printf "%.2f", value / 1024.0 }'
 }
 
+adb_retry() {
+  local attempt=1
+  local max_attempts=3
+  while true; do
+    if adb -s "${DEVICE}" "$@"; then
+      return 0
+    fi
+    if [[ "${attempt}" -ge "${max_attempts}" ]]; then
+      return 1
+    fi
+    echo "adb command failed (attempt ${attempt}/${max_attempts}), retrying..." >&2
+    adb start-server >/dev/null 2>&1 || true
+    adb -s "${DEVICE}" wait-for-device >/dev/null 2>&1 || true
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+}
+
 verify_model_path_on_device() {
   local path="$1"
-  if ! adb -s "${DEVICE}" shell test -f "${path}" >/dev/null 2>&1; then
+  if [[ "${path}" == "/data/user/0/${PACKAGE_NAME}/"* || "${path}" == "/data/data/${PACKAGE_NAME}/"* ]]; then
+    if ! adb_retry shell run-as "${PACKAGE_NAME}" test -f "${path}" >/dev/null 2>&1; then
+      echo "Model file not found in app-private storage: ${path}" >&2
+      exit 1
+    fi
+    return
+  fi
+  if ! adb_retry shell test -f "${path}" >/dev/null 2>&1; then
     echo "Model file not found on device: ${path}" >&2
     exit 1
   fi
@@ -188,68 +256,110 @@ append_metric_row() {
     >> "${target_csv}"
 }
 
-run_case() {
-  local case_label="$1"
+run_model_sweep() {
+  local sweep_label="$1"
   local model_id="$2"
-  local scenario="$3"
-  local max_tokens="$4"
 
-  local instrument_output="${RUN_DIR}/instrument-${case_label}.txt"
-  local logcat_case="${RUN_DIR}/logcat-${case_label}.txt"
-  local meminfo_case="${RUN_DIR}/meminfo-${case_label}.txt"
+  local instrument_output="${RUN_DIR}/instrument-${sweep_label}.txt"
+  local logcat_case="${RUN_DIR}/logcat-${sweep_label}.txt"
+  local meminfo_case="${RUN_DIR}/meminfo-${sweep_label}.txt"
 
-  adb -s "${DEVICE}" logcat -c
-  adb -s "${DEVICE}" shell am instrument -w -r \
-    -e class "${TEST_CLASS}" \
-    -e stage2_scenario "${scenario}" \
+  adb_retry logcat -c
+  adb_retry shell am instrument -w -r \
+    -e class "${TEST_CLASS_SWEEP}" \
     -e stage2_model_id "${model_id}" \
+    -e stage2_scenarios "A,B" \
     -e stage2_model_0_8b_path "${MODEL_0_8B_PATH}" \
     -e stage2_model_2b_path "${MODEL_2B_PATH}" \
     -e stage2_runs "${RUNS}" \
-    -e stage2_max_tokens "${max_tokens}" \
+    -e stage2_max_tokens_a "${MAX_TOKENS_A}" \
+    -e stage2_max_tokens_b "${MAX_TOKENS_B}" \
+    -e stage2_min_tokens "${MIN_TOKENS}" \
+    -e stage2_warmup_max_tokens "${WARMUP_MAX_TOKENS}" \
     "${TEST_RUNNER}" | tee "${instrument_output}"
 
-  adb -s "${DEVICE}" logcat -d > "${logcat_case}"
-  adb -s "${DEVICE}" shell dumpsys meminfo "${PACKAGE_NAME}" > "${meminfo_case}"
+  adb_retry logcat -d > "${logcat_case}"
+  adb_retry shell dumpsys meminfo "${PACKAGE_NAME}" > "${meminfo_case}"
 
   {
-    printf '===== %s =====\n' "${case_label}"
+    printf '===== %s =====\n' "${sweep_label}"
     cat "${logcat_case}"
     printf '\n'
   } >> "${LOGCAT_PATH}"
 
-  local metric_line
-  metric_line="$(grep -Eo 'STAGE2_METRIC\|[^[:space:]]+' "${instrument_output}" | tail -n 1 || true)"
-  if [[ -z "${metric_line}" ]]; then
-    metric_line="$(grep -Eo 'STAGE2_METRIC\|[^[:space:]]+' "${logcat_case}" | tail -n 1 || true)"
-  fi
-  if [[ -z "${metric_line}" ]]; then
-    echo "Failed to extract STAGE2_METRIC line for ${case_label}" >&2
+  local metric_lines=()
+  local metric_lines_raw
+  metric_lines_raw="$(
+    {
+      grep -Eo 'STAGE2_METRIC\|[^[:space:]]+' "${instrument_output}" || true
+      grep -Eo 'STAGE2_METRIC\|[^[:space:]]+' "${logcat_case}" || true
+    } | awk 'NF && !seen[$0]++'
+  )"
+  while IFS= read -r line; do
+    if [[ -n "${line}" ]]; then
+      metric_lines+=("${line}")
+    fi
+  done <<< "${metric_lines_raw}"
+  if [[ "${#metric_lines[@]}" -eq 0 ]]; then
+    echo "Failed to extract STAGE2_METRIC lines for ${sweep_label}" >&2
     exit 1
   fi
 
-  if [[ "${model_id}" == "${MODEL_0_8B_ID}" && "${scenario}" == "A" ]]; then
-    append_metric_row "${SCENARIO_A_CSV}" "${scenario}" "${model_id}" "${metric_line}" "${meminfo_case}" "${logcat_case}"
-  elif [[ "${model_id}" == "${MODEL_0_8B_ID}" && "${scenario}" == "B" ]]; then
-    append_metric_row "${SCENARIO_B_CSV}" "${scenario}" "${model_id}" "${metric_line}" "${meminfo_case}" "${logcat_case}"
+  local saw_a=0
+  local saw_b=0
+  local metric_line scenario parsed_model
+  for metric_line in "${metric_lines[@]}"; do
+    scenario="$(metric_value "${metric_line}" "scenario")"
+    parsed_model="$(metric_value "${metric_line}" "model_id")"
+    if [[ "${parsed_model}" != "${model_id}" ]]; then
+      continue
+    fi
+    case "${scenario}" in
+      A) saw_a=1 ;;
+      B) saw_b=1 ;;
+      *) continue ;;
+    esac
+
+    if [[ "${model_id}" == "${MODEL_0_8B_ID}" ]]; then
+      if [[ "${scenario}" == "A" ]]; then
+        append_metric_row "${SCENARIO_A_CSV}" "${scenario}" "${model_id}" "${metric_line}" "${meminfo_case}" "${logcat_case}"
+      else
+        append_metric_row "${SCENARIO_B_CSV}" "${scenario}" "${model_id}" "${metric_line}" "${meminfo_case}" "${logcat_case}"
+      fi
+    else
+      append_metric_row "${MODEL_2B_CSV}" "${scenario}" "${model_id}" "${metric_line}" "${meminfo_case}" "${logcat_case}"
+    fi
+  done
+
+  if [[ "${saw_a}" -ne 1 || "${saw_b}" -ne 1 ]]; then
+    echo "Missing scenario metric(s) in ${sweep_label}: saw_a=${saw_a}, saw_b=${saw_b}" >&2
+    exit 1
+  fi
+
+  if [[ "${model_id}" == "${MODEL_0_8B_ID}" ]]; then
+    cp "${meminfo_case}" "${RUN_DIR}/meminfo-0-8b-scenario-a.txt"
+    cp "${meminfo_case}" "${RUN_DIR}/meminfo-0-8b-scenario-b.txt"
   else
-    append_metric_row "${MODEL_2B_CSV}" "${scenario}" "${model_id}" "${metric_line}" "${meminfo_case}" "${logcat_case}"
+    cp "${meminfo_case}" "${RUN_DIR}/meminfo-2b-scenario-a.txt"
+    cp "${meminfo_case}" "${RUN_DIR}/meminfo-2b-scenario-b.txt"
   fi
 }
 
 verify_model_path_on_device "${MODEL_0_8B_PATH}"
 verify_model_path_on_device "${MODEL_2B_PATH}"
 
-adb -s "${DEVICE}" get-state >/dev/null
+adb_retry get-state >/dev/null
 
-./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true \
-  :apps:mobile-android:installDebug \
-  :apps:mobile-android:installDebugAndroidTest
+if [[ "${SKIP_INSTALL}" == "1" ]]; then
+  echo "Skipping installDebug/installDebugAndroidTest (POCKETGPT_STAGE2_SKIP_INSTALL=1)"
+else
+  ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true \
+    :apps:mobile-android:installDebug \
+    :apps:mobile-android:installDebugAndroidTest
+fi
 
-run_case "0-8b-scenario-a" "${MODEL_0_8B_ID}" "A" 128
-run_case "0-8b-scenario-b" "${MODEL_0_8B_ID}" "B" 256
-run_case "2b-scenario-a" "${MODEL_2B_ID}" "A" 128
-run_case "2b-scenario-b" "${MODEL_2B_ID}" "B" 256
+run_model_sweep "0-8b-sweep" "${MODEL_0_8B_ID}"
+run_model_sweep "2b-sweep" "${MODEL_2B_ID}"
 
 {
   head -n 1 "${SCENARIO_A_CSV}"
@@ -267,6 +377,10 @@ GIT_SHA="$(git rev-parse --short HEAD)"
   echo "- Runtime: NATIVE_JNI"
   echo "- 0.8B model path: ${MODEL_0_8B_PATH}"
   echo "- 2B model path: ${MODEL_2B_PATH}"
+  echo "- Runs per scenario: ${RUNS}"
+  echo "- Max tokens A/B: ${MAX_TOKENS_A}/${MAX_TOKENS_B}"
+  echo "- Min tokens override: ${MIN_TOKENS}"
+  echo "- Warmup max tokens: ${WARMUP_MAX_TOKENS}"
   echo "- Scenario A rows: $(($(wc -l < "${SCENARIO_A_CSV}") - 1))"
   echo "- Scenario B rows: $(($(wc -l < "${SCENARIO_B_CSV}") - 1))"
   echo "- 2B metrics rows: $(($(wc -l < "${MODEL_2B_CSV}") - 1))"

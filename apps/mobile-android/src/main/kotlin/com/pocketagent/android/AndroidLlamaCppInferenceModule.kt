@@ -15,6 +15,9 @@ class AndroidLlamaCppInferenceModule(
         if (!runtimeBridge.listAvailableModels().contains(modelId)) {
             return false
         }
+        if (activeModelId == modelId) {
+            return true
+        }
         if (activeModelId != null && activeModelId != modelId) {
             runtimeBridge.unloadModel()
         }

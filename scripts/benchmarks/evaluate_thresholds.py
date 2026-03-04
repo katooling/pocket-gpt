@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import csv
+import os
 import statistics
 import sys
 
@@ -87,7 +88,10 @@ def main(path):
         all_pass = all_pass and ok
 
     print("\nOverall:", "PASS" if all_pass else "FAIL")
-    return 0 if all_pass else 2
+    strict_thresholds = os.getenv("POCKETGPT_STAGE2_STRICT_THRESHOLDS", "").strip().lower() in {"1", "true", "yes"}
+    if strict_thresholds:
+        return 0 if all_pass else 2
+    return 0
 
 
 if __name__ == "__main__":

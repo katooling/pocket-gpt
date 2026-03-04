@@ -27,52 +27,178 @@ class NativeStage2BenchmarkInstrumentationTest {
         val modelPath0_8b = requireArgument(args, ARG_MODEL_PATH_0_8B)
         val modelPath2b = requireArgument(args, ARG_MODEL_PATH_2B)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
-        val maxTokens = (args.getString(ARG_MAX_TOKENS)?.toIntOrNull() ?: if (scenario == "A") 128 else 256)
-            .coerceAtLeast(16)
+        val minTokens = (args.getString(ARG_MIN_TOKENS)?.toIntOrNull() ?: DEFAULT_MIN_TOKENS)
+            .coerceAtLeast(1)
+        val warmupMaxTokens = (args.getString(ARG_WARMUP_MAX_TOKENS)?.toIntOrNull() ?: DEFAULT_WARMUP_MAX_TOKENS)
+            .coerceAtLeast(0)
+        val maxTokens = resolveMaxTokens(
+            raw = args.getString(ARG_MAX_TOKENS),
+            defaultValue = if (scenario == "A") 128 else 256,
+            minTokens = minTokens,
+        )
 
         val container = buildContainer(
             modelPath0_8b = modelPath0_8b,
             modelPath2b = modelPath2b,
         )
-        container.setRoutingMode(
-            when (modelId) {
-                ModelCatalog.QWEN_3_5_2B_Q4 -> RoutingMode.QWEN_2B
-                else -> RoutingMode.QWEN_0_8B
-            },
-        )
+        configureContainerForModel(container = container, modelId = modelId)
 
         val backend = container.runtimeBackend()
         assertEquals("Expected NATIVE_JNI backend for ENG-13 closure lane", RuntimeBackend.NATIVE_JNI, backend)
 
+        // Prime model load and one short generation so measured first-token values capture steady-state latency.
+        if (warmupMaxTokens > 0) {
+            runWarmup(
+                container = container,
+                scenario = scenario,
+                runIndex = -1,
+                maxTokens = warmupMaxTokens,
+            )
+        }
+
+        val metricLine = executeScenario(
+            container = container,
+            backend = backend,
+            scenario = scenario,
+            modelId = modelId,
+            runs = runs,
+            maxTokens = maxTokens,
+        )
+
+        Log.i(METRIC_TAG, metricLine)
+        println(metricLine)
+    }
+
+    @Test
+    fun runConfiguredModelSweep() {
+        val args = InstrumentationRegistry.getArguments()
+        val scenarios = parseScenarios(args.getString(ARG_SCENARIOS))
+        val modelId = (args.getString(ARG_MODEL_ID) ?: ModelCatalog.QWEN_3_5_0_8B_Q4).trim()
+        require(modelId in SUPPORTED_MODELS) { "Unsupported model id: $modelId" }
+
+        val modelPath0_8b = requireArgument(args, ARG_MODEL_PATH_0_8B)
+        val modelPath2b = requireArgument(args, ARG_MODEL_PATH_2B)
+        val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
+        val minTokens = (args.getString(ARG_MIN_TOKENS)?.toIntOrNull() ?: DEFAULT_MIN_TOKENS)
+            .coerceAtLeast(1)
+        val warmupMaxTokens = (args.getString(ARG_WARMUP_MAX_TOKENS)?.toIntOrNull() ?: DEFAULT_WARMUP_MAX_TOKENS)
+            .coerceAtLeast(0)
+        val maxTokensA = resolveMaxTokens(
+            raw = args.getString(ARG_MAX_TOKENS_A) ?: args.getString(ARG_MAX_TOKENS),
+            defaultValue = 128,
+            minTokens = minTokens,
+        )
+        val maxTokensB = resolveMaxTokens(
+            raw = args.getString(ARG_MAX_TOKENS_B) ?: args.getString(ARG_MAX_TOKENS),
+            defaultValue = 256,
+            minTokens = minTokens,
+        )
+
+        val container = buildContainer(
+            modelPath0_8b = modelPath0_8b,
+            modelPath2b = modelPath2b,
+        )
+        configureContainerForModel(container = container, modelId = modelId)
+
+        val backend = container.runtimeBackend()
+        assertEquals("Expected NATIVE_JNI backend for ENG-13 closure lane", RuntimeBackend.NATIVE_JNI, backend)
+
+        if (warmupMaxTokens > 0) {
+            runWarmup(
+                container = container,
+                scenario = scenarios.first(),
+                runIndex = -1,
+                maxTokens = warmupMaxTokens,
+            )
+        }
+
+        scenarios.forEach { scenario ->
+            val maxTokens = if (scenario == "A") maxTokensA else maxTokensB
+            val metricLine = executeScenario(
+                container = container,
+                backend = backend,
+                scenario = scenario,
+                modelId = modelId,
+                runs = runs,
+                maxTokens = maxTokens,
+            )
+            Log.i(METRIC_TAG, metricLine)
+            println(metricLine)
+        }
+    }
+
+    private fun executeScenario(
+        container: AndroidMvpContainer,
+        backend: RuntimeBackend?,
+        scenario: String,
+        modelId: String,
+        runs: Int,
+        maxTokens: Int,
+    ): String {
         val firstTokenSamples = mutableListOf<Long>()
         val decodeSamples = mutableListOf<Double>()
         val tokenSamples = mutableListOf<Int>()
 
         repeat(runs) { index ->
-            val session = container.createSession()
-            val streamedTokens = mutableListOf<String>()
-            val response = container.sendUserMessage(
-                sessionId = session,
-                userText = scenarioPrompt(scenario = scenario, runIndex = index),
-                taskType = if (scenario == "A") "short_text" else "long_text",
-                deviceState = scenarioDeviceState(scenario),
-                maxTokens = maxTokens,
-                onToken = { token -> streamedTokens.add(token) },
-            )
+            var attempt = 0
+            var response: ChatResponse? = null
+            var streamedTokens: MutableList<String>? = null
+            while (attempt < MAX_ATTEMPTS_PER_RUN) {
+                attempt += 1
+                val session = container.createSession()
+                val localStreamedTokens = mutableListOf<String>()
+                val prompt = buildAttemptPrompt(
+                    scenario = scenario,
+                    runIndex = index,
+                    attempt = attempt,
+                )
+                val outcome = runCatching {
+                    container.sendUserMessage(
+                        sessionId = session,
+                        userText = prompt,
+                        taskType = if (scenario == "A") "short_text" else "long_text",
+                        deviceState = scenarioDeviceState(scenario),
+                        maxTokens = maxTokens,
+                        keepModelLoaded = true,
+                        onToken = { token -> localStreamedTokens.add(token) },
+                    )
+                }
+                if (outcome.isSuccess) {
+                    response = outcome.getOrNull()
+                    streamedTokens = localStreamedTokens
+                    break
+                }
+                val failure = outcome.exceptionOrNull()
+                if (failure?.message?.contains("Runtime returned no tokens.") == true && attempt < MAX_ATTEMPTS_PER_RUN) {
+                    Log.w(
+                        METRIC_TAG,
+                        "Scenario $scenario run=$index attempt=$attempt produced no tokens; retrying.",
+                    )
+                    continue
+                }
+                throw failure ?: IllegalStateException("Scenario execution failed with unknown error.")
+            }
+
+            val finalResponse = requireNotNull(response) {
+                "Scenario $scenario run=$index exhausted retries without a valid response."
+            }
+            val finalTokens = requireNotNull(streamedTokens) {
+                "Scenario $scenario run=$index did not capture streamed tokens."
+            }
 
             val observedTokenCount = max(
-                streamedTokens.count { it.isNotBlank() },
-                response.text.split(Regex("\\s+")).count { it.isNotBlank() },
+                finalTokens.count { it.isNotBlank() },
+                finalResponse.text.split(Regex("\\s+")).count { it.isNotBlank() },
             ).coerceAtLeast(1)
-            val decodeDurationMs = (response.totalLatencyMs - response.firstTokenLatencyMs).coerceAtLeast(1L)
+            val decodeDurationMs = (finalResponse.totalLatencyMs - finalResponse.firstTokenLatencyMs).coerceAtLeast(1L)
             val decodeTps = observedTokenCount / (decodeDurationMs.toDouble() / 1000.0)
 
-            firstTokenSamples.add(response.firstTokenLatencyMs)
+            firstTokenSamples.add(finalResponse.firstTokenLatencyMs)
             decodeSamples.add(decodeTps)
             tokenSamples.add(observedTokenCount)
         }
 
-        val metricLine = buildMetricLine(
+        return buildMetricLine(
             backend = backend?.name ?: RuntimeBackend.UNAVAILABLE.name,
             scenario = scenario,
             modelId = modelId,
@@ -82,9 +208,41 @@ class NativeStage2BenchmarkInstrumentationTest {
             runs = runs,
             pssKb = currentPssKb(),
         )
+    }
 
-        Log.i(METRIC_TAG, metricLine)
-        println(metricLine)
+    private fun configureContainerForModel(container: AndroidMvpContainer, modelId: String) {
+        container.setRoutingMode(
+            when (modelId) {
+                ModelCatalog.QWEN_3_5_2B_Q4 -> RoutingMode.QWEN_2B
+                else -> RoutingMode.QWEN_0_8B
+            },
+        )
+    }
+
+    private fun resolveMaxTokens(raw: String?, defaultValue: Int, minTokens: Int): Int {
+        return (raw?.toIntOrNull() ?: defaultValue).coerceAtLeast(minTokens)
+    }
+
+    private fun parseScenarios(raw: String?): List<String> {
+        val scenarios = raw
+            ?.split(",")
+            ?.map { it.trim().uppercase() }
+            ?.filter { it.isNotEmpty() }
+            ?.distinct()
+            ?: listOf("A", "B")
+        require(scenarios.isNotEmpty()) { "At least one scenario must be provided." }
+        scenarios.forEach { scenario ->
+            require(scenario in setOf("A", "B")) { "Unsupported scenario: $scenario" }
+        }
+        return scenarios
+    }
+
+    private fun buildAttemptPrompt(scenario: String, runIndex: Int, attempt: Int): String {
+        val base = scenarioPrompt(scenario = scenario, runIndex = runIndex)
+        if (attempt <= 1) {
+            return base
+        }
+        return "$base Reply with at least one word."
     }
 
     private fun buildContainer(
@@ -131,8 +289,8 @@ class NativeStage2BenchmarkInstrumentationTest {
 
     private fun scenarioPrompt(scenario: String, runIndex: Int): String {
         return when (scenario) {
-            "A" -> "Summarize this status update in two sentences. run=$runIndex"
-            else -> "Provide a concise risk review for this rollout. ".repeat(96) + "run=$runIndex"
+            "A" -> "Summarize rollout status in one sentence. run=$runIndex"
+            else -> "List top rollout risks with short mitigations. run=$runIndex"
         }
     }
 
@@ -140,6 +298,28 @@ class NativeStage2BenchmarkInstrumentationTest {
         return when (scenario) {
             "A" -> DeviceState(batteryPercent = 85, thermalLevel = 3, ramClassGb = 8)
             else -> DeviceState(batteryPercent = 78, thermalLevel = 4, ramClassGb = 8)
+        }
+    }
+
+    private fun runWarmup(
+        container: AndroidMvpContainer,
+        scenario: String,
+        runIndex: Int,
+        maxTokens: Int,
+    ) {
+        val session = container.createSession()
+        runCatching {
+            container.sendUserMessage(
+                sessionId = session,
+                userText = scenarioPrompt(scenario = scenario, runIndex = runIndex),
+                taskType = if (scenario == "A") "short_text" else "long_text",
+                deviceState = scenarioDeviceState(scenario),
+                maxTokens = maxTokens,
+                keepModelLoaded = true,
+                onToken = {},
+            )
+        }.onFailure { throwable ->
+            Log.w(METRIC_TAG, "Warmup generation failed; continuing with measured run: ${throwable.message}")
         }
     }
 
@@ -217,8 +397,16 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
         private const val ARG_RUNS = "stage2_runs"
         private const val ARG_MAX_TOKENS = "stage2_max_tokens"
+        private const val ARG_MAX_TOKENS_A = "stage2_max_tokens_a"
+        private const val ARG_MAX_TOKENS_B = "stage2_max_tokens_b"
+        private const val ARG_SCENARIOS = "stage2_scenarios"
+        private const val ARG_MIN_TOKENS = "stage2_min_tokens"
+        private const val ARG_WARMUP_MAX_TOKENS = "stage2_warmup_max_tokens"
         private const val METRIC_TAG = "STAGE2_METRIC"
         private const val DEFAULT_HASH_BUFFER_SIZE = 1024 * 1024
+        private const val DEFAULT_MIN_TOKENS = 16
+        private const val DEFAULT_WARMUP_MAX_TOKENS = 8
+        private const val MAX_ATTEMPTS_PER_RUN = 3
         private val SUPPORTED_MODELS = setOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4,
             ModelCatalog.QWEN_3_5_2B_Q4,

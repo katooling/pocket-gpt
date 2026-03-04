@@ -84,6 +84,7 @@ class AndroidMvpContainer(
         taskType: String,
         deviceState: DeviceState,
         maxTokens: Int = 128,
+        keepModelLoaded: Boolean = false,
     ): ChatResponse {
         return sendUserMessage(
             sessionId = sessionId,
@@ -91,6 +92,7 @@ class AndroidMvpContainer(
             taskType = taskType,
             deviceState = deviceState,
             maxTokens = maxTokens,
+            keepModelLoaded = keepModelLoaded,
             onToken = {},
         )
     }
@@ -101,6 +103,7 @@ class AndroidMvpContainer(
         taskType: String,
         deviceState: DeviceState,
         maxTokens: Int = 128,
+        keepModelLoaded: Boolean = false,
         onToken: (String) -> Unit,
     ): ChatResponse {
         requirePolicyEvent(
@@ -146,7 +149,9 @@ class AndroidMvpContainer(
                 onToken(token)
             }
         } finally {
-            inferenceModule.unloadModel()
+            if (!keepModelLoaded) {
+                inferenceModule.unloadModel()
+            }
         }
         check(firstTokenLatencyMs >= 0) { "Runtime returned no tokens." }
         val totalLatency = System.currentTimeMillis() - startedMs
