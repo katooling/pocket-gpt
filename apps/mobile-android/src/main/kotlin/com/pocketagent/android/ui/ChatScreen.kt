@@ -1,0 +1,426 @@
+package com.pocketagent.android.ui
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import com.pocketagent.android.R
+import com.pocketagent.android.ui.state.ChatSessionUiModel
+import com.pocketagent.android.ui.state.ChatUiState
+import com.pocketagent.android.ui.state.MessageRole
+import com.pocketagent.android.ui.state.ModelRuntimeStatus
+
+@Composable
+internal fun ChatScreenBody(
+    state: ChatUiState,
+    onSuggestedPrompt: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.padding(12.dp)) {
+        OfflineAndStatusHeader(state = state)
+        Spacer(modifier = Modifier.height(8.dp))
+        MessageList(
+            activeSession = state.activeSession,
+            onSuggestedPrompt = onSuggestedPrompt,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .testTag("chat_message_list"),
+        )
+    }
+}
+
+@Composable
+private fun OfflineAndStatusHeader(state: ChatUiState) {
+    val modelStatusText = when (state.runtime.modelRuntimeStatus) {
+        ModelRuntimeStatus.NOT_READY -> stringResource(id = R.string.ui_model_status_not_ready)
+        ModelRuntimeStatus.LOADING -> stringResource(id = R.string.ui_model_status_loading)
+        ModelRuntimeStatus.READY -> stringResource(id = R.string.ui_model_status_ready)
+        ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AssistChip(
+            modifier = Modifier.testTag("offline_indicator"),
+            onClick = { },
+            label = { Text(stringResource(id = R.string.ui_offline_first)) },
+            colors = AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
+        )
+        AssistChip(
+            onClick = { },
+            label = {
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_model_label,
+                        state.runtime.routingMode.name,
+                    ),
+                )
+            },
+        )
+        AssistChip(
+            onClick = { },
+            label = {
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_model_status_label,
+                        modelStatusText,
+                    ),
+                )
+            },
+        )
+    }
+
+    if (state.runtime.lastErrorUserMessage != null && state.runtime.lastErrorCode != null) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Card(modifier = Modifier.testTag("runtime_error_banner")) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.ui_runtime_error_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_runtime_error_with_code,
+                        state.runtime.lastErrorUserMessage,
+                        state.runtime.lastErrorCode,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                state.runtime.lastErrorTechnicalDetail?.let { detail ->
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
+    state.runtime.lastError?.let { error ->
+        if (state.runtime.lastErrorUserMessage != null) {
+            return@let
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Card {
+            Text(
+                text = error,
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageList(
+    activeSession: ChatSessionUiModel?,
+    onSuggestedPrompt: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(activeSession?.messages?.size, activeSession?.messages?.lastOrNull()?.content) {
+        val messages = activeSession?.messages ?: return@LaunchedEffect
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(index = messages.lastIndex)
+        }
+    }
+
+    if (activeSession == null) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(
+                text = stringResource(id = R.string.ui_no_session_selected),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+    if (activeSession.messages.isEmpty()) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(id = R.string.ui_chat_empty_state),
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SuggestedPromptCard(
+                    prompt = stringResource(id = R.string.ui_prompt_quick_answer),
+                    onClick = onSuggestedPrompt,
+                )
+                SuggestedPromptCard(
+                    prompt = stringResource(id = R.string.ui_prompt_image_help),
+                    onClick = onSuggestedPrompt,
+                )
+                SuggestedPromptCard(
+                    prompt = stringResource(id = R.string.ui_prompt_local_search),
+                    onClick = onSuggestedPrompt,
+                )
+                SuggestedPromptCard(
+                    prompt = stringResource(id = R.string.ui_prompt_reminder),
+                    onClick = onSuggestedPrompt,
+                )
+            }
+        }
+        return
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(
+            items = activeSession.messages,
+            key = { it.id },
+            contentType = { it.kind },
+        ) { message ->
+            val isUser = message.role == MessageRole.USER
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+            ) {
+                Surface(
+                    tonalElevation = 1.dp,
+                    color = when (message.role) {
+                        MessageRole.USER -> MaterialTheme.colorScheme.primaryContainer
+                        MessageRole.ASSISTANT -> MaterialTheme.colorScheme.surfaceVariant
+                        MessageRole.SYSTEM -> MaterialTheme.colorScheme.errorContainer
+                    },
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.medium)
+                        .fillMaxWidth(0.9f),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        when {
+                            message.imagePath != null -> {
+                                Text(
+                                    text = stringResource(id = R.string.ui_image_message_label, message.imagePath),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                            message.toolName != null -> {
+                                Text(
+                                    text = stringResource(id = R.string.ui_tool_message_label, message.toolName),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                        }
+                        val content = if (message.content.isBlank() && message.isStreaming) {
+                            "..."
+                        } else {
+                            message.content
+                        }
+                        MarkdownMessageContent(content = content)
+                        if (message.content.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                IconButton(
+                                    onClick = { clipboardManager.setText(AnnotatedString(message.content)) },
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = stringResource(id = R.string.a11y_copy_message),
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuggestedPromptCard(
+    prompt: String,
+    onClick: (String) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick(prompt) },
+    ) {
+        Text(
+            text = prompt,
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun MarkdownMessageContent(content: String) {
+    val codeFenceParts = remember(content) { content.split("```") }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        codeFenceParts.forEachIndexed { index, part ->
+            if (index % 2 == 1) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = part.trim(),
+                        modifier = Modifier.padding(10.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    )
+                }
+            } else {
+                part.lines().forEach { rawLine ->
+                    val line = rawLine.trimEnd()
+                    if (line.isBlank()) return@forEach
+                    val rendered = if (line.startsWith("- ") || line.startsWith("* ")) {
+                        "• ${line.drop(2)}"
+                    } else {
+                        line
+                    }
+                    Text(
+                        text = renderInlineBold(rendered),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun renderInlineBold(text: String): AnnotatedString {
+    val regex = Regex("\\*\\*(.+?)\\*\\*")
+    val matches = regex.findAll(text).toList()
+    if (matches.isEmpty()) {
+        return AnnotatedString(text)
+    }
+    return buildAnnotatedString {
+        var cursor = 0
+        matches.forEach { match ->
+            if (match.range.first > cursor) {
+                append(text.substring(cursor, match.range.first))
+            }
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append(match.groupValues[1])
+            }
+            cursor = match.range.last + 1
+        }
+        if (cursor < text.length) {
+            append(text.substring(cursor))
+        }
+    }
+}
+
+@Composable
+internal fun ComposerBar(
+    text: String,
+    isSending: Boolean,
+    onTextChanged: (String) -> Unit,
+    onSend: () -> Unit,
+    onAttachImage: () -> Unit,
+) {
+    val sendStateDescription = when {
+        isSending -> stringResource(id = R.string.a11y_send_state_sending)
+        text.isBlank() -> stringResource(id = R.string.a11y_send_state_disabled)
+        else -> stringResource(id = R.string.a11y_send_state_enabled)
+    }
+    val attachImageDescription = stringResource(id = R.string.a11y_attach_image)
+    val sendButtonDescription = stringResource(id = R.string.a11y_send_button)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        IconButton(onClick = onAttachImage) {
+            Icon(Icons.Default.Image, contentDescription = attachImageDescription)
+        }
+        OutlinedTextField(
+            value = text,
+            onValueChange = onTextChanged,
+            modifier = Modifier
+                .weight(1f)
+                .testTag("composer_input"),
+            label = { Text(stringResource(id = R.string.ui_composer_label)) },
+            enabled = !isSending,
+            maxLines = 4,
+        )
+        Button(
+            modifier = Modifier
+                .testTag("send_button")
+                .semantics {
+                    contentDescription = sendButtonDescription
+                    stateDescription = sendStateDescription
+                },
+            onClick = onSend,
+            enabled = text.isNotBlank() && !isSending,
+        ) {
+            Text(stringResource(id = R.string.ui_send_button))
+        }
+    }
+}
