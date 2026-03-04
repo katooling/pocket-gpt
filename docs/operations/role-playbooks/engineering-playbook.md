@@ -26,15 +26,18 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 - [x] ENG-07 completed: SQLite memory backend + pruning
 - [x] ENG-08 completed: runtime image path hardening
 - [x] ENG-10 completed: WP-11 Compose MVP UI implementation and closure support
+- [x] ENG-11A completed: native-runtime truth gate for startup/closure-path checks
 
 ## What Is In Progress
 
-- [ ] None
+- [ ] WP-12 backend production runtime closure
+- [ ] ENG-11 native-runtime truth gate execution (phase A complete; follow-on rollout checks in progress)
 
 ## Lead Eng Dispatch (Now)
 
 1. Support WP-09 rollout readiness and stabilization backlog.
-2. Keep regression/lane stability for external beta.
+2. Execute WP-12 ENG-12..ENG-17 sequence: model distribution, native runtime proof, Android-native data plane, and policy wiring.
+3. Keep regression/lane stability for external beta.
 
 ## Task Queue
 
@@ -50,6 +53,13 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 | ENG-08 | Image path production hardening | Done | ENG-07 | Runtime Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-08.md` |
 | ENG-10 | WP-11 Compose chat UX + runtime façade + session persistence + advanced controls | Done | WP-06 | Android Runtime Eng | `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`, `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md` |
 | ENG-WP07-SIGNOFF | WP-07 Stage-6 final engineering signoff for go/no-go packet | Done | QA-06, ENG-WP07-S6 | Engineering Lead | `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
+| ENG-11A | Native-runtime truth gate (block closure startup checks on `ADB_FALLBACK`) | Done | WP-11 | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md` |
+| ENG-12 | Model distribution implementation (bundle/download/sideload decision + checksum provenance) | Ready | ENG-11A | Runtime Eng | `docs/operations/execution-board.md` |
+| ENG-13 | Real Samsung runtime performance + memory characterization (0.8B/2B) | Ready | ENG-11A | Runtime Eng, QA | `docs/testing/stage-2-benchmark-runbook.md` |
+| ENG-14 | Android-native SQLite backend for runtime memory path | Ready | ENG-11A | Core Eng | `packages/memory` |
+| ENG-15 | Real data-store integration for notes/search/reminder tools | Ready | ENG-11A | Platform Eng | `packages/tool-runtime` |
+| ENG-16 | Real multimodal image runtime path integration | Ready | ENG-11A | Runtime Eng | `packages/inference-adapters` |
+| ENG-17 | Platform network policy enforcement wiring + regressions | Ready | ENG-11A | Security Eng | `docs/security/privacy-model.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
 | ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
 

@@ -56,11 +56,11 @@ PocketAgent is local-first by default:
 2. User consent required for any optional cloud path
 3. Documented data inventory and retention behavior
 
-## Implementation Coverage (As Of 2026-03-03)
+## Implementation Coverage (As Of 2026-03-04)
 
 | Control Area | Planned Guarantee | Current Coverage |
 |---|---|---|
-| Local inference default | No cloud-required inference path | Partial (smoke adapter path only) |
+| Local inference default | No cloud-required inference path | Partial (closure-path startup checks now block `ADB_FALLBACK`; native JNI proof and full production path still in progress) |
 | Local data retention policy | explicit retention window + pruning | Partial (policy interface present; in-memory memory backend) |
 | Tool safety | strict schema validation + allowlist | Partial (allowlist + payload fragment blocking) |
 | Diagnostics privacy | no raw prompt/response by default | Partial (diagnostics are metric-only strings; needs explicit redaction tests) |

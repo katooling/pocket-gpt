@@ -112,9 +112,7 @@ Exit criteria:
 
 Goal: gather confidence evidence and make a defensible go/no-go call.
 
-Status (2026-03-04): In progress. QA-06 soak evidence is complete; final packet signoff is pending and external beta is additionally gated by WP-11 user-facing UI closure.
-
-Status (2026-03-04): In progress for WP-07. QA-06 soak evidence and Engineering Stage-6 startup/crash resilience support closeout are complete; final packet signatures remain open.
+Status (2026-03-04): Closed for WP-07. QA-06 soak evidence, Engineering Stage-6 startup/crash resilience support closeout, and final Product/QA/Engineering dated signatures are complete; external beta signoff is now gated by WP-11 closure.
 
 Deliverables:
 
@@ -128,6 +126,27 @@ Exit criteria:
 2. No repeatable blocker issues in soak runs.
 3. WP-11 UI acceptance suite (`UI-01`..`UI-10`) is complete with evidence links.
 4. Beta go/no-go decision recorded with Product + QA + Engineering signatures.
+
+## Stage 6.5 - Backend Production Runtime Closure
+
+Goal: close post-signoff backend/runtime truth gaps so production claims are backed by native execution and Android-native data paths.
+
+Status (2026-03-04): In progress for WP-12. ENG-11A landed runtime-backend truth gating so closure startup checks block `ADB_FALLBACK` by default.
+
+Deliverables:
+
+1. Native runtime truth gate (`NATIVE_JNI` required on closure path) with explicit backend diagnostics.
+2. Model distribution contract finalized and implemented (bundle/download/sideload) with artifact provenance evidence.
+3. Real-device runtime performance and memory characterization for Qwen 0.8B and 2B.
+4. Android-native persistence and tool data-plane hardening (remove JVM-only/JDBC assumptions and placeholder tool-store responses).
+5. Platform network policy wiring validated against Android runtime behavior.
+
+Exit criteria:
+
+1. Closure evidence demonstrates real JNI runtime execution (not fallback stubs).
+2. Stage metrics are produced from real model inference runs on target device(s).
+3. Memory/tool/image paths use production data paths with regression coverage.
+4. Privacy/security controls map to platform-enforced behavior and test evidence.
 
 ## Stage 7 - Post-MVP Voice Foundation (Next Horizon)
 

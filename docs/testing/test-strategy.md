@@ -32,6 +32,7 @@ Last updated: 2026-03-04
 | Policy/tool safety regressions blocked | Stage 3+ |
 | Scenario C + memory quality checks pass | Stage 5+ |
 | Soak test + go/no-go packet complete | Stage 6 beta |
+| Closure-path startup checks fail on `ADB_FALLBACK` backend unless explicitly override-enabled for local scaffolding | Stage 6.5+ |
 | UI-01..UI-10 acceptance suite pass | WP-11 close + external beta signoff |
 
 ## CI Baseline

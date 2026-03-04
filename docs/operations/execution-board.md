@@ -36,6 +36,7 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-09 | Distribution plan and beta operations | Product | Marketing, QA | 7 | Yes | WP-07, WP-08, WP-11 | In Progress | Week 6-7 |
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 8 | Yes | WP-07 | Backlog | Post-MVP |
 | WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | Done | Week 6 |
+| WP-12 | Backend production runtime closure (native inference, model distribution, Android-native data plane) | Engineering | QA, Product, Security | 7 | Yes | WP-07, WP-11 | In Progress | Week 7-8 |
 
 ## Current Sprint Board
 
@@ -45,10 +46,18 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] MKT-04 landing page + launch copy v1 prep draft (publish-readiness now unblocked by gate closure)
 - [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
+- [ ] WP-12 backend production runtime closure kickoff + execution
+- [ ] ENG-11 native-runtime truth gate: startup checks block closure path on `ADB_FALLBACK` backend unless explicitly override-enabled for local scaffolding
 
 ### Ready
 
 - [ ] PROD-04 monetization scope and pricing hypothesis kickoff
+- [ ] ENG-12 model distribution implementation decision + execution (`PAD` vs first-launch download vs side-load) with checksum/provenance contract
+- [ ] ENG-13 physical-device performance/memory characterization for real Qwen 0.8B and 2B (`first_token`, `decode_tps`, `PSS`, OOM risk)
+- [ ] ENG-14 Android-native SQLite memory backend migration (remove JVM-JDBC dependency from Android runtime path)
+- [ ] ENG-15 notes/search/reminder integration against real on-device stores (remove placeholder responses from production flow)
+- [ ] ENG-16 real multimodal image analysis runtime path (replace smoke image contract on production path)
+- [ ] ENG-17 platform network policy enforcement wiring + regression checks (manifest/security config + runtime client gate)
 
 ### Blocked
 
@@ -81,16 +90,19 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] WP-11 package closeout complete (Product/QA/Engineering closure signoff recorded) (`docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`)
 - [x] PROD-03 acceptance checklist finalization complete
 - [x] WP-08 positioning and launch prep asset lock pass complete (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`, `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`)
+- [x] ENG-11A runtime truth gate landed: startup checks classify `ADB_FALLBACK` as blocking for closure-path runs and publish backend identity in stage runner output (`docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`)
+- [x] MKT-02 external competitor snapshot sourced (ChatGPT/Gemini/Claude) (`docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`)
 
 ## Immediate Assignments (Current Owners)
 
 1. Engineering (Lead/Core/Runtime):
-   - WP-07 and WP-11 closure gates are signed; support WP-09 rollout readiness and stabilization backlog.
+   - WP-12 in progress. Complete ENG-12..ENG-17 while keeping WP-09 rollout stabilization support.
 2. QA:
-   - QA-09 template packet delivered; execute weekly triage/promotion/signal reporting cadence for WP-09.
+   - QA-09 template packet delivered; execute weekly triage/promotion/signal reporting cadence for WP-09 and prepare validation matrix for WP-12 runtime truth/data-plane gates.
 3. Product:
-   - External beta signoff gate is clear; WP-09/PROD-06 kickoff published (`docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`).
+   - External beta signoff gate is clear; WP-09/PROD-06 kickoff published (`docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`). Provide model distribution decision input for ENG-12.
 4. Marketing:
+   - Run real screenshot/video capture using `docs/operations/mkt-04-demo-asset-capture-runbook.md`.
    - Advance MKT-03/MKT-04 from draft toward publish-ready assets under release sequencing.
 
 ## Evidence Log
@@ -119,13 +131,18 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-07 (PROD-03 final dated owner signatures + package closeout): `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`
 - WP-08 (MKT lock pass): `docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`
 - WP-08 (Product lock pass): `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`
+- WP-08 (MKT-02 external competitor snapshot): `docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`
+- WP-08 (MKT-04 landing page + launch copy v1 draft): `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md`
+- WP-08 (MKT-04 demo asset capture runbook): `docs/operations/mkt-04-demo-asset-capture-runbook.md`
 - WP-11 (UI foundation implementation + docs alignment): `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`
 - WP-11 (Product/QA/Engineering closure signoff): `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`
 - WP-09 (Product Ops kickoff for distribution + beta operations): `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`
+- WP-09 (MKT-03 launch channel test plan draft prework): `docs/operations/evidence/wp-09/2026-03-04-mkt-03-launch-channel-test-plan-draft.md`
 - WP-09 (QA rollout quality checkpoints initial packet): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`
 - WP-09 (QA incident triage template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`
 - WP-09 (QA release promotion checklist): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`
 - WP-09 (QA weekly rollout summary template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md`
+- WP-12 (ENG-11 runtime truth gate): `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`
 
 ## Dependency Flow
 
@@ -144,6 +161,7 @@ Wp06 --> Wp11
 Wp07 --> Wp09
 Wp08 --> Wp09
 Wp11 --> Wp09
+Wp11 --> Wp12
 Wp07 --> Wp10
 ```
 
@@ -160,6 +178,7 @@ Wp07 --> Wp10
 - WP-09: channel plan, support process, beta rollout checklist
 - WP-10: STT/TTS spike report with latency/power budgets
 - WP-11: UI acceptance suite (Compose/instrumentation/Maestro), UX evidence notes, and in-app workflow validation packet
+- WP-12: native-runtime proof logs, model-delivery artifact provenance evidence, Android-native persistence validation, and network-policy enforcement checks
 
 ## Cadence
 
