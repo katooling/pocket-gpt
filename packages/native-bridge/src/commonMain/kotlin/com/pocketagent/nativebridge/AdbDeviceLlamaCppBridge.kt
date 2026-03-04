@@ -1,19 +1,8 @@
-package com.pocketagent.android
+package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
-import java.io.ByteArrayOutputStream
 
-data class CommandResult(
-    val exitCode: Int,
-    val stdout: String,
-    val stderr: String,
-)
-
-fun interface CommandRunner {
-    fun run(command: List<String>): CommandResult
-}
-
-class AdbDeviceLlamaCppRuntimeBridge(
+class AdbDeviceLlamaCppBridge(
     private val supportedModels: Set<String> = setOf(
         ModelCatalog.QWEN_3_5_0_8B_Q4,
         ModelCatalog.QWEN_3_5_2B_Q4,
@@ -44,16 +33,16 @@ class AdbDeviceLlamaCppRuntimeBridge(
 
         val shellOutput = runCatching {
             commandRunner.run(
-            listOf(
-                "adb",
-                "-s",
-                serial,
-                "shell",
-                "echo",
-                "ADB_LLAMACPP",
-                "model=$model",
-                "max_tokens=$maxTokens",
-            ),
+                listOf(
+                    "adb",
+                    "-s",
+                    serial,
+                    "shell",
+                    "echo",
+                    "ADB_LLAMACPP",
+                    "model=$model",
+                    "max_tokens=$maxTokens",
+                ),
             )
         }.getOrElse { return false }
         if (shellOutput.exitCode != 0) {
@@ -105,29 +94,5 @@ class AdbDeviceLlamaCppRuntimeBridge(
             return devices.firstOrNull { it == preferred }
         }
         return devices.singleOrNull()
-    }
-}
-
-private class ProcessCommandRunner : CommandRunner {
-    override fun run(command: List<String>): CommandResult {
-        return runCatching {
-            val process = ProcessBuilder(command).start()
-            val stdoutBytes = ByteArrayOutputStream()
-            val stderrBytes = ByteArrayOutputStream()
-            process.inputStream.copyTo(stdoutBytes)
-            process.errorStream.copyTo(stderrBytes)
-            val exitCode = process.waitFor()
-            CommandResult(
-                exitCode = exitCode,
-                stdout = stdoutBytes.toString(Charsets.UTF_8.name()),
-                stderr = stderrBytes.toString(Charsets.UTF_8.name()),
-            )
-        }.getOrElse { error ->
-            CommandResult(
-                exitCode = 127,
-                stdout = "",
-                stderr = error.message ?: "Command execution failed.",
-            )
-        }
     }
 }

@@ -1,4 +1,4 @@
-package com.pocketagent.android
+package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
 import kotlin.test.Test
@@ -6,12 +6,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class AndroidLlamaCppRuntimeBridgeTest {
+class NativeJniLlamaCppBridgeTest {
     @Test
     fun `uses native runtime when library is available`() {
         val nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello")
         val fallback = FakeFallbackBridge()
-        val bridge = AndroidLlamaCppRuntimeBridge(
+        val bridge = NativeJniLlamaCppBridge(
             nativeApi = nativeApi,
             libraryLoader = { _ -> },
             fallbackBridge = fallback,
@@ -35,7 +35,7 @@ class AndroidLlamaCppRuntimeBridgeTest {
     fun `falls back to adb bridge when native runtime is unavailable`() {
         val nativeApi = FakeNativeApi(initializeOk = false, loadOk = false, generatedText = "")
         val fallback = FakeFallbackBridge(ready = true, loadOk = true, generateOk = true)
-        val bridge = AndroidLlamaCppRuntimeBridge(
+        val bridge = NativeJniLlamaCppBridge(
             nativeApi = nativeApi,
             libraryLoader = { _ -> error("missing native library") },
             fallbackBridge = fallback,
@@ -56,7 +56,7 @@ class AndroidLlamaCppRuntimeBridgeTest {
 
     @Test
     fun `is not ready when both native and fallback are unavailable`() {
-        val bridge = AndroidLlamaCppRuntimeBridge(
+        val bridge = NativeJniLlamaCppBridge(
             nativeApi = FakeNativeApi(initializeOk = false, loadOk = false, generatedText = ""),
             libraryLoader = { _ -> error("missing native library") },
             fallbackBridge = FakeFallbackBridge(ready = false),
@@ -73,7 +73,7 @@ private class FakeNativeApi(
     private val initializeOk: Boolean,
     private val loadOk: Boolean,
     private val generatedText: String,
-) : AndroidLlamaCppRuntimeBridge.NativeApi {
+) : NativeJniLlamaCppBridge.NativeApi {
     var loadCalled = false
     var generateCalled = false
     var unloadCalled = false

@@ -1,24 +1,8 @@
-package com.pocketagent.android
+package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
 
-enum class RuntimeBackend {
-    NATIVE_JNI,
-    ADB_FALLBACK,
-    UNAVAILABLE,
-}
-
-interface LlamaCppRuntimeBridge {
-    fun isReady(): Boolean
-    fun listAvailableModels(): List<String>
-    fun loadModel(modelId: String): Boolean = loadModel(modelId, null)
-    fun loadModel(modelId: String, modelPath: String?): Boolean
-    fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean
-    fun unloadModel()
-    fun runtimeBackend(): RuntimeBackend
-}
-
-class AndroidLlamaCppRuntimeBridge(
+class NativeJniLlamaCppBridge(
     private val libraryName: String = "pocket_llama",
     private val nativeApi: NativeApi = JniNativeApi(),
     private val libraryLoader: (String) -> Unit = System::loadLibrary,
@@ -26,7 +10,7 @@ class AndroidLlamaCppRuntimeBridge(
         ModelCatalog.QWEN_3_5_0_8B_Q4,
         ModelCatalog.QWEN_3_5_2B_Q4,
     ),
-    private val fallbackBridge: LlamaCppRuntimeBridge = AdbDeviceLlamaCppRuntimeBridge(),
+    private val fallbackBridge: LlamaCppRuntimeBridge = AdbDeviceLlamaCppBridge(),
     private val fallbackEnabled: Boolean = defaultFallbackEnabled(),
 ) : LlamaCppRuntimeBridge {
     private var initialized = false

@@ -1,4 +1,4 @@
-package com.pocketagent.android
+package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.ModelCatalog
@@ -8,10 +8,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-class AndroidLlamaCppInferenceModuleTest {
+class LlamaCppInferenceModuleTest {
     @Test
     fun `generate stream requires loaded model`() {
-        val module = AndroidLlamaCppInferenceModule(FakeBridge())
+        val module = LlamaCppInferenceModule(FakeBridge())
 
         assertFailsWith<IllegalStateException> {
             module.generateStream(InferenceRequest("hello", 32)) {}
@@ -21,7 +21,7 @@ class AndroidLlamaCppInferenceModuleTest {
     @Test
     fun `load generate unload delegates to runtime bridge`() {
         val bridge = FakeBridge()
-        val module = AndroidLlamaCppInferenceModule(bridge)
+        val module = LlamaCppInferenceModule(bridge)
         module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
 
         assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
@@ -39,7 +39,7 @@ class AndroidLlamaCppInferenceModuleTest {
     @Test
     fun `load fails for unknown model and runtime generation failure throws`() {
         val bridge = FakeBridge(generateOk = false)
-        val module = AndroidLlamaCppInferenceModule(bridge)
+        val module = LlamaCppInferenceModule(bridge)
 
         assertFalse(module.loadModel("unknown-model"))
         assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
@@ -51,7 +51,7 @@ class AndroidLlamaCppInferenceModuleTest {
 
     @Test
     fun `runtime backend delegates to bridge`() {
-        val module = AndroidLlamaCppInferenceModule(FakeBridge(backend = RuntimeBackend.ADB_FALLBACK))
+        val module = LlamaCppInferenceModule(FakeBridge(backend = RuntimeBackend.ADB_FALLBACK))
         assertEquals(RuntimeBackend.ADB_FALLBACK, module.runtimeBackend())
     }
 }

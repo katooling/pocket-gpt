@@ -242,6 +242,46 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     release_runtime_locked();
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeInitialize(
+    JNIEnv * env,
+    jobject thiz) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeInitialize(env, thiz);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeLoadModel(
+    JNIEnv * env,
+    jobject thiz,
+    jstring modelId,
+    jstring modelPath) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeLoadModel(
+        env,
+        thiz,
+        modelId,
+        modelPath);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeGenerate(
+    JNIEnv * env,
+    jobject thiz,
+    jstring prompt,
+    jint maxTokens) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeGenerate(
+        env,
+        thiz,
+        prompt,
+        maxTokens);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeUnloadModel(
+    JNIEnv * env,
+    jobject thiz) {
+    Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeUnloadModel(env, thiz);
+}
+
 extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM * /*vm*/, void * /*reserved*/) {
     std::lock_guard<std::mutex> lock(g_mutex);
     release_runtime_locked();

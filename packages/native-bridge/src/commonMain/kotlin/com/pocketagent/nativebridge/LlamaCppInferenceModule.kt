@@ -1,10 +1,10 @@
-package com.pocketagent.android
+package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 
-class AndroidLlamaCppInferenceModule(
-    private val runtimeBridge: LlamaCppRuntimeBridge = AndroidLlamaCppRuntimeBridge(),
+class LlamaCppInferenceModule(
+    private val runtimeBridge: LlamaCppRuntimeBridge = NativeJniLlamaCppBridge(),
 ) : InferenceModule {
     private var activeModelId: String? = null
     private val modelPathById: MutableMap<String, String> = mutableMapOf()

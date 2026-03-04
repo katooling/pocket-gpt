@@ -1,4 +1,4 @@
-package com.pocketagent.android
+package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
 import kotlin.test.Test
@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class AdbDeviceLlamaCppRuntimeBridgeTest {
+class AdbDeviceLlamaCppBridgeTest {
     @Test
     fun `is ready and generates tokens when one adb device is attached`() {
         val runner = ScriptedCommandRunner(
@@ -23,7 +23,7 @@ class AdbDeviceLlamaCppRuntimeBridgeTest {
                 ),
             ),
         )
-        val bridge = AdbDeviceLlamaCppRuntimeBridge(commandRunner = runner)
+        val bridge = AdbDeviceLlamaCppBridge(commandRunner = runner)
 
         assertTrue(bridge.isReady())
         assertEquals(RuntimeBackend.ADB_FALLBACK, bridge.runtimeBackend())
@@ -45,7 +45,7 @@ class AdbDeviceLlamaCppRuntimeBridgeTest {
                 ),
             ),
         )
-        val bridge = AdbDeviceLlamaCppRuntimeBridge(commandRunner = runner)
+        val bridge = AdbDeviceLlamaCppBridge(commandRunner = runner)
 
         assertFalse(bridge.isReady())
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
@@ -54,7 +54,7 @@ class AdbDeviceLlamaCppRuntimeBridgeTest {
 
     @Test
     fun `command execution failure degrades to unavailable without crash`() {
-        val bridge = AdbDeviceLlamaCppRuntimeBridge(commandRunner = ThrowingCommandRunner())
+        val bridge = AdbDeviceLlamaCppBridge(commandRunner = ThrowingCommandRunner())
 
         assertFalse(bridge.isReady())
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
