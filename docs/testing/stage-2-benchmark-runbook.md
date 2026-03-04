@@ -1,6 +1,6 @@
 # Stage-2 Benchmark Runbook (Scenario A/B)
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 ## Source of truth
 
@@ -18,9 +18,10 @@ Required files:
 1. `scenario-a.csv`
 2. `scenario-b.csv`
 3. `stage-2-threshold-input.csv`
-4. `threshold-report.txt`
-5. `logcat.txt`
-6. `notes.md`
+4. `model-2b-metrics.csv`
+5. `threshold-report.txt`
+6. `logcat.txt`
+7. `notes.md`
 
 ## Recommended Execution
 
@@ -38,3 +39,10 @@ bash scripts/dev/bench.sh stage2 \
 ```
 
 After run completion, add a human evidence note in `docs/operations/evidence/wp-03/` linking the generated run directory.
+
+Validate closure-path artifact integrity before evidence submission:
+
+```bash
+python3 scripts/benchmarks/validate_stage2_runtime_evidence.py \
+  scripts/benchmarks/runs/YYYY-MM-DD/<device-id>
+```

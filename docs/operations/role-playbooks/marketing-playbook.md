@@ -20,10 +20,12 @@ Define and validate messaging, category positioning, and launch channel strategy
 - [x] MKT-02 competitor matrix finalized with claim-risk labels (validated/provisional/excluded)
 - [x] WP-08 lock-pass evidence note published (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`)
 - [x] MKT-02 external competitor snapshot sourced (ChatGPT/Gemini/Claude) (`docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`)
+- [x] MKT-07 UI proof-based messaging + asset-selection pass completed
 
 ## What Is In Progress
 
 - [x] MKT-03 launch channel test plan draft started (execution lane unblocked)
+- [x] MKT-03 7-day scorecard template prepared for first execution window
 - [x] MKT-04 prep draft started (publish-readiness lane unblocked)
 - [x] MKT-04 real screenshot/video capture runbook and capture script prepared
 
@@ -42,9 +44,9 @@ Current state (2026-03-04): `WP-07` and `WP-11` are both `Done`; publish remains
 |---|---|---|---|---|---|
 | MKT-01 | Messaging architecture (privacy vs reliability vs utility) | Done | WP-03 | Marketing Lead | `docs/operations/mkt-01-messaging-architecture-draft.md` |
 | MKT-02 | Competitor matrix with evidence-safe claims | Done | MKT-01 | Product Marketing | `docs/operations/mkt-02-competitor-matrix-template-draft.md` |
-| MKT-03 | Launch channel test plan (communities, beta cohorts) | In Progress (draft complete; execution enabled) | MKT-01 | Growth Lead | `docs/operations/mkt-03-launch-channel-test-plan-draft.md` |
+| MKT-03 | Launch channel test plan (communities, beta cohorts) | In Progress (draft complete; scorecard execution ready) | MKT-01 | Growth Lead | `docs/operations/mkt-03-launch-channel-test-plan-draft.md`, `docs/operations/mkt-03-7-day-scorecard-template.md` |
 | MKT-04 | Landing page and launch copy v1 | In Progress (copy draft + demo capture lane active) | WP-07, WP-11 | Content Lead | `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md` |
-| MKT-07 | UI proof-based messaging + asset-selection pass | Ready | WP-11, MKT-04 | Marketing Lead | `docs/operations/ui-ux-handoff-ticket-pack.md`, `docs/product/feature-catalog.md` |
+| MKT-07 | UI proof-based messaging + asset-selection pass | Done | WP-11, MKT-04 | Marketing Lead | `docs/operations/evidence/wp-09/2026-03-04-mkt-07-ui-proof-messaging-pass.md`, `docs/operations/mkt-07-ui-proof-messaging-map.md` |
 | MKT-05 | Voice horizon narrative (STT/TTS roadmap messaging) | Backlog | PROD-05 | Product Marketing | `docs/roadmap/product-roadmap.md` |
 | MKT-06 | Distribution partnership list and outreach strategy | Backlog | WP-09 | Marketing Ops | `docs/product/open-questions-log.md` |
 

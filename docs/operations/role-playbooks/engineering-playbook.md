@@ -32,6 +32,8 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 - [x] ENG-15 completed: local tool store integration for notes/search/reminders
 - [x] ENG-16 completed: production runtime-backed image path wiring
 - [x] ENG-17 completed: platform network policy wiring + regression checks
+- [x] ENG-18 completed: UI accessibility + deterministic error-state hardening for beta rollout
+- [x] ENG-13 support completed: Stage-2 runtime evidence integrity validator + runbook wiring
 
 ## What Is In Progress
 
@@ -61,11 +63,12 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 | ENG-11A | Native-runtime truth gate (block closure startup checks on `ADB_FALLBACK`) | Done | WP-11 | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md` |
 | ENG-12 | Side-load model distribution + strict manifest/SHA/provenance hard-block policy | Done | ENG-11A, Product decision note | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`, `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md` |
 | ENG-13 | Native JNI runtime proof on Samsung + perf/memory characterization (0.8B/2B) | Blocked (`ADB_FALLBACK` in closure path; no `NATIVE_JNI` proof yet) | ENG-11A | Runtime Eng, QA | `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`, `docs/testing/stage-2-benchmark-runbook.md` |
+| ENG-13-SUPPORT | Stage-2 closure artifact integrity validator (`NATIVE_JNI`/non-placeholder guard) | Done | ENG-11A | Eng Platform | `scripts/benchmarks/validate_stage2_runtime_evidence.py`, `docs/testing/stage-2-benchmark-runbook.md` |
 | ENG-14 | Replace JVM-JDBC memory path with Android-native SQLite backend | Done | ENG-12 artifact-path contract stable | Core Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md` |
 | ENG-15 | Replace placeholder notes/search/reminder responses with real local stores | Done | ENG-12 artifact-path contract stable | Platform Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md` |
 | ENG-16 | Replace smoke image adapter with production multimodal runtime path | Done | ENG-12 artifact-path contract stable | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md` |
 | ENG-17 | Wire policy module to Android platform network behavior + regressions | Done | ENG-12..ENG-16 integration available | Security Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md` |
-| ENG-18 | UI accessibility + error-state hardening for beta rollout | Ready | WP-11 | Android Eng | `docs/operations/ui-ux-handoff-ticket-pack.md`, `docs/testing/test-strategy.md` |
+| ENG-18 | UI accessibility + error-state hardening for beta rollout | Done | WP-11 | Android Eng | `docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`, `docs/testing/test-strategy.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
 | ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
 

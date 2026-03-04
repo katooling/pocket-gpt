@@ -47,14 +47,12 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
 - [ ] WP-12 backend production runtime closure kickoff + execution
+- [ ] PROD-04 monetization scope and pricing hypothesis kickoff (v0 hypothesis doc published)
+- [ ] ENG support: stage-2 runtime evidence integrity gate active for closure packet validation
 
 ### Ready
 
-- [ ] PROD-04 monetization scope and pricing hypothesis kickoff
-- [ ] PROD-08 UX feedback taxonomy + intake policy for beta operations (`docs/operations/ui-ux-handoff-ticket-pack.md`)
-- [ ] ENG-18 UI accessibility + error-state hardening for beta rollout (`docs/operations/ui-ux-handoff-ticket-pack.md`)
-- [ ] QA-10 weekly UI regression matrix execution for rollout operations (`docs/operations/ui-ux-handoff-ticket-pack.md`)
-- [ ] MKT-07 UI proof-based messaging and asset-selection pass (`docs/operations/ui-ux-handoff-ticket-pack.md`)
+- [ ] MKT-03 first 7-day scorecard execution window
 
 ### Blocked
 
@@ -96,6 +94,10 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-17 Android platform network policy wiring/regression checks landed (`docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`)
 - [x] QA-WP12 closeout validation packet executed (recommendation: do not close WP-12 until ENG-13 native JNI blocker is resolved) (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`)
 - [x] MKT-02 external competitor snapshot sourced (ChatGPT/Gemini/Claude) (`docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`)
+- [x] ENG-18 UI accessibility + error-state hardening complete (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`)
+- [x] QA-10 weekly UI regression matrix run 01 complete (`docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`)
+- [x] PROD-08 UX feedback taxonomy + intake policy complete (`docs/operations/evidence/wp-09/2026-03-04-prod-08-ux-feedback-taxonomy-pilot.md`)
+- [x] MKT-07 UI proof-based messaging + asset-selection pass complete (`docs/operations/evidence/wp-09/2026-03-04-mkt-07-ui-proof-messaging-pass.md`)
 
 ## Immediate Assignments (Current Owners)
 
@@ -103,21 +105,23 @@ All teams should update status here first, then mirror updates in role playbooks
    - WP-11 gate is closed with QA-08 evidence pack.
    - WP-12 implementation tickets `ENG-12`, `ENG-14`, `ENG-15`, `ENG-16`, and `ENG-17` are complete with dated evidence.
    - Resolve `ENG-13` native JNI blocker (`NATIVE_JNI` backend proof + 0.8B/2B + memory/PSS packet) before QA closeout trigger.
-   - New UI hardening handoff ticket ready: `ENG-18` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
+   - `ENG-18` is complete with accessibility/error-state hardening evidence (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`).
 2. QA:
    - QA-08 acceptance gate is complete; continue QA-09 weekly triage/promotion/signal cadence.
    - `QA-WP12` closeout packet is executed with recommendation to keep WP-12 open.
    - Re-run QA closeout after `ENG-13` native JNI proof is landed.
-   - New UI operations ticket ready: `QA-10` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
+   - `QA-10` week-01 regression matrix run is complete (`docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`).
 3. Product:
    - External beta signoff dependency on WP-11 is cleared; continue WP-09 planning.
    - ENG-12 model distribution decision is approved (side-load/manual-internal only + strict provenance checks) and unblocked (`docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`).
    - WP-12 acceptance/signoff remains pending `ENG-13` blocker resolution.
-   - New UX operations ticket ready: `PROD-08` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
+   - `PROD-08` taxonomy + intake policy is complete (`docs/operations/evidence/wp-09/2026-03-04-prod-08-ux-feedback-taxonomy-pilot.md`).
+   - `PROD-04` monetization scope/pricing hypothesis is in progress (`docs/operations/prod-04-monetization-hypothesis-v0.md`).
 4. Marketing:
    - Run real screenshot/video capture using `docs/operations/mkt-04-demo-asset-capture-runbook.md`.
    - Advance MKT-03/MKT-04 from draft toward publish-ready assets under release sequencing.
-   - New UX messaging ticket ready: `MKT-07` (`docs/operations/ui-ux-handoff-ticket-pack.md`).
+   - `MKT-07` UI-proof messaging pass is complete (`docs/operations/evidence/wp-09/2026-03-04-mkt-07-ui-proof-messaging-pass.md`).
+   - Execute MKT-03 weekly scorecard cadence (`docs/operations/mkt-03-7-day-scorecard-template.md`).
 
 ## Evidence Log
 
@@ -154,10 +158,18 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-09 (Product Ops kickoff for distribution + beta operations): `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`
 - WP-09 (UI/UX next-wave ticket pack dispatch): `docs/operations/evidence/wp-09/2026-03-04-prod-ui-ux-handoff-ticket-pack.md`
 - WP-09 (MKT-03 launch channel test plan draft prework): `docs/operations/evidence/wp-09/2026-03-04-mkt-03-launch-channel-test-plan-draft.md`
+- WP-09 (MKT-03 7-day channel scorecard template): `docs/operations/mkt-03-7-day-scorecard-template.md`
 - WP-09 (QA rollout quality checkpoints initial packet): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`
 - WP-09 (QA incident triage template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`
 - WP-09 (QA release promotion checklist): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`
 - WP-09 (QA weekly rollout summary template): `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md`
+- WP-09 (ENG-18 UI accessibility + error-state hardening): `docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`
+- WP-09 (QA-10 weekly UI regression matrix run 01): `docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`
+- WP-09 (PROD-08 UX feedback taxonomy + intake policy pilot): `docs/operations/evidence/wp-09/2026-03-04-prod-08-ux-feedback-taxonomy-pilot.md`
+- WP-09 (PROD-04 monetization scope/pricing hypothesis v0): `docs/operations/prod-04-monetization-hypothesis-v0.md`
+- WP-09 (MKT-07 UI proof messaging + asset-selection pass): `docs/operations/evidence/wp-09/2026-03-04-mkt-07-ui-proof-messaging-pass.md`
+- WP-12 (Parallel work plan while ENG-13 executes): `docs/operations/2026-03-04-parallel-work-plan-during-eng-13.md`
+- WP-12 (Stage-2 native runtime evidence validator): `scripts/benchmarks/validate_stage2_runtime_evidence.py`
 - WP-12 (ENG-11 runtime truth gate): `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`
 - WP-12 (ENG-12 side-load distribution + strict provenance/runtime verification hard-block): `docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`
 - WP-12 (ENG-13 native runtime proof attempt; blocked on `NATIVE_JNI` closure evidence): `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`

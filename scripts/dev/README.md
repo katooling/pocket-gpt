@@ -17,6 +17,30 @@ bash scripts/dev/test.sh quick
 
 If `doctor` fails, follow the suggested fix lines and rerun `doctor`.
 
+## Newcomer Confidence Checklist (4 Commands)
+
+Run these in order for fast, layered confidence:
+
+```bash
+python3 tools/devctl/main.py doctor
+bash scripts/dev/test.sh quick
+python3 tools/devctl/main.py lane android-instrumented
+python3 tools/devctl/main.py lane maestro
+```
+
+What each command proves:
+
+1. `doctor`
+   Environment/toolchain is usable (Python deps, Gradle/Android prerequisites, lane prerequisites).
+2. `test.sh quick`
+   Core JVM/Kotlin and policy/runtime contracts still hold after your changes.
+3. `lane android-instrumented`
+   App boots and bridge/runtime integration still works on-device/emulator instrumentation lane.
+4. `lane maestro`
+   Basic end-to-end UI smoke flow still passes in the external E2E runner.
+
+Use this as a quick pre-PR baseline. For broader coverage, run `bash scripts/dev/test.sh ci` and, when needed, the physical device lane in this README.
+
 ## Standard (CI + Local)
 
 ```bash
@@ -66,10 +90,18 @@ Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
 1. `scenario-a.csv`
 2. `scenario-b.csv`
 3. `stage-2-threshold-input.csv`
-4. `threshold-report.txt`
-5. `logcat.txt`
-6. `notes.md`
-7. `summary.json`
+4. `model-2b-metrics.csv` (required for WP-12/ENG-13 closure evidence)
+5. `threshold-report.txt`
+6. `logcat.txt`
+7. `notes.md`
+8. `summary.json`
+
+Evidence integrity gate:
+
+```bash
+python3 scripts/benchmarks/validate_stage2_runtime_evidence.py \
+  scripts/benchmarks/runs/YYYY-MM-DD/<device-id>
+```
 
 ## Framework Lanes (Direct)
 
