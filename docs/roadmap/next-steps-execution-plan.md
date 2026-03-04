@@ -60,6 +60,8 @@ Exit criteria:
 
 Goal: enforce downgrade and privacy-safe diagnostics behavior.
 
+Status (2026-03-04): Completed for WP-04. Routing matrix boundary tests, runtime policy enforcement checks, and diagnostics redaction checks are implemented with engineering/QA evidence linked in operations logs.
+
 Deliverables:
 
 1. Routing matrix coverage for battery/thermal/RAM/task combinations.
@@ -91,6 +93,8 @@ Exit criteria:
 ## Stage 5 - Memory + Image Productionization
 
 Goal: replace in-memory scaffolds with production-ready persistence and image path behavior.
+
+Status (2026-03-04): In progress. ENG-07 kickoff opened for SQLite memory backend + pruning scope under WP-06.
 
 Deliverables:
 
