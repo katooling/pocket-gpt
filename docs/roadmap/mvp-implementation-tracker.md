@@ -64,8 +64,8 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 - [ ] Validate memory retrieval relevance on follow-up prompts
 - [ ] Run image path Scenario C benchmarks
 - [ ] Record latency and output quality notes
-- [ ] Back memory with SQLite persistence and retention pruning tests
-- [ ] Add deterministic image path contract tests
+- [x] Back memory with SQLite persistence and retention pruning tests (ENG-07 closeout, 2026-03-04)
+- [x] Add deterministic image path contract tests (ENG-07 closeout, 2026-03-04)
 
 ## Stage 6 Checklist
 

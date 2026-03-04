@@ -1,6 +1,6 @@
 # Next Steps Execution Plan (Android-First MVP)
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 This plan turns current scaffolding into validated MVP capability with explicit DX, test, and reliability gates per stage.
 
@@ -94,7 +94,7 @@ Exit criteria:
 
 Goal: replace in-memory scaffolds with production-ready persistence and image path behavior.
 
-Status (2026-03-04): In progress. ENG-07 kickoff opened for SQLite memory backend + pruning scope under WP-06.
+Status (2026-03-04): In progress. ENG-07 closeout landed for SQLite memory backend + pruning with deterministic image contract tests; QA-05 Scenario C device acceptance is now ready.
 
 Deliverables:
 

@@ -40,17 +40,17 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### In Progress
 
-- [ ] WP-06 Memory + image productionization (ENG-07 kickoff)
+- [ ] WP-06 Memory + image productionization (ENG-07 closeout landed; QA-05 device acceptance pending, ENG-08 hardening in progress)
 - [ ] PROD-03 acceptance checklist finalization (aligned; final beta closeout pending Stage 5/6 evidence)
 - [ ] MKT-02 competitor external sourcing pass (optional enhancement; publishable Pocket GPT claim set already locked)
 
 ### Ready
 
-- [ ] None
+- [ ] QA-05 Scenario C image + memory acceptance run (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
 
 ### Blocked
 
-- [ ] QA-05 Scenario C image + memory acceptance run is blocked pending ENG-07 WP-06 deliverables (SQLite persistence + retention/pruning + Scenario C contract path) (`docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md`)
+- [ ] None
 
 ### Done
 
@@ -67,6 +67,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] QA-03 routing/policy boundary regression rerun passed on incoming WP-04 state (`docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`)
 - [x] QA-04 tool safety adversarial regression rerun passed on final WP-05 state (`docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`)
 - [x] ENG-06 closeout gate: tool runtime schema safety productionization completed with package-level acceptance and deterministic error-contract stability checks (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
+- [x] ENG-07 closeout gate: SQLite memory backend + retention/pruning tests + deterministic Scenario C image contract tests landed; QA-05 unblocked for device acceptance execution (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
 - [x] WP-05 Tool runtime safety productionization package closeout complete (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 - [x] WP-04 package closeout complete (routing/policy/diagnostics hardening with engineering+QA evidence) (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`, `docs/operations/evidence/wp-04/2026-03-04-qa-03.md`)
 - [x] PM/Prod dispatch packet published for WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies (`docs/operations/evidence/wp-04/2026-03-04-pm-prod-dispatch-wp04-wp05.md`)
@@ -81,7 +82,7 @@ All teams should update status here first, then mirror updates in role playbooks
 1. Lead Eng - start now:
    - ENG-04 gate for WP-03 is closed (`docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`)
    - ENG-06 package closeout complete; WP-05 is now marked Done (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
-   - ENG-07 kickoff opened for WP-06 memory productionization (`docs/operations/evidence/wp-06/2026-03-04-eng-07.md`)
+   - ENG-07 closeout landed for WP-06 memory productionization (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`); continue ENG-08 image-path production hardening
 2. QA - start immediately after ENG-04 closeout:
    - QA-02 closure refresh complete (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`); recommend WP-03 package close decision
    - QA-03 rerun complete and PASS (`docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`); QA-04 rerun complete and PASS (`docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`)
@@ -122,6 +123,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-05 (QA-04 tool safety adversarial regression baseline): `docs/operations/evidence/wp-05/2026-03-04-qa-04.md`
 - WP-05 (QA-04 tool safety adversarial regression rerun on final WP-05 state): `docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`
 - WP-06 (ENG-07 memory productionization kickoff): `docs/operations/evidence/wp-06/2026-03-04-eng-07.md`
+- WP-06 (ENG-07 memory productionization closeout + QA unblock): `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`
 - WP-06 (QA-05 prep and blocker map): `docs/operations/evidence/wp-06/2026-03-04-qa-05-prep.md`
 - WP-08 (Product lock pass: PROD-01/02 finalization + PROD-03 alignment): `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`
 - WP-08 (MKT-01 finalized messaging architecture with claim labels): `docs/operations/mkt-01-messaging-architecture-draft.md`
