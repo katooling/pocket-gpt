@@ -4,12 +4,12 @@ Last updated: 2026-03-04
 
 ## Mission
 
-Deliver reliable local runtime capability and core feature implementation for MVP while preserving modular boundaries and privacy/safety guarantees.
+Deliver reliable local runtime capability and user-facing MVP experience while preserving modular boundaries and privacy/safety guarantees.
 
 ## Where To Start
 
 1. Check `docs/operations/execution-board.md`.
-2. Pull engineering-owned tasks in `Ready` state.
+2. Pull engineering-owned tasks in `Ready`/`In Progress` state.
 3. Confirm prerequisites are complete.
 4. Update this playbook status table when you start/finish.
 
@@ -17,30 +17,26 @@ Deliver reliable local runtime capability and core feature implementation for MV
 
 - [x] Core module interfaces scaffolded (`Conversation`, `Inference`, `Routing`, `Tool`, `Memory`, `Policy`, `Observability`)
 - [x] Android-first scaffolding and benchmark scripts established
-- [x] Foundational docs and architecture ADRs complete
-- [x] ENG-01 completed: Gradle wrapper + one-command verification baseline (`docs/operations/evidence/wp-01/2026-03-03-eng-01.md`)
-- [x] ENG-02 completed: CI workflow for clean/test + test artifact upload (`docs/operations/evidence/wp-01/2026-03-03-eng-02.md`)
-- [x] ENG-03 completed: real Android runtime bridge path integrated with physical-device 10-run evidence (`docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`)
-- [x] ENG-OPS completed: engineering foundations simplification (strict PR gates, canonical docs, benchmark automation wrapper, Android app + host lane split) (`docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`)
-- [x] ENG-04 completed: artifact-manifest startup validation enforced, placeholder checksum removed from active Stage-2 path, QA handoff unblocked (`docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`)
-- [x] ENG-05 completed (engineering scope): routing matrix boundary tests, runtime policy enforcement checks, diagnostics redaction checks (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`)
-- [x] ENG-06 completed: tool runtime strict schema validation productionized with deterministic error-contract stability coverage and package-level CI/governance acceptance evidence (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
+- [x] ENG-01 completed: Gradle wrapper + one-command verification baseline
+- [x] ENG-02 completed: CI workflow baseline
+- [x] ENG-03 completed: real Android runtime bridge + physical-device evidence
+- [x] ENG-04 completed: artifact-manifest startup validation + checksum lifecycle gate
+- [x] ENG-05 completed: routing/policy/diagnostics hardening
+- [x] ENG-06 completed: strict schema-safe tool runtime productionization
+- [x] ENG-07 completed: SQLite memory backend + pruning
+- [x] ENG-08 completed: runtime image path hardening
 
 ## What Is In Progress
 
-- [ ] None
-
-## What Is Done (Recent)
-
-- [x] ENG-07 SQLite memory backend + pruning closeout complete; QA-05 unblocked (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
-- [x] ENG-08 image path production hardening closeout complete (`docs/operations/evidence/wp-06/2026-03-04-eng-08.md`)
+- [ ] ENG-10 WP-11 Compose MVP UI implementation (runtime façade + chat/session/image/tool UX + advanced controls)
 
 ## Lead Eng Dispatch (Now)
 
 1. Run in parallel:
-   - WP-06 is closed (ENG-07 + ENG-08 + QA-05); support QA-led WP-07 Stage-6 hardening execution
+   - support WP-07 closure (Stage-6 hardening packet)
+   - execute WP-11 UI implementation and integration tests
 2. Handoff trigger:
-   - Start QA-06 soak/go-no-go packet under WP-07
+   - QA starts QA-08 once first integrated UI slice lands
 
 ## Task Queue
 
@@ -53,7 +49,8 @@ Deliver reliable local runtime capability and core feature implementation for MV
 | ENG-05 | Routing + policy hardening with boundary tests | Done | ENG-04 | Runtime Eng | `docs/operations/evidence/wp-04/2026-03-04-eng-05.md` |
 | ENG-06 | Tool runtime strict schema validation | Done | ENG-04 | Platform Eng | `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md` |
 | ENG-07 | SQLite memory backend + pruning | Done | ENG-05 | Core Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md` |
-| ENG-08 | Image path production hardening | Done | ENG-07 | Runtime Eng | `docs/feasibility/benchmark-protocol.md`, `docs/operations/evidence/wp-06/2026-03-04-eng-08.md` |
+| ENG-08 | Image path production hardening | Done | ENG-07 | Runtime Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-08.md` |
+| ENG-10 | WP-11 Compose chat UX + runtime façade + session persistence + advanced controls | In Progress | WP-06 | Android Runtime Eng | `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
 | ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
 
@@ -61,33 +58,13 @@ Deliver reliable local runtime capability and core feature implementation for MV
 
 1. Tests added/updated for changed behavior.
 2. No policy/security regressions introduced.
-3. Required benchmark or runtime evidence attached for stage tasks.
+3. Required benchmark/runtime/UI evidence attached for stage tasks.
 4. `execution-board.md` and this file status updated.
-
-## Evidence Log
-
-- 2026-03-03: ENG-01 evidence captured in `docs/operations/evidence/wp-01/2026-03-03-eng-01.md`
-- 2026-03-03: ENG-02 evidence captured in `docs/operations/evidence/wp-01/2026-03-03-eng-02.md`
-- 2026-03-03: ENG-03 runtime bridge integration evidence captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03.md`
-- 2026-03-03: ENG-03 automation foundation update captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03-automation-foundation.md`
-- 2026-03-03: ENG-03 device pass 01 captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-01.md`
-- 2026-03-03: ENG-03 device pass 02 captured in `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md`
-- 2026-03-03: ENG-04 artifact lifecycle evidence (parallel in progress) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-04.md`
-- 2026-03-03: ENG-04 closeout evidence (active Stage-2 startup path enforces checksum metadata and removes placeholder ambiguity) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`
-- 2026-03-04: ENG-05 routing/policy/diagnostics hardening implementation evidence captured in `docs/operations/evidence/wp-04/2026-03-04-eng-05.md`
-- 2026-03-03: ENG-06 tool schema hardening evidence (parallel in progress) captured in `docs/operations/evidence/wp-05/2026-03-03-eng-06.md`
-- 2026-03-04: ENG-06 package closeout evidence (deterministic validation-contract stability + package-level CI/governance acceptance) captured in `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`
-- 2026-03-04: ENG-07 memory productionization kickoff evidence captured in `docs/operations/evidence/wp-06/2026-03-04-eng-07.md`
-- 2026-03-04: ENG-07 memory productionization closeout evidence (SQLite persistence + pruning + deterministic image contract tests) captured in `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`
-- 2026-03-04: ENG-08 image-path production hardening closeout evidence (runtime routing/model lifecycle integration + deterministic validation contract coverage) captured in `docs/operations/evidence/wp-06/2026-03-04-eng-08.md`
-- 2026-03-03: ENG-OPS engineering foundations simplification captured in `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md`
-- 2026-03-03: ENG devctl DX consolidation (config-driven orchestrator + Maestro/Espresso lanes) captured in `docs/operations/evidence/wp-03/2026-03-03-eng-devctl-dx-consolidation.md`
-- 2026-03-03: Platform governance hardening refresh with governance self-test coverage captured in `docs/operations/evidence/wp-03/2026-03-03-eng-platform-governance-refresh.md`
 
 ## Engineering References
 
 - `docs/operations/execution-board.md`
-- `docs/roadmap/next-steps-execution-plan.md`
 - `docs/roadmap/mvp-implementation-tracker.md`
 - `docs/testing/test-strategy.md`
+- `docs/testing/android-dx-and-test-playbook.md`
 - `docs/architecture/modular-monolith.md`

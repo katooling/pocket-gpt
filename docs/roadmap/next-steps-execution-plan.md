@@ -112,6 +112,10 @@ Exit criteria:
 
 Goal: gather confidence evidence and make a defensible go/no-go call.
 
+Status (2026-03-04): In progress. QA-06 soak evidence is complete; final packet signoff is pending and external beta is additionally gated by WP-11 user-facing UI closure.
+
+Status (2026-03-04): In progress for WP-07. QA-06 soak evidence and Engineering Stage-6 startup/crash resilience support closeout are complete; final packet signatures remain open.
+
 Deliverables:
 
 1. 30-minute soak runs on target device classes.
@@ -122,7 +126,8 @@ Exit criteria:
 
 1. Scenario A/B/C thresholds pass on target Android mid-tier devices.
 2. No repeatable blocker issues in soak runs.
-3. Beta go/no-go decision recorded with evidence links.
+3. WP-11 UI acceptance suite (`UI-01`..`UI-10`) is complete with evidence links.
+4. Beta go/no-go decision recorded with Product + QA + Engineering signatures.
 
 ## Stage 7 - Post-MVP Voice Foundation (Next Horizon)
 
@@ -170,3 +175,6 @@ Exit criteria:
    - `docs/roadmap/product-roadmap.md`
    - `docs/roadmap/team-workstreams.md`
    - `docs/product/open-questions-log.md`
+9. External beta release requires dual-track closure:
+   - `WP-07 Done` (hardening)
+   - `WP-11 Done` (user-facing UI)
