@@ -32,7 +32,7 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-05 | Tool runtime safety productionization | Engineering | Security, QA | 4 | Yes | WP-03 | Done | Week 3-4 |
 | WP-06 | Memory + image productionization | Engineering | QA, Product | 5 | Partial | WP-04 | In Progress | Week 4-5 |
 | WP-07 | Beta hardening and go/no-go packet | QA | Eng, Product | 6 | No | WP-05, WP-06 | Backlog | Week 6 |
-| WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | In Progress | Week 4-6 |
+| WP-08 | MVP positioning and launch prep assets | Marketing | Product | 5 | Yes | WP-03 | Done | Week 4-6 |
 | WP-09 | Distribution plan and beta operations | Product | Marketing, QA | 6 | Yes | WP-07, WP-08 | Backlog | Week 6-7 |
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 7 | Yes | WP-07 | Backlog | Post-MVP |
 
@@ -41,8 +41,7 @@ All teams should update status here first, then mirror updates in role playbooks
 ### In Progress
 
 - [ ] WP-06 Memory + image productionization (QA-05 acceptance complete; ENG-08 hardening in progress)
-- [ ] PROD-03 acceptance checklist finalization (aligned; final beta closeout pending Stage 5/6 evidence)
-- [ ] MKT-02 competitor external sourcing pass (optional enhancement; publishable Pocket GPT claim set already locked)
+- [ ] PROD-03 acceptance checklist finalization (Stage 5 closed via WP-06 evidence; Stage 6 WP-07 soak/hardening signoff pending)
 
 ### Ready
 
@@ -71,6 +70,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] QA-05 Scenario C image + memory acceptance packet executed and passed (`docs/operations/evidence/wp-06/2026-03-04-qa-05.md`)
 - [x] WP-05 Tool runtime safety productionization package closeout complete (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
 - [x] WP-04 package closeout complete (routing/policy/diagnostics hardening with engineering+QA evidence) (`docs/operations/evidence/wp-04/2026-03-04-eng-05.md`, `docs/operations/evidence/wp-04/2026-03-04-qa-03.md`)
+- [x] WP-08 positioning and launch prep asset lock pass complete (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`, `docs/operations/evidence/wp-08/2026-03-04-prod-lock-pass.md`)
 - [x] PM/Prod dispatch packet published for WP-04/WP-05 owner-level scope, acceptance criteria, and dependencies (`docs/operations/evidence/wp-04/2026-03-04-pm-prod-dispatch-wp04-wp05.md`)
 - [x] PROD-01 launch workflows lock pass complete (2026-03-04)
 - [x] PROD-02 launch device policy lock pass complete (2026-03-04)
@@ -78,23 +78,17 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] MKT-02 competitor matrix lock pass complete with claim-risk labels and dependency tags (`docs/operations/mkt-02-competitor-matrix-template-draft.md`)
 - [x] WP-08 marketing lock-pass evidence note published (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`)
 
-## Immediate Assignments (PM Dispatch)
+## Immediate Assignments (Current Owners)
 
-1. Lead Eng - start now:
-   - ENG-04 gate for WP-03 is closed (`docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md`)
-   - ENG-06 package closeout complete; WP-05 is now marked Done (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
-   - ENG-07 closeout landed for WP-06 memory productionization (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`); continue ENG-08 image-path production hardening
-2. QA - start immediately after ENG-04 closeout:
-   - QA-02 closure refresh complete (`docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md`); recommend WP-03 package close decision
-   - QA-03 rerun complete and PASS (`docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`); QA-04 rerun complete and PASS (`docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`); QA-05 Scenario C + memory acceptance complete and PASS (`docs/operations/evidence/wp-06/2026-03-04-qa-05.md`)
-3. Product - start now in draft mode, finalize after WP-03 Done:
-   - `PROD-01` launch workflows finalized (lock pass complete 2026-03-04)
-   - `PROD-02` launch device support policy finalized (lock pass complete 2026-03-04)
-   - `PROD-03` acceptance checklist aligned to current validated scope; final beta closeout gated by Stage 5/6 evidence
-4. Marketing - start now in draft mode, finalize after WP-03 Done:
-   - `MKT-01` messaging architecture finalized (`docs/operations/mkt-01-messaging-architecture-draft.md`)
-   - `MKT-02` evidence-safe competitor matrix finalized with validated/provisional/excluded labeling (`docs/operations/mkt-02-competitor-matrix-template-draft.md`)
-   - lock-pass evidence note published (`docs/operations/evidence/wp-08/2026-03-04-mkt-lock-pass.md`)
+1. Engineering (Lead/Core/Runtime):
+   - Continue WP-06 via `ENG-08` image-path production hardening; support Stage-6 readiness handoff.
+2. QA:
+   - QA-01 through QA-05 are complete; prepare QA-06 soak packet for execution once WP-07 opens.
+3. Product:
+   - Continue `PROD-03` final acceptance checklist closure; Stage-6 signoff remains pending WP-07 evidence.
+4. Marketing:
+   - No active in-progress marketing task; WP-08 lock-pass is complete.
+   - Keep `MKT-03`/`MKT-04` in backlog until WP-07/WP-09 timing gates open.
 
 ## Evidence Log
 
