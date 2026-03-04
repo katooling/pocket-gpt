@@ -34,21 +34,20 @@ Define launch messaging across privacy, reliability, and utility with explicit c
 | U-02 | Utility | H1 scope includes 3-5 local deterministic tools and Memory v1. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/roadmap/product-roadmap.md` |
 | U-03 | Utility | Single-image understanding is included in MVP scope direction. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/roadmap/product-roadmap.md`, `docs/product/feature-catalog.md` |
 | U-04 | Utility | Claim publication must respect reliability-gate discipline. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/product/feature-catalog.md`, `docs/testing/test-strategy.md` |
-| Q-01 | Reliability | Scenario C and memory quality outcomes are complete. | Provisional | No | `DEP-WP06-STAGE5` | `docs/testing/test-strategy.md`, `docs/operations/execution-board.md` |
-| Q-02 | Reliability | Soak/go-no-go packet outcomes are complete. | Provisional | No | `DEP-WP07-STAGE6` | `docs/testing/test-strategy.md`, `docs/operations/execution-board.md` |
+| Q-01 | Reliability | Scenario C and memory quality outcomes are complete. | Validated | Yes | `DEP-WP06-CLOSED` | `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`, `docs/operations/execution-board.md` |
+| Q-02 | Reliability | Soak/go-no-go packet outcomes are complete. | Validated | Yes | `DEP-WP07-CLOSED` | `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`, `docs/operations/execution-board.md` |
 | X-01 | Utility | iOS parity is available now. | Excluded | No | `DEP-H2-NOT-SHIPPED` | `docs/roadmap/product-roadmap.md` |
 | X-02 | Utility | Voice mode/STT/TTS is available now. | Excluded | No | `DEP-H3-NOT-SHIPPED` | `docs/roadmap/product-roadmap.md` |
 
 ## Finalized Messaging Pillars (Publishable)
 
 1. Privacy: `Local-first by default, with privacy and policy controls treated as release-gated requirements.`
-2. Reliability: `Validated real-device evidence demonstrates Scenario A/B threshold pass on the current artifact-validated runtime path.`
+2. Reliability: `Validated real-device evidence demonstrates Scenario A/B/C threshold pass and soak/go-no-go closeout on the artifact-validated runtime path.`
 3. Utility: `Current MVP scope focuses on offline chat, streaming, local tools, memory v1, and single-image support.`
 
 ## Non-Publishable Queue
 
-1. `Provisional`: Scenario C outcomes, soak outcomes.
-2. `Excluded`: iOS-now claims, voice-now claims, universal performance guarantees.
+1. `Excluded`: iOS-now claims, voice-now claims, universal performance guarantees.
 
 ## Lock Pass Outcome
 

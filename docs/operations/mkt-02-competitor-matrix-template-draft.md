@@ -1,7 +1,7 @@
 # MKT-02 Competitor Matrix (Evidence-Safe, Post-WP-03)
 
 Last updated: 2026-03-04
-Status: Finalized for Pocket GPT claim set; competitor cells remain source-gated
+Status: Finalized for Pocket GPT claim set; competitor snapshot sourced (ChatGPT/Gemini/Claude)
 Owner: Product Marketing
 Prerequisites: MKT-01 baseline complete, WP-03 marked Done
 
@@ -11,6 +11,21 @@ Prerequisites: MKT-01 baseline complete, WP-03 marked Done
 2. Each claim is labeled: `Validated`, `Provisional`, or `Excluded`.
 3. Only `Validated` claims are publishable.
 4. Competitor cells require external citation; otherwise must be `Unknown`.
+
+## External Source Register (2026-03-04 Snapshot)
+
+Competitor columns in this file are fixed as:
+1. Competitor A = ChatGPT (OpenAI)
+2. Competitor B = Gemini Apps (Google)
+3. Competitor C = Claude (Anthropic)
+
+Primary external sources:
+1. OpenAI Data Controls FAQ: [help.openai.com/en/articles/7730893-data-controls-faq](https://help.openai.com/en/articles/7730893-data-controls-faq)
+2. OpenAI Voice Mode FAQ: [help.openai.com/en/articles/8400625-voice-mode-faq](https://help.openai.com/en/articles/8400625-voice-mode-faq)
+3. Google Gemini privacy hub: [support.google.com/gemini/answer/13594961](https://support.google.com/gemini/answer/13594961)
+4. Google Gemini apps availability: [support.google.com/gemini/answer/16103362](https://support.google.com/gemini/answer/16103362)
+5. Anthropic training usage policy: [support.anthropic.com/en/articles/7996868-is-my-data-used-for-model-training](https://support.anthropic.com/en/articles/7996868-is-my-data-used-for-model-training)
+6. Anthropic voice mode mobile apps: [support.anthropic.com/en/articles/12304248-how-to-use-voice-mode-with-claude-mobile-apps](https://support.anthropic.com/en/articles/12304248-how-to-use-voice-mode-with-claude-mobile-apps)
 
 ## Claim Risk Register
 
@@ -28,31 +43,30 @@ Prerequisites: MKT-01 baseline complete, WP-03 marked Done
 | U-02 | H1 includes 3-5 local deterministic tools + Memory v1. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/roadmap/product-roadmap.md` |
 | U-03 | Single-image understanding is in MVP scope direction. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/roadmap/product-roadmap.md`, `docs/product/feature-catalog.md` |
 | U-04 | Feature claims must respect reliability gate discipline. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/product/feature-catalog.md`, `docs/testing/test-strategy.md` |
-| X-01 | Scenario C/memory quality pass complete. | Provisional | No | `DEP-WP06-STAGE5` | `docs/roadmap/product-roadmap.md`, `docs/testing/test-strategy.md` |
-| X-02 | Soak/go-no-go packet complete. | Provisional | No | `DEP-WP07-STAGE6` | `docs/testing/test-strategy.md`, `docs/operations/execution-board.md` |
+| X-01 | Scenario C/memory quality pass complete. | Validated | Yes | `DEP-WP06-CLOSED` | `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`, `docs/operations/execution-board.md` |
+| X-02 | Soak/go-no-go packet complete. | Validated | Yes | `DEP-WP07-CLOSED` | `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`, `docs/operations/execution-board.md` |
 | X-03 | iOS parity available now. | Excluded | No | `DEP-H2-NOT-SHIPPED` | `docs/roadmap/product-roadmap.md` |
 | X-04 | Voice mode/STT/TTS available now. | Excluded | No | `DEP-H3-NOT-SHIPPED` | `docs/roadmap/product-roadmap.md` |
 | X-05 | Universal device performance guarantee. | Excluded | No | `DEP-NO-EVIDENCE` | WP-03 evidence limited to tested runs/devices |
 
 ## Competitor Matrix (Publishable Rows Only)
 
-Note: Competitor data is intentionally unfilled until sourced. Use `Unknown` where evidence is not yet cited.
+Note: `Unknown` is preserved where no source-backed statement was found.  
+Note: Cells explicitly marked `Inference` are reasoned from cited data-handling statements, not direct vendor wording.
 
-| Capability | Pocket GPT (publishable text) | Competitor A | Competitor B | Competitor C | Claim label | Dependency tag |
+| Capability | Pocket GPT (publishable text) | ChatGPT (OpenAI) | Gemini Apps (Google) | Claude (Anthropic) | Claim label | Dependency tag |
 |---|---|---|---|---|---|---|
-| Local-first default posture | Privacy-first, local-first by default in product vision. | Unknown | Unknown | Unknown | Validated | `DEP-WP03-CLOSED` |
-| Cloud dependency default path | Cloud-dependent default path is out of current MVP scope. | Unknown | Unknown | Unknown | Validated | `DEP-WP03-CLOSED` |
-| Policy/privacy gate discipline | Privacy and policy controls are explicitly release-gated. | Unknown | Unknown | Unknown | Validated | `DEP-WP03-CLOSED` |
-| Real-device reliability evidence | Real-device Scenario A/B evidence exists with threshold PASS. | Unknown | Unknown | Unknown | Validated | `DEP-QA02-CLOSEOUT` |
-| Reproducible artifact policy | Artifact + evidence linkage policy is defined for stage closure. | Unknown | Unknown | Unknown | Validated | `DEP-WP03-CLOSED` |
-| MVP utility scope | H1/MVP scope includes offline chat, streaming, local tools, memory, and single-image path. | Unknown | Unknown | Unknown | Validated | `DEP-WP03-CLOSED` |
+| Local-first default posture | Privacy-first, local-first by default in product vision. | No local-first-default claim found in sourced docs (`Unknown` for local-first parity). | No local-first-default claim found in sourced docs (`Unknown` for local-first parity). | No local-first-default claim found in sourced docs (`Unknown` for local-first parity). | Validated | `DEP-WP03-CLOSED` |
+| Cloud dependency default path | Cloud-dependent default path is out of current MVP scope. | `Inference`: cloud-processed by default based on account/data-control and training controls docs. | `Inference`: cloud-processed by default; Gemini Apps data may be reviewed and retained per privacy hub controls. | `Inference`: Free/Pro conversations may be used for model improvement by default; opt-out available. | Validated | `DEP-WP03-CLOSED` |
+| Policy/privacy gate discipline | Privacy and policy controls are explicitly release-gated. | Training can be disabled; Temporary Chats not used to train. | Gemini Apps activity and deletion controls are documented; some data may be reviewed by humans. | Training policy differs by tier (Free/Pro opt-out; Team/Enterprise/API default no training). | Validated | `DEP-WP03-CLOSED` |
+| Real-device reliability evidence | Real-device Scenario A/B evidence exists with threshold PASS. | Unknown (no public Scenario-style threshold packet in sourced docs). | Unknown (no public Scenario-style threshold packet in sourced docs). | Unknown (no public Scenario-style threshold packet in sourced docs). | Validated | `DEP-QA02-CLOSEOUT` |
+| Reproducible artifact policy | Artifact + evidence linkage policy is defined for stage closure. | Unknown (no artifact-path policy equivalent found in sourced docs). | Unknown (no artifact-path policy equivalent found in sourced docs). | Unknown (no artifact-path policy equivalent found in sourced docs). | Validated | `DEP-WP03-CLOSED` |
+| MVP utility scope | H1/MVP scope includes offline chat, streaming, local tools, memory, and single-image path. | Mobile app controls exist (iOS/Android settings) and voice mode is available on mobile apps. | Gemini Apps support includes Android, iOS, and web availability. | Voice mode is supported on Claude mobile apps (iOS/Android). | Validated | `DEP-WP03-CLOSED` |
 
 ## Non-Publishable Claims Queue
 
 | Claim | Label | Blocker |
 |---|---|---|
-| Scenario C and memory quality outcomes | Provisional | Stage 5/WP-06 evidence not yet complete |
-| Soak reliability and beta go/no-go outcomes | Provisional | Stage 6/WP-07 evidence not yet complete |
 | iOS parity available now | Excluded | H2 target, not current shipped scope |
 | Voice conversation mode available now | Excluded | H3 target, not current shipped scope |
 | Universal device-class performance statement | Excluded | No broad evidence basis |

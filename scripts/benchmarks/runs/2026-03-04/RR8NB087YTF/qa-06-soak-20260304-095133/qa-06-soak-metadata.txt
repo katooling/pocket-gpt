@@ -1,0 +1,7 @@
+device=RR8NB087YTF
+start_utc=2026-03-04T02:51:27Z
+end_utc=2026-03-04T03:22:03Z
+duration_seconds=1836
+duration_minutes=30.6
+loop_runs=1
+scenario_command=while [ $SECONDS -lt $((SECONDS+1800)) ]; do ./gradlew --no-daemon :apps:mobile-android-host:run; done

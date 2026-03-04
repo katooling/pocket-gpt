@@ -64,3 +64,48 @@ Track these questions continuously so engineering, product, and go-to-market sta
 9. Which UI architecture path should be used for MVP?
    - Resolved in product recovery implementation.
    - Decision: Jetpack Compose + ViewModel with an app-facing runtime façade (`MvpRuntimeFacade`) and advanced controls in sheet UX.
+10. Is external beta still blocked after WP-07 packet signoff and WP-11 closure?
+   - Resolved by final Product/QA/Engineering gate approvals on 2026-03-04.
+   - Decision: no remaining Product/QA gate blocker; proceed with WP-09 distribution + beta operations execution.
+11. When can marketing show a real screenshot of the app doing useful work?
+   - Resolved by gate evidence review.
+   - Decision: start screenshot/video capture now for launch assets; publish externally only after asset QA and copy QA pass.
+   - References:
+     - `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`
+     - `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`
+12. Should marketing wait for real inference or start with architecture/privacy story?
+   - Resolved by messaging sequencing rule.
+   - Decision: run both in sequence now: architecture/privacy + reliability proof first, paired with real inference screenshots/video in the same launch cycle.
+   - References:
+     - `docs/operations/mkt-01-messaging-architecture-draft.md`
+     - `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md`
+13. Who should first beta testers be: technical community or general consumers?
+   - Resolved by staged rollout strategy.
+   - Decision: start with technical communities and closed cohorts, then broaden after first feedback/activation loop stabilizes.
+   - References:
+     - `docs/operations/mkt-03-launch-channel-test-plan-draft.md`
+     - [support.google.com/googleplay/android-developer/answer/9845334](https://support.google.com/googleplay/android-developer/answer/9845334)
+14. Is privacy-first positioning strong enough without a working demo?
+   - Resolved by conversion-risk policy.
+   - Decision: privacy-first alone is insufficient for launch conversion; require real product proof (screenshots/video + evidence links) on primary launch surfaces.
+   - References:
+     - `docs/operations/mkt-01-messaging-architecture-draft.md`
+     - `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md`
+15. What does the competitor landscape look like now that matrix cells were unknown?
+   - Resolved by external source-backed snapshot.
+   - Decision: matrix now has sourced baseline for ChatGPT/Gemini/Claude; reliability artifact parity remains explicitly `Unknown` where no public equivalent evidence packet exists.
+   - References:
+     - `docs/operations/mkt-02-competitor-matrix-template-draft.md`
+     - `docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`
+16. Which launch distribution path should be used first: Play Store, direct APK, or community beta?
+   - Resolved by channel-governance decision.
+   - Decision: primary path is Google Play internal/closed testing + community recruitment funnel; direct APK is contingency-only for tightly controlled technical testers.
+   - References:
+     - [support.google.com/googleplay/android-developer/answer/9845334](https://support.google.com/googleplay/android-developer/answer/9845334)
+     - [support.google.com/googleplay/android-developer/answer/16360545](https://support.google.com/googleplay/android-developer/answer/16360545)
+17. For ENG-12, what model artifact distribution path and provenance policy should engineering implement now?
+   - Resolved by Product decision for WP-12 backend runtime closure.
+   - Decision: side-load (manual/internal only) as the single default path; model load is hard-blocked unless manifest + SHA-256 + provenance signature checks pass.
+   - References:
+     - `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
+     - `docs/operations/execution-board.md`

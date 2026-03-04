@@ -18,3 +18,26 @@
 1. Weekly review during Phase 0 and Phase 1.
 2. Track mitigation status and residual risk.
 3. Update go/no-go recommendation with unresolved high risks.
+
+## Stage-6 Review Update (2026-03-04)
+
+Evidence reviewed:
+
+1. `docs/operations/evidence/wp-07/2026-03-04-qa-06.md`
+2. `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`
+3. `docs/operations/evidence/wp-06/2026-03-04-eng-08.md`
+4. `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`
+5. `docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`
+6. `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`
+
+Risk posture notes:
+
+1. `R-002` (thermal throttling): reduced likelihood for current tested device class due to QA-06 30.6-minute soak PASS with no crash/OOM/ANR signatures; residual OEM variability remains.
+2. `R-005` (privacy claims divergence): mitigation evidence improved via diagnostics redaction/policy rejection regressions (QA-03 rerun PASS).
+3. `R-006` (tool injection/execution abuse): mitigation evidence improved via WP-05 closeout contract stability and adversarial coverage.
+4. `R-001` and `R-003` remain active medium/high launch-watch items until broader multi-device Stage-6 evidence expands beyond current executed hardware.
+
+Go/no-go impact:
+
+1. No new blocker risk introduced by current Stage-6 QA evidence set.
+2. Residual high risks are tracked and require continued monitoring through WP-07 closure.

@@ -1,0 +1,72 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.13/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :packages:memory:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:tool-runtime:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:core-domain:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :packages:inference-adapters:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :apps:mobile-android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :apps:mobile-android:preBuild UP-TO-DATE
+> Task :apps:mobile-android:preDebugBuild UP-TO-DATE
+> Task :packages:inference-adapters:processResources NO-SOURCE
+> Task :apps:mobile-android:generateDebugBuildConfig UP-TO-DATE
+> Task :packages:core-domain:compileKotlin UP-TO-DATE
+> Task :packages:tool-runtime:compileKotlin UP-TO-DATE
+> Task :packages:memory:compileKotlin UP-TO-DATE
+> Task :packages:memory:compileJava NO-SOURCE
+> Task :packages:core-domain:compileJava NO-SOURCE
+> Task :packages:tool-runtime:compileJava NO-SOURCE
+> Task :packages:memory:processResources NO-SOURCE
+> Task :packages:core-domain:processResources NO-SOURCE
+> Task :packages:tool-runtime:processResources NO-SOURCE
+> Task :packages:memory:classes UP-TO-DATE
+> Task :packages:tool-runtime:classes UP-TO-DATE
+> Task :packages:core-domain:classes UP-TO-DATE
+> Task :packages:core-domain:jar UP-TO-DATE
+> Task :packages:tool-runtime:jar UP-TO-DATE
+> Task :packages:memory:jar UP-TO-DATE
+> Task :packages:inference-adapters:compileKotlin UP-TO-DATE
+> Task :packages:inference-adapters:compileJava NO-SOURCE
+> Task :packages:inference-adapters:classes UP-TO-DATE
+> Task :packages:inference-adapters:jar UP-TO-DATE
+> Task :apps:mobile-android:checkDebugAarMetadata UP-TO-DATE
+> Task :apps:mobile-android:generateDebugResValues UP-TO-DATE
+> Task :apps:mobile-android:mapDebugSourceSetPaths UP-TO-DATE
+> Task :apps:mobile-android:generateDebugResources UP-TO-DATE
+> Task :apps:mobile-android:mergeDebugResources UP-TO-DATE
+> Task :apps:mobile-android:packageDebugResources UP-TO-DATE
+> Task :apps:mobile-android:parseDebugLocalResources UP-TO-DATE
+> Task :apps:mobile-android:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :apps:mobile-android:extractDeepLinksDebug UP-TO-DATE
+> Task :apps:mobile-android:processDebugMainManifest UP-TO-DATE
+> Task :apps:mobile-android:processDebugManifest UP-TO-DATE
+> Task :apps:mobile-android:processDebugManifestForPackage UP-TO-DATE
+> Task :apps:mobile-android:processDebugResources UP-TO-DATE
+> Task :apps:mobile-android:compileDebugKotlin UP-TO-DATE
+> Task :apps:mobile-android:javaPreCompileDebug UP-TO-DATE
+> Task :apps:mobile-android:compileDebugJavaWithJavac UP-TO-DATE
+> Task :apps:mobile-android:bundleDebugClassesToRuntimeJar UP-TO-DATE
+> Task :apps:mobile-android:bundleDebugClassesToCompileJar UP-TO-DATE
+> Task :apps:mobile-android:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :apps:mobile-android:preDebugUnitTestBuild UP-TO-DATE
+> Task :apps:mobile-android:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :apps:mobile-android:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :apps:mobile-android:mergeDebugShaders UP-TO-DATE
+> Task :apps:mobile-android:compileDebugShaders NO-SOURCE
+> Task :apps:mobile-android:generateDebugAssets UP-TO-DATE
+> Task :apps:mobile-android:mergeDebugAssets UP-TO-DATE
+> Task :apps:mobile-android:packageDebugUnitTestForUnitTest UP-TO-DATE
+> Task :apps:mobile-android:generateDebugUnitTestConfig UP-TO-DATE
+> Task :apps:mobile-android:processDebugJavaRes UP-TO-DATE
+> Task :apps:mobile-android:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :apps:mobile-android:testDebugUnitTest UP-TO-DATE
+
+[Incubating] Problems report is available at: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.13/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 10s
+36 actionable tasks: 36 up-to-date
