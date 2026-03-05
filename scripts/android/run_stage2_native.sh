@@ -32,6 +32,14 @@ WARMUP_MAX_TOKENS="${POCKETGPT_STAGE2_WARMUP_MAX_TOKENS:-}"
 MODEL_0_8B_PATH="${POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH:-}"
 MODEL_2B_PATH="${POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH:-}"
 MODEL_PROVISION_SKIPPED="${POCKETGPT_STAGE2_MODEL_PROVISION_SKIPPED:-unknown}"
+PREFIX_CACHE_ENABLED="${POCKETGPT_PREFIX_CACHE_ENABLED:-1}"
+PREFIX_CACHE_STRICT="${POCKETGPT_PREFIX_CACHE_STRICT:-0}"
+
+TOTAL_PREFIX_CACHE_HITS=0
+TOTAL_PREFIX_CACHE_MISSES=0
+TOTAL_PREFILL_REUSED_TOKENS=0
+PREFIX_CACHE_LOGS_MISSING=0
+WARM_VS_COLD_FIRST_TOKEN_DELTA_MS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -154,7 +162,7 @@ if [[ "${PROFILE}" == "closure" ]]; then
 fi
 
 if [[ -z "${RUNS}" ]]; then
-  RUNS="$([[ "${PROFILE}" == "quick" ]] && echo "1" || echo "3")"
+  RUNS="$([[ "${PROFILE}" == "quick" ]] && echo "2" || echo "3")"
 fi
 if [[ -z "${MAX_TOKENS_A}" ]]; then
   MAX_TOKENS_A="$([[ "${PROFILE}" == "quick" ]] && echo "4" || echo "128")"
@@ -205,6 +213,14 @@ if ! [[ "${WARMUP_MAX_TOKENS}" =~ ^[0-9]+$ ]]; then
 fi
 if [[ "${LOGCAT_MODE}" != "filtered" && "${LOGCAT_MODE}" != "full" ]]; then
   echo "--logcat must be filtered or full" >&2
+  exit 1
+fi
+if [[ "${PREFIX_CACHE_ENABLED}" != "0" && "${PREFIX_CACHE_ENABLED}" != "1" ]]; then
+  echo "POCKETGPT_PREFIX_CACHE_ENABLED must be 0 or 1" >&2
+  exit 1
+fi
+if [[ "${PREFIX_CACHE_STRICT}" != "0" && "${PREFIX_CACHE_STRICT}" != "1" ]]; then
+  echo "POCKETGPT_PREFIX_CACHE_STRICT must be 0 or 1" >&2
   exit 1
 fi
 
@@ -511,7 +527,7 @@ append_logcat_block() {
   if [[ "${LOGCAT_MODE}" == "filtered" ]]; then
     {
       printf '===== %s =====\n' "${sweep_label}"
-      grep -E 'STAGE2_METRIC|NATIVE_JNI|ADB_FALLBACK|FATAL EXCEPTION|OutOfMemoryError|ANR in com\.pocketagent\.android|Application Not Responding' "${logcat_case}" || true
+      grep -E 'STAGE2_METRIC|PREFIX_CACHE|NATIVE_JNI|ADB_FALLBACK|FATAL EXCEPTION|OutOfMemoryError|ANR in com\.pocketagent\.android|Application Not Responding' "${logcat_case}" || true
       printf '\n'
     } >> "${LOGCAT_PATH}"
     return
@@ -522,6 +538,45 @@ append_logcat_block() {
     cat "${logcat_case}"
     printf '\n'
   } >> "${LOGCAT_PATH}"
+}
+
+collect_prefix_cache_stats() {
+  local logcat_case="$1"
+  python3 - "${logcat_case}" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+hits = 0
+misses = 0
+reused_tokens = 0
+missing = 1
+pattern = re.compile(r'PREFIX_CACHE\|([^\r\n]+)')
+
+with open(path, "r", encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        match = pattern.search(line)
+        if not match:
+            continue
+        missing = 0
+        fields = {}
+        for part in match.group(1).split("|"):
+            if "=" not in part:
+                continue
+            key, value = part.split("=", 1)
+            fields[key.strip()] = value.strip()
+        hit_value = fields.get("hit", "").lower()
+        if hit_value in {"1", "true", "yes"}:
+            hits += 1
+        else:
+            misses += 1
+        try:
+            reused_tokens += int(fields.get("reused_tokens", "0"))
+        except ValueError:
+            pass
+
+print(f"{hits} {misses} {reused_tokens} {missing}")
+PY
 }
 
 run_model_sweep() {
@@ -545,11 +600,26 @@ run_model_sweep() {
     -e stage2_max_tokens_b "${MAX_TOKENS_B}" \
     -e stage2_min_tokens "${MIN_TOKENS}" \
     -e stage2_warmup_max_tokens "${WARMUP_MAX_TOKENS}" \
+    -e stage2_prefix_cache_enabled "${PREFIX_CACHE_ENABLED}" \
+    -e stage2_prefix_cache_strict "${PREFIX_CACHE_STRICT}" \
     "${TEST_RUNNER}" | tee "${instrument_output}"
 
   adb_retry logcat -d > "${logcat_case}"
   adb_retry shell dumpsys meminfo "${PACKAGE_NAME}" > "${meminfo_case}"
   append_logcat_block "${sweep_label}" "${logcat_case}"
+
+  local cache_hits cache_misses cache_reused cache_missing
+  read -r cache_hits cache_misses cache_reused cache_missing < <(collect_prefix_cache_stats "${logcat_case}")
+  TOTAL_PREFIX_CACHE_HITS=$((TOTAL_PREFIX_CACHE_HITS + cache_hits))
+  TOTAL_PREFIX_CACHE_MISSES=$((TOTAL_PREFIX_CACHE_MISSES + cache_misses))
+  TOTAL_PREFILL_REUSED_TOKENS=$((TOTAL_PREFILL_REUSED_TOKENS + cache_reused))
+  if [[ "${cache_missing}" -eq 1 ]]; then
+    PREFIX_CACHE_LOGS_MISSING=1
+  fi
+  if [[ "${PROFILE}" == "quick" && "${PREFIX_CACHE_ENABLED}" == "1" && "${cache_missing}" -eq 1 ]]; then
+    echo "Prefix-cache counters missing from logcat for ${sweep_label} while cache is enabled." >&2
+    exit 1
+  fi
 
   local metric_lines=()
   local metric_lines_raw
@@ -583,6 +653,12 @@ run_model_sweep() {
       B) saw_b=1 ;;
       *) continue ;;
     esac
+
+    local warm_delta
+    warm_delta="$(metric_value "${metric_line}" "warm_vs_cold_first_token_delta_ms")"
+    if [[ "${model_id}" == "${MODEL_0_8B_ID}" && "${scenario}" == "A" && -n "${warm_delta}" ]]; then
+      WARM_VS_COLD_FIRST_TOKEN_DELTA_MS="${warm_delta}"
+    fi
 
     if [[ "${model_id}" == "${MODEL_0_8B_ID}" ]]; then
       if [[ "${scenario}" == "A" ]]; then
@@ -771,6 +847,13 @@ GIT_SHA="$(git rev-parse --short HEAD)"
   echo "- Install mode: ${INSTALL_MODE}"
   echo "- APK install skipped: ${APK_INSTALL_SKIPPED}"
   echo "- Runtime: NATIVE_JNI"
+  echo "- Prefix cache enabled: ${PREFIX_CACHE_ENABLED}"
+  echo "- Prefix cache strict: ${PREFIX_CACHE_STRICT}"
+  echo "- Prefix cache hits: ${TOTAL_PREFIX_CACHE_HITS}"
+  echo "- Prefix cache misses: ${TOTAL_PREFIX_CACHE_MISSES}"
+  echo "- Prefill tokens reused: ${TOTAL_PREFILL_REUSED_TOKENS}"
+  echo "- Prefix cache logs missing: ${PREFIX_CACHE_LOGS_MISSING}"
+  echo "- Warm-vs-cold first token delta ms: ${WARM_VS_COLD_FIRST_TOKEN_DELTA_MS:-n/a}"
   echo "- Logcat mode: ${LOGCAT_MODE}"
   echo "- 0.8B model path: ${MODEL_0_8B_PATH}"
   echo "- 2B model path: ${MODEL_2B_PATH}"
@@ -797,6 +880,13 @@ STAGE2_APK_INSTALL_SKIPPED=${APK_INSTALL_SKIPPED}
 STAGE2_MODEL_PROVISION_SKIPPED=${MODEL_PROVISION_SKIPPED}
 STAGE2_STRICT_THRESHOLDS=${STRICT_THRESHOLDS}
 STAGE2_MODEL_LOAD_MODE=${MODEL_LOAD_MODE}
+STAGE2_PREFIX_CACHE_ENABLED=${PREFIX_CACHE_ENABLED}
+STAGE2_PREFIX_CACHE_STRICT=${PREFIX_CACHE_STRICT}
+STAGE2_PREFIX_CACHE_HITS=${TOTAL_PREFIX_CACHE_HITS}
+STAGE2_PREFIX_CACHE_MISSES=${TOTAL_PREFIX_CACHE_MISSES}
+STAGE2_PREFILL_TOKENS_REUSED=${TOTAL_PREFILL_REUSED_TOKENS}
+STAGE2_PREFIX_CACHE_LOGS_MISSING=${PREFIX_CACHE_LOGS_MISSING}
+STAGE2_WARM_VS_COLD_FIRST_TOKEN_DELTA_MS=${WARM_VS_COLD_FIRST_TOKEN_DELTA_MS:-}
 META
 
 echo "Stage-2 native artifacts written to ${RUN_DIR}"

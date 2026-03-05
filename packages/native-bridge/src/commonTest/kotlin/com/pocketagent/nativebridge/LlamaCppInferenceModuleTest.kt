@@ -54,6 +54,24 @@ class LlamaCppInferenceModuleTest {
         val module = LlamaCppInferenceModule(FakeBridge(backend = RuntimeBackend.ADB_FALLBACK))
         assertEquals(RuntimeBackend.ADB_FALLBACK, module.runtimeBackend())
     }
+
+    @Test
+    fun `generate stream with cache delegates cache key and policy`() {
+        val bridge = FakeBridge()
+        val module = LlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+
+        module.generateStreamWithCache(
+            request = InferenceRequest("hello", 32),
+            cacheKey = "cache-key-v1",
+            cachePolicy = CachePolicy.PREFIX_KV_REUSE,
+            onToken = {},
+        )
+
+        assertEquals("cache-key-v1", bridge.lastCacheKey)
+        assertEquals(CachePolicy.PREFIX_KV_REUSE, bridge.lastCachePolicy)
+    }
 }
 
 private class FakeBridge(
@@ -64,6 +82,8 @@ private class FakeBridge(
     var generateCalls: Int = 0
     var unloadCalls: Int = 0
     var lastModelPath: String? = null
+    var lastCacheKey: String? = null
+    var lastCachePolicy: CachePolicy? = null
 
     override fun isReady(): Boolean = true
 
@@ -78,8 +98,16 @@ private class FakeBridge(
         return true
     }
 
-    override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
+    override fun generate(
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicy: CachePolicy,
+        onToken: (String) -> Unit,
+    ): Boolean {
         generateCalls += 1
+        lastCacheKey = cacheKey
+        lastCachePolicy = cachePolicy
         if (!generateOk) {
             return false
         }

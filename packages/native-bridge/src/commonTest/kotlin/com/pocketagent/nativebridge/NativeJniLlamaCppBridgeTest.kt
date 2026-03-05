@@ -21,12 +21,21 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals(RuntimeBackend.NATIVE_JNI, bridge.runtimeBackend())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         val tokens = mutableListOf<String>()
-        assertTrue(bridge.generate("prompt", 16) { tokens.add(it) })
+        assertTrue(
+            bridge.generate(
+                prompt = "prompt",
+                maxTokens = 16,
+                cacheKey = "k1",
+                cachePolicy = CachePolicy.PREFIX_KV_REUSE,
+            ) { tokens.add(it) },
+        )
         bridge.unloadModel()
 
         assertTrue(nativeApi.loadCalled)
         assertTrue(nativeApi.generateCalled)
         assertTrue(nativeApi.unloadCalled)
+        assertEquals("k1", nativeApi.lastCacheKey)
+        assertEquals(CachePolicy.PREFIX_KV_REUSE.code, nativeApi.lastCachePolicyCode)
         assertFalse(fallback.loadCalled)
         assertEquals(listOf("native ", "hello "), tokens)
     }
@@ -46,12 +55,21 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals(RuntimeBackend.ADB_FALLBACK, bridge.runtimeBackend())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         val tokens = mutableListOf<String>()
-        assertTrue(bridge.generate("prompt", 16) { tokens.add(it) })
+        assertTrue(
+            bridge.generate(
+                prompt = "prompt",
+                maxTokens = 16,
+                cacheKey = "fallback-k1",
+                cachePolicy = CachePolicy.PREFIX_KV_REUSE_STRICT,
+            ) { tokens.add(it) },
+        )
         bridge.unloadModel()
 
         assertTrue(fallback.loadCalled)
         assertTrue(fallback.generateCalled)
         assertTrue(fallback.unloadCalled)
+        assertEquals("fallback-k1", fallback.lastCacheKey)
+        assertEquals(CachePolicy.PREFIX_KV_REUSE_STRICT, fallback.lastCachePolicy)
     }
 
     @Test
@@ -77,6 +95,8 @@ private class FakeNativeApi(
     var loadCalled = false
     var generateCalled = false
     var unloadCalled = false
+    var lastCacheKey: String? = null
+    var lastCachePolicyCode: Int? = null
 
     override fun initialize(): Boolean = initializeOk
 
@@ -85,8 +105,10 @@ private class FakeNativeApi(
         return loadOk
     }
 
-    override fun generate(prompt: String, maxTokens: Int): String {
+    override fun generate(prompt: String, maxTokens: Int, cacheKey: String?, cachePolicyCode: Int): String {
         generateCalled = true
+        lastCacheKey = cacheKey
+        lastCachePolicyCode = cachePolicyCode
         return generatedText
     }
 
@@ -103,6 +125,8 @@ private class FakeFallbackBridge(
     var loadCalled = false
     var generateCalled = false
     var unloadCalled = false
+    var lastCacheKey: String? = null
+    var lastCachePolicy: CachePolicy? = null
 
     override fun isReady(): Boolean = ready
 
@@ -116,8 +140,16 @@ private class FakeFallbackBridge(
         return loadOk
     }
 
-    override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
+    override fun generate(
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicy: CachePolicy,
+        onToken: (String) -> Unit,
+    ): Boolean {
         generateCalled = true
+        lastCacheKey = cacheKey
+        lastCachePolicy = cachePolicy
         if (!generateOk) {
             return false
         }

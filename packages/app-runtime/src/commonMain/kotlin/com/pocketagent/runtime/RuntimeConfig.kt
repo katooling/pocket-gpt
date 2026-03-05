@@ -14,6 +14,10 @@ data class RuntimeConfig(
     val artifactProvenanceSignatureByModelId: Map<String, String>,
     val runtimeCompatibilityTag: String,
     val requireNativeRuntimeForStartupChecks: Boolean,
+    val prefixCacheEnabled: Boolean,
+    val prefixCacheStrict: Boolean,
+    val responseCacheTtlSec: Long,
+    val responseCacheMaxEntries: Int,
 ) {
     companion object {
         const val QWEN_0_8B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256"
@@ -25,9 +29,17 @@ data class RuntimeConfig(
         const val MODEL_PROVENANCE_ISSUER_ENV: String = "POCKETGPT_MODEL_PROVENANCE_ISSUER"
         const val MODEL_RUNTIME_COMPATIBILITY_ENV: String = "POCKETGPT_MODEL_RUNTIME_COMPATIBILITY"
         const val REQUIRE_NATIVE_RUNTIME_STARTUP_ENV: String = "POCKETGPT_REQUIRE_NATIVE_RUNTIME_STARTUP"
+        const val PREFIX_CACHE_ENABLED_ENV: String = "POCKETGPT_PREFIX_CACHE_ENABLED"
+        const val PREFIX_CACHE_STRICT_ENV: String = "POCKETGPT_PREFIX_CACHE_STRICT"
+        const val RESPONSE_CACHE_TTL_SEC_ENV: String = "POCKETGPT_RESPONSE_CACHE_TTL_SEC"
+        const val RESPONSE_CACHE_MAX_ENTRIES_ENV: String = "POCKETGPT_RESPONSE_CACHE_MAX_ENTRIES"
         private const val DEFAULT_PROVENANCE_ISSUER: String = "internal-release"
         private const val DEFAULT_RUNTIME_COMPATIBILITY_TAG: String = "android-arm64-v8a"
         private const val DEFAULT_SHA_BUFFER_SIZE: Int = 1024 * 1024
+        private const val DEFAULT_PREFIX_CACHE_ENABLED: Boolean = true
+        private const val DEFAULT_PREFIX_CACHE_STRICT: Boolean = false
+        private const val DEFAULT_RESPONSE_CACHE_TTL_SEC: Long = 0L
+        private const val DEFAULT_RESPONSE_CACHE_MAX_ENTRIES: Int = 0
 
         fun fromEnvironment(): RuntimeConfig {
             val artifactPayloadByModelId = mapOf(
@@ -82,13 +94,28 @@ data class RuntimeConfig(
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: DEFAULT_RUNTIME_COMPATIBILITY_TAG
-            val requireNativeRuntimeForStartupChecks = run {
-                val raw = System.getenv(REQUIRE_NATIVE_RUNTIME_STARTUP_ENV)
-                    ?.trim()
-                    ?.lowercase()
-                    ?: return@run true
-                raw !in setOf("0", "false", "no")
-            }
+            val requireNativeRuntimeForStartupChecks = booleanEnv(
+                name = REQUIRE_NATIVE_RUNTIME_STARTUP_ENV,
+                defaultValue = true,
+            )
+            val prefixCacheEnabled = booleanEnv(
+                name = PREFIX_CACHE_ENABLED_ENV,
+                defaultValue = DEFAULT_PREFIX_CACHE_ENABLED,
+            )
+            val prefixCacheStrict = booleanEnv(
+                name = PREFIX_CACHE_STRICT_ENV,
+                defaultValue = DEFAULT_PREFIX_CACHE_STRICT,
+            )
+            val responseCacheTtlSec = longEnv(
+                name = RESPONSE_CACHE_TTL_SEC_ENV,
+                defaultValue = DEFAULT_RESPONSE_CACHE_TTL_SEC,
+                minValue = 0L,
+            )
+            val responseCacheMaxEntries = intEnv(
+                name = RESPONSE_CACHE_MAX_ENTRIES_ENV,
+                defaultValue = DEFAULT_RESPONSE_CACHE_MAX_ENTRIES,
+                minValue = 0,
+            )
             return RuntimeConfig(
                 artifactPayloadByModelId = artifactPayloadByModelId,
                 artifactFilePathByModelId = artifactFilePathByModelId,
@@ -97,7 +124,33 @@ data class RuntimeConfig(
                 artifactProvenanceSignatureByModelId = artifactProvenanceSignatureByModelId,
                 runtimeCompatibilityTag = runtimeCompatibilityTag,
                 requireNativeRuntimeForStartupChecks = requireNativeRuntimeForStartupChecks,
+                prefixCacheEnabled = prefixCacheEnabled,
+                prefixCacheStrict = prefixCacheStrict,
+                responseCacheTtlSec = responseCacheTtlSec,
+                responseCacheMaxEntries = responseCacheMaxEntries,
             )
+        }
+
+        private fun booleanEnv(name: String, defaultValue: Boolean): Boolean {
+            val raw = System.getenv(name)
+                ?.trim()
+                ?.lowercase()
+                ?: return defaultValue
+            return when (raw) {
+                "1", "true", "yes", "on" -> true
+                "0", "false", "no", "off" -> false
+                else -> defaultValue
+            }
+        }
+
+        private fun intEnv(name: String, defaultValue: Int, minValue: Int): Int {
+            val parsed = System.getenv(name)?.trim()?.toIntOrNull() ?: return defaultValue
+            return parsed.coerceAtLeast(minValue)
+        }
+
+        private fun longEnv(name: String, defaultValue: Long, minValue: Long): Long {
+            val parsed = System.getenv(name)?.trim()?.toLongOrNull() ?: return defaultValue
+            return parsed.coerceAtLeast(minValue)
         }
 
         private fun resolvePayload(sideLoadPathEnv: String, fallbackSeed: String): ByteArray {

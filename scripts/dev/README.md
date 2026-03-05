@@ -122,6 +122,7 @@ Profile behavior:
 1. `quick`:
    - defaults to `--models 0.8b`
    - uses low-run/token defaults for iteration
+   - runs paired cold/warm measurements within the sweep (`runs=2` default) and records `warm_vs_cold_first_token_delta_ms`
    - supports `--resume` and partial model/scenario execution
    - threshold/runtime reports are still emitted; runtime evidence validator is not enforced as a closure gate
 2. `closure`:
@@ -134,6 +135,13 @@ Install controls:
 1. `--install-mode auto`: assemble APKs and skip reinstall when hashes are unchanged
 2. `--install-mode force`: always install app + test APK
 3. `--install-mode skip`: never install in this run
+
+Optional cache controls (env):
+
+1. `POCKETGPT_PREFIX_CACHE_ENABLED=0|1` (default `1`)
+2. `POCKETGPT_PREFIX_CACHE_STRICT=0|1` (default `0`)
+3. `POCKETGPT_RESPONSE_CACHE_TTL_SEC=<seconds>` (default `0`, disabled)
+4. `POCKETGPT_RESPONSE_CACHE_MAX_ENTRIES=<count>` (default `0`, disabled)
 
 ## Framework Lanes (Direct)
 

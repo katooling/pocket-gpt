@@ -27,7 +27,13 @@ class AdbDeviceLlamaCppBridge(
         return true
     }
 
-    override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
+    override fun generate(
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicy: CachePolicy,
+        onToken: (String) -> Unit,
+    ): Boolean {
         val serial = activeSerial ?: resolveSerial() ?: return false
         val model = activeModelId ?: return false
 
@@ -42,6 +48,7 @@ class AdbDeviceLlamaCppBridge(
                     "ADB_LLAMACPP",
                     "model=$model",
                     "max_tokens=$maxTokens",
+                    "cache_policy=${cachePolicy.name}",
                 ),
             )
         }.getOrElse { return false }

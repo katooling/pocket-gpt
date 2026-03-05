@@ -41,6 +41,10 @@ class AndroidMvpContainer(
     private val artifactProvenanceSignatureByModelId: Map<String, String> = RuntimeConfig.fromEnvironment().artifactProvenanceSignatureByModelId,
     private val runtimeCompatibilityTag: String = RuntimeConfig.fromEnvironment().runtimeCompatibilityTag,
     private val requireNativeRuntimeForStartupChecks: Boolean = RuntimeConfig.fromEnvironment().requireNativeRuntimeForStartupChecks,
+    private val prefixCacheEnabled: Boolean = RuntimeConfig.fromEnvironment().prefixCacheEnabled,
+    private val prefixCacheStrict: Boolean = RuntimeConfig.fromEnvironment().prefixCacheStrict,
+    private val responseCacheTtlSec: Long = RuntimeConfig.fromEnvironment().responseCacheTtlSec,
+    private val responseCacheMaxEntries: Int = RuntimeConfig.fromEnvironment().responseCacheMaxEntries,
     private val networkPolicyClient: PolicyAwareNetworkClient = PolicyAwareNetworkClient(policyModule),
 ) {
     private val runtimeConfig = RuntimeConfig(
@@ -51,6 +55,10 @@ class AndroidMvpContainer(
         artifactProvenanceSignatureByModelId = artifactProvenanceSignatureByModelId,
         runtimeCompatibilityTag = runtimeCompatibilityTag,
         requireNativeRuntimeForStartupChecks = requireNativeRuntimeForStartupChecks,
+        prefixCacheEnabled = prefixCacheEnabled,
+        prefixCacheStrict = prefixCacheStrict,
+        responseCacheTtlSec = responseCacheTtlSec,
+        responseCacheMaxEntries = responseCacheMaxEntries,
     )
 
     private val orchestrator = RuntimeOrchestrator(
@@ -140,7 +148,7 @@ class AndroidMvpContainer(
 
     fun getRoutingMode(): RoutingMode = orchestrator.getRoutingMode()
 
-    fun runtimeBackend(): RuntimeBackend? = orchestrator.runtimeBackend()
+    fun runtimeBackend(): RuntimeBackend? = orchestrator.runtimeBackendEnum()
 
     companion object {
         const val QWEN_0_8B_SHA256_ENV: String = RuntimeConfig.QWEN_0_8B_SHA256_ENV
@@ -152,6 +160,10 @@ class AndroidMvpContainer(
         const val MODEL_PROVENANCE_ISSUER_ENV: String = RuntimeConfig.MODEL_PROVENANCE_ISSUER_ENV
         const val MODEL_RUNTIME_COMPATIBILITY_ENV: String = RuntimeConfig.MODEL_RUNTIME_COMPATIBILITY_ENV
         const val REQUIRE_NATIVE_RUNTIME_STARTUP_ENV: String = RuntimeConfig.REQUIRE_NATIVE_RUNTIME_STARTUP_ENV
+        const val PREFIX_CACHE_ENABLED_ENV: String = RuntimeConfig.PREFIX_CACHE_ENABLED_ENV
+        const val PREFIX_CACHE_STRICT_ENV: String = RuntimeConfig.PREFIX_CACHE_STRICT_ENV
+        const val RESPONSE_CACHE_TTL_SEC_ENV: String = RuntimeConfig.RESPONSE_CACHE_TTL_SEC_ENV
+        const val RESPONSE_CACHE_MAX_ENTRIES_ENV: String = RuntimeConfig.RESPONSE_CACHE_MAX_ENTRIES_ENV
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
 
         fun baselineModels(): List<String> = ModelCatalog.baselineModels()

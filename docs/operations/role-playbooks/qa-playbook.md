@@ -1,6 +1,6 @@
 # QA Playbook
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Mission
 
@@ -28,6 +28,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 
 - [ ] WP-09 rollout quality execution support (weekly cadence)
 - [ ] DX-01 validation support for Stage-2 quick/closure lane split and resume workflow
+- [ ] DX-02 validation support for prefix-cache telemetry and warm-vs-cold runtime checks
 
 ## Task Queue
 
@@ -44,6 +45,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 | QA-10 | Weekly UI regression matrix execution for beta operations | Done (run 01 complete; weekly cadence active) | WP-11, QA-08 | QA Lead | `docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`, `docs/testing/wp-09-ui-regression-matrix.md` |
 | QA-WP12 | Validate backend production runtime closure packet (ENG-12..ENG-17) | Done (rerun executed 2026-03-04; recommendation: close WP-12) | ENG-12, ENG-13, ENG-14, ENG-15, ENG-16, ENG-17 evidence notes | QA Engineer | `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`, `docs/testing/android-dx-and-test-playbook.md`, `docs/testing/test-strategy.md` |
 | QA-DX-01 | Validate Stage-2 quick/closure profile behavior + resume artifact integrity | In Progress | DX-01 implementation | QA Engineer | `docs/testing/stage-2-benchmark-runbook.md`, `docs/testing/test-lane-profiles-and-selection.md` |
+| QA-DX-02 | Validate prefix-cache counters, warm-vs-cold deltas, and closure artifact compatibility | In Progress | DX-02 implementation | QA Engineer | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/summary.json`, `docs/testing/stage-2-benchmark-runbook.md` |
 | QA-07 | Voice STT/TTS quality benchmark framework (post-MVP) | Backlog | WP-10 | QA Lead | `docs/roadmap/product-roadmap.md` |
 
 ## QA Definition of Done

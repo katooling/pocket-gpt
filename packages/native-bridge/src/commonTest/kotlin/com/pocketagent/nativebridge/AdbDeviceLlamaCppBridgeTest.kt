@@ -16,9 +16,9 @@ class AdbDeviceLlamaCppBridgeTest {
                     stdout = "List of devices attached\nSER123 device product:a model:b device:c\n",
                     stderr = "",
                 ),
-                "adb -s SER123 shell echo ADB_LLAMACPP model=${ModelCatalog.QWEN_3_5_0_8B_Q4} max_tokens=64" to CommandResult(
+                "adb -s SER123 shell echo ADB_LLAMACPP model=${ModelCatalog.QWEN_3_5_0_8B_Q4} max_tokens=64 cache_policy=OFF" to CommandResult(
                     exitCode = 0,
-                    stdout = "ADB_LLAMACPP model=${ModelCatalog.QWEN_3_5_0_8B_Q4} max_tokens=64\n",
+                    stdout = "ADB_LLAMACPP model=${ModelCatalog.QWEN_3_5_0_8B_Q4} max_tokens=64 cache_policy=OFF\n",
                     stderr = "",
                 ),
             ),

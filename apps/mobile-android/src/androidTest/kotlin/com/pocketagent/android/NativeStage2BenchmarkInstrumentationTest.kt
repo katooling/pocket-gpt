@@ -13,6 +13,7 @@ import java.security.MessageDigest
 import java.util.Locale
 import kotlin.math.max
 import org.junit.Assert.assertEquals
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -21,6 +22,10 @@ class NativeStage2BenchmarkInstrumentationTest {
     @Test
     fun runConfiguredScenario() {
         val args = InstrumentationRegistry.getArguments()
+        assumeTrue(
+            "Skipping Stage-2 native benchmark instrumentation test. Missing model path arguments.",
+            hasRequiredModelPaths(args),
+        )
         val scenario = (args.getString(ARG_SCENARIO) ?: "A").trim().uppercase()
         require(scenario in setOf("A", "B")) { "Unsupported scenario: $scenario" }
         val modelId = (args.getString(ARG_MODEL_ID) ?: ModelCatalog.QWEN_3_5_0_8B_Q4).trim()
@@ -28,6 +33,8 @@ class NativeStage2BenchmarkInstrumentationTest {
 
         val modelPath0_8b = requireArgument(args, ARG_MODEL_PATH_0_8B)
         val modelPath2b = requireArgument(args, ARG_MODEL_PATH_2B)
+        val prefixCacheEnabled = parseBooleanArg(args, ARG_PREFIX_CACHE_ENABLED, defaultValue = true)
+        val prefixCacheStrict = parseBooleanArg(args, ARG_PREFIX_CACHE_STRICT, defaultValue = false)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
         val minTokens = (args.getString(ARG_MIN_TOKENS)?.toIntOrNull() ?: DEFAULT_MIN_TOKENS)
             .coerceAtLeast(1)
@@ -42,6 +49,8 @@ class NativeStage2BenchmarkInstrumentationTest {
         val container = buildContainer(
             modelPath0_8b = modelPath0_8b,
             modelPath2b = modelPath2b,
+            prefixCacheEnabled = prefixCacheEnabled,
+            prefixCacheStrict = prefixCacheStrict,
         )
         configureContainerForModel(container = container, modelId = modelId)
 
@@ -78,12 +87,18 @@ class NativeStage2BenchmarkInstrumentationTest {
     @Test
     fun runConfiguredModelSweep() {
         val args = InstrumentationRegistry.getArguments()
+        assumeTrue(
+            "Skipping Stage-2 native benchmark instrumentation sweep. Missing model path arguments.",
+            hasRequiredModelPaths(args),
+        )
         val scenarios = parseScenarios(args.getString(ARG_SCENARIOS))
         val modelId = (args.getString(ARG_MODEL_ID) ?: ModelCatalog.QWEN_3_5_0_8B_Q4).trim()
         require(modelId in SUPPORTED_MODELS) { "Unsupported model id: $modelId" }
 
         val modelPath0_8b = requireArgument(args, ARG_MODEL_PATH_0_8B)
         val modelPath2b = requireArgument(args, ARG_MODEL_PATH_2B)
+        val prefixCacheEnabled = parseBooleanArg(args, ARG_PREFIX_CACHE_ENABLED, defaultValue = true)
+        val prefixCacheStrict = parseBooleanArg(args, ARG_PREFIX_CACHE_STRICT, defaultValue = false)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
         val minTokens = (args.getString(ARG_MIN_TOKENS)?.toIntOrNull() ?: DEFAULT_MIN_TOKENS)
             .coerceAtLeast(1)
@@ -103,6 +118,8 @@ class NativeStage2BenchmarkInstrumentationTest {
         val container = buildContainer(
             modelPath0_8b = modelPath0_8b,
             modelPath2b = modelPath2b,
+            prefixCacheEnabled = prefixCacheEnabled,
+            prefixCacheStrict = prefixCacheStrict,
         )
         configureContainerForModel(container = container, modelId = modelId)
 
@@ -217,6 +234,8 @@ class NativeStage2BenchmarkInstrumentationTest {
             tokens = medianInt(tokenSamples),
             runs = runs,
             pssKb = currentPssKb(),
+            coldFirstTokenMs = firstTokenSamples.firstOrNull() ?: 0L,
+            warmFirstTokenMs = firstTokenSamples.lastOrNull() ?: 0L,
         )
     }
 
@@ -258,6 +277,8 @@ class NativeStage2BenchmarkInstrumentationTest {
     private fun buildContainer(
         modelPath0_8b: String,
         modelPath2b: String,
+        prefixCacheEnabled: Boolean,
+        prefixCacheStrict: Boolean,
     ): AndroidMvpContainer {
         val pathMap = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to modelPath0_8b,
@@ -294,6 +315,10 @@ class NativeStage2BenchmarkInstrumentationTest {
             artifactSha256ByModelId = shaByModel,
             artifactProvenanceIssuerByModelId = issuerByModel,
             artifactProvenanceSignatureByModelId = signatureByModel,
+            prefixCacheEnabled = prefixCacheEnabled,
+            prefixCacheStrict = prefixCacheStrict,
+            responseCacheTtlSec = 0L,
+            responseCacheMaxEntries = 0,
         )
     }
 
@@ -348,7 +373,10 @@ class NativeStage2BenchmarkInstrumentationTest {
         tokens: Int,
         runs: Int,
         pssKb: Int,
+        coldFirstTokenMs: Long,
+        warmFirstTokenMs: Long,
     ): String {
+        val warmVsColdDelta = coldFirstTokenMs - warmFirstTokenMs
         return buildString {
             append("STAGE2_METRIC")
             append("|backend=").append(backend)
@@ -359,6 +387,22 @@ class NativeStage2BenchmarkInstrumentationTest {
             append("|tokens=").append(tokens)
             append("|runs=").append(runs)
             append("|pss_kb=").append(pssKb)
+            append("|cold_first_token_ms=").append(coldFirstTokenMs)
+            append("|warm_first_token_ms=").append(warmFirstTokenMs)
+            append("|warm_vs_cold_first_token_delta_ms=").append(warmVsColdDelta)
+        }
+    }
+
+    private fun parseBooleanArg(
+        args: android.os.Bundle,
+        key: String,
+        defaultValue: Boolean,
+    ): Boolean {
+        val raw = args.getString(key)?.trim()?.lowercase() ?: return defaultValue
+        return when (raw) {
+            "1", "true", "yes", "on" -> true
+            "0", "false", "no", "off" -> false
+            else -> defaultValue
         }
     }
 
@@ -374,6 +418,15 @@ class NativeStage2BenchmarkInstrumentationTest {
         val file = File(value)
         require(file.exists() && file.isFile) { "Model path does not exist: $value" }
         return file.absolutePath
+    }
+
+    private fun hasRequiredModelPaths(args: android.os.Bundle): Boolean {
+        val path0 = args.getString(ARG_MODEL_PATH_0_8B)?.trim().orEmpty()
+        val path2 = args.getString(ARG_MODEL_PATH_2B)?.trim().orEmpty()
+        if (path0.isEmpty() || path2.isEmpty()) {
+            return false
+        }
+        return File(path0).exists() && File(path2).exists()
     }
 
     private fun sha256HexFromFile(file: File): String {
@@ -412,6 +465,8 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val ARG_SCENARIOS = "stage2_scenarios"
         private const val ARG_MIN_TOKENS = "stage2_min_tokens"
         private const val ARG_WARMUP_MAX_TOKENS = "stage2_warmup_max_tokens"
+        private const val ARG_PREFIX_CACHE_ENABLED = "stage2_prefix_cache_enabled"
+        private const val ARG_PREFIX_CACHE_STRICT = "stage2_prefix_cache_strict"
         private const val METRIC_TAG = "STAGE2_METRIC"
         private const val DEFAULT_HASH_BUFFER_SIZE = 1024 * 1024
         private const val DEFAULT_MIN_TOKENS = 16

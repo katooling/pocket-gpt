@@ -1,6 +1,6 @@
 # Execution Board
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 This is the single board for planning and delivery.  
 All teams should update status here first, then mirror updates in role playbooks.
@@ -37,7 +37,7 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 8 | Yes | WP-07 | Backlog | Post-MVP |
 | WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | Done | Week 6 |
 | WP-12 | Backend production runtime closure (native inference, model distribution, Android-native data plane) | Engineering | QA, Product, Security | 7 | Yes | WP-07, WP-11 | Done | Week 7-8 |
-| WP-13 | UX quality closure (onboarding, runtime clarity, usability gate, listing readiness) | Product | Eng, QA, Design, Marketing | 8 | Yes | WP-11 | Ready | Week 8 |
+| WP-13 | UX quality closure (onboarding, runtime clarity, usability gate, listing readiness) | Product | Eng, QA, Design, Marketing | 8 | Yes | WP-11 | In Progress | Week 8 |
 
 ## Current Sprint Board
 
@@ -50,11 +50,13 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] PROD-04 monetization scope and pricing hypothesis kickoff (v0 hypothesis doc published)
 - [ ] ENG support: stage-2 runtime evidence integrity gate active for closure packet validation
 - [ ] DX-01 layered test profiles + Stage-2 quick/closure efficiency rollout (devctl/scripts/docs)
+- [ ] DX-02 provider-style caching rollout (native prefix/KV reuse + runtime cache telemetry + Stage-2 cache metrics)
+- [ ] WP-13 run-01 usability gate execution packet (A/B/C workflow evidence + thresholds)
+- [ ] APP runtime integration hardening (app-path runtime wiring + in-app model provisioning recovery)
 
 ### Ready
 
 - [ ] MKT-03 first 7-day scorecard execution window
-- [ ] WP-13 UX quality work package kickoff (`docs/operations/wp-13-ux-quality-work-package.md`)
 - [ ] APP-STORE-01 Play Store listing spec + screenshot shotlist finalization (`docs/ux/play-store-listing-spec.md`)
 - [ ] TEST-ENG-01 test architecture and ownership matrix publish (`docs/testing/test-strategy.md`)
 - [ ] TEST-ENG-02 persistence codec unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/state/SessionPersistenceCodecTest.kt`)
@@ -123,7 +125,7 @@ All teams should update status here first, then mirror updates in role playbooks
 3. Product:
    - External beta signoff dependency on WP-11 is cleared; continue WP-09 planning.
    - ENG-12 model distribution decision is approved (side-load/manual-internal only + strict provenance checks) and unblocked (`docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`).
-   - WP-12 acceptance/signoff can proceed from closed engineering and QA evidence.
+   - WP-12 acceptance/signoff is complete; focus shifted to WP-13 usability gate and launch readiness.
    - `PROD-08` taxonomy + intake policy is complete (`docs/operations/evidence/wp-09/2026-03-04-prod-08-ux-feedback-taxonomy-pilot.md`).
    - `PROD-04` monetization scope/pricing hypothesis is in progress (`docs/operations/prod-04-monetization-hypothesis-v0.md`).
 4. Marketing:
@@ -191,6 +193,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-12 (Product ENG-12 model distribution path + provenance decision): `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
 - WP-12 (Handover ticket packet for ENG-12..ENG-17 + QA closeout): `docs/operations/wp-12-handover-ticket-packet.md`
 - WP-12 (Product dispatch evidence for handover ticket packet sync): `docs/operations/evidence/wp-12/2026-03-04-prod-wp12-handover-ticket-packet.md`
+- WP-13 (Usability gate run-01 operational packet): `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
 
 ## Dependency Flow
 

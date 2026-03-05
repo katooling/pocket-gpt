@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -14,12 +15,17 @@ namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
 constexpr int DEFAULT_CONTEXT_SIZE = 512;
 constexpr int DEFAULT_BATCH_SIZE = 512;
+constexpr int CACHE_POLICY_OFF = 0;
+constexpr int CACHE_POLICY_PREFIX_REUSE = 1;
+constexpr int CACHE_POLICY_PREFIX_REUSE_STRICT = 2;
 
 std::mutex g_mutex;
 bool g_backend_initialized = false;
 llama_model * g_model = nullptr;
 llama_context * g_context = nullptr;
 llama_sampler * g_sampler = nullptr;
+std::vector<llama_token> g_cached_prompt_tokens;
+std::string g_cached_cache_key;
 
 void log_error(const std::string & message) {
     __android_log_print(ANDROID_LOG_ERROR, TAG, "%s", message.c_str());
@@ -51,6 +57,8 @@ void release_runtime_locked() {
         llama_model_free(g_model);
         g_model = nullptr;
     }
+    g_cached_prompt_tokens.clear();
+    g_cached_cache_key.clear();
 }
 
 bool ensure_backend_initialized_locked() {
@@ -89,6 +97,52 @@ std::vector<llama_token> tokenize_prompt(const llama_vocab * vocab, const std::s
     }
     tokens.resize(static_cast<size_t>(actual));
     return tokens;
+}
+
+size_t longest_common_prefix(
+    const std::vector<llama_token> & lhs,
+    const std::vector<llama_token> & rhs) {
+    const size_t limit = std::min(lhs.size(), rhs.size());
+    size_t count = 0;
+    while (count < limit && lhs[count] == rhs[count]) {
+        ++count;
+    }
+    return count;
+}
+
+bool decode_tokens_from_offset(
+    llama_context * ctx,
+    const std::vector<llama_token> & tokens,
+    size_t offset) {
+    if (offset >= tokens.size()) {
+        return true;
+    }
+    for (size_t idx = offset; idx < tokens.size(); idx += static_cast<size_t>(DEFAULT_BATCH_SIZE)) {
+        const size_t remaining = tokens.size() - idx;
+        const int32_t chunk_size = static_cast<int32_t>(std::min(remaining, static_cast<size_t>(DEFAULT_BATCH_SIZE)));
+        llama_batch prompt_batch = llama_batch_get_one(const_cast<llama_token *>(tokens.data() + idx), chunk_size);
+        if (llama_decode(ctx, prompt_batch) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void log_prefix_cache_event(
+    int policy,
+    bool hit,
+    size_t reused_tokens,
+    size_t prompt_tokens,
+    bool strict_key_match) {
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "PREFIX_CACHE|policy=%d|hit=%s|reused_tokens=%zu|prompt_tokens=%zu|strict_key_match=%s",
+        policy,
+        hit ? "true" : "false",
+        reused_tokens,
+        prompt_tokens,
+        strict_key_match ? "true" : "false");
 }
 } // namespace
 
@@ -161,8 +215,11 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     JNIEnv * env,
     jobject /*thiz*/,
     jstring prompt,
-    jint maxTokens) {
+    jint maxTokens,
+    jstring cacheKey,
+    jint cachePolicy) {
     const std::string prompt_text = to_std_string(env, prompt);
+    const std::string cache_key = to_std_string(env, cacheKey);
     if (prompt_text.empty()) {
         return env->NewStringUTF("");
     }
@@ -180,7 +237,6 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     }
 
     llama_sampler_reset(g_sampler);
-    llama_memory_clear(llama_get_memory(g_context), false);
 
     const int safe_max_tokens = std::max(1, static_cast<int>(maxTokens));
     std::vector<llama_token> prompt_tokens = tokenize_prompt(vocab, prompt_text);
@@ -195,15 +251,40 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         prompt_tokens.erase(prompt_tokens.begin(), prompt_tokens.begin() + static_cast<std::ptrdiff_t>(trim_count));
     }
 
-    for (size_t offset = 0; offset < prompt_tokens.size(); offset += static_cast<size_t>(DEFAULT_BATCH_SIZE)) {
-        const size_t remaining = prompt_tokens.size() - offset;
-        const int32_t chunk_size = static_cast<int32_t>(std::min(remaining, static_cast<size_t>(DEFAULT_BATCH_SIZE)));
-        llama_batch prompt_batch = llama_batch_get_one(prompt_tokens.data() + offset, chunk_size);
-        if (llama_decode(g_context, prompt_batch) != 0) {
-            log_error("nativeGenerate failed: llama_decode failed on prompt batch");
-            return env->NewStringUTF("");
+    bool strict_key_match = true;
+    size_t reused_tokens = 0;
+    size_t decode_offset = 0;
+    bool cache_hit = false;
+    bool use_prefix_cache = cachePolicy == CACHE_POLICY_PREFIX_REUSE || cachePolicy == CACHE_POLICY_PREFIX_REUSE_STRICT;
+    bool strict_mode = cachePolicy == CACHE_POLICY_PREFIX_REUSE_STRICT;
+    if (use_prefix_cache) {
+        strict_key_match = !strict_mode || (cache_key == g_cached_cache_key && !cache_key.empty());
+        if (strict_key_match && !g_cached_prompt_tokens.empty()) {
+            reused_tokens = longest_common_prefix(g_cached_prompt_tokens, prompt_tokens);
+            if (reused_tokens > 0) {
+                if (llama_memory_seq_rm(llama_get_memory(g_context), -1, static_cast<llama_pos>(reused_tokens), -1)) {
+                    decode_offset = reused_tokens;
+                    cache_hit = true;
+                } else {
+                    reused_tokens = 0;
+                }
+            }
         }
     }
+
+    if (!cache_hit) {
+        llama_memory_clear(llama_get_memory(g_context), false);
+        decode_offset = 0;
+    }
+
+    if (!decode_tokens_from_offset(g_context, prompt_tokens, decode_offset)) {
+        log_error("nativeGenerate failed: llama_decode failed on prompt batch");
+        return env->NewStringUTF("");
+    }
+
+    g_cached_prompt_tokens = prompt_tokens;
+    g_cached_cache_key = cache_key;
+    log_prefix_cache_event(cachePolicy, cache_hit, reused_tokens, prompt_tokens.size(), strict_key_match);
 
     std::string output;
     output.reserve(static_cast<size_t>(safe_max_tokens) * 4);
@@ -267,12 +348,16 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     JNIEnv * env,
     jobject thiz,
     jstring prompt,
-    jint maxTokens) {
+    jint maxTokens,
+    jstring cacheKey,
+    jint cachePolicy) {
     return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeGenerate(
         env,
         thiz,
         prompt,
-        maxTokens);
+        maxTokens,
+        cacheKey,
+        cachePolicy);
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -39,6 +39,8 @@ Fast-iteration runtime controls:
 - `POCKETGPT_STAGE2_MIN_TOKENS=<n>`
 - `POCKETGPT_STAGE2_WARMUP_MAX_TOKENS=<n>`
 - `POCKETGPT_STAGE2_MODEL_PROVISION_SKIPPED=<0|1|unknown>`
+- `POCKETGPT_PREFIX_CACHE_ENABLED=<0|1>`
+- `POCKETGPT_PREFIX_CACHE_STRICT=<0|1>`
 
 The second parameter in `collect_logcat.sh` is capture duration in seconds.
 
@@ -49,3 +51,9 @@ Caching outputs:
 - Model provisioning metadata: `scripts/benchmarks/cache/<device>/model-provision-state.env`
 - APK install metadata: `scripts/benchmarks/cache/<device>/apk-install-state.env`
 - Device export env file: `scripts/benchmarks/device-env/<device>.env`
+
+Stage-2 cache telemetry:
+
+- `run_stage2_native.sh` collects `PREFIX_CACHE|...` counters from logcat and stores rollup values in `stage2-run-meta.env`.
+- Quick profile fails fast if cache counters are missing while prefix cache is enabled.
+- Summary output fields include `prefix_cache_hits`, `prefix_cache_misses`, `prefill_tokens_reused`, and `warm_vs_cold_first_token_delta_ms`.

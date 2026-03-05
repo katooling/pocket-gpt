@@ -1,6 +1,6 @@
 # Test Lane Profiles and Selection
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Purpose
 
@@ -49,7 +49,8 @@ Key mappings:
 1. Iteration-focused profile.
 2. Default model set is `0.8b`.
 3. Supports partial model/scenario execution and resume.
-4. Runtime validator report is generated but not enforced as closure gate.
+4. Uses paired cold/warm sampling (default `runs=2`) and emits `warm_vs_cold_first_token_delta_ms`.
+5. Runtime validator report is generated but not enforced as closure gate.
 
 ### `closure`
 
@@ -79,3 +80,4 @@ Key mappings:
 4. APK install cache: `scripts/benchmarks/cache/<device>/apk-install-state.env`
 5. Model provision cache: `scripts/benchmarks/cache/<device>/model-provision-state.env`
 6. Device env exports: `scripts/benchmarks/device-env/<device>.env`
+7. Stage-2 cache counters: `scripts/benchmarks/runs/YYYY-MM-DD/<device>/stage2-run-meta.env`

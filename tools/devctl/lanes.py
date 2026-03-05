@@ -725,6 +725,11 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
         "apk_install_skipped": run_meta.get("STAGE2_APK_INSTALL_SKIPPED", "unknown"),
         "model_provision_skipped": run_meta.get("STAGE2_MODEL_PROVISION_SKIPPED", "unknown"),
         "model_load_mode": run_meta.get("STAGE2_MODEL_LOAD_MODE", "warm_within_sweep"),
+        "prefix_cache_enabled": run_meta.get("STAGE2_PREFIX_CACHE_ENABLED", "unknown"),
+        "prefix_cache_hits": run_meta.get("STAGE2_PREFIX_CACHE_HITS", "0"),
+        "prefix_cache_misses": run_meta.get("STAGE2_PREFIX_CACHE_MISSES", "0"),
+        "prefill_tokens_reused": run_meta.get("STAGE2_PREFILL_TOKENS_REUSED", "0"),
+        "warm_vs_cold_first_token_delta_ms": run_meta.get("STAGE2_WARM_VS_COLD_FIRST_TOKEN_DELTA_MS", ""),
     }
     filtered = {field: summary_data[field] for field in stage2_cfg.summary_json.fields if field in summary_data}
     summary_path.write_text(json.dumps(filtered, indent=2) + "\n", encoding="utf-8")

@@ -8,12 +8,32 @@ enum class RuntimeBackend {
     UNAVAILABLE,
 }
 
+enum class CachePolicy(val code: Int) {
+    OFF(0),
+    PREFIX_KV_REUSE(1),
+    PREFIX_KV_REUSE_STRICT(2),
+}
+
 interface LlamaCppRuntimeBridge {
     fun isReady(): Boolean
     fun listAvailableModels(): List<String>
     fun loadModel(modelId: String): Boolean = loadModel(modelId, null)
     fun loadModel(modelId: String, modelPath: String?): Boolean
-    fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean
+    fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean =
+        generate(
+            prompt = prompt,
+            maxTokens = maxTokens,
+            cacheKey = null,
+            cachePolicy = CachePolicy.OFF,
+            onToken = onToken,
+        )
+    fun generate(
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicy: CachePolicy,
+        onToken: (String) -> Unit,
+    ): Boolean
     fun unloadModel()
     fun runtimeBackend(): RuntimeBackend
 }

@@ -55,6 +55,11 @@ summary_json:
     - model_provision_skipped
     - strict_thresholds
     - model_load_mode
+    - prefix_cache_enabled
+    - prefix_cache_hits
+    - prefix_cache_misses
+    - prefill_tokens_reused
+    - warm_vs_cold_first_token_delta_ms
     - evidence_draft
     - evidence_note_path
 

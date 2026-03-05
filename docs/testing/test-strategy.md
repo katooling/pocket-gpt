@@ -1,6 +1,6 @@
 # Test Strategy
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Source of truth
 
@@ -32,6 +32,7 @@ Last updated: 2026-03-04
 | L3 Android smoke lane | QA + Engineering | device/emulator UI wiring confidence | weekly + pre-promotion | `python3 tools/devctl/main.py lane android-instrumented`, `python3 tools/devctl/main.py lane maestro` | weekly QA packets under `docs/operations/evidence/wp-09/` |
 | L4 Stage-2 quick lane | Engineering | fast native runtime sanity/perf loop | runtime/native edits | `bash scripts/dev/bench.sh stage2 --profile quick --device <id>` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` |
 | L5 Stage-2 closure lane | Engineering + QA | strict closure evidence (native JNI + thresholds + validator) | closure/signoff windows | `bash scripts/dev/bench.sh stage2 --profile closure --device <id>` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` + evidence note |
+| L6 Real-runtime app-path lane | Engineering + QA | prove user-message app path on native runtime in RC builds | release-candidate windows | `adb shell am instrument ... -e stage2_model_0_8b_path ... -e stage2_model_2b_path ... com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner` | instrumentation output + linked evidence note |
 | Product usability lane | Product + QA + Design | release decision from usability signals | beta cohort windows | WP-13 usability packet workflow | `docs/operations/evidence/wp-13/...` |
 
 ## Core Flow Coverage Matrix (Mandatory)
@@ -46,6 +47,7 @@ Last updated: 2026-03-04
 | Diagnostics export + redaction | diagnostics/redaction tests | diagnostics UI assertion | scenario-b diagnostics step | QA release promotion checklist | Eng + QA + Security |
 | Offline/network policy enforcement | policy/network tests | launch sanity in offline mode | n/a | WP-12/weekly policy references | Eng + QA + Security |
 | Runtime/model readiness transitions | ViewModel runtime state tests | status-chip and advanced-sheet checks | n/a | stage-2 and startup checks | Eng + QA |
+| Scenario C continuity/user journey | ViewModel session + image tests | smoke regression assertions | `tests/maestro/scenario-c.yaml` | weekly matrix + usability packet | QA + Product + Eng |
 
 Coverage rule:
 
@@ -65,6 +67,8 @@ Coverage rule:
 | Soak test + go/no-go packet complete | Stage 6 beta |
 | Closure-path startup checks fail on `ADB_FALLBACK` backend unless explicitly override-enabled for local scaffolding | Stage 6.5+ |
 | UI-01..UI-10 acceptance suite pass | WP-11 close + external beta signoff |
+| Maestro Scenario C (`tests/maestro/scenario-c.yaml`) pass | WP-13 usability + promotion readiness |
+| Real-runtime app-path smoke pass on RC candidate (native claim path) | production-claim promotion windows |
 
 ## CI Baseline
 
@@ -91,6 +95,9 @@ CI note:
 3. Maestro E2E UI scenarios:
    - `tests/maestro/scenario-a.yaml`
    - `tests/maestro/scenario-b.yaml`
+   - `tests/maestro/scenario-c.yaml`
+4. Real-runtime app-path instrumentation (release candidates only):
+   - `apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/RealRuntimeAppPathInstrumentationTest.kt`
 
 ## Runtime Lane Optimization Rules
 
@@ -99,7 +106,8 @@ CI note:
 3. Use `--install-mode auto` to skip reinstall when app/test APK hashes are unchanged.
 4. Use `--resume` for interrupted runs; runner uses a per-run manifest to skip already completed model/scenario sweeps.
 5. Keep Stage-2 env contracts stable (`POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH`, `POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH`) across quick and closure profiles.
-6. Treat closure lane as strict-only: requires `--models both --scenarios both`, strict thresholds, and runtime evidence validator PASS.
+6. Enable prefix cache for quick iteration lanes (`POCKETGPT_PREFIX_CACHE_ENABLED=1`) and track `prefix_cache_hits/misses` + `warm_vs_cold_first_token_delta_ms`.
+7. Treat closure lane as strict-only: requires `--models both --scenarios both`, strict thresholds, and runtime evidence validator PASS.
 
 ## Automation Boundary (CI vs Human)
 

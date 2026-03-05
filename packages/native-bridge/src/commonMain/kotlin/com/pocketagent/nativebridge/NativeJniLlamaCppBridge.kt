@@ -39,16 +39,33 @@ class NativeJniLlamaCppBridge(
         return runCatching { nativeApi.loadModel(modelId, normalizedModelPath) }.getOrDefault(false)
     }
 
-    override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
+    override fun generate(
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicy: CachePolicy,
+        onToken: (String) -> Unit,
+    ): Boolean {
         ensureRuntimeInitialized()
         if (!runtimeReady) {
             return false
         }
         if (usingFallback) {
-            return fallbackBridge.generate(prompt, maxTokens, onToken)
+            return fallbackBridge.generate(
+                prompt = prompt,
+                maxTokens = maxTokens,
+                cacheKey = cacheKey,
+                cachePolicy = cachePolicy,
+                onToken = onToken,
+            )
         }
         val output = runCatching {
-            nativeApi.generate(prompt = prompt, maxTokens = maxTokens)
+            nativeApi.generate(
+                prompt = prompt,
+                maxTokens = maxTokens,
+                cacheKey = cacheKey,
+                cachePolicyCode = cachePolicy.code,
+            )
         }.getOrNull() ?: return false
 
         output
@@ -105,21 +122,22 @@ class NativeJniLlamaCppBridge(
     interface NativeApi {
         fun initialize(): Boolean
         fun loadModel(modelId: String, modelPath: String): Boolean
-        fun generate(prompt: String, maxTokens: Int): String
+        fun generate(prompt: String, maxTokens: Int, cacheKey: String?, cachePolicyCode: Int): String
         fun unloadModel()
     }
 
     private class JniNativeApi : NativeApi {
         external fun nativeInitialize(): Boolean
         external fun nativeLoadModel(modelId: String, modelPath: String): Boolean
-        external fun nativeGenerate(prompt: String, maxTokens: Int): String
+        external fun nativeGenerate(prompt: String, maxTokens: Int, cacheKey: String?, cachePolicy: Int): String
         external fun nativeUnloadModel()
 
         override fun initialize(): Boolean = nativeInitialize()
 
         override fun loadModel(modelId: String, modelPath: String): Boolean = nativeLoadModel(modelId, modelPath)
 
-        override fun generate(prompt: String, maxTokens: Int): String = nativeGenerate(prompt, maxTokens)
+        override fun generate(prompt: String, maxTokens: Int, cacheKey: String?, cachePolicyCode: Int): String =
+            nativeGenerate(prompt, maxTokens, cacheKey, cachePolicyCode)
 
         override fun unloadModel() = nativeUnloadModel()
     }

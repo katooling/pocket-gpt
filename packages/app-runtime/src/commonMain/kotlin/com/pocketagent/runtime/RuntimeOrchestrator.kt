@@ -20,12 +20,14 @@ import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryChunk
 import com.pocketagent.memory.MemoryModule
+import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolCall
 import com.pocketagent.tools.ToolModule
+import java.security.MessageDigest
 
 class RuntimeOrchestrator(
     private val conversationModule: ConversationModule = InMemoryConversationModule(),
@@ -42,6 +44,10 @@ class RuntimeOrchestrator(
 ) : RuntimeContainer {
     private val imageInputModule = RuntimeImageInputModule(inferenceModule)
     private val sessionManager = RuntimeSessionManager(conversationModule, memoryModule)
+    private val responseCache = RuntimeResponseCache(
+        maxEntries = runtimeConfig.responseCacheMaxEntries,
+        ttlMs = runtimeConfig.responseCacheTtlSec.coerceAtLeast(0L) * 1000L,
+    )
     private var routingMode: RoutingMode = RoutingMode.AUTO
 
     init {
@@ -71,9 +77,6 @@ class RuntimeOrchestrator(
             "Model artifact not registered for runtime model: $modelId"
         }
         artifactVerifier.verifyArtifactOrThrow(modelId)
-        check(inferenceModule.loadModel(modelId)) {
-            "Failed to load runtime model: $modelId"
-        }
 
         conversationModule.appendUserTurn(sessionId, userText)
         requirePolicyEvent(
@@ -89,20 +92,77 @@ class RuntimeOrchestrator(
         )
 
         val prompt = buildPrompt(userText, sessionId, taskType, deviceState)
+        val prefixCacheKey = buildPrefixCacheKey(
+            modelId = modelId,
+            taskType = taskType,
+            prompt = prompt,
+            maxTokens = maxTokens,
+        )
+        val responseCacheKey = buildResponseCacheKey(
+            modelId = modelId,
+            taskType = taskType,
+            prompt = prompt,
+            maxTokens = maxTokens,
+        )
         requirePolicyEvent(
             eventType = "inference.generate",
             failureMessage = "Policy module rejected inference event type.",
         )
         val startedMs = System.currentTimeMillis()
+
+        responseCache.get(responseCacheKey)?.let { cachedText ->
+            if (cachedText.isNotBlank()) {
+                emitCachedTokens(cachedText, onToken)
+                val firstTokenLatencyMs = 1L
+                val totalLatency = (System.currentTimeMillis() - startedMs).coerceAtLeast(1L)
+                requirePolicyEvent(
+                    eventType = "observability.record_runtime_metrics",
+                    failureMessage = "Policy module rejected diagnostics metric event type.",
+                )
+                observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
+                observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
+                observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
+                conversationModule.appendAssistantTurn(sessionId, cachedText)
+                return ChatResponse(
+                    sessionId = sessionId,
+                    modelId = modelId,
+                    text = cachedText,
+                    firstTokenLatencyMs = firstTokenLatencyMs,
+                    totalLatencyMs = totalLatency,
+                )
+            }
+        }
+
+        check(inferenceModule.loadModel(modelId)) {
+            "Failed to load runtime model: $modelId"
+        }
+
+        val cachePolicy = resolveNativeCachePolicy()
         var firstTokenLatencyMs = -1L
         val builder = StringBuilder()
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule
         try {
-            inferenceModule.generateStream(InferenceRequest(prompt = prompt, maxTokens = maxTokens)) { token ->
-                if (firstTokenLatencyMs < 0) {
-                    firstTokenLatencyMs = System.currentTimeMillis() - startedMs
+            if (nativeInference != null) {
+                nativeInference.generateStreamWithCache(
+                    request = InferenceRequest(prompt = prompt, maxTokens = maxTokens),
+                    cacheKey = prefixCacheKey,
+                    cachePolicy = cachePolicy,
+                    onToken = { token ->
+                        if (firstTokenLatencyMs < 0) {
+                            firstTokenLatencyMs = System.currentTimeMillis() - startedMs
+                        }
+                        builder.append(token)
+                        onToken(token)
+                    },
+                )
+            } else {
+                inferenceModule.generateStream(InferenceRequest(prompt = prompt, maxTokens = maxTokens)) { token ->
+                    if (firstTokenLatencyMs < 0) {
+                        firstTokenLatencyMs = System.currentTimeMillis() - startedMs
+                    }
+                    builder.append(token)
+                    onToken(token)
                 }
-                builder.append(token)
-                onToken(token)
             }
         } finally {
             if (!keepModelLoaded) {
@@ -111,6 +171,8 @@ class RuntimeOrchestrator(
         }
         check(firstTokenLatencyMs >= 0) { "Runtime returned no tokens." }
         val totalLatency = System.currentTimeMillis() - startedMs
+        val responseText = builder.toString().trim()
+        responseCache.put(responseCacheKey, responseText)
         requirePolicyEvent(
             eventType = "observability.record_runtime_metrics",
             failureMessage = "Policy module rejected diagnostics metric event type.",
@@ -118,12 +180,12 @@ class RuntimeOrchestrator(
         observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
         observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
         observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
-        conversationModule.appendAssistantTurn(sessionId, builder.toString().trim())
+        conversationModule.appendAssistantTurn(sessionId, responseText)
 
         return ChatResponse(
             sessionId = sessionId,
             modelId = modelId,
-            text = builder.toString().trim(),
+            text = responseText,
             firstTokenLatencyMs = firstTokenLatencyMs,
             totalLatencyMs = totalLatency,
         )
@@ -242,7 +304,7 @@ class RuntimeOrchestrator(
         val runtimeBackend = runtimeBackend()
         if (runtimeConfig.requireNativeRuntimeForStartupChecks &&
             runtimeBackend != null &&
-            runtimeBackend != RuntimeBackend.NATIVE_JNI
+            runtimeBackend != RuntimeBackend.NATIVE_JNI.name
         ) {
             checks.add(
                 "Runtime backend is $runtimeBackend. " +
@@ -284,7 +346,9 @@ class RuntimeOrchestrator(
 
     fun listTurns(sessionId: SessionId): List<Turn> = sessionManager.listTurns(sessionId)
 
-    fun runtimeBackend(): RuntimeBackend? {
+    override fun runtimeBackend(): String? = runtimeBackendEnum()?.name
+
+    fun runtimeBackendEnum(): RuntimeBackend? {
         return (inferenceModule as? LlamaCppInferenceModule)?.runtimeBackend()
     }
 
@@ -312,6 +376,72 @@ class RuntimeOrchestrator(
         }.take(contextBudget * 4)
     }
 
+    private fun resolveNativeCachePolicy(): CachePolicy {
+        if (!runtimeConfig.prefixCacheEnabled) {
+            return CachePolicy.OFF
+        }
+        return if (runtimeConfig.prefixCacheStrict) {
+            CachePolicy.PREFIX_KV_REUSE_STRICT
+        } else {
+            CachePolicy.PREFIX_KV_REUSE
+        }
+    }
+
+    private fun buildPrefixCacheKey(
+        modelId: String,
+        taskType: String,
+        prompt: String,
+        maxTokens: Int,
+    ): String {
+        val normalizedPrefix = prompt
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(MAX_PREFIX_CACHE_KEY_PROMPT_CHARS)
+        val keyMaterial = buildList {
+            add(CACHE_KEY_VERSION)
+            add(modelId)
+            add(runtimeConfig.runtimeCompatibilityTag)
+            add(taskType)
+            add(runtimeConfig.artifactSha256ByModelId[modelId].orEmpty())
+            add(runtimeConfig.artifactProvenanceSignatureByModelId[modelId].orEmpty())
+            add("max_tokens=$maxTokens")
+            add("decode_profile=$DECODE_PROFILE_STABLE")
+            add(normalizedPrefix)
+        }.joinToString("|")
+        return sha256Hex(keyMaterial)
+    }
+
+    private fun buildResponseCacheKey(
+        modelId: String,
+        taskType: String,
+        prompt: String,
+        maxTokens: Int,
+    ): String {
+        val keyMaterial = buildList {
+            add(CACHE_KEY_VERSION)
+            add(modelId)
+            add(runtimeConfig.runtimeCompatibilityTag)
+            add(taskType)
+            add(runtimeConfig.artifactSha256ByModelId[modelId].orEmpty())
+            add(runtimeConfig.artifactProvenanceSignatureByModelId[modelId].orEmpty())
+            add("max_tokens=$maxTokens")
+            add("decode_profile=$DECODE_PROFILE_STABLE")
+            add(prompt)
+        }.joinToString("|")
+        return sha256Hex(keyMaterial)
+    }
+
+    private fun sha256Hex(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray())
+        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    private fun emitCachedTokens(text: String, onToken: (String) -> Unit) {
+        text.split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+            .forEach { token -> onToken("$token ") }
+    }
+
     private fun requirePolicyEvent(eventType: String, failureMessage: String) {
         check(policyModule.enforceDataBoundary(eventType)) { failureMessage }
     }
@@ -326,5 +456,8 @@ class RuntimeOrchestrator(
 
     companion object {
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
+        private const val CACHE_KEY_VERSION = "v1"
+        private const val DECODE_PROFILE_STABLE = "sampler:greedy"
+        private const val MAX_PREFIX_CACHE_KEY_PROMPT_CHARS: Int = 1024
     }
 }

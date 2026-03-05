@@ -1,6 +1,6 @@
 # Engineering Playbook
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Mission
 
@@ -40,6 +40,7 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 
 - [ ] WP-09 rollout support and stabilization backlog
 - [ ] DX-01 layered test profiles + Stage-2 quick/closure efficiency rollout
+- [ ] DX-02 provider-style caching rollout (native prefix/KV reuse + runtime cache telemetry)
 
 ## Lead Eng Dispatch (Now)
 
@@ -71,6 +72,7 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 | ENG-17 | Wire policy module to Android platform network behavior + regressions | Done | ENG-12..ENG-16 integration available | Security Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md` |
 | ENG-18 | UI accessibility + error-state hardening for beta rollout | Done | WP-11 | Android Eng | `docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`, `docs/testing/test-strategy.md` |
 | DX-01 | Layered test profiles + Stage-2 quick/closure efficiency automation | In Progress | WP-12 closeout | Eng Platform + Runtime | `docs/testing/test-lane-profiles-and-selection.md`, `scripts/dev/README.md` |
+| DX-02 | Provider-style caching rollout (native prefix reuse + runtime response cache + Stage-2 cache telemetry) | In Progress | DX-01 baseline | Runtime Eng + Platform Eng | `packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/RuntimeBridgeContracts.kt`, `apps/mobile-android/src/main/cpp/pocket_llama.cpp`, `docs/testing/stage-2-benchmark-runbook.md` |
 | ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
 | ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
 

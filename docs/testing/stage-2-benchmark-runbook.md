@@ -1,6 +1,6 @@
 # Stage-2 Benchmark Runbook (Scenario A/B)
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Source of truth
 
@@ -47,6 +47,9 @@ export POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-0.
 export POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-2b-q4.gguf
 ```
 
+Note: these environment exports are for Stage-2 benchmark lanes only.  
+Normal app launch path now uses in-app model provisioning (`Advanced` -> `Open model setup`) and does not require shell env exports.
+
 If models are only available on host storage, provision them to device first:
 
 ```bash
@@ -83,10 +86,11 @@ bash scripts/dev/bench.sh stage2 \
 
 Quick profile characteristics:
 
-1. Defaults to 0.8B model, low token/runs configuration.
+1. Defaults to 0.8B model, low token/runs configuration with paired cold/warm run sampling (`runs=2` default).
 2. Supports partial scenarios (`a` or `b`) for targeted reruns.
 3. Supports resume to avoid repeating completed sweeps.
-4. Uses filtered logcat by default.
+4. Uses filtered logcat by default and captures `PREFIX_CACHE|...` counters.
+5. Emits warm-vs-cold first-token delta in `summary.json` for quick-loop regression checks.
 
 ### Closure Profile (Gate/Signoff)
 
@@ -105,3 +109,10 @@ Closure profile requirements:
 2. Must pass strict threshold evaluation.
 3. Must pass runtime evidence validator (`NATIVE_JNI` required, `ADB_FALLBACK` forbidden).
 4. Must be linked from dated evidence note under `docs/operations/evidence/...`.
+
+Optional cache controls:
+
+```bash
+export POCKETGPT_PREFIX_CACHE_ENABLED=1
+export POCKETGPT_PREFIX_CACHE_STRICT=0
+```
