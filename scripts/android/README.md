@@ -12,6 +12,7 @@ These scripts support repeatable Android device testing for MVP stages.
 - `ensure_device.sh`: validates one adb-ready device (supports `ADB_SERIAL`)
 - `capture_device_baseline.sh`: captures device + battery + thermal + memory baseline
 - `configure_device_for_benchmark.sh`: benchmark-friendly device settings (`status|apply|reset`)
+- `dev_loop.sh`: one-command install + launch + live logcat preview for iterative Android development
 - `run_short_loop.sh`: runs any command `N` times and captures crash/OOM signals from logcat
 - `run_stage2_native.sh`: executes real Stage-2 native JNI benchmark runs on-device (supports profile-driven quick/closure execution, partial model/scenario runs, resume manifest, install caching, and run metadata output)
 - `provision_sideload_models.sh`: pushes local GGUF models with SHA-aware skip behavior and emits export-ready env files under `scripts/benchmarks/device-env/`
@@ -25,6 +26,8 @@ bash scripts/android/ensure_device.sh
 bash scripts/android/capture_device_baseline.sh
 bash scripts/android/configure_device_for_benchmark.sh status
 bash scripts/android/configure_device_for_benchmark.sh apply
+bash scripts/android/dev_loop.sh
+bash scripts/android/dev_loop.sh --no-install
 bash scripts/android/run_short_loop.sh --runs 10 --label wp02 -- bash scripts/dev/verify.sh
 bash scripts/android/provision_sideload_models.sh --device <device-id> --model-0-8b-local <host-path> --model-2b-local <host-path>
 bash scripts/android/run_stage2_native.sh --device <device-id> --profile quick --models 0.8b --scenarios both --resume --install-mode auto
