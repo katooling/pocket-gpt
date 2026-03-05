@@ -21,14 +21,15 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals(RuntimeBackend.NATIVE_JNI, bridge.runtimeBackend())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         val tokens = mutableListOf<String>()
-        assertTrue(
-            bridge.generate(
-                prompt = "prompt",
-                maxTokens = 16,
-                cacheKey = "k1",
-                cachePolicy = CachePolicy.PREFIX_KV_REUSE,
-            ) { tokens.add(it) },
+        val result = bridge.generate(
+            requestId = "req-native-1",
+            prompt = "prompt",
+            maxTokens = 16,
+            cacheKey = "k1",
+            cachePolicy = CachePolicy.PREFIX_KV_REUSE,
+            onToken = { tokens.add(it) },
         )
+        assertTrue(result.success)
         bridge.unloadModel()
 
         assertTrue(nativeApi.loadCalled)
@@ -55,14 +56,15 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals(RuntimeBackend.ADB_FALLBACK, bridge.runtimeBackend())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         val tokens = mutableListOf<String>()
-        assertTrue(
-            bridge.generate(
-                prompt = "prompt",
-                maxTokens = 16,
-                cacheKey = "fallback-k1",
-                cachePolicy = CachePolicy.PREFIX_KV_REUSE_STRICT,
-            ) { tokens.add(it) },
+        val result = bridge.generate(
+            requestId = "req-fallback-1",
+            prompt = "prompt",
+            maxTokens = 16,
+            cacheKey = "fallback-k1",
+            cachePolicy = CachePolicy.PREFIX_KV_REUSE_STRICT,
+            onToken = { tokens.add(it) },
         )
+        assertTrue(result.success)
         bridge.unloadModel()
 
         assertTrue(fallback.loadCalled)
@@ -85,6 +87,30 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
         assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
     }
+
+    @Test
+    fun `cancel generation delegates to active backend`() {
+        val nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello")
+        val nativeBridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+        )
+        assertTrue(nativeBridge.isReady())
+        assertTrue(nativeBridge.cancelGeneration())
+        assertTrue(nativeApi.cancelCalled)
+
+        val fallback = FakeFallbackBridge()
+        val fallbackBridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(initializeOk = false, loadOk = false, generatedText = ""),
+            libraryLoader = { _ -> error("missing native library") },
+            fallbackBridge = fallback,
+            fallbackEnabled = true,
+        )
+        assertTrue(fallbackBridge.isReady())
+        assertTrue(fallbackBridge.cancelGeneration())
+        assertTrue(fallback.cancelCalled)
+    }
 }
 
 private class FakeNativeApi(
@@ -95,6 +121,7 @@ private class FakeNativeApi(
     var loadCalled = false
     var generateCalled = false
     var unloadCalled = false
+    var cancelCalled = false
     var lastCacheKey: String? = null
     var lastCachePolicyCode: Int? = null
 
@@ -103,6 +130,24 @@ private class FakeNativeApi(
     override fun loadModel(modelId: String, modelPath: String): Boolean {
         loadCalled = true
         return loadOk
+    }
+
+    override fun generateStream(
+        requestId: String,
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicyCode: Int,
+        onToken: NativeJniLlamaCppBridge.NativeApi.TokenCallback,
+    ): NativeJniLlamaCppBridge.NativeApi.StreamStatus {
+        generateCalled = true
+        lastCacheKey = cacheKey
+        lastCachePolicyCode = cachePolicyCode
+        generatedText
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+            .forEach { token -> onToken.onToken("$token ") }
+        return NativeJniLlamaCppBridge.NativeApi.StreamStatus(GenerationFinishReason.COMPLETED)
     }
 
     override fun generate(prompt: String, maxTokens: Int, cacheKey: String?, cachePolicyCode: Int): String {
@@ -115,6 +160,11 @@ private class FakeNativeApi(
     override fun unloadModel() {
         unloadCalled = true
     }
+
+    override fun cancelGeneration(): Boolean {
+        cancelCalled = true
+        return true
+    }
 }
 
 private class FakeFallbackBridge(
@@ -125,6 +175,7 @@ private class FakeFallbackBridge(
     var loadCalled = false
     var generateCalled = false
     var unloadCalled = false
+    var cancelCalled = false
     var lastCacheKey: String? = null
     var lastCachePolicy: CachePolicy? = null
 
@@ -141,25 +192,45 @@ private class FakeFallbackBridge(
     }
 
     override fun generate(
+        requestId: String,
         prompt: String,
         maxTokens: Int,
         cacheKey: String?,
         cachePolicy: CachePolicy,
         onToken: (String) -> Unit,
-    ): Boolean {
+    ): GenerationResult {
         generateCalled = true
         lastCacheKey = cacheKey
         lastCachePolicy = cachePolicy
         if (!generateOk) {
-            return false
+            return GenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = 0L,
+                cancelled = false,
+                errorCode = "FALLBACK_FAILURE",
+            )
         }
         onToken("fallback ")
         onToken("token ")
-        return true
+        return GenerationResult(
+            finishReason = GenerationFinishReason.COMPLETED,
+            tokenCount = 2,
+            firstTokenMs = 1L,
+            totalMs = 2L,
+            cancelled = false,
+            errorCode = null,
+        )
     }
 
     override fun unloadModel() {
         unloadCalled = true
+    }
+
+    override fun cancelGeneration(): Boolean {
+        cancelCalled = true
+        return true
     }
 
     override fun runtimeBackend(): RuntimeBackend {

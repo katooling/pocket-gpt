@@ -43,6 +43,8 @@ fun main() {
         maxTokens = 64,
         keepModelLoaded = false,
         onToken = {},
+        requestTimeoutMs = 90_000L,
+        requestId = "stage-runner-${System.currentTimeMillis()}",
     )
     println("Model: ${response.modelId}")
     println("Response: ${response.text}")

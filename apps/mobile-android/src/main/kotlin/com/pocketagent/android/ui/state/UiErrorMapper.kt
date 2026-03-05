@@ -31,6 +31,8 @@ object UiErrorMapper {
                 "Model runtime compatibility failed. Import a compatible model build and refresh checks."
             normalized.contains("runtime backend is adb_fallback") || normalized.contains("runtime backend is unavailable") ->
                 "Native runtime backend is unavailable. Confirm device/runtime setup and retry."
+            normalized.contains("startup checks timed out") || normalized.contains("timed out") ->
+                "Runtime checks timed out. Refresh runtime checks and retry."
             else ->
                 "Runtime setup is incomplete. Open model setup, refresh checks, and retry."
         }
@@ -78,6 +80,15 @@ object UiErrorMapper {
             code = RUNTIME_CODE,
             userMessage = "Request failed. Please try again.",
             technicalDetail = detail,
+        )
+    }
+
+    fun runtimeCancelled(reason: String?): UiError {
+        val normalized = reason?.trim().orEmpty().ifBlank { "cancelled" }
+        return UiError(
+            code = RUNTIME_CODE,
+            userMessage = "Request was cancelled. Send again when ready.",
+            technicalDetail = "Generation cancelled: $normalized.",
         )
     }
 

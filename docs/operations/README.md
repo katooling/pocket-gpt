@@ -21,6 +21,13 @@ This section is the project operating system for cross-functional execution.
 - `rebased-release-plan-2026-03-05.md`
 - `prod-09-soft-gate-pilot-policy.md`
 - `prod-10-launch-gate-matrix.md`
+- `ux-13-stuck-send-timeout-recovery.md`
+- `eng-20-runtime-cancel-timeout-contract.md`
+- `qa-13-send-capture-gate-operationalization.md`
+- `doc-02-product-ux-doc-sync-timeout-cancel-send-capture.md`
+- `sec-02-privacy-claim-parity-audit.md`
+- `prod-11-pilot-support-incident-playbook.md`
+- `mkt-10-claim-freeze-v1.md`
 - `mkt-08-proof-asset-capture-and-listing-finalization.md`
 - `mkt-09-channel-scorecard-run-01.md`
 - `wp-13-ux-quality-work-package.md`

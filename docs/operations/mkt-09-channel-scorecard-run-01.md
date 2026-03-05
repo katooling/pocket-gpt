@@ -26,6 +26,7 @@ Execute the first 7-day channel experiment and produce a keep/iterate/stop recom
 1. Filled scorecard with channel metrics and qualitative notes.
 2. Claim-safety audit result per channel message block.
 3. Recommendation: `keep`, `iterate`, or `stop`.
+4. Claim set used must reference `docs/operations/mkt-10-claim-freeze-v1.md`.
 
 ## Acceptance
 

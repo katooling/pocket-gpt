@@ -77,6 +77,9 @@ class JourneyLaneConfig(_StrictModel):
     artifacts: ArtifactsConfig
     repeats_default: int = 1
     repeats_max: int = 5
+    reply_timeout_seconds_default: int = 90
+    capture_intervals_default: list[int] = Field(default_factory=lambda: [5, 15, 30, 60, 90])
+    prompt_default: str = "ola, how you doin"
 
 
 class RealRuntimeModelConfig(_StrictModel):

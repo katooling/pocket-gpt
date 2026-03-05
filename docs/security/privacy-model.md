@@ -68,3 +68,12 @@ PocketAgent is local-first by default:
 | Voice privacy (future STT/TTS) | equivalent controls to text/image paths | Planned (post-MVP) |
 
 Use `docs/roadmap/next-steps-execution-plan.md` as the source of truth for closure of these gaps.
+
+## Claim Parity Governance (As Of 2026-03-05)
+
+1. External publishable privacy claims must be backed by `Verified` rows in:
+   - `docs/operations/sec-02-privacy-claim-parity-audit.md`
+2. Claims with partial control parity remain internal-only until:
+   - control is implemented in-app,
+   - evidence is attached in operations packets,
+   - Product + Security mark parity as verified.

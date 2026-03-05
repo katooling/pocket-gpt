@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -75,6 +76,7 @@ internal fun AdvancedSettingsSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable { onRoutingModeSelected(mode) }
                     .semantics {
                         role = Role.RadioButton
                         selected = state.runtime.routingMode == mode

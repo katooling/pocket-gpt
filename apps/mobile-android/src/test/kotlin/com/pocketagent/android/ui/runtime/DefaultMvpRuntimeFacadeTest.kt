@@ -28,13 +28,14 @@ class DefaultMvpRuntimeFacadeTest {
 
         val events = facade.streamUserMessage(request).toList()
 
-        assertEquals(3, events.size)
-        assertTrue(events[0] is ChatStreamEvent.Token)
-        assertTrue(events[1] is ChatStreamEvent.Token)
-        assertTrue(events[2] is ChatStreamEvent.Completed)
-        assertEquals("hello", (events[0] as ChatStreamEvent.Token).accumulatedText)
-        assertEquals("hello world", (events[1] as ChatStreamEvent.Token).accumulatedText)
-        assertEquals("response", (events[2] as ChatStreamEvent.Completed).response.text)
+        assertEquals(4, events.size)
+        assertTrue(events[0] is ChatStreamEvent.Started)
+        assertTrue(events[1] is ChatStreamEvent.TokenDelta)
+        assertTrue(events[2] is ChatStreamEvent.TokenDelta)
+        assertTrue(events[3] is ChatStreamEvent.Completed)
+        assertEquals("hello", (events[1] as ChatStreamEvent.TokenDelta).accumulatedText)
+        assertEquals("hello world", (events[2] as ChatStreamEvent.TokenDelta).accumulatedText)
+        assertEquals("response", (events[3] as ChatStreamEvent.Completed).response.text)
         assertEquals("hello", container.lastUserText)
         assertEquals(64, container.lastMaxTokens)
     }
@@ -58,6 +59,80 @@ class DefaultMvpRuntimeFacadeTest {
         assertTrue(facade.deleteSession(SessionId("session-1")))
         assertEquals(1, container.deleteCalls)
     }
+
+    @Test
+    fun `stream user message emits cancelled event on runtime cancellation`() = runTest {
+        val container = FakeRuntimeContainer().apply {
+            sendError = RuntimeGenerationCancelledException(requestId = "req-cancel")
+        }
+        val facade = DefaultMvpRuntimeFacade(container)
+        val request = StreamUserMessageRequest(
+            sessionId = SessionId("session-1"),
+            requestId = "req-cancel",
+            userText = "hello",
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            maxTokens = 64,
+        )
+
+        val events = facade.streamUserMessage(request).toList()
+
+        assertEquals(2, events.size)
+        assertTrue(events[0] is ChatStreamEvent.Started)
+        assertTrue(events[1] is ChatStreamEvent.Cancelled)
+        assertEquals("cancelled", (events[1] as ChatStreamEvent.Cancelled).reason)
+    }
+
+    @Test
+    fun `stream user message emits failed event with bridge error code`() = runTest {
+        val container = FakeRuntimeContainer().apply {
+            sendError = RuntimeGenerationFailureException(
+                message = "utf8 stream failure",
+                errorCode = "JNI_UTF8_STREAM_ERROR",
+            )
+        }
+        val facade = DefaultMvpRuntimeFacade(container)
+        val request = StreamUserMessageRequest(
+            sessionId = SessionId("session-1"),
+            requestId = "req-fail",
+            userText = "hello",
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            maxTokens = 64,
+        )
+
+        val events = facade.streamUserMessage(request).toList()
+
+        assertEquals(2, events.size)
+        assertTrue(events[0] is ChatStreamEvent.Started)
+        assertTrue(events[1] is ChatStreamEvent.Failed)
+        assertEquals("jni_utf8_stream_error", (events[1] as ChatStreamEvent.Failed).errorCode)
+    }
+
+    @Test
+    fun `terminal failure does not trigger duplicate cancel from awaitClose`() = runTest {
+        val container = FakeRuntimeContainer().apply {
+            sendError = RuntimeGenerationFailureException(
+                message = "runtime failure",
+                errorCode = "JNI_RUNTIME_ERROR",
+            )
+        }
+        val facade = DefaultMvpRuntimeFacade(container)
+        val request = StreamUserMessageRequest(
+            sessionId = SessionId("session-1"),
+            requestId = "req-fail-nocancel",
+            userText = "hello",
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            maxTokens = 64,
+        )
+
+        val events = facade.streamUserMessage(request).toList()
+
+        assertEquals(2, events.size)
+        assertEquals(0, container.cancelByRequestCalls)
+        assertEquals(0, container.cancelBySessionCalls)
+    }
 }
 
 private class FakeRuntimeContainer : RuntimeContainer {
@@ -66,6 +141,9 @@ private class FakeRuntimeContainer : RuntimeContainer {
     var lastMaxTokens: Int = 0
     var restoreCalls: Int = 0
     var deleteCalls: Int = 0
+    var sendError: Throwable? = null
+    var cancelByRequestCalls: Int = 0
+    var cancelBySessionCalls: Int = 0
 
     override fun createSession(): SessionId = SessionId("session-1")
 
@@ -77,7 +155,10 @@ private class FakeRuntimeContainer : RuntimeContainer {
         maxTokens: Int,
         keepModelLoaded: Boolean,
         onToken: (String) -> Unit,
+        requestTimeoutMs: Long,
+        requestId: String,
     ): ChatResponse {
+        sendError?.let { throw it }
         lastUserText = userText
         lastMaxTokens = maxTokens
         onToken("hello ")
@@ -104,6 +185,16 @@ private class FakeRuntimeContainer : RuntimeContainer {
     override fun getRoutingMode(): RoutingMode = currentRoutingMode
 
     override fun runStartupChecks(): List<String> = listOf("check")
+
+    override fun cancelGeneration(sessionId: SessionId): Boolean {
+        cancelBySessionCalls += 1
+        return true
+    }
+
+    override fun cancelGenerationByRequest(requestId: String): Boolean {
+        cancelByRequestCalls += 1
+        return true
+    }
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         restoreCalls += 1

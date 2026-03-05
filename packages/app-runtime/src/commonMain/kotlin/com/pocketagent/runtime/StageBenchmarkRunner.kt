@@ -126,6 +126,8 @@ private class RuntimeContainerBenchmarkRuntime(
             maxTokens = maxTokens,
             keepModelLoaded = false,
             onToken = {},
+            requestTimeoutMs = 90_000L,
+            requestId = "benchmark-${System.currentTimeMillis()}",
         )
     }
 

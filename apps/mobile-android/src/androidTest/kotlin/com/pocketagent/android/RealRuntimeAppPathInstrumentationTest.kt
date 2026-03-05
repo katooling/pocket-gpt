@@ -2,10 +2,12 @@ package com.pocketagent.android
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.StreamUserMessageRequest
+import java.io.File
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -35,16 +37,23 @@ class RealRuntimeAppPathInstrumentationTest {
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
 
         AppRuntimeDependencies.resetRuntimeFacadeFactoryForTests()
-        AppRuntimeDependencies.seedModelFromAbsolutePath(
+        val seeded0 = AppRuntimeDependencies.seedModelFromAbsolutePath(
             context = appContext,
             modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
             absolutePath = modelPath0_8b,
         )
-        AppRuntimeDependencies.seedModelFromAbsolutePath(
+        val seeded2 = AppRuntimeDependencies.seedModelFromAbsolutePath(
             context = appContext,
             modelId = ModelCatalog.QWEN_3_5_2B_Q4,
             absolutePath = modelPath2b,
         )
+        val snapshot = AppRuntimeDependencies.currentProvisioningSnapshot(appContext)
+        val state0 = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+        val state2 = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_2B_Q4 }
+        assertEquals(seeded0.version, state0.activeVersion)
+        assertEquals(seeded2.version, state2.activeVersion)
+        assertEquals(normalizePath(modelPath0_8b), normalizePath(state0.absolutePath.orEmpty()))
+        assertEquals(normalizePath(modelPath2b), normalizePath(state2.absolutePath.orEmpty()))
         AppRuntimeDependencies.installProductionRuntime(appContext)
 
         val facade = AppRuntimeDependencies.runtimeFacadeFactory()
@@ -56,6 +65,7 @@ class RealRuntimeAppPathInstrumentationTest {
         assertEquals("NATIVE_JNI", facade.runtimeBackend())
 
         val sessionId = facade.createSession()
+        facade.setRoutingMode(RoutingMode.QWEN_0_8B)
         var completed: ChatStreamEvent.Completed? = null
         facade.streamUserMessage(
             StreamUserMessageRequest(
@@ -74,12 +84,20 @@ class RealRuntimeAppPathInstrumentationTest {
         val response = completed?.response
         assertNotNull("Expected completed chat response from real runtime lane.", response)
         assertTrue(response?.text?.isNotBlank() == true)
+        assertEquals(ModelCatalog.QWEN_3_5_0_8B_Q4, response?.modelId)
     }
 
     private fun requireFile(value: String): String {
-        val file = java.io.File(value)
+        val file = File(value)
         require(file.exists() && file.isFile) { "Model path does not exist: $value" }
         return file.absolutePath
+    }
+
+    private fun normalizePath(value: String): String {
+        val canonical = runCatching { File(value).canonicalPath }.getOrElse { File(value).absolutePath }
+        return canonical
+            .replace("/sdcard/", "/storage/emulated/0/")
+            .replace("/storage/self/primary/", "/storage/emulated/0/")
     }
 
     private fun parseBooleanArg(

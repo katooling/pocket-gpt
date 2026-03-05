@@ -6,4 +6,6 @@ data class ChatResponse(
     val text: String,
     val firstTokenLatencyMs: Long,
     val totalLatencyMs: Long,
+    val requestId: String = "",
+    val finishReason: String = "completed",
 )

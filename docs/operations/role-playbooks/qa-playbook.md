@@ -28,6 +28,7 @@ Provide reproducible release evidence across runtime stability, UX quality, and 
 ## Ready Queue
 
 - [ ] `QA-11` lane rerun after `ENG-19` (`android-instrumented`, `maestro`, `journey`)
+- [ ] `QA-13` send-capture gate operationalization in weekly lane evidence
 - [ ] `QA-WP13-RUN02` moderated 5-user packet execution
 - [ ] `QA-12` weekly required-tier + best-effort matrix publication
 
@@ -36,6 +37,7 @@ Provide reproducible release evidence across runtime stability, UX quality, and 
 | Task ID | Task | Status | Owner | References |
 |---|---|---|---|---|
 | QA-11 | Full lane rerun after ENG-19 patch | Ready | QA Engineer | `docs/testing/android-dx-and-test-playbook.md`, `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md` |
+| QA-13 | Send-capture gate operationalization with pass/fail rubric in weekly journey evidence | Ready | QA Engineer | `docs/testing/android-dx-and-test-playbook.md`, `docs/operations/qa-13-send-capture-gate-operationalization.md`, `docs/operations/wp-13-usability-gate-packet-template.md` |
 | QA-WP13-RUN02 | Moderated 5-user workflow packet with actual metrics | Ready | QA Lead + Product | `docs/operations/wp-13-usability-gate-packet-template.md`, `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` |
 | QA-12 | Weekly regression matrix (required-tier + best-effort + caveats) | Ready | QA Lead | `docs/testing/wp-09-ui-regression-matrix.md` |
 | QA-10 | Weekly UI regression matrix run execution | In Progress | QA Lead | `docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md` |
@@ -47,6 +49,7 @@ Provide reproducible release evidence across runtime stability, UX quality, and 
 1. Required promotion signals: latest pass ids for `android-instrumented`, `maestro`, `journey` + completed moderated packet.
 2. Any open `UX-S0`/`UX-S1` blocker triggers hold recommendation.
 3. Weekly matrix must explicitly label required-tier vs best-effort coverage.
+4. Journey send-capture stage must show `phase=completed` and `placeholder_visible=false` within SLA for pass.
 
 ## QA References
 
@@ -54,4 +57,5 @@ Provide reproducible release evidence across runtime stability, UX quality, and 
 - `docs/testing/test-strategy.md`
 - `docs/testing/android-dx-and-test-playbook.md`
 - `docs/operations/wp-13-usability-gate-packet-template.md`
+- `docs/operations/qa-13-send-capture-gate-operationalization.md`
 - `docs/operations/prod-10-launch-gate-matrix.md`

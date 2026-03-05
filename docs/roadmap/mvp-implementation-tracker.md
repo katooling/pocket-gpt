@@ -42,6 +42,13 @@ Pilot promotion policy:
 | MKT-08 | Proof asset capture + listing shotlist finalization | Marketing | Ready | Claim-safe asset set approved |
 | MKT-09 | First 7-day channel scorecard execution | Marketing | Ready | Scorecard completed with keep/iterate/stop decision |
 | PROD-10 | Unified launch gate matrix and promote/hold decision run | Product | Ready | Single matrix maps story->flow->test->evidence->claim |
+| UX-13 | Stuck send + timeout recovery UX | Product + Design + Android | Ready | Deterministic timeout/cancel recovery UX + test assertions |
+| ENG-20 | Runtime cancel/timeout contract hardening | Engineering | In Progress | JNI + fallback timeout/cancel semantics documented and evidenced |
+| QA-13 | Send-capture gate operationalization | QA | Ready | Weekly journey gate includes send-capture pass/fail rubric |
+| DOC-02 | Product/UX doc sync for timeout/cancel/send-capture | Product | In Progress | PRD + UX docs aligned to runtime behavior |
+| SEC-02 | Privacy claim parity audit | Product + Security | Ready | Claim->control->evidence table with publishability status |
+| PROD-11 | Pilot support + incident UX-ops playbook | Product Ops | Ready | SLA/escalation/fallback playbook published |
+| MKT-10 | Claim freeze v1 | Marketing | Ready | Publish-safe claim set tied to PROD-10 rows |
 
 ## Stage-wide Quality Gates (apply to every stage)
 

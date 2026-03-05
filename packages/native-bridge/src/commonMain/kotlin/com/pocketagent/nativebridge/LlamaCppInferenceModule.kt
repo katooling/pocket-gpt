@@ -27,34 +27,48 @@ class LlamaCppInferenceModule(
     }
 
     override fun generateStream(request: InferenceRequest, onToken: (String) -> Unit) {
-        generateStreamWithCache(
+        val result = generateStreamWithCache(
+            requestId = "legacy",
             request = request,
             cacheKey = null,
             cachePolicy = CachePolicy.OFF,
             onToken = onToken,
         )
+        check(result.success) {
+            "llama.cpp runtime generation failed. finishReason=${result.finishReason} errorCode=${result.errorCode.orEmpty()}"
+        }
     }
 
     fun generateStreamWithCache(
+        requestId: String,
         request: InferenceRequest,
         cacheKey: String?,
         cachePolicy: CachePolicy,
         onToken: (String) -> Unit,
-    ) {
+    ): GenerationResult {
         check(activeModelId != null) { "Model must be loaded before generation." }
-        val success = runtimeBridge.generate(
+        val result = runtimeBridge.generate(
+            requestId = requestId,
             prompt = request.prompt,
             maxTokens = request.maxTokens,
             cacheKey = cacheKey,
             cachePolicy = cachePolicy,
             onToken = onToken,
         )
-        check(success) { "llama.cpp runtime generation failed." }
+        return result
     }
 
     override fun unloadModel() {
         runtimeBridge.unloadModel()
         activeModelId = null
+    }
+
+    fun cancelGeneration(): Boolean {
+        return runtimeBridge.cancelGeneration()
+    }
+
+    fun cancelGeneration(requestId: String): Boolean {
+        return runtimeBridge.cancelGeneration(requestId)
     }
 
     fun runtimeBackend(): RuntimeBackend = runtimeBridge.runtimeBackend()

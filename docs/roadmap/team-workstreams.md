@@ -15,11 +15,12 @@ Role playbooks:
 
 | Workstream | Primary Scope | Current Focus Tickets | Depends On |
 |---|---|---|---|
-| Product Ops | release policy, docs coherence, decision governance | `DOC-01`, `PROD-09`, `PROD-10` | execution board + tracker + evidence contracts |
-| Runtime + DX | lane robustness, deterministic preflight/recovery behavior | `ENG-19` | devctl lane architecture + device policy |
-| QA Operations | lane reruns, packet closure, weekly regression signal | `QA-11`, `QA-WP13-RUN02`, `QA-12` | ENG-19 patch + WP-13 packet template |
-| UX/Product Design | first-run recovery comprehension and measurable UX contracts | `UX-12` | model-management flow + runtime states |
-| Marketing Ops | evidence-safe proof assets and channel experiment execution | `MKT-08`, `MKT-09` | moderated packet + launch gate matrix |
+| Product Ops | release policy, docs coherence, decision governance | `DOC-01`, `DOC-02`, `PROD-09`, `PROD-10`, `PROD-11` | execution board + tracker + evidence contracts |
+| Runtime + DX | lane robustness, deterministic preflight/recovery behavior | `ENG-19`, `ENG-20` | devctl lane architecture + runtime bridge contracts |
+| QA Operations | lane reruns, packet closure, weekly regression signal | `QA-11`, `QA-13`, `QA-WP13-RUN02`, `QA-12` | ENG-19/ENG-20 + WP-13 packet template |
+| UX/Product Design | first-run recovery and timeout/cancel comprehension | `UX-12`, `UX-13` | model-management flow + runtime states |
+| Marketing Ops | evidence-safe proof assets and channel experiment execution | `MKT-08`, `MKT-09`, `MKT-10` | moderated packet + launch gate matrix + SEC-02 |
+| Security + Trust | privacy-claim parity and enforcement evidence mapping | `SEC-02` | privacy model + diagnostics evidence |
 
 ## Interface Contracts
 
@@ -33,13 +34,20 @@ Role playbooks:
 | Ticket | Owner | Support | Status |
 |---|---|---|---|
 | DOC-01 | Product Ops | Eng, QA, Marketing | In Progress |
+| DOC-02 | Product Lead | Eng, QA, Design | In Progress |
 | ENG-19 | Engineering | QA | In Progress |
+| ENG-20 | Engineering | QA, Product | In Progress |
 | QA-11 | QA | Engineering | Ready |
+| QA-13 | QA | Engineering, Product | Ready |
 | PROD-09 | Product Ops | QA, Marketing | Done |
 | UX-12 | Product + Design + Android | QA | Done |
+| UX-13 | Product + Design + Android | QA | Ready |
 | QA-WP13-RUN02 | QA + Product | Design, Engineering | Ready |
 | MKT-08 | Marketing | Product | Ready |
 | MKT-09 | Marketing | Product, QA | Ready |
+| MKT-10 | Marketing | Product, Security | Ready |
+| SEC-02 | Product + Security | QA, Marketing | Ready |
+| PROD-11 | Product Ops | QA, Marketing | Ready |
 | PROD-10 | Product | QA, Eng, Marketing | Ready |
 
 ## Weekly Decision Questions

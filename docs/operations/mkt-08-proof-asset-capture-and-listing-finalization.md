@@ -26,3 +26,4 @@ Capture claim-safe proof assets from the pilot build and finalize Play Store lis
 1. Every asset maps to a `PROD-10` matrix row.
 2. No asset implies unsupported/publicly unvalidated behavior.
 3. Final listing package is approved by Product + Marketing.
+4. External-facing assets only use claim blocks allowed by `MKT-10` claim freeze.

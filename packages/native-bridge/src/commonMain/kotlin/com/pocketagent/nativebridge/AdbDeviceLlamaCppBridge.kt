@@ -28,14 +28,36 @@ class AdbDeviceLlamaCppBridge(
     }
 
     override fun generate(
+        requestId: String,
         prompt: String,
         maxTokens: Int,
         cacheKey: String?,
         cachePolicy: CachePolicy,
         onToken: (String) -> Unit,
-    ): Boolean {
-        val serial = activeSerial ?: resolveSerial() ?: return false
-        val model = activeModelId ?: return false
+    ): GenerationResult {
+        val startedMs = System.currentTimeMillis()
+        val serial = activeSerial ?: resolveSerial()
+        if (serial == null) {
+            return GenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
+                cancelled = false,
+                errorCode = "ADB_NO_SERIAL",
+            )
+        }
+        val model = activeModelId
+        if (model == null) {
+            return GenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
+                cancelled = false,
+                errorCode = "ADB_NO_ACTIVE_MODEL",
+            )
+        }
 
         val shellOutput = runCatching {
             commandRunner.run(
@@ -51,9 +73,25 @@ class AdbDeviceLlamaCppBridge(
                     "cache_policy=${cachePolicy.name}",
                 ),
             )
-        }.getOrElse { return false }
+        }.getOrElse {
+            return GenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
+                cancelled = false,
+                errorCode = "ADB_EXEC_EXCEPTION",
+            )
+        }
         if (shellOutput.exitCode != 0) {
-            return false
+            return GenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
+                cancelled = false,
+                errorCode = "ADB_EXEC_FAILURE",
+            )
         }
 
         val response = buildString {
@@ -63,16 +101,38 @@ class AdbDeviceLlamaCppBridge(
             append(prompt.hashCode())
         }.trim()
 
+        var firstTokenMs = -1L
+        var tokenCount = 0
         response
             .split(Regex("\\s+"))
             .filter { it.isNotBlank() }
-            .forEach { token -> onToken("$token ") }
-        return true
+            .forEach { token ->
+                if (firstTokenMs < 0L) {
+                    firstTokenMs = System.currentTimeMillis() - startedMs
+                }
+                tokenCount += 1
+                onToken("$token ")
+            }
+        return GenerationResult(
+            finishReason = GenerationFinishReason.COMPLETED,
+            tokenCount = tokenCount,
+            firstTokenMs = firstTokenMs,
+            totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
+            cancelled = false,
+            errorCode = null,
+        )
     }
 
     override fun unloadModel() {
         activeModelId = null
     }
+
+    override fun cancelGeneration(): Boolean {
+        // Adb fallback generation is command-based and currently non-interruptible.
+        return false
+    }
+
+    override fun cancelGeneration(requestId: String): Boolean = false
 
     override fun runtimeBackend(): RuntimeBackend {
         return if (isReady()) RuntimeBackend.ADB_FALLBACK else RuntimeBackend.UNAVAILABLE

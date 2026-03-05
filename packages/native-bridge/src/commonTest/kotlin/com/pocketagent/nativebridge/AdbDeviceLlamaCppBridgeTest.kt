@@ -30,7 +30,9 @@ class AdbDeviceLlamaCppBridgeTest {
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
 
         val tokens = mutableListOf<String>()
-        assertTrue(bridge.generate(prompt = "hello", maxTokens = 64) { tokens.add(it) })
+        val result = bridge.generate(prompt = "hello", maxTokens = 64) { tokens.add(it) }
+        assertTrue(result.success)
+        assertEquals(GenerationFinishReason.COMPLETED, result.finishReason)
         assertTrue(tokens.isNotEmpty())
     }
 

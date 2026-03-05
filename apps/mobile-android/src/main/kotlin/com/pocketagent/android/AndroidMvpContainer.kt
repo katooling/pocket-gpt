@@ -45,6 +45,7 @@ class AndroidMvpContainer(
     private val prefixCacheStrict: Boolean = RuntimeConfig.fromEnvironment().prefixCacheStrict,
     private val responseCacheTtlSec: Long = RuntimeConfig.fromEnvironment().responseCacheTtlSec,
     private val responseCacheMaxEntries: Int = RuntimeConfig.fromEnvironment().responseCacheMaxEntries,
+    private val streamContractV2Enabled: Boolean = RuntimeConfig.fromEnvironment().streamContractV2Enabled,
     private val networkPolicyClient: PolicyAwareNetworkClient = PolicyAwareNetworkClient(policyModule),
 ) {
     private val runtimeConfig = RuntimeConfig(
@@ -55,11 +56,12 @@ class AndroidMvpContainer(
         artifactProvenanceSignatureByModelId = artifactProvenanceSignatureByModelId,
         runtimeCompatibilityTag = runtimeCompatibilityTag,
         requireNativeRuntimeForStartupChecks = requireNativeRuntimeForStartupChecks,
-        prefixCacheEnabled = prefixCacheEnabled,
-        prefixCacheStrict = prefixCacheStrict,
-        responseCacheTtlSec = responseCacheTtlSec,
-        responseCacheMaxEntries = responseCacheMaxEntries,
-    )
+            prefixCacheEnabled = prefixCacheEnabled,
+            prefixCacheStrict = prefixCacheStrict,
+            responseCacheTtlSec = responseCacheTtlSec,
+            responseCacheMaxEntries = responseCacheMaxEntries,
+            streamContractV2Enabled = streamContractV2Enabled,
+        )
 
     private val orchestrator = RuntimeOrchestrator(
         conversationModule = conversationModule,
@@ -82,6 +84,8 @@ class AndroidMvpContainer(
         deviceState: DeviceState,
         maxTokens: Int = 128,
         keepModelLoaded: Boolean = false,
+        requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
+        requestId: String = "legacy",
     ): ChatResponse {
         return sendUserMessage(
             sessionId = sessionId,
@@ -90,6 +94,8 @@ class AndroidMvpContainer(
             deviceState = deviceState,
             maxTokens = maxTokens,
             keepModelLoaded = keepModelLoaded,
+            requestTimeoutMs = requestTimeoutMs,
+            requestId = requestId,
             onToken = {},
         )
     }
@@ -101,6 +107,8 @@ class AndroidMvpContainer(
         deviceState: DeviceState,
         maxTokens: Int = 128,
         keepModelLoaded: Boolean = false,
+        requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
+        requestId: String = "legacy",
         onToken: (String) -> Unit,
     ): ChatResponse {
         return orchestrator.sendUserMessage(
@@ -111,6 +119,8 @@ class AndroidMvpContainer(
             maxTokens = maxTokens,
             onToken = onToken,
             keepModelLoaded = keepModelLoaded,
+            requestTimeoutMs = requestTimeoutMs,
+            requestId = requestId,
         )
     }
 
@@ -164,8 +174,11 @@ class AndroidMvpContainer(
         const val PREFIX_CACHE_STRICT_ENV: String = RuntimeConfig.PREFIX_CACHE_STRICT_ENV
         const val RESPONSE_CACHE_TTL_SEC_ENV: String = RuntimeConfig.RESPONSE_CACHE_TTL_SEC_ENV
         const val RESPONSE_CACHE_MAX_ENTRIES_ENV: String = RuntimeConfig.RESPONSE_CACHE_MAX_ENTRIES_ENV
+        const val STREAM_CONTRACT_V2_ENV: String = RuntimeConfig.STREAM_CONTRACT_V2_ENV
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
 
         fun baselineModels(): List<String> = ModelCatalog.baselineModels()
+
+        private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 90_000L
     }
 }

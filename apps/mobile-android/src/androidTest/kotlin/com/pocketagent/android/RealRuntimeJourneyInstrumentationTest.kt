@@ -2,12 +2,19 @@ package com.pocketagent.android
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.pocketagent.core.SessionId
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.inference.DeviceState
 import com.pocketagent.core.Turn
+import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.StreamUserMessageRequest
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -32,6 +39,8 @@ class RealRuntimeJourneyInstrumentationTest {
         val modelPath2b = requireFile(modelPath2bRaw)
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         val journeyArtifactDir = args.getString(ARG_JOURNEY_ARTIFACT_DIR)?.trim().orEmpty()
+        val replyTimeoutSeconds = args.getString(ARG_REPLY_TIMEOUT_SECONDS)?.toLongOrNull()?.takeIf { it > 0L } ?: 90L
+        val replyTimeoutMs = replyTimeoutSeconds * 1_000L
         val traceLines = mutableListOf<String>()
 
         fun trace(step: String, detail: String) {
@@ -40,19 +49,27 @@ class RealRuntimeJourneyInstrumentationTest {
 
         try {
             AppRuntimeDependencies.resetRuntimeFacadeFactoryForTests()
-            AppRuntimeDependencies.seedModelFromAbsolutePath(
+            val seeded0 = AppRuntimeDependencies.seedModelFromAbsolutePath(
                 context = appContext,
                 modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
                 absolutePath = modelPath0_8b,
             )
             trace("provision", "seeded ${ModelCatalog.QWEN_3_5_0_8B_Q4}")
 
-            AppRuntimeDependencies.seedModelFromAbsolutePath(
+            val seeded2 = AppRuntimeDependencies.seedModelFromAbsolutePath(
                 context = appContext,
                 modelId = ModelCatalog.QWEN_3_5_2B_Q4,
                 absolutePath = modelPath2b,
             )
             trace("provision", "seeded ${ModelCatalog.QWEN_3_5_2B_Q4}")
+            val snapshot = AppRuntimeDependencies.currentProvisioningSnapshot(appContext)
+            val state0 = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+            val state2 = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_2B_Q4 }
+            assertEquals(seeded0.version, state0.activeVersion)
+            assertEquals(seeded2.version, state2.activeVersion)
+            assertEquals(normalizePath(modelPath0_8b), normalizePath(state0.absolutePath.orEmpty()))
+            assertEquals(normalizePath(modelPath2b), normalizePath(state2.absolutePath.orEmpty()))
+            trace("provision", "active_0_8b=${state0.activeVersion} active_2b=${state2.activeVersion}")
 
             AppRuntimeDependencies.installProductionRuntime(appContext)
             val facade = AppRuntimeDependencies.runtimeFacadeFactory()
@@ -84,6 +101,60 @@ class RealRuntimeJourneyInstrumentationTest {
             trace("diagnostics", diagnostics.take(80))
             assertTrue(diagnostics.isNotBlank())
 
+            val enableStreamingProbe = parseBooleanArg(args, ARG_ENABLE_STREAMING_PROBE, defaultValue = false)
+            if (enableStreamingProbe) {
+                var firstTokenLatencyMs: Long? = null
+                var completionLatencyMs: Long? = null
+                var completionText = ""
+                var completionModelId: String? = null
+                val sendStart = System.currentTimeMillis()
+
+                withTimeout(replyTimeoutMs) {
+                    facade.streamUserMessage(
+                        StreamUserMessageRequest(
+                            sessionId = SessionId(sessionId.value),
+                            userText = "ola, how you doin",
+                            taskType = "short_text",
+                            deviceState = DeviceState(
+                                batteryPercent = 72,
+                                thermalLevel = 3,
+                                ramClassGb = 8,
+                            ),
+                            maxTokens = 128,
+                            requestTimeoutMs = replyTimeoutMs,
+                        ),
+                    ).collect { event ->
+                        when (event) {
+                            is ChatStreamEvent.TokenDelta -> {
+                                if (firstTokenLatencyMs == null && event.accumulatedText.isNotBlank()) {
+                                    firstTokenLatencyMs = System.currentTimeMillis() - sendStart
+                                    trace("first_token", "latency_ms=$firstTokenLatencyMs")
+                                }
+                            }
+
+                            is ChatStreamEvent.Completed -> {
+                                completionLatencyMs = System.currentTimeMillis() - sendStart
+                                completionText = event.response.text
+                                completionModelId = event.response.modelId
+                                trace("completed", "latency_ms=$completionLatencyMs")
+                            }
+                            else -> Unit
+                        }
+                    }
+                }
+
+                assertNotNull("First token did not arrive within ${replyTimeoutMs}ms.", firstTokenLatencyMs)
+                assertNotNull("Completion did not arrive within ${replyTimeoutMs}ms.", completionLatencyMs)
+                assertTrue("Completion text is blank.", completionText.isNotBlank())
+                assertEquals(
+                    "Journey probe should execute with the explicitly selected 2B model.",
+                    ModelCatalog.QWEN_3_5_2B_Q4,
+                    completionModelId,
+                )
+            } else {
+                trace("send", "streaming probe disabled")
+            }
+
             // Session continuity surface: restore turns and ensure delete path is healthy.
             facade.restoreSession(
                 sessionId = sessionId,
@@ -111,6 +182,13 @@ class RealRuntimeJourneyInstrumentationTest {
         return file.absolutePath
     }
 
+    private fun normalizePath(value: String): String {
+        val canonical = runCatching { File(value).canonicalPath }.getOrElse { File(value).absolutePath }
+        return canonical
+            .replace("/sdcard/", "/storage/emulated/0/")
+            .replace("/storage/self/primary/", "/storage/emulated/0/")
+    }
+
     private fun parseBooleanArg(
         args: android.os.Bundle,
         key: String,
@@ -129,5 +207,7 @@ class RealRuntimeJourneyInstrumentationTest {
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
         private const val ARG_JOURNEY_ARTIFACT_DIR = "journey_artifact_dir"
+        private const val ARG_REPLY_TIMEOUT_SECONDS = "journey_reply_timeout_seconds"
+        private const val ARG_ENABLE_STREAMING_PROBE = "journey_enable_streaming_probe"
     }
 }

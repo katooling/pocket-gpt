@@ -15,6 +15,7 @@ import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -328,6 +329,111 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `send message timeout maps to deterministic runtime error`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            streamDelayMs = 100L,
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+            runtimeGenerationTimeoutMs = 50L,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("ola how you doin")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-RUNTIME-001") })
+        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("timed out") })
+        assertEquals("UI-RUNTIME-001", viewModel.uiState.value.runtime.lastErrorCode)
+        assertFalse(viewModel.uiState.value.composer.isSending)
+        assertTrue(runtime.cancelledRequestIds.isNotEmpty())
+    }
+
+    @Test
+    fun `cancelled terminal event preserves partial output and records terminal metadata`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            streamTokens = listOf("partial "),
+            streamTerminal = StreamTerminal.CANCELLED_MANUAL,
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("cancel test")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        val assistant = active.messages.lastOrNull { it.role == MessageRole.ASSISTANT && it.content.contains("partial") }
+        val terminalSystem = active.messages.lastOrNull { it.role == MessageRole.SYSTEM && it.finishReason == "cancelled" }
+
+        assertTrue(assistant != null)
+        assertEquals("cancelled", assistant?.finishReason)
+        assertTrue(assistant?.terminalEventSeen == true)
+        assertTrue(assistant?.requestId?.isNotBlank() == true)
+        assertTrue(terminalSystem != null)
+        assertEquals(assistant?.requestId, terminalSystem?.requestId)
+        assertEquals("UI-RUNTIME-001", viewModel.uiState.value.runtime.lastErrorCode)
+        assertFalse(viewModel.uiState.value.composer.isSending)
+    }
+
+    @Test
+    fun `failed terminal event records normalized finish reason`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            streamTokens = listOf("chunk "),
+            streamTerminal = StreamTerminal.FAILED,
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("failure test")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        val assistant = active.messages.lastOrNull { it.role == MessageRole.ASSISTANT && it.content.contains("chunk") }
+        val terminalSystem = active.messages.lastOrNull { it.role == MessageRole.SYSTEM && it.finishReason == "failed:jni_utf8_stream_error" }
+
+        assertTrue(assistant != null)
+        assertEquals("failed:jni_utf8_stream_error", assistant?.finishReason)
+        assertTrue(assistant?.terminalEventSeen == true)
+        assertTrue(terminalSystem != null)
+        assertEquals(assistant?.requestId, terminalSystem?.requestId)
+        assertEquals("UI-RUNTIME-001", viewModel.uiState.value.runtime.lastErrorCode)
+    }
+
+    @Test
+    fun `startup probe timeout maps to startup ui error code`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupDelayMs = 200L,
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = Dispatchers.IO,
+            runtimeStartupProbeTimeoutMs = 50L,
+        )
+
+        Thread.sleep(250L)
+
+        val runtimeState = viewModel.uiState.value.runtime
+        assertEquals("UI-STARTUP-001", runtimeState.lastErrorCode)
+        assertTrue(runtimeState.lastErrorUserMessage?.contains("timed out") == true)
+        assertEquals("Startup checks timed out after 1s.", runtimeState.modelStatusDetail)
+    }
+
+    @Test
     fun `routing mode and diagnostics export update runtime and timeline`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade()
         val viewModel = ChatViewModel(
@@ -359,6 +465,7 @@ class ChatViewModelTest {
 
         assertEquals("NATIVE_JNI", viewModel.uiState.value.runtime.runtimeBackend)
         assertEquals(null, viewModel.uiState.value.runtime.lastErrorCode)
+        assertTrue(runtime.cancelledSessions.isNotEmpty())
     }
 
     @Test
@@ -419,7 +526,10 @@ private class RecordingRuntimeFacade(
     private val failImage: Boolean = false,
     private val returnImageValidationError: Boolean = false,
     private val startupChecks: List<String> = emptyList(),
+    private val startupDelayMs: Long = 0L,
     private val streamTokens: List<String> = listOf("stream ", "token "),
+    private val streamDelayMs: Long = 0L,
+    private val streamTerminal: StreamTerminal = StreamTerminal.COMPLETED,
     private val runtimeBackend: String? = null,
 ) : MvpRuntimeFacade {
     private var sessionCounter = 0
@@ -427,6 +537,8 @@ private class RecordingRuntimeFacade(
     var failTool: Boolean = false
     var returnToolValidationError: Boolean = false
     val restoredTurns = mutableListOf<Pair<SessionId, List<Turn>>>()
+    val cancelledSessions = mutableListOf<SessionId>()
+    val cancelledRequestIds = mutableListOf<String>()
 
     override fun createSession(): SessionId {
         sessionCounter += 1
@@ -434,22 +546,84 @@ private class RecordingRuntimeFacade(
     }
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = flow {
+        emit(
+            ChatStreamEvent.Started(
+                requestId = request.requestId,
+                startedAtEpochMs = System.currentTimeMillis(),
+            ),
+        )
+        if (streamDelayMs > 0L) {
+            delay(streamDelayMs)
+        }
         val builder = StringBuilder()
         streamTokens.forEach { token ->
             builder.append(token)
-            emit(ChatStreamEvent.Token(token = token, accumulatedText = builder.toString().trim()))
-        }
-        emit(
-            ChatStreamEvent.Completed(
-                response = ChatResponse(
-                    sessionId = request.sessionId,
-                    modelId = "auto",
-                    text = "response for ${request.userText}",
-                    firstTokenLatencyMs = 25,
-                    totalLatencyMs = 75,
+            emit(
+                ChatStreamEvent.TokenDelta(
+                    requestId = request.requestId,
+                    token = token,
+                    accumulatedText = builder.toString().trim(),
                 ),
-            ),
-        )
+            )
+        }
+        when (streamTerminal) {
+            StreamTerminal.COMPLETED -> emit(
+                ChatStreamEvent.Completed(
+                    requestId = request.requestId,
+                    response = ChatResponse(
+                        sessionId = request.sessionId,
+                        modelId = "auto",
+                        text = "response for ${request.userText}",
+                        firstTokenLatencyMs = 25,
+                        totalLatencyMs = 75,
+                    ),
+                    finishReason = "completed",
+                    firstTokenMs = 25,
+                    completionMs = 75,
+                ),
+            )
+
+            StreamTerminal.CANCELLED_TIMEOUT -> emit(
+                ChatStreamEvent.Cancelled(
+                    requestId = request.requestId,
+                    reason = "timeout",
+                    terminalEventSeen = true,
+                    firstTokenMs = if (streamTokens.isNotEmpty()) 25 else null,
+                    completionMs = 75,
+                ),
+            )
+
+            StreamTerminal.CANCELLED_MANUAL -> emit(
+                ChatStreamEvent.Cancelled(
+                    requestId = request.requestId,
+                    reason = "cancelled",
+                    terminalEventSeen = true,
+                    firstTokenMs = if (streamTokens.isNotEmpty()) 25 else null,
+                    completionMs = 75,
+                ),
+            )
+
+            StreamTerminal.FAILED -> emit(
+                ChatStreamEvent.Failed(
+                    requestId = request.requestId,
+                    errorCode = "jni_utf8_stream_error",
+                    message = "utf8 stream failure",
+                    terminalEventSeen = true,
+                    firstTokenMs = if (streamTokens.isNotEmpty()) 25 else null,
+                    completionMs = 75,
+                ),
+            )
+        }
+    }
+
+    override fun cancelGeneration(sessionId: SessionId): Boolean {
+        cancelledSessions += sessionId
+        return true
+    }
+
+    override fun cancelGenerationByRequest(requestId: String): Boolean {
+        cancelledRequestIds += requestId
+        return true
     }
 
     override fun runTool(toolName: String, jsonArgs: String): String {
@@ -480,7 +654,12 @@ private class RecordingRuntimeFacade(
 
     override fun getRoutingMode(): RoutingMode = routingMode
 
-    override fun runStartupChecks(): List<String> = startupChecks
+    override fun runStartupChecks(): List<String> {
+        if (startupDelayMs > 0L) {
+            Thread.sleep(startupDelayMs)
+        }
+        return startupChecks
+    }
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         restoredTurns += sessionId to turns
@@ -489,4 +668,11 @@ private class RecordingRuntimeFacade(
     override fun deleteSession(sessionId: SessionId): Boolean = true
 
     override fun runtimeBackend(): String? = runtimeBackend
+}
+
+private enum class StreamTerminal {
+    COMPLETED,
+    CANCELLED_TIMEOUT,
+    CANCELLED_MANUAL,
+    FAILED,
 }

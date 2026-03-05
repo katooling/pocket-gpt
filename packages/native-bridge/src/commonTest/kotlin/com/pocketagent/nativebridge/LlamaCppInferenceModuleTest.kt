@@ -63,6 +63,7 @@ class LlamaCppInferenceModuleTest {
         assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
 
         module.generateStreamWithCache(
+            requestId = "req-cache",
             request = InferenceRequest("hello", 32),
             cacheKey = "cache-key-v1",
             cachePolicy = CachePolicy.PREFIX_KV_REUSE,
@@ -99,22 +100,37 @@ private class FakeBridge(
     }
 
     override fun generate(
+        requestId: String,
         prompt: String,
         maxTokens: Int,
         cacheKey: String?,
         cachePolicy: CachePolicy,
         onToken: (String) -> Unit,
-    ): Boolean {
+    ): GenerationResult {
         generateCalls += 1
         lastCacheKey = cacheKey
         lastCachePolicy = cachePolicy
         if (!generateOk) {
-            return false
+            return GenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = 0L,
+                cancelled = false,
+                errorCode = "FAKE_FAILURE",
+            )
         }
         onToken("hello ")
         onToken("from ")
         onToken("llama ")
-        return true
+        return GenerationResult(
+            finishReason = GenerationFinishReason.COMPLETED,
+            tokenCount = 3,
+            firstTokenMs = 1L,
+            totalMs = 3L,
+            cancelled = false,
+            errorCode = null,
+        )
     }
 
     override fun unloadModel() {

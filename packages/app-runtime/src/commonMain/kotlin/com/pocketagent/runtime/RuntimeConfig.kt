@@ -18,6 +18,7 @@ data class RuntimeConfig(
     val prefixCacheStrict: Boolean,
     val responseCacheTtlSec: Long,
     val responseCacheMaxEntries: Int,
+    val streamContractV2Enabled: Boolean = true,
 ) {
     companion object {
         const val QWEN_0_8B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256"
@@ -33,6 +34,7 @@ data class RuntimeConfig(
         const val PREFIX_CACHE_STRICT_ENV: String = "POCKETGPT_PREFIX_CACHE_STRICT"
         const val RESPONSE_CACHE_TTL_SEC_ENV: String = "POCKETGPT_RESPONSE_CACHE_TTL_SEC"
         const val RESPONSE_CACHE_MAX_ENTRIES_ENV: String = "POCKETGPT_RESPONSE_CACHE_MAX_ENTRIES"
+        const val STREAM_CONTRACT_V2_ENV: String = "POCKETGPT_STREAM_CONTRACT_V2"
         private const val DEFAULT_PROVENANCE_ISSUER: String = "internal-release"
         private const val DEFAULT_RUNTIME_COMPATIBILITY_TAG: String = "android-arm64-v8a"
         private const val DEFAULT_SHA_BUFFER_SIZE: Int = 1024 * 1024
@@ -116,6 +118,10 @@ data class RuntimeConfig(
                 defaultValue = DEFAULT_RESPONSE_CACHE_MAX_ENTRIES,
                 minValue = 0,
             )
+            val streamContractV2Enabled = booleanEnv(
+                name = STREAM_CONTRACT_V2_ENV,
+                defaultValue = true,
+            )
             return RuntimeConfig(
                 artifactPayloadByModelId = artifactPayloadByModelId,
                 artifactFilePathByModelId = artifactFilePathByModelId,
@@ -128,6 +134,7 @@ data class RuntimeConfig(
                 prefixCacheStrict = prefixCacheStrict,
                 responseCacheTtlSec = responseCacheTtlSec,
                 responseCacheMaxEntries = responseCacheMaxEntries,
+                streamContractV2Enabled = streamContractV2Enabled,
             )
         }
 

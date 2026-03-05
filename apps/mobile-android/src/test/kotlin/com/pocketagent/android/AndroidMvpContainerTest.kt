@@ -15,7 +15,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class AndroidMvpContainerTest {
@@ -182,7 +181,7 @@ class AndroidMvpContainerTest {
 
         assertEquals(emptyList(), checks)
         assertTrue(inference.loadCalls.contains(ModelCatalog.QWEN_3_5_0_8B_Q4))
-        assertNotEquals(0, inference.unloadCalls)
+        assertEquals(0, inference.unloadCalls)
     }
 
     @Test
@@ -457,17 +456,32 @@ private class BackendAwareTestBridge(
     override fun loadModel(modelId: String, modelPath: String?): Boolean = isReady()
 
     override fun generate(
+        requestId: String,
         prompt: String,
         maxTokens: Int,
         cacheKey: String?,
         cachePolicy: com.pocketagent.nativebridge.CachePolicy,
         onToken: (String) -> Unit,
-    ): Boolean {
+    ): com.pocketagent.nativebridge.GenerationResult {
         if (!isReady()) {
-            return false
+            return com.pocketagent.nativebridge.GenerationResult(
+                finishReason = com.pocketagent.nativebridge.GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = 0L,
+                cancelled = false,
+                errorCode = "BACKEND_UNAVAILABLE",
+            )
         }
         onToken("token ")
-        return true
+        return com.pocketagent.nativebridge.GenerationResult(
+            finishReason = com.pocketagent.nativebridge.GenerationFinishReason.COMPLETED,
+            tokenCount = 1,
+            firstTokenMs = 1L,
+            totalMs = 1L,
+            cancelled = false,
+            errorCode = null,
+        )
     }
 
     override fun unloadModel() {

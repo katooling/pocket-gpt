@@ -62,4 +62,23 @@ class UiErrorMapperTest {
         assertNotNull(error)
         assertTrue(error.userMessage.contains("Native runtime backend is unavailable"))
     }
+
+    @Test
+    fun `startup mapper differentiates timeout guidance`() {
+        val error = UiErrorMapper.startupFailure(
+            listOf("Startup checks timed out after 30s."),
+        )
+
+        assertNotNull(error)
+        assertTrue(error.userMessage.contains("timed out"))
+    }
+
+    @Test
+    fun `runtime cancelled maps to deterministic runtime code and detail`() {
+        val error = UiErrorMapper.runtimeCancelled("cancelled")
+
+        assertEquals("UI-RUNTIME-001", error.code)
+        assertTrue(error.userMessage.contains("cancelled", ignoreCase = true))
+        assertTrue(error.technicalDetail?.contains("cancelled", ignoreCase = true) == true)
+    }
 }

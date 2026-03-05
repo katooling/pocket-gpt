@@ -14,13 +14,35 @@ enum class CachePolicy(val code: Int) {
     PREFIX_KV_REUSE_STRICT(2),
 }
 
+enum class GenerationFinishReason {
+    COMPLETED,
+    MAX_TOKENS,
+    CANCELLED,
+    CALLBACK_ERROR,
+    UTF8_STREAM_ERROR,
+    ERROR,
+}
+
+data class GenerationResult(
+    val finishReason: GenerationFinishReason,
+    val tokenCount: Int,
+    val firstTokenMs: Long,
+    val totalMs: Long,
+    val cancelled: Boolean,
+    val errorCode: String? = null,
+) {
+    val success: Boolean
+        get() = finishReason == GenerationFinishReason.COMPLETED || finishReason == GenerationFinishReason.MAX_TOKENS
+}
+
 interface LlamaCppRuntimeBridge {
     fun isReady(): Boolean
     fun listAvailableModels(): List<String>
     fun loadModel(modelId: String): Boolean = loadModel(modelId, null)
     fun loadModel(modelId: String, modelPath: String?): Boolean
-    fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean =
+    fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): GenerationResult =
         generate(
+            requestId = "legacy",
             prompt = prompt,
             maxTokens = maxTokens,
             cacheKey = null,
@@ -28,12 +50,15 @@ interface LlamaCppRuntimeBridge {
             onToken = onToken,
         )
     fun generate(
+        requestId: String,
         prompt: String,
         maxTokens: Int,
         cacheKey: String?,
         cachePolicy: CachePolicy,
         onToken: (String) -> Unit,
-    ): Boolean
+    ): GenerationResult
+    fun cancelGeneration(): Boolean = false
+    fun cancelGeneration(requestId: String): Boolean = cancelGeneration()
     fun unloadModel()
     fun runtimeBackend(): RuntimeBackend
 }

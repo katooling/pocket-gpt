@@ -92,6 +92,9 @@ internal object PersistedChatStateCodec {
                                                     message.imagePath?.let { put("imagePath", JsonPrimitive(it)) }
                                                     message.toolName?.let { put("toolName", JsonPrimitive(it)) }
                                                     put("isStreaming", JsonPrimitive(message.isStreaming))
+                                                    message.requestId?.let { put("requestId", JsonPrimitive(it)) }
+                                                    message.finishReason?.let { put("finishReason", JsonPrimitive(it)) }
+                                                    put("terminalEventSeen", JsonPrimitive(message.terminalEventSeen))
                                                 },
                                             )
                                         }
@@ -132,6 +135,9 @@ internal object PersistedChatStateCodec {
                 imagePath = obj.stringOrNull("imagePath"),
                 toolName = obj.stringOrNull("toolName"),
                 isStreaming = obj.booleanOrDefault("isStreaming", false),
+                requestId = obj.stringOrNull("requestId"),
+                finishReason = obj.stringOrNull("finishReason"),
+                terminalEventSeen = obj.booleanOrDefault("terminalEventSeen", false),
             )
         }
     }
