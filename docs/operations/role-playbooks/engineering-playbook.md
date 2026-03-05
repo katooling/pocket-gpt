@@ -2,6 +2,15 @@
 
 Last updated: 2026-03-05
 
+## Non-Negotiable Standard
+
+Engineering and quality excellence are mandatory for every change.
+
+1. No "temporary hack" is acceptable without an owner, expiry, and cleanup ticket.
+2. Every behavior change must be testable and covered at the right layer.
+3. Every release-impacting change must ship with reproducible evidence.
+4. Quality regressions are blockers, not follow-up chores.
+
 ## Mission
 
 Ship stable runtime and UX infrastructure while preserving privacy/safety contracts and reproducible lane behavior.
@@ -47,6 +56,7 @@ Ship stable runtime and UX infrastructure while preserving privacy/safety contra
 2. Lane changes require unit coverage and rerun evidence on target device.
 3. Cancel/timeout behavior must be deterministic in UI and documented for JNI + fallback runtime paths.
 4. Release-claim impacting code changes must include updated docs and evidence pointers.
+5. Excellence bar applies to code, UX, tests, docs, and operational evidence equally.
 
 ## Engineering References
 

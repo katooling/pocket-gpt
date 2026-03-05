@@ -2,6 +2,14 @@
 
 Last updated: 2026-03-06
 
+## Quality Bar
+
+Engineering and quality excellence are the default operating mode.
+
+1. No lane may be skipped for convenience when it is required by strategy.
+2. Fast targeted runs are encouraged for iteration, but closure decisions require full evidence.
+3. Failures must end with a clear signature, root-cause direction, and artifact links.
+
 ## Source of truth
 
 - Command contract: `scripts/dev/README.md`

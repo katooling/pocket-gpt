@@ -2,6 +2,14 @@
 
 This directory contains product, architecture, operations, and testing documentation.
 
+## Documentation Principle
+
+This project operates with engineering and quality excellence as a non-negotiable baseline.
+
+1. Requirements, implementation, tests, and evidence must stay aligned.
+2. Docs must be updated with every meaningful behavior or process change.
+3. If evidence and documentation disagree, release decisions default to `hold` until resolved.
+
 ## Source of truth
 
 Testing and execution process docs are canonical in:

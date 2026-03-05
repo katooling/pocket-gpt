@@ -2,6 +2,15 @@
 
 Last updated: 2026-03-06
 
+## Excellence Policy
+
+Engineering and quality excellence are always required.
+
+1. Fast feedback is required, but never at the cost of correctness.
+2. Release confidence requires deterministic tests plus reproducible device evidence.
+3. Known quality debt must be tracked explicitly with owner and closure date.
+4. "Works on my device" is not acceptance.
+
 ## Source of truth
 
 - Command contract: `scripts/dev/README.md`
@@ -172,3 +181,4 @@ Human-required checkpoints:
 2. Any change under `packages/native-bridge/**` or `apps/mobile-android/src/main/cpp/**` must trigger Stage-2 quick lane before merge.
 3. Any UI layer change under `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/**` must trigger Android instrumented smoke lane before merge.
 4. Closure evidence is only valid from Stage-2 closure profile artifacts generated in the same run directory and date window.
+5. Merge readiness requires both engineering correctness and user-facing quality validation.

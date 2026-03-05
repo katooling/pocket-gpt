@@ -5,6 +5,14 @@ Last updated: 2026-03-06
 This is the single board for planning and delivery.  
 All teams should update status here first, then mirror updates in role playbooks.
 
+## Program Standard
+
+Engineering and quality excellence are mandatory program-wide.
+
+1. Task completion requires acceptance criteria, test proof, and evidence links.
+2. Quality regressions discovered in-progress must be prioritized before new feature expansion.
+3. Promotion decisions require both technical correctness and UX quality confidence.
+
 ## How To Use
 
 1. Check task status (`Done`, `In Progress`, `Ready`, `Blocked`, `Backlog`).
