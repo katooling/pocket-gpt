@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import csv
 import fnmatch
+import hashlib
+import html
 import json
 import os
 import re
@@ -64,6 +66,43 @@ class JourneyStepResult:
     screenshots: list[str] | None = None
     failure_signature: str | None = None
     logcat: str | None = None
+    phase: str | None = None
+    elapsed_ms: int | None = None
+    runtime_status: str | None = None
+    backend: str | None = None
+    active_model_id: str | None = None
+    placeholder_visible: bool | None = None
+    response_visible: bool | None = None
+    response_role: str | None = None
+    response_non_empty: bool | None = None
+    first_token_seen: bool | None = None
+    request_id: str | None = None
+    finish_reason: str | None = None
+    terminal_event_seen: bool | None = None
+    first_token_ms: int | None = None
+    completion_ms: int | None = None
+
+
+@dataclass
+class SendCaptureSnapshot:
+    second: int
+    screenshot: str | None
+    window_dump: str | None
+    chat_state_snapshot: str | None
+    runtime_status: str | None
+    backend: str | None
+    active_model_id: str | None
+    placeholder_visible: bool
+    runtime_error_visible: bool
+    timeout_message_visible: bool
+    streaming_text_visible: bool
+    response_visible: bool
+    response_role: str | None
+    response_non_empty: bool
+    first_token_seen: bool
+    request_id: str | None
+    finish_reason: str | None
+    terminal_event_seen: bool
 
 
 def _now_stamp() -> str:
@@ -74,6 +113,10 @@ _DEFAULT_HEALTH_APP_PACKAGE = "com.pocketagent.android"
 _DEFAULT_HEALTH_TEST_PACKAGE = "com.pocketagent.android.test"
 _REMOTE_DIR_RETRY_ATTEMPTS = 3
 _REMOTE_DIR_RETRY_BACKOFF_SECONDS = 0.5
+_SEND_CAPTURE_READY_GRACE_SECONDS = 5
+_MODEL_SYNC_MANIFEST_FILE = "model-sync-v1.json"
+_MODEL_SYNC_MANIFEST_SCHEMA = "model-sync-v1"
+_FORCE_MODEL_SYNC_ENV = "POCKETGPT_FORCE_MODEL_SYNC"
 
 
 def _append_native_build_flag(command: Sequence[str]) -> list[str]:
@@ -444,13 +487,44 @@ def _run_instrumentation_class(
         env=context.env,
         timeout_seconds=timeout_seconds,
     )
+    output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
     if result.returncode != 0:
-        output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
         raise DevctlError(
             "DEVICE_ERROR",
             f"Instrumentation failed for {test_class} (exit={result.returncode}).\n{output}",
         )
+    failure_reason = _extract_instrumentation_failure(output)
+    if failure_reason is not None:
+        raise DevctlError(
+            "DEVICE_ERROR",
+            f"Instrumentation failed for {test_class} (reported failure: {failure_reason}).\n{output}",
+        )
     return result
+
+
+def _extract_instrumentation_failure(output: str) -> str | None:
+    if not output.strip():
+        return None
+
+    short_msg_match = re.search(r"INSTRUMENTATION_RESULT:\s*shortMsg=(.+)", output)
+    if short_msg_match is not None:
+        short_msg = short_msg_match.group(1).strip()
+        if short_msg and short_msg.lower() != "ok":
+            return short_msg
+
+    failed_match = re.search(r"INSTRUMENTATION_FAILED:\s*(.+)", output)
+    if failed_match is not None:
+        return failed_match.group(1).strip() or "instrumentation_failed"
+
+    for marker in (
+        "Process crashed.",
+        "FAILURES!!!",
+        "INSTRUMENTATION_STATUS: Error",
+        "INSTRUMENTATION_RESULT: stream=Error",
+    ):
+        if marker in output:
+            return marker
+    return None
 
 
 def _remote_dir_exists(
@@ -556,6 +630,170 @@ def _remote_file_size_bytes(context: RuntimeContext, serial: str, path: str) -> 
         return None
 
 
+def _remote_path_exists(context: RuntimeContext, serial: str, path: str) -> bool:
+    quoted_path = path.replace("'", "'\"'\"'")
+    result = context.run(
+        ["adb", "-s", serial, "shell", "sh", "-c", f"[ -e '{quoted_path}' ] && echo 1 || echo 0"],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if result.returncode != 0:
+        return False
+    return (result.stdout or "").strip() == "1"
+
+
+def _compute_file_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _remote_file_sha256(context: RuntimeContext, serial: str, path: str) -> str | None:
+    quoted = _shell_single_quote(path)
+    probe = context.run(
+        [
+            "adb",
+            "-s",
+            serial,
+            "shell",
+            "sh",
+            "-c",
+            f"if [ -f {quoted} ]; then (sha256sum {quoted} 2>/dev/null || toybox sha256sum {quoted} 2>/dev/null); fi",
+        ],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if probe.returncode != 0:
+        return None
+
+    output = (probe.stdout or "").strip()
+    if not output:
+        return None
+    line = output.splitlines()[-1].strip()
+    match = re.match(r"^([a-fA-F0-9]{64})\b", line)
+    return match.group(1).lower() if match is not None else None
+
+
+def _remote_read_text_file(context: RuntimeContext, serial: str, path: str) -> str | None:
+    quoted = _shell_single_quote(path)
+    probe = context.run(
+        ["adb", "-s", serial, "shell", "sh", "-c", f"if [ -f {quoted} ]; then cat {quoted}; fi"],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if probe.returncode != 0:
+        return None
+    text = probe.stdout or ""
+    return text if text.strip() else None
+
+
+def _model_sync_cache_dir(model_dir: str) -> str:
+    normalized = model_dir.rstrip("/")
+    if normalized.endswith("/models"):
+        return f"{normalized[:-len('/models')]}/devctl-cache"
+    return f"{normalized}/devctl-cache"
+
+
+def _build_model_sync_manifest_payload(
+    *,
+    app_package: str,
+    selected_model_dir: str,
+    models: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "schema": _MODEL_SYNC_MANIFEST_SCHEMA,
+        "app_package": app_package,
+        "selected_model_dir": selected_model_dir,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "models": dict(models),
+    }
+
+
+def _parse_model_sync_manifest(raw: str) -> dict[str, Any]:
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError("manifest root is not an object")
+    if parsed.get("schema") != _MODEL_SYNC_MANIFEST_SCHEMA:
+        raise ValueError("unsupported schema")
+    models = parsed.get("models")
+    if models is None:
+        parsed["models"] = {}
+    elif not isinstance(models, dict):
+        raise ValueError("models section is not an object")
+    selected = parsed.get("selected_model_dir")
+    if selected is not None and not isinstance(selected, str):
+        raise ValueError("selected_model_dir must be string")
+    return parsed
+
+
+def _load_model_sync_manifest(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    cache_dirs: Sequence[str],
+) -> tuple[dict[str, Any], str | None, str | None]:
+    load_error: str | None = None
+    for cache_dir in cache_dirs:
+        manifest_path = f"{cache_dir.rstrip('/')}/{_MODEL_SYNC_MANIFEST_FILE}"
+        raw = _remote_read_text_file(context, serial, manifest_path)
+        if raw is None:
+            continue
+        try:
+            parsed = _parse_model_sync_manifest(raw)
+            return parsed, manifest_path, None
+        except Exception as exc:  # noqa: BLE001 - malformed on-device cache should self-heal.
+            load_error = f"{manifest_path}: {exc}"
+            print_step(f"Ignoring corrupt model-sync cache manifest at {manifest_path}; self-healing on save.")
+    return {"schema": _MODEL_SYNC_MANIFEST_SCHEMA, "models": {}}, None, load_error
+
+
+def _write_model_sync_manifest(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    cache_dir: str,
+    payload: Mapping[str, Any],
+) -> str:
+    ensured_cache_dir = _ensure_remote_dir(
+        context=context,
+        serial=serial,
+        path=cache_dir,
+        failure_label="Failed to ensure remote cache directory for model sync manifest.",
+    )
+    manifest_path = f"{ensured_cache_dir.rstrip('/')}/{_MODEL_SYNC_MANIFEST_FILE}"
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+        handle.write(json.dumps(payload, indent=2) + "\n")
+        temp_manifest_path = Path(handle.name)
+    try:
+        push = context.run(
+            ["adb", "-s", serial, "push", str(temp_manifest_path), manifest_path],
+            check=False,
+            capture_output=True,
+            env=context.env,
+        )
+    finally:
+        temp_manifest_path.unlink(missing_ok=True)
+    if push.returncode != 0:
+        detail = "\n".join(
+            part
+            for part in [(push.stdout or "").strip(), (push.stderr or "").strip()]
+            if part
+        ).strip()
+        raise DevctlError(
+            "DEVICE_ERROR",
+            "Failed to persist model sync manifest.\n" + (detail or "<no-output>"),
+        )
+    return manifest_path
+
+
 def _resolve_available_instrumentation_runner(
     *,
     context: RuntimeContext,
@@ -620,50 +858,201 @@ def prepare_real_runtime_env(
         failure_label="Failed to prepare remote model directory.",
     )
 
+    preferred_model_dirs = [resolved_model_dir, *[path for path in candidate_model_dirs if path != resolved_model_dir]]
+    candidate_cache_dirs = list(dict.fromkeys([_model_sync_cache_dir(path) for path in preferred_model_dirs]))
+    model_sync_manifest, loaded_manifest_path, manifest_load_error = _load_model_sync_manifest(
+        context=context,
+        serial=device_serial,
+        cache_dirs=candidate_cache_dirs,
+    )
+    manifest_models = model_sync_manifest.get("models")
+    if not isinstance(manifest_models, dict):
+        manifest_models = {}
+    force_model_sync = context.env.get(_FORCE_MODEL_SYNC_ENV, "").strip() == "1"
+    model_sync_records: dict[str, dict[str, Any]] = {}
+    model_sync_decisions: list[dict[str, Any]] = []
+
+    selected_model_dir = model_sync_manifest.get("selected_model_dir")
+    if isinstance(selected_model_dir, str) and selected_model_dir.strip():
+        preferred_model_dirs = [
+            selected_model_dir.strip(),
+            *[path for path in preferred_model_dirs if path != selected_model_dir.strip()],
+        ]
+    selected_model_dir_for_cache = preferred_model_dirs[0]
+
     for model in real_runtime_cfg.models:
         host_path = model_host_paths_by_id[model.model_id]
-        device_path = f"{resolved_model_dir.rstrip('/')}/{model.device_file_name}"
         host_size = Path(host_path).stat().st_size
-        remote_size = _remote_file_size_bytes(context, device_serial, device_path)
-        if remote_size == host_size:
-            print_step(
-                f"Model {model.model_id} already present at {device_path} with matching size; skipping push."
-            )
-            model_device_paths_by_id[model.model_id] = device_path
-            continue
+        host_sha256 = _compute_file_sha256(host_path)
+        manifest_entry = manifest_models.get(model.model_id)
+        manifest_host_size = None
+        if isinstance(manifest_entry, dict):
+            try:
+                manifest_host_size = int(manifest_entry.get("host_size", -1))
+            except (TypeError, ValueError):
+                manifest_host_size = None
+        decision = "push_required"
+        decision_reason = "no reusable device artifact found"
+        push_failures: list[str] = []
+        resolved_device_path: str | None = None
+        resolved_device_size: int | None = None
 
-        print_step(f"Pushing {model.model_id} to device path {device_path}")
-        for attempt in range(2):
-            if attempt > 0:
-                print_step(
-                    f"Retrying push for {model.model_id} after ensuring remote directory exists "
-                    f"(attempt {attempt + 1}/2)."
+        if (
+            not force_model_sync and
+            isinstance(manifest_entry, dict) and
+            isinstance(manifest_entry.get("device_path"), str) and
+            manifest_host_size == host_size and
+            str(manifest_entry.get("host_sha256", "")).lower() == host_sha256
+        ):
+            candidate_path = manifest_entry["device_path"].strip()
+            if candidate_path:
+                remote_size = _remote_file_size_bytes(context, device_serial, candidate_path)
+                if remote_size == host_size:
+                    remote_sha = _remote_file_sha256(context, device_serial, candidate_path)
+                    if remote_sha is None or remote_sha == host_sha256:
+                        resolved_device_path = candidate_path
+                        resolved_device_size = remote_size
+                        decision = "cache_hit"
+                        decision_reason = "model-sync manifest fingerprint matched"
+                        selected_model_dir_for_cache = str(Path(candidate_path).parent)
+                    else:
+                        decision_reason = "manifest fingerprint matched but remote hash mismatched"
+                else:
+                    decision_reason = "manifest fingerprint matched but cached device path is stale"
+
+        for dir_index, model_dir in enumerate(preferred_model_dirs):
+            if resolved_device_path is not None:
+                break
+            try:
+                ensured_dir = _ensure_remote_dir(
+                    context=context,
+                    serial=device_serial,
+                    path=model_dir,
+                    failure_label="Failed to ensure remote model directory before push.",
                 )
-            _ensure_remote_dir(
+            except DevctlError as exc:
+                push_failures.append(f"{model_dir}: {exc.message}")
+                if dir_index + 1 < len(preferred_model_dirs):
+                    print_step(
+                        f"Model directory unavailable at {model_dir}; "
+                        "trying fallback model directory."
+                    )
+                    continue
+                raise
+            device_path = f"{ensured_dir.rstrip('/')}/{model.device_file_name}"
+            selected_model_dir_for_cache = ensured_dir
+            remote_size = None if force_model_sync else _remote_file_size_bytes(context, device_serial, device_path)
+            if remote_size == host_size:
+                remote_sha = _remote_file_sha256(context, device_serial, device_path)
+                if remote_sha is None or remote_sha == host_sha256:
+                    print_step(
+                        f"Model {model.model_id} already present at {device_path} with matching size; skipping push."
+                    )
+                    resolved_device_path = device_path
+                    resolved_device_size = remote_size
+                    if decision != "cache_hit":
+                        decision = "size_probe_hit"
+                        decision_reason = (
+                            "device artifact matched size and hash"
+                            if remote_sha is not None
+                            else "device artifact matched size (device hash unavailable)"
+                        )
+                    if dir_index > 0:
+                        preferred_model_dirs = [ensured_dir, *[path for path in preferred_model_dirs if path != ensured_dir]]
+                    break
+                decision_reason = "device artifact size matched but hash mismatched; forcing push"
+
+            if force_model_sync:
+                decision = "forced_sync"
+                decision_reason = f"{_FORCE_MODEL_SYNC_ENV}=1"
+
+            print_step(f"Pushing {model.model_id} to device path {device_path}")
+            push_result = None
+            for attempt in range(2):
+                if attempt > 0:
+                    print_step(
+                        f"Retrying push for {model.model_id} after ensuring remote directory exists "
+                        f"(attempt {attempt + 1}/2)."
+                    )
+                _ensure_remote_dir(
+                    context=context,
+                    serial=device_serial,
+                    path=ensured_dir,
+                    failure_label="Failed to ensure remote model directory before push retry.",
+                )
+                push_result = context.run(
+                    ["adb", "-s", device_serial, "push", host_path, device_path],
+                    check=False,
+                    capture_output=True,
+                    env=context.env,
+                )
+                if push_result.returncode == 0:
+                    resolved_device_path = device_path
+                    resolved_device_size = _remote_file_size_bytes(context, device_serial, device_path) or host_size
+                    if dir_index > 0:
+                        preferred_model_dirs = [ensured_dir, *[path for path in preferred_model_dirs if path != ensured_dir]]
+                    break
+                # Small delay helps stabilize scoped-storage media directory writes on some devices.
+                time.sleep(1.0)
+
+            if resolved_device_path is not None:
+                break
+
+            stderr = (push_result.stderr or "").strip() if push_result is not None else ""
+            stdout = (push_result.stdout or "").strip() if push_result is not None else ""
+            detail = "\n".join(part for part in [stdout, stderr] if part).strip()
+            push_failures.append(f"{device_path}: {detail or 'push failed'}")
+            if dir_index + 1 < len(preferred_model_dirs):
+                print_step(
+                    f"Push failed for {model.model_id} at {device_path}; "
+                    "trying fallback model directory."
+                )
+
+        if resolved_device_path is None:
+            detail = "\n".join(push_failures) if push_failures else "no push attempts recorded"
+            raise DevctlError(
+                "DEVICE_ERROR",
+                f"Failed to push model artifact {host_path} after trying candidate device paths.\n{detail}",
+            )
+        model_device_paths_by_id[model.model_id] = resolved_device_path
+        model_sync_records[model.model_id] = {
+            "host_sha256": host_sha256,
+            "host_size": host_size,
+            "device_path": resolved_device_path,
+            "device_size": resolved_device_size if resolved_device_size is not None else host_size,
+            "last_verified_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        model_sync_decisions.append(
+            {
+                "model_id": model.model_id,
+                "decision": decision,
+                "reason": decision_reason,
+                "host_size": host_size,
+                "host_sha256": host_sha256,
+                "device_path": resolved_device_path,
+                "device_size": resolved_device_size if resolved_device_size is not None else host_size,
+            }
+        )
+
+    model_sync_manifest_path: str | None = None
+    if model_sync_records:
+        selected_model_dir_for_cache = selected_model_dir_for_cache.rstrip("/")
+        selected_cache_dir = _model_sync_cache_dir(selected_model_dir_for_cache)
+        payload = _build_model_sync_manifest_payload(
+            app_package=real_runtime_cfg.app_package,
+            selected_model_dir=selected_model_dir_for_cache,
+            models=model_sync_records,
+        )
+        try:
+            model_sync_manifest_path = _write_model_sync_manifest(
                 context=context,
                 serial=device_serial,
-                path=resolved_model_dir,
-                failure_label="Failed to ensure remote model directory before push.",
+                cache_dir=selected_cache_dir,
+                payload=payload,
             )
-            result = context.run(
-                ["adb", "-s", device_serial, "push", host_path, device_path],
-                check=False,
-                capture_output=True,
-                env=context.env,
-            )
-            if result.returncode == 0:
-                break
-            if attempt == 1:
-                stderr = (result.stderr or "").strip()
-                stdout = (result.stdout or "").strip()
-                detail = "\n".join(part for part in [stdout, stderr] if part).strip()
-                raise DevctlError(
-                    "DEVICE_ERROR",
-                    f"Failed to push model artifact {host_path} to {device_path} after retry.\n{detail}",
-                )
-            # Small delay helps stabilize scoped-storage media directory writes on some devices.
-            time.sleep(1.0)
-        model_device_paths_by_id[model.model_id] = device_path
+        except DevctlError as exc:
+            print_step(f"Model sync cache manifest write skipped: {exc.message}")
+            manifest_load_error = manifest_load_error or exc.message
 
     instrumentation_runner = _resolve_available_instrumentation_runner(
         context=context,
@@ -701,6 +1090,15 @@ def prepare_real_runtime_env(
                     "model_host_paths_by_id": model_host_paths_by_id,
                     "model_device_paths_by_id": model_device_paths_by_id,
                     "instrumentation_runner": instrumentation_runner,
+                    "model_sync": {
+                        "schema": _MODEL_SYNC_MANIFEST_SCHEMA,
+                        "manifest_path": model_sync_manifest_path,
+                        "loaded_manifest_path": loaded_manifest_path,
+                        "load_error": manifest_load_error,
+                        "force_sync": force_model_sync,
+                        "selected_model_dir": selected_model_dir_for_cache.rstrip("/"),
+                        "decisions": model_sync_decisions,
+                    },
                 },
                 indent=2,
             )
@@ -739,6 +1137,648 @@ def _collect_maestro_screenshots(debug_dir: Path) -> list[str]:
         except ValueError:
             screenshots.append(str(path))
     return screenshots
+
+
+def _report_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _capture_device_screenshot(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    local_path: Path,
+) -> bool:
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    remote_path = f"/sdcard/{_sanitize_file_token(local_path.stem)}-{os.getpid()}.png"
+    screencap = context.run(
+        ["adb", "-s", serial, "shell", "screencap", "-p", remote_path],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if screencap.returncode != 0:
+        return False
+
+    pull = context.run(
+        ["adb", "-s", serial, "pull", remote_path, str(local_path)],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    context.run(["adb", "-s", serial, "shell", "rm", "-f", remote_path], check=False, env=context.env)
+    return pull.returncode == 0 and local_path.exists()
+
+
+def _capture_window_dump(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    local_path: Path,
+) -> bool:
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    remote_path = f"/sdcard/{_sanitize_file_token(local_path.stem)}-{os.getpid()}.xml"
+    dump_result = context.run(
+        ["adb", "-s", serial, "shell", "uiautomator", "dump", remote_path],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if dump_result.returncode != 0:
+        return False
+
+    pull = context.run(
+        ["adb", "-s", serial, "pull", remote_path, str(local_path)],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    context.run(["adb", "-s", serial, "shell", "rm", "-f", remote_path], check=False, env=context.env)
+    return pull.returncode == 0 and local_path.exists()
+
+
+def _capture_shared_pref_snapshots(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    app_package: str,
+    snapshot_dir: Path,
+    suffix: str,
+) -> dict[str, Path]:
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    pref_files = {
+        "chat": "pocketagent_chat_state.xml",
+        "runtime_models": "pocketagent_runtime_models.xml",
+        "model_downloads": "pocketagent_model_downloads.xml",
+    }
+    outputs: dict[str, Path] = {}
+
+    for key, pref_file in pref_files.items():
+        result = context.run(
+            ["adb", "-s", serial, "shell", "run-as", app_package, "cat", f"shared_prefs/{pref_file}"],
+            check=False,
+            capture_output=True,
+            env=context.env,
+        )
+        output_path = snapshot_dir / f"{key}_{suffix}.xml"
+        if result.returncode == 0 and (result.stdout or "").strip():
+            output_path.write_text(result.stdout or "", encoding="utf-8")
+            outputs[key] = output_path
+            continue
+
+        error_path = snapshot_dir / f"{key}_{suffix}.error.txt"
+        detail = "\n".join(
+            part for part in [(result.stdout or "").strip(), (result.stderr or "").strip()] if part
+        )
+        error_path.write_text(detail or f"run-as failed with exit code {result.returncode}\n", encoding="utf-8")
+        outputs[f"{key}_error"] = error_path
+
+    return outputs
+
+
+def _extract_ui_runtime_fields(window_dump: str) -> tuple[str | None, str | None, str | None, bool, bool, bool]:
+    texts = [html.unescape(token).strip() for token in re.findall(r'text="([^"]*)"', window_dump)]
+    runtime_status = next((token.split(":", 1)[1].strip() for token in texts if token.startswith("Runtime:")), None)
+    backend = next((token.split(":", 1)[1].strip() for token in texts if token.startswith("Backend:")), None)
+    active_model_id = next((token.split(":", 1)[1].strip() for token in texts if token.startswith("Model:")), None)
+    placeholder_visible = any(token == "..." for token in texts)
+    runtime_error_visible = any("UI-RUNTIME-001" in token for token in texts)
+    timeout_message_visible = any("Request timed out" in token for token in texts)
+    return runtime_status, backend, active_model_id, placeholder_visible, runtime_error_visible, timeout_message_visible
+
+
+def _extract_chat_response_state(
+    chat_snapshot: str,
+    *,
+    prompt: str | None = None,
+) -> tuple[bool, bool, bool, str | None, bool, bool, str | None, str | None, bool]:
+    if not chat_snapshot:
+        return False, False, False, None, False, False, None, None, False
+
+    match = re.search(r'<string name="chat_state_v2">(.*?)</string>', chat_snapshot, flags=re.DOTALL)
+    if match is None:
+        return False, False, False, None, False, False, None, None, False
+
+    raw_json = html.unescape(match.group(1))
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return False, False, False, None, False, False, None, None, False
+
+    sessions = payload.get("sessions")
+    if not isinstance(sessions, list) or not sessions:
+        return False, False, False, None, False, False, None, None, False
+
+    active_session_id = payload.get("activeSessionId")
+    active = None
+    if isinstance(active_session_id, str):
+        active = next(
+            (session for session in sessions if isinstance(session, dict) and session.get("id") == active_session_id),
+            None,
+        )
+    if active is None and isinstance(sessions[-1], dict):
+        active = sessions[-1]
+    if not isinstance(active, dict):
+        return False, False, False, None, False, False, None, None, False
+
+    messages = active.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return False, False, False, None, False, False, None, None, False
+
+    typed_messages = [item for item in messages if isinstance(item, dict)]
+    if not typed_messages:
+        return False, False, False, None, False, False, None, None, False
+
+    if prompt:
+        prompt_folded = prompt.strip().lower()
+        if prompt_folded:
+            for index, message in enumerate(reversed(typed_messages)):
+                role = str(message.get("role", "")).strip().lower()
+                content = str(message.get("content", "")).strip().lower()
+                if role == "user" and content == prompt_folded:
+                    anchor = len(typed_messages) - index - 1
+                    typed_messages = typed_messages[anchor:]
+                    break
+
+    if not typed_messages:
+        return False, False, False, None, False, False, None, None, False
+
+    latest = typed_messages[-1]
+    latest_role = str(latest.get("role", "")).strip().lower()
+    latest_content = str(latest.get("content", ""))
+    latest_streaming = bool(latest.get("isStreaming"))
+
+    placeholder_visible = latest_role == "assistant" and latest_streaming and latest_content.strip() == ""
+
+    assistant_messages = [
+        item
+        for item in typed_messages
+        if str(item.get("role", "")).strip().lower() == "assistant"
+    ]
+    first_token_seen = any(str(item.get("content", "")).strip() for item in assistant_messages)
+    streaming_text_visible = any(
+        bool(item.get("isStreaming")) and str(item.get("content", "")).strip()
+        for item in assistant_messages
+    )
+
+    final_response = next(
+        (
+            item
+            for item in reversed(typed_messages)
+            if str(item.get("role", "")).strip().lower() in {"assistant", "system"}
+            and not bool(item.get("isStreaming"))
+            and str(item.get("content", "")).strip()
+        ),
+        None,
+    )
+
+    response_visible = final_response is not None
+    response_non_empty = response_visible
+    response_role = (
+        str(final_response.get("role", "")).strip().lower()
+        if isinstance(final_response, dict)
+        else None
+    )
+    request_id = (
+        str(final_response.get("requestId", "")).strip() or None
+        if isinstance(final_response, dict)
+        else None
+    )
+    finish_reason = (
+        str(final_response.get("finishReason", "")).strip() or None
+        if isinstance(final_response, dict)
+        else None
+    )
+    terminal_event_seen = (
+        bool(final_response.get("terminalEventSeen", False))
+        if isinstance(final_response, dict)
+        else False
+    )
+    return (
+        placeholder_visible,
+        streaming_text_visible,
+        response_visible,
+        response_role,
+        response_non_empty,
+        first_token_seen,
+        request_id,
+        finish_reason,
+        terminal_event_seen,
+    )
+
+
+def _capture_send_snapshot(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    app_package: str,
+    capture_root: Path,
+    second: int,
+    prompt: str,
+) -> SendCaptureSnapshot:
+    suffix = f"t{second:03d}"
+    screenshot_path = capture_root / "screenshots" / f"screenshot-{suffix}.png"
+    window_path = capture_root / "window-dumps" / f"window_dump_{suffix}.xml"
+    state_dir = capture_root / "state"
+
+    screenshot_ok = _capture_device_screenshot(context=context, serial=serial, local_path=screenshot_path)
+    window_ok = _capture_window_dump(context=context, serial=serial, local_path=window_path)
+    state_outputs = _capture_shared_pref_snapshots(
+        context=context,
+        serial=serial,
+        app_package=app_package,
+        snapshot_dir=state_dir,
+        suffix=suffix,
+    )
+
+    runtime_status: str | None = None
+    backend: str | None = None
+    active_model_id: str | None = None
+    placeholder_from_ui = False
+    runtime_error_visible = False
+    timeout_message_visible = False
+    if window_ok:
+        window_text = window_path.read_text(encoding="utf-8", errors="replace")
+        (
+            runtime_status,
+            backend,
+            active_model_id,
+            placeholder_from_ui,
+            runtime_error_visible,
+            timeout_message_visible,
+        ) = _extract_ui_runtime_fields(window_text)
+
+    chat_snapshot_path = state_outputs.get("chat")
+    placeholder_from_state = False
+    streaming_text_visible = False
+    response_visible = False
+    response_role: str | None = None
+    response_non_empty = False
+    first_token_seen = False
+    request_id: str | None = None
+    finish_reason: str | None = None
+    terminal_event_seen = False
+    if chat_snapshot_path is not None and chat_snapshot_path.exists():
+        chat_text = chat_snapshot_path.read_text(encoding="utf-8", errors="replace")
+        (
+            placeholder_from_state,
+            streaming_text_visible,
+            response_visible,
+            response_role,
+            response_non_empty,
+            first_token_seen,
+            request_id,
+            finish_reason,
+            terminal_event_seen,
+        ) = _extract_chat_response_state(
+            chat_text,
+            prompt=prompt,
+        )
+
+    return SendCaptureSnapshot(
+        second=second,
+        screenshot=_report_path(screenshot_path) if screenshot_ok else None,
+        window_dump=_report_path(window_path) if window_ok else None,
+        chat_state_snapshot=_report_path(chat_snapshot_path) if chat_snapshot_path else None,
+        runtime_status=runtime_status,
+        backend=backend,
+        active_model_id=active_model_id,
+        placeholder_visible=placeholder_from_ui or placeholder_from_state,
+        runtime_error_visible=runtime_error_visible,
+        timeout_message_visible=timeout_message_visible,
+        streaming_text_visible=streaming_text_visible,
+        response_visible=response_visible,
+        response_role=response_role,
+        response_non_empty=response_non_empty,
+        first_token_seen=first_token_seen,
+        request_id=request_id,
+        finish_reason=finish_reason,
+        terminal_event_seen=terminal_event_seen,
+    )
+
+
+def _run_send_capture_stage(
+    *,
+    context: RuntimeContext,
+    maestro_bin: str,
+    serial: str,
+    app_package: str,
+    run_root: Path,
+    prompt: str,
+    reply_timeout_seconds: int,
+    capture_intervals: Sequence[int],
+) -> JourneyStepResult:
+    capture_root = run_root / "send-capture"
+    capture_root.mkdir(parents=True, exist_ok=True)
+    debug_output_dir = run_root / "maestro-debug" / "send-capture-kickoff"
+    debug_output_dir.mkdir(parents=True, exist_ok=True)
+
+    kickoff_flow = capture_root / "send-kickoff.yaml"
+    kickoff_flow.write_text(
+        "\n".join(
+            [
+                f"appId: {app_package}",
+                "---",
+                "- launchApp",
+                "- takeScreenshot: \"send-kickoff-01-launch\"",
+                "- runFlow:",
+                "    when:",
+                "      visible: \"Welcome to Pocket GPT\"",
+                "    commands:",
+                "      - runFlow:",
+                "          when:",
+                "            visible: \"Skip\"",
+                "          commands:",
+                "            - tapOn: \"Skip\"",
+                "- runFlow:",
+                "    when:",
+                "      visible: \"PocketAgent\"",
+                "    commands:",
+                "      - tapOn: \"PocketAgent\"",
+                "- extendedWaitUntil:",
+                "    visible: \"Runtime: Ready\"",
+                f"    timeout: {reply_timeout_seconds * 1000}",
+                "- tapOn: \"Advanced\"",
+                "- runFlow:",
+                "    when:",
+                "      visible: \"Routing mode QWEN_0_8B\"",
+                "    commands:",
+                "      - tapOn: \"Routing mode QWEN_0_8B\"",
+                "- runFlow:",
+                "    when:",
+                "      visible: \"QWEN_0_8B\"",
+                "    commands:",
+                "      - tapOn: \"QWEN_0_8B\"",
+                "- back",
+                "- extendedWaitUntil:",
+                "    visible: \"Model: QWEN_0_8B\"",
+                "    timeout: 5000",
+                "- assertNotVisible: \"UI-RUNTIME-001\"",
+                "- takeScreenshot: \"send-kickoff-02-ready\"",
+                "- tapOn: \"Message\"",
+                "- takeScreenshot: \"send-kickoff-03-message-tab\"",
+                "- eraseText",
+                f"- inputText: {json.dumps(prompt)}",
+                "- takeScreenshot: \"send-kickoff-04-typed\"",
+                "- runFlow:",
+                "    when:",
+                "      notVisible: \"Send\"",
+                "    commands:",
+                "      - back",
+                "- runFlow:",
+                "    when:",
+                "      visible: \"PocketAgent\"",
+                "    commands:",
+                "      - tapOn: \"PocketAgent\"",
+                "      - extendedWaitUntil:",
+                "          visible: \"Runtime: Ready\"",
+                f"          timeout: {reply_timeout_seconds * 1000}",
+                "      - tapOn: \"Message\"",
+                "      - eraseText",
+                f"      - inputText: {json.dumps(prompt)}",
+                "- takeScreenshot: \"send-kickoff-05-before-send\"",
+                "- tapOn: \"Send\"",
+                f"- assertVisible: {json.dumps(prompt)}",
+                "- takeScreenshot: \"send-kickoff-06-after-send\"",
+                "- assertNotVisible: \"UI-RUNTIME-001\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Keep a bounded logcat slice focused on the send window.
+    context.run(["adb", "-s", serial, "shell", "am", "force-stop", app_package], check=False, env=context.env)
+    context.run(
+        ["adb", "-s", serial, "shell", "run-as", app_package, "rm", "-f", "shared_prefs/pocketagent_chat_state.xml"],
+        check=False,
+        env=context.env,
+    )
+    context.run(["adb", "-s", serial, "logcat", "-c"], check=False, env=context.env)
+    started = time.monotonic()
+    kickoff_result = context.run(
+        [maestro_bin, "--device", serial, "test", str(kickoff_flow), "--debug-output", str(debug_output_dir)],
+        check=False,
+        capture_output=True,
+        env=context.env,
+        cwd=debug_output_dir,
+    )
+    kickoff_output = debug_output_dir / "maestro-output.txt"
+    kickoff_output.write_text((kickoff_result.stdout or "") + (kickoff_result.stderr or ""), encoding="utf-8")
+
+    screenshots = _collect_maestro_screenshots(debug_output_dir)
+    logcat_path = capture_root / "send-window-logcat.txt"
+
+    if kickoff_result.returncode != 0:
+        failure_capture = capture_root / "screenshots" / "send-kickoff-failure.png"
+        if _capture_device_screenshot(context=context, serial=serial, local_path=failure_capture):
+            screenshots.append(_report_path(failure_capture))
+        _capture_logcat(context, serial, logcat_path)
+        combined = ((kickoff_result.stdout or "") + "\n" + (kickoff_result.stderr or "")).strip()
+        failure_signature = combined.splitlines()[-1] if combined else f"kickoff_exit={kickoff_result.returncode}"
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return JourneyStepResult(
+            name="send-capture",
+            status="failed",
+            duration_seconds=elapsed_ms / 1000.0,
+            details=f"Kickoff flow failed: {_report_path(kickoff_output)}",
+            screenshots=screenshots,
+            failure_signature=failure_signature,
+            logcat=_report_path(logcat_path),
+            phase="error",
+            elapsed_ms=elapsed_ms,
+        )
+
+    snapshots: list[SendCaptureSnapshot] = []
+    capture_started = time.monotonic()
+    for second in capture_intervals:
+        target = capture_started + float(second)
+        wait_seconds = target - time.monotonic()
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        snapshot = _capture_send_snapshot(
+            context=context,
+            serial=serial,
+            app_package=app_package,
+            capture_root=capture_root,
+            second=second,
+            prompt=prompt,
+        )
+        snapshots.append(snapshot)
+        if snapshot.screenshot:
+            screenshots.append(snapshot.screenshot)
+
+    snapshots_payload_path = capture_root / "send-snapshots.json"
+    snapshots_payload_path.write_text(
+        json.dumps(
+            [
+                {
+                    "second": snapshot.second,
+                    "screenshot": snapshot.screenshot,
+                    "window_dump": snapshot.window_dump,
+                    "chat_state_snapshot": snapshot.chat_state_snapshot,
+                    "runtime_status": snapshot.runtime_status,
+                    "backend": snapshot.backend,
+                    "active_model_id": snapshot.active_model_id,
+                    "placeholder_visible": snapshot.placeholder_visible,
+                    "runtime_error_visible": snapshot.runtime_error_visible,
+                    "timeout_message_visible": snapshot.timeout_message_visible,
+                    "streaming_text_visible": snapshot.streaming_text_visible,
+                    "response_visible": snapshot.response_visible,
+                    "response_role": snapshot.response_role,
+                    "response_non_empty": snapshot.response_non_empty,
+                    "first_token_seen": snapshot.first_token_seen,
+                    "request_id": snapshot.request_id,
+                    "finish_reason": snapshot.finish_reason,
+                    "terminal_event_seen": snapshot.terminal_event_seen,
+                }
+                for snapshot in snapshots
+            ],
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    _capture_logcat(context, serial, logcat_path)
+    duration_seconds = time.monotonic() - started
+    final = snapshots[-1]
+    completion = next(
+        (
+            item
+            for item in snapshots
+            if item.response_visible
+            and item.response_non_empty
+            and item.response_role == "assistant"
+            and not item.placeholder_visible
+            and not item.runtime_error_visible
+            and item.terminal_event_seen
+        ),
+        None,
+    )
+    first_token = next((item for item in snapshots if item.first_token_seen), None)
+    terminal_snapshot = next(
+        (
+            item
+            for item in snapshots
+            if item.terminal_event_seen and item.response_visible and item.response_non_empty
+        ),
+        None,
+    )
+    utf8_error_snapshot = next(
+        (
+            item
+            for item in snapshots
+            if "utf8" in (item.finish_reason or "").strip().lower()
+        ),
+        None,
+    )
+
+    status = "passed"
+    phase = "completed"
+    failure_signature: str | None = None
+    elapsed_ms = int(duration_seconds * 1000)
+    first_token_ms = first_token.second * 1000 if first_token is not None else None
+    completion_ms = completion.second * 1000 if completion is not None else None
+    request_id = (
+        completion.request_id
+        if completion is not None
+        else (terminal_snapshot.request_id if terminal_snapshot is not None else final.request_id)
+    )
+    finish_reason = (
+        completion.finish_reason
+        if completion is not None
+        else (terminal_snapshot.finish_reason if terminal_snapshot is not None else final.finish_reason)
+    )
+    terminal_event_seen = terminal_snapshot is not None or bool(final.terminal_event_seen)
+
+    if completion is not None and completion.second > reply_timeout_seconds:
+        status = "failed"
+        phase = "timeout"
+        elapsed_ms = reply_timeout_seconds * 1000
+        failure_signature = "completion_after_sla"
+    elif completion is not None:
+        elapsed_ms = completion.second * 1000
+        grace_limit = min(reply_timeout_seconds, completion.second + _SEND_CAPTURE_READY_GRACE_SECONDS)
+        ready_window = [
+            item
+            for item in snapshots
+            if completion.second <= item.second <= grace_limit
+        ]
+        ready_within_grace = any((item.runtime_status or "").strip().lower() == "ready" for item in ready_window)
+        ready_window_has_signal = len(ready_window) > 1 or completion.second >= reply_timeout_seconds
+        if ready_window_has_signal and not ready_within_grace:
+            status = "failed"
+            phase = "timeout"
+            failure_signature = "completion_without_ready_within_grace"
+        elif utf8_error_snapshot is not None:
+            status = "failed"
+            phase = "error"
+            failure_signature = "utf8_stream_error"
+    elif final.timeout_message_visible or final.runtime_error_visible:
+        status = "failed"
+        phase = "timeout"
+        elapsed_ms = reply_timeout_seconds * 1000
+        if first_token is not None and not terminal_event_seen:
+            failure_signature = "cancel_ack_missing"
+        elif final.timeout_message_visible:
+            failure_signature = "ui_timeout_message_visible_at_sla"
+        else:
+            failure_signature = "ui_runtime_error_visible_at_sla"
+    elif first_token is not None and not terminal_event_seen:
+        status = "failed"
+        phase = "first_token"
+        elapsed_ms = first_token.second * 1000
+        failure_signature = "no_terminal_event"
+    elif utf8_error_snapshot is not None:
+        status = "failed"
+        phase = "error"
+        failure_signature = "utf8_stream_error"
+    elif final.placeholder_visible or ((final.runtime_status or "").strip().lower() == "loading"):
+        status = "failed"
+        phase = "timeout"
+        elapsed_ms = reply_timeout_seconds * 1000
+        failure_signature = f"placeholder_or_loading_persisted_at_{reply_timeout_seconds}s"
+    else:
+        status = "failed"
+        phase = "error"
+        failure_signature = "no_assistant_or_system_reply_observed"
+
+    details_lines = [
+        f"Prompt: {prompt}",
+        f"Kickoff output: {_report_path(kickoff_output)}",
+        f"Capture intervals (s): {', '.join(str(value) for value in capture_intervals)}",
+        f"Snapshot timeline: {_report_path(snapshots_payload_path)}",
+        f"State snapshots: {_report_path(capture_root / 'state')}",
+    ]
+
+    return JourneyStepResult(
+        name="send-capture",
+        status=status,
+        duration_seconds=duration_seconds,
+        details="\n".join(details_lines),
+        screenshots=screenshots,
+        failure_signature=failure_signature,
+        logcat=_report_path(logcat_path),
+        phase=phase,
+        elapsed_ms=elapsed_ms,
+        runtime_status=final.runtime_status,
+        backend=final.backend,
+        active_model_id=final.active_model_id,
+        placeholder_visible=final.placeholder_visible,
+        response_visible=completion is not None or final.response_visible,
+        response_role=completion.response_role if completion is not None else final.response_role,
+        response_non_empty=completion.response_non_empty if completion is not None else final.response_non_empty,
+        first_token_seen=first_token is not None,
+        request_id=request_id,
+        finish_reason=finish_reason,
+        terminal_event_seen=terminal_event_seen,
+        first_token_ms=first_token_ms,
+        completion_ms=completion_ms,
+    )
 
 def _extract_summary_path(output: str) -> Path | None:
     matches = re.findall(r"Run summary written to ([^\n]+summary\.csv)", output)
@@ -879,15 +1919,62 @@ def parse_device_lane_args(raw_args: Sequence[str], default_scenario_command: Se
     )
 
 
-def _parse_journey_args(raw_args: Sequence[str], *, repeats_default: int, repeats_max: int) -> argparse.Namespace:
+def _parse_journey_args(
+    raw_args: Sequence[str],
+    *,
+    repeats_default: int,
+    repeats_max: int,
+    reply_timeout_default: int,
+    capture_intervals_default: Sequence[int],
+    prompt_default: str,
+) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="devctl lane journey")
     parser.add_argument("--repeats", type=int, default=repeats_default)
+    parser.add_argument("--reply-timeout-seconds", type=int, default=reply_timeout_default)
+    parser.add_argument(
+        "--capture-intervals",
+        type=str,
+        default=",".join(str(value) for value in capture_intervals_default),
+    )
+    parser.add_argument("--prompt", type=str, default=prompt_default)
     parsed = parser.parse_args(list(raw_args))
     if parsed.repeats <= 0:
         raise DevctlError("CONFIG_ERROR", "--repeats must be > 0")
     if parsed.repeats > repeats_max:
         raise DevctlError("CONFIG_ERROR", f"--repeats must be <= {repeats_max}")
+    if parsed.reply_timeout_seconds <= 0:
+        raise DevctlError("CONFIG_ERROR", "--reply-timeout-seconds must be > 0")
+
+    capture_intervals = _parse_capture_intervals(parsed.capture_intervals)
+    capture_intervals = sorted({0, *capture_intervals})
+    capture_intervals = [value for value in capture_intervals if value <= parsed.reply_timeout_seconds]
+    if capture_intervals[-1] != parsed.reply_timeout_seconds:
+        capture_intervals.append(parsed.reply_timeout_seconds)
+    parsed.capture_intervals = capture_intervals
+
+    prompt = parsed.prompt.strip()
+    if not prompt:
+        raise DevctlError("CONFIG_ERROR", "--prompt must not be empty")
+    parsed.prompt = prompt
     return parsed
+
+
+def _parse_capture_intervals(raw: str) -> list[int]:
+    values: list[int] = []
+    for token in raw.split(","):
+        value_raw = token.strip()
+        if not value_raw:
+            continue
+        try:
+            value = int(value_raw)
+        except ValueError as exc:
+            raise DevctlError("CONFIG_ERROR", f"Invalid capture interval: {value_raw}") from exc
+        if value < 0:
+            raise DevctlError("CONFIG_ERROR", f"Capture intervals must be >= 0, got {value}")
+        values.append(value)
+    if not values:
+        raise DevctlError("CONFIG_ERROR", "--capture-intervals must include at least one integer value")
+    return values
 
 
 def _write_journey_report(
@@ -913,6 +2000,21 @@ def _write_journey_report(
                 "screenshots": step.screenshots or [],
                 "failure_signature": step.failure_signature,
                 "logcat": step.logcat,
+                "phase": step.phase,
+                "elapsed_ms": step.elapsed_ms,
+                "runtime_status": step.runtime_status,
+                "backend": step.backend,
+                "active_model_id": step.active_model_id,
+                "placeholder_visible": step.placeholder_visible,
+                "response_visible": step.response_visible,
+                "response_role": step.response_role,
+                "response_non_empty": step.response_non_empty,
+                "first_token_seen": step.first_token_seen,
+                "request_id": step.request_id,
+                "finish_reason": step.finish_reason,
+                "terminal_event_seen": step.terminal_event_seen,
+                "first_token_ms": step.first_token_ms,
+                "completion_ms": step.completion_ms,
             }
             for step in steps
         ],
@@ -928,11 +2030,26 @@ def _write_journey_report(
         f"- Run host: `{run_host}`",
         f"- Generated: `{payload['generated_at']}`",
         "",
-        "| Step | Status | Duration (s) |",
-        "|---|---|---|",
+        "| Step | Phase | Status | Duration (s) | Elapsed (ms) | Runtime | Backend | Model | Placeholder | Response | Role | Non-empty | First token | Request ID | Finish reason | Terminal | First token ms | Completion ms |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for step in steps:
-        lines.append(f"| {step.name} | {step.status} | {step.duration_seconds:.2f} |")
+        lines.append(
+            "| "
+            f"{step.name} | {step.phase or '-'} | {step.status} | {step.duration_seconds:.2f} | "
+            f"{step.elapsed_ms if step.elapsed_ms is not None else '-'} | "
+            f"{step.runtime_status or '-'} | {step.backend or '-'} | {step.active_model_id or '-'} | "
+            f"{step.placeholder_visible if step.placeholder_visible is not None else '-'} | "
+            f"{step.response_visible if step.response_visible is not None else '-'} | "
+            f"{step.response_role or '-'} | "
+            f"{step.response_non_empty if step.response_non_empty is not None else '-'} | "
+            f"{step.first_token_seen if step.first_token_seen is not None else '-'} | "
+            f"{step.request_id or '-'} | "
+            f"{step.finish_reason or '-'} | "
+            f"{step.terminal_event_seen if step.terminal_event_seen is not None else '-'} | "
+            f"{step.first_token_ms if step.first_token_ms is not None else '-'} | "
+            f"{step.completion_ms if step.completion_ms is not None else '-'} |"
+        )
         if step.details:
             lines.append(f"- Details: {step.details}")
         if step.failure_signature:
@@ -1247,6 +2364,8 @@ def _run_maestro_flow(
         details=f"Debug output: {debug_output_dir}",
         screenshots=screenshots,
         failure_signature=failure_signature,
+        phase="completed" if status == "passed" else "error",
+        elapsed_ms=int(duration * 1000),
     )
 
 
@@ -1312,6 +2431,9 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
         raw_args,
         repeats_default=lane_cfg.repeats_default,
         repeats_max=lane_cfg.repeats_max,
+        reply_timeout_default=lane_cfg.reply_timeout_seconds_default,
+        capture_intervals_default=lane_cfg.capture_intervals_default,
+        prompt_default=lane_cfg.prompt_default,
     )
     maestro_bin = shutil.which("maestro")
     if maestro_bin is None:
@@ -1350,6 +2472,7 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
             instrumentation_args = dict(runner_args)
             instrumentation_args["stage2_enable_journey_test"] = "true"
             instrumentation_args["journey_artifact_dir"] = device_journey_dir
+            instrumentation_args["journey_reply_timeout_seconds"] = str(args.reply_timeout_seconds)
 
             started = time.monotonic()
             instrumentation_output_path = run_root / "instrumentation-output.txt"
@@ -1376,21 +2499,44 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
 
             local_instrumentation_shots = run_root / real_runtime_cfg.screenshot_dir_name / "instrumentation"
             local_instrumentation_shots.mkdir(parents=True, exist_ok=True)
-            context.run(
-                ["adb", "-s", serial, "pull", device_journey_dir, str(local_instrumentation_shots)],
-                check=False,
-                env=context.env,
-            )
+            if _remote_path_exists(context, serial, device_journey_dir):
+                context.run(
+                    ["adb", "-s", serial, "pull", device_journey_dir, str(local_instrumentation_shots)],
+                    check=False,
+                    env=context.env,
+                )
+            else:
+                print_step(
+                    f"No instrumentation artifact directory found on device: {device_journey_dir}"
+                )
             step = JourneyStepResult(
                 name=f"{run_label}:instrumentation",
                 status=instrumentation_status,
                 duration_seconds=duration,
-                details=str(instrumentation_output_path),
+                details=_report_path(instrumentation_output_path),
                 screenshots=_collect_maestro_screenshots(local_instrumentation_shots),
                 failure_signature=instrumentation_failure,
+                phase="startup" if instrumentation_status == "passed" else "error",
+                elapsed_ms=int(duration * 1000),
             )
             steps.append(step)
             if instrumentation_status != "passed":
+                _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
+                continue
+
+            send_step = _run_send_capture_stage(
+                context=context,
+                maestro_bin=maestro_bin,
+                serial=serial,
+                app_package=real_runtime_cfg.app_package,
+                run_root=run_root,
+                prompt=args.prompt,
+                reply_timeout_seconds=args.reply_timeout_seconds,
+                capture_intervals=args.capture_intervals,
+            )
+            send_step.name = f"{run_label}:send-capture"
+            steps.append(send_step)
+            if send_step.status != "passed":
                 _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
                 continue
 
@@ -1405,6 +2551,7 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
                     flow_path=flow_path,
                     debug_output_dir=run_root / real_runtime_cfg.maestro_debug_dir_name / flow_path.stem,
                 )
+                flow_step.name = f"{run_label}:{flow_step.name}"
                 steps.append(flow_step)
                 if flow_step.status != "passed":
                     break

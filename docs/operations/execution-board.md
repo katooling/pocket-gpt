@@ -1,6 +1,6 @@
 # Execution Board
 
-Last updated: 2026-03-05
+Last updated: 2026-03-06
 
 This is the single board for planning and delivery.  
 All teams should update status here first, then mirror updates in role playbooks.
@@ -52,7 +52,7 @@ All teams should update status here first, then mirror updates in role playbooks
 
 - [ ] DOC-01 timeline/status reconciliation across roadmap + board + role playbooks
 - [ ] DOC-02 product/UX doc parity sync for timeout/cancel/send-capture + manifest outage UX
-- [ ] ENG-19 devctl preflight robustness for busy media paths (retry/fallback behavior landed; full rerun packet pending)
+- [ ] ENG-19 devctl preflight robustness for busy media paths (retry/fallback + `model-sync-v1` cross-launch cache contract landed; full rerun packet pending)
 - [ ] ENG-20 runtime cancel/timeout contract hardening (JNI + fallback semantics + journey telemetry parity)
 - [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; cadence in progress)
@@ -141,7 +141,7 @@ All teams should update status here first, then mirror updates in role playbooks
 ## Immediate Assignments (Current Owners)
 
 1. Engineering (Lead/Core/Runtime):
-   - Finalize `ENG-19` packet with deterministic preflight retry/fallback behavior validated on target hardware.
+   - Finalize `ENG-19` packet with deterministic preflight retry/fallback + model-sync cache behavior validated on target hardware.
    - Finalize `ENG-20` runtime cancel/timeout contract notes with JNI/fallback behavior and telemetry fields.
    - Support `QA-11` same-device rerun for `android-instrumented`, `maestro`, and `journey`.
    - Keep post-WP12 runtime performance follow-ups tracked (first-token latency).

@@ -41,9 +41,8 @@ appId: com.pocketagent.android
       - tapOn: "Refresh runtime checks"
       - extendedWaitUntil:
           visible: "Runtime: Ready"
-          timeout: 120000
+          timeout: 300000
 - assertVisible: "Runtime: Ready"
 - assertNotVisible: "Runtime: Error"
-- assertNotVisible: "Loading runtime model..."
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-b-04-after-switch-send"

@@ -63,6 +63,7 @@ import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
+import com.pocketagent.android.ui.state.RuntimeUiState
 
 @Composable
 internal fun ChatScreenBody(
@@ -169,6 +170,7 @@ private fun OfflineAndStatusHeader(
     StatusChips()
 
     if (state.runtime.lastErrorUserMessage != null && state.runtime.lastErrorCode != null) {
+        val recoveryHint = stringResource(id = state.runtime.recoveryHintTextResId())
         Spacer(modifier = Modifier.height(8.dp))
         Card(modifier = Modifier.testTag("runtime_error_banner")) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -202,7 +204,7 @@ private fun OfflineAndStatusHeader(
                 ) {
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = stringResource(id = R.string.ui_model_setup_hint),
+                        text = recoveryHint,
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(modifier = Modifier.height(6.dp))
@@ -247,6 +249,17 @@ private fun OfflineAndStatusHeader(
                 color = MaterialTheme.colorScheme.error,
             )
         }
+    }
+}
+
+private fun RuntimeUiState.recoveryHintTextResId(): Int {
+    val timeoutError = lastErrorTechnicalDetail
+        ?.contains("timed out", ignoreCase = true) == true ||
+        lastErrorUserMessage?.contains("timed out", ignoreCase = true) == true
+    return if (timeoutError) {
+        R.string.ui_runtime_timeout_hint
+    } else {
+        R.string.ui_model_setup_hint
     }
 }
 

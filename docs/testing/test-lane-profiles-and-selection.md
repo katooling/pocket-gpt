@@ -1,6 +1,6 @@
 # Test Lane Profiles and Selection
 
-Last updated: 2026-03-05
+Last updated: 2026-03-06
 
 ## Purpose
 
@@ -81,7 +81,9 @@ Key mappings:
 5. Model provision cache: `scripts/benchmarks/cache/<device>/model-provision-state.env`
 6. Device env exports: `scripts/benchmarks/device-env/<device>.env`
 7. Stage-2 cache counters: `scripts/benchmarks/runs/YYYY-MM-DD/<device>/stage2-run-meta.env`
-8. Journey gate reports: `scripts/benchmarks/runs/YYYY-MM-DD/<device>/journey/<stamp>/journey-report.json`
+8. Journey gate reports: `scripts/benchmarks/runs/YYYY-MM-DD/<device>/journey/<stamp>/journey-report.json` (includes send-capture `phase`, `elapsed_ms`, runtime/backend/model context, and placeholder visibility at SLA checkpoints)
+9. Real-runtime preflight sync cache manifest (on device): `/sdcard/Android/media/<app>/devctl-cache/model-sync-v1.json` with fallback under `/sdcard/Download/<app>/devctl-cache/`
+10. Force-sync debug override: `POCKETGPT_FORCE_MODEL_SYNC=1` (forces model `adb push` regardless of cache hit)
 
 ## Hosted CI Mapping
 

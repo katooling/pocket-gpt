@@ -24,10 +24,13 @@ import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
 import com.pocketagent.runtime.StreamUserMessageRequest
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -117,8 +120,8 @@ class ChatViewModel(
             return
         }
 
-        val assistantMessageId = "assistant-stream-${System.currentTimeMillis()}"
-        val requestId = "req-${System.currentTimeMillis()}-${(1000..9999).random()}"
+        val assistantMessageId = newMessageId(prefix = "assistant-stream")
+        val requestId = newRequestId()
         val assistantPlaceholder = MessageUiModel(
             id = assistantMessageId,
             role = MessageRole.ASSISTANT,
@@ -142,6 +145,7 @@ class ChatViewModel(
             var lastStreamingUiUpdateAtMs = 0L
             var firstTokenMs: Long? = null
             val sendStartedAtMs = System.currentTimeMillis()
+            val terminalHandled = AtomicBoolean(false)
 
             fun flushPendingStreamingText(force: Boolean = false, triggerToken: String? = null) {
                 val text = pendingStreamingText?.trim().orEmpty()
@@ -166,6 +170,74 @@ class ChatViewModel(
                 lastStreamingUiUpdateAtMs = now
             }
 
+            fun finalizeWithRuntimeError(
+                uiError: UiError,
+                terminalReason: String,
+                terminalRequestId: String = requestId,
+                terminalEventSeen: Boolean = true,
+            ) {
+                val partialStreamingText = messageContent(
+                    sessionId = activeSession.id,
+                    messageId = assistantMessageId,
+                ).orEmpty().trim()
+                if (partialStreamingText.isNotBlank()) {
+                    finalizeStreamingMessage(
+                        sessionId = activeSession.id,
+                        messageId = assistantMessageId,
+                        finalText = partialStreamingText,
+                        role = MessageRole.ASSISTANT,
+                        requestId = terminalRequestId,
+                        finishReason = terminalReason,
+                        terminalEventSeen = terminalEventSeen,
+                    )
+                    appendSystemMessage(
+                        sessionId = activeSession.id,
+                        content = formatUserFacingError(uiError),
+                        requestId = terminalRequestId,
+                        finishReason = terminalReason,
+                        terminalEventSeen = terminalEventSeen,
+                    )
+                } else {
+                    finalizeStreamingMessage(
+                        sessionId = activeSession.id,
+                        messageId = assistantMessageId,
+                        finalText = formatUserFacingError(uiError),
+                        role = MessageRole.SYSTEM,
+                        requestId = terminalRequestId,
+                        finishReason = terminalReason,
+                        terminalEventSeen = terminalEventSeen,
+                    )
+                }
+                _uiState.update { state ->
+                    state.copy(
+                        composer = state.composer.copy(isSending = false),
+                        runtime = state.runtime
+                            .copy(
+                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                                modelStatusDetail = uiError.userMessage,
+                            )
+                            .withUiError(uiError),
+                    )
+                }
+                persistState()
+            }
+
+            fun claimTerminalEvent(): Boolean = terminalHandled.compareAndSet(false, true)
+
+            val terminalWatchdog = launch {
+                delay(runtimeGenerationTimeoutMs + SEND_TERMINAL_WATCHDOG_GRACE_MS)
+                if (!claimTerminalEvent()) {
+                    return@launch
+                }
+                flushPendingStreamingText(force = true)
+                runtimeFacade.cancelGenerationByRequest(requestId)
+                finalizeWithRuntimeError(
+                    uiError = UiErrorMapper.runtimeTimeout(runtimeGenerationTimeoutMs),
+                    terminalReason = "timeout",
+                    terminalRequestId = requestId,
+                )
+            }
+
             runCatching {
                 withTimeout(runtimeGenerationTimeoutMs) {
                     runtimeFacade.streamUserMessage(
@@ -182,6 +254,9 @@ class ChatViewModel(
                         if (event.requestId != requestId) {
                             return@collect
                         }
+                        if (terminalHandled.get()) {
+                            return@collect
+                        }
                         when (event) {
                             is ChatStreamEvent.Started -> {
                                 // request lifecycle started; keep UI in loading until first delta/terminal event.
@@ -196,6 +271,10 @@ class ChatViewModel(
                             }
 
                             is ChatStreamEvent.Completed -> {
+                                if (!claimTerminalEvent()) {
+                                    return@collect
+                                }
+                                terminalWatchdog.cancel()
                                 flushPendingStreamingText(force = true)
                                 finalizeStreamingMessage(
                                     sessionId = activeSession.id,
@@ -225,101 +304,46 @@ class ChatViewModel(
                             }
 
                             is ChatStreamEvent.Cancelled -> {
+                                if (!claimTerminalEvent()) {
+                                    return@collect
+                                }
+                                terminalWatchdog.cancel()
                                 flushPendingStreamingText(force = true)
-                                runtimeFacade.cancelGenerationByRequest(requestId)
-                                val uiError = UiErrorMapper.runtimeTimeout(runtimeGenerationTimeoutMs)
-                                val partialStreamingText = messageContent(
-                                    sessionId = activeSession.id,
-                                    messageId = assistantMessageId,
-                                ).orEmpty().trim()
-                                if (partialStreamingText.isNotBlank()) {
-                                    finalizeStreamingMessage(
-                                        sessionId = activeSession.id,
-                                        messageId = assistantMessageId,
-                                        finalText = partialStreamingText,
-                                        role = MessageRole.ASSISTANT,
-                                        requestId = event.requestId,
-                                        finishReason = "cancelled",
-                                        terminalEventSeen = event.terminalEventSeen,
-                                    )
-                                    appendSystemMessage(
-                                        sessionId = activeSession.id,
-                                        content = formatUserFacingError(uiError),
-                                    )
+                                val uiError = if (event.reason.equals("timeout", ignoreCase = true)) {
+                                    UiErrorMapper.runtimeTimeout(runtimeGenerationTimeoutMs)
                                 } else {
-                                    finalizeStreamingMessage(
-                                        sessionId = activeSession.id,
-                                        messageId = assistantMessageId,
-                                        finalText = formatUserFacingError(uiError),
-                                        role = MessageRole.SYSTEM,
-                                        requestId = event.requestId,
-                                        finishReason = "cancelled",
-                                        terminalEventSeen = event.terminalEventSeen,
-                                    )
+                                    UiErrorMapper.runtimeCancelled(event.reason)
                                 }
-                                _uiState.update { state ->
-                                    state.copy(
-                                        composer = state.composer.copy(isSending = false),
-                                        runtime = state.runtime
-                                            .copy(
-                                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                                                modelStatusDetail = uiError.userMessage,
-                                            )
-                                            .withUiError(uiError),
-                                    )
-                                }
-                                persistState()
+                                finalizeWithRuntimeError(
+                                    uiError = uiError,
+                                    terminalReason = event.reason,
+                                    terminalRequestId = event.requestId,
+                                    terminalEventSeen = event.terminalEventSeen,
+                                )
                             }
 
                             is ChatStreamEvent.Failed -> {
+                                if (!claimTerminalEvent()) {
+                                    return@collect
+                                }
+                                terminalWatchdog.cancel()
                                 flushPendingStreamingText(force = true)
                                 val uiError = UiErrorMapper.runtimeFailure(event.message)
-                                val partialStreamingText = messageContent(
-                                    sessionId = activeSession.id,
-                                    messageId = assistantMessageId,
-                                ).orEmpty().trim()
-                                if (partialStreamingText.isNotBlank()) {
-                                    finalizeStreamingMessage(
-                                        sessionId = activeSession.id,
-                                        messageId = assistantMessageId,
-                                        finalText = partialStreamingText,
-                                        role = MessageRole.ASSISTANT,
-                                        requestId = event.requestId,
-                                        finishReason = "failed:${event.errorCode}",
-                                        terminalEventSeen = event.terminalEventSeen,
-                                    )
-                                    appendSystemMessage(
-                                        sessionId = activeSession.id,
-                                        content = formatUserFacingError(uiError),
-                                    )
-                                } else {
-                                    finalizeStreamingMessage(
-                                        sessionId = activeSession.id,
-                                        messageId = assistantMessageId,
-                                        finalText = formatUserFacingError(uiError),
-                                        role = MessageRole.SYSTEM,
-                                        requestId = event.requestId,
-                                        finishReason = "failed:${event.errorCode}",
-                                        terminalEventSeen = event.terminalEventSeen,
-                                    )
-                                }
-                                _uiState.update { state ->
-                                    state.copy(
-                                        composer = state.composer.copy(isSending = false),
-                                        runtime = state.runtime
-                                            .copy(
-                                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                                                modelStatusDetail = uiError.userMessage,
-                                            )
-                                            .withUiError(uiError),
-                                    )
-                                }
-                                persistState()
+                                finalizeWithRuntimeError(
+                                    uiError = uiError,
+                                    terminalReason = "failed:${event.errorCode}",
+                                    terminalRequestId = event.requestId,
+                                    terminalEventSeen = event.terminalEventSeen,
+                                )
                             }
                         }
                     }
                 }
             }.onFailure { error ->
+                if (!claimTerminalEvent()) {
+                    return@onFailure
+                }
+                terminalWatchdog.cancel()
                 flushPendingStreamingText(force = true)
                 val generationTimedOut = error is TimeoutCancellationException || error is RuntimeGenerationTimeoutException
                 if (generationTimedOut) {
@@ -330,47 +354,12 @@ class ChatViewModel(
                 } else {
                     UiErrorMapper.runtimeFailure(error.message)
                 }
-                val partialStreamingText = messageContent(
-                    sessionId = activeSession.id,
-                    messageId = assistantMessageId,
-                ).orEmpty().trim()
-                if (partialStreamingText.isNotBlank()) {
-                    finalizeStreamingMessage(
-                        sessionId = activeSession.id,
-                        messageId = assistantMessageId,
-                        finalText = partialStreamingText,
-                        role = MessageRole.ASSISTANT,
-                        requestId = requestId,
-                        finishReason = "timeout",
-                        terminalEventSeen = true,
-                    )
-                    appendSystemMessage(
-                        sessionId = activeSession.id,
-                        content = formatUserFacingError(uiError),
-                    )
-                } else {
-                    finalizeStreamingMessage(
-                        sessionId = activeSession.id,
-                        messageId = assistantMessageId,
-                        finalText = formatUserFacingError(uiError),
-                        role = MessageRole.SYSTEM,
-                        requestId = requestId,
-                        finishReason = if (generationTimedOut) "timeout" else "runtime_error",
-                        terminalEventSeen = true,
-                    )
-                }
-                _uiState.update { state ->
-                    state.copy(
-                        composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime
-                            .copy(
-                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                                modelStatusDetail = uiError.userMessage,
-                            )
-                            .withUiError(uiError),
-                    )
-                }
-                persistState()
+                val terminalReason = if (generationTimedOut) "timeout" else "runtime_error"
+                finalizeWithRuntimeError(
+                    uiError = uiError,
+                    terminalReason = terminalReason,
+                    terminalRequestId = requestId,
+                )
             }
         }
     }
@@ -704,6 +693,9 @@ class ChatViewModel(
     }
 
     fun refreshRuntimeReadiness(statusDetailOverride: String? = null) {
+        _uiState.value.activeSessionId?.let { sessionId ->
+            runtimeFacade.cancelGeneration(SessionId(sessionId))
+        }
         launchStartupProbe(statusDetailOverride)
     }
 
@@ -869,13 +861,22 @@ class ChatViewModel(
         }
     }
 
-    private fun appendSystemMessage(sessionId: String, content: String) {
+    private fun appendSystemMessage(
+        sessionId: String,
+        content: String,
+        requestId: String? = null,
+        finishReason: String? = null,
+        terminalEventSeen: Boolean = false,
+    ) {
         updateActiveSession(sessionId) { session ->
             session.copy(
                 messages = session.messages + createMessage(
                     role = MessageRole.SYSTEM,
                     content = content,
                     kind = MessageKind.TEXT,
+                    requestId = requestId,
+                    finishReason = finishReason,
+                    terminalEventSeen = terminalEventSeen,
                 ),
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
@@ -1092,9 +1093,12 @@ class ChatViewModel(
         kind: MessageKind,
         imagePath: String? = null,
         toolName: String? = null,
+        requestId: String? = null,
+        finishReason: String? = null,
+        terminalEventSeen: Boolean = false,
     ): MessageUiModel {
         return MessageUiModel(
-            id = "msg-${System.currentTimeMillis()}-${role.name.lowercase()}-${(0..999).random()}",
+            id = newMessageId(prefix = "msg-${role.name.lowercase()}"),
             role = role,
             content = content,
             timestampEpochMs = System.currentTimeMillis(),
@@ -1102,9 +1106,15 @@ class ChatViewModel(
             imagePath = imagePath,
             toolName = toolName,
             isStreaming = false,
-            terminalEventSeen = true,
+            requestId = requestId,
+            finishReason = finishReason,
+            terminalEventSeen = terminalEventSeen,
         )
     }
+
+    private fun newRequestId(): String = "req-${UUID.randomUUID()}"
+
+    private fun newMessageId(prefix: String): String = "$prefix-${UUID.randomUUID()}"
 
     companion object {
         private const val TITLE_MAX_CHARS = 42
@@ -1115,6 +1125,7 @@ class ChatViewModel(
         private const val DEFAULT_RUNTIME_GENERATION_TIMEOUT_MS = 90_000L
         private const val DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS = 30_000L
         private const val STREAM_UI_UPDATE_MIN_INTERVAL_MS = 80L
+        private const val SEND_TERMINAL_WATCHDOG_GRACE_MS = 1_500L
         private val DEFAULT_DEVICE_STATE = DeviceState(
             batteryPercent = 85,
             thermalLevel = 3,

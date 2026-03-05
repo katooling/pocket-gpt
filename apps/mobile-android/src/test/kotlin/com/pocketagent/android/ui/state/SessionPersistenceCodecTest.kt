@@ -60,4 +60,36 @@ class SessionPersistenceCodecTest {
         assertEquals("AUTO", decoded.routingMode)
         assertFalse(decoded.onboardingCompleted)
     }
+
+    @Test
+    fun `decode preserves backward compatibility when terminal metadata fields are absent`() {
+        val decoded = PersistedChatStateCodec.decode(
+            """
+            {
+              "activeSessionId": "s1",
+              "sessions": [
+                {
+                  "id": "s1",
+                  "title": "Legacy session",
+                  "messages": [
+                    {
+                      "id": "m1",
+                      "role": "ASSISTANT",
+                      "content": "legacy payload",
+                      "timestampEpochMs": 1,
+                      "kind": "TEXT",
+                      "isStreaming": false
+                    }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val message = decoded.sessions.single().messages.single()
+        assertNull(message.requestId)
+        assertNull(message.finishReason)
+        assertFalse(message.terminalEventSeen)
+    }
 }

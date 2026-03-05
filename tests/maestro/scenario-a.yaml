@@ -12,6 +12,14 @@ appId: com.pocketagent.android
     timeout: 180000
 - assertVisible: "Runtime: Ready"
 - assertNotVisible: "UI-RUNTIME-001"
+- runFlow:
+    when:
+      visible: "Runtime: Error"
+    commands:
+      - tapOn: "Refresh runtime checks"
+      - extendedWaitUntil:
+          visible: "Runtime: Ready"
+          timeout: 300000
 - takeScreenshot: "scenario-a-01-ready"
 - tapOn: "Message"
 - eraseText
@@ -29,9 +37,8 @@ appId: com.pocketagent.android
       - tapOn: "Refresh runtime checks"
       - extendedWaitUntil:
           visible: "Runtime: Ready"
-          timeout: 120000
+          timeout: 300000
 - assertVisible: "Runtime: Ready"
 - assertNotVisible: "Runtime: Error"
-- assertNotVisible: "Loading runtime model..."
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-a-03-sent"

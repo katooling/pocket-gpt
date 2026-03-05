@@ -1,6 +1,6 @@
 # Test Strategy
 
-Last updated: 2026-03-05
+Last updated: 2026-03-06
 
 ## Source of truth
 
@@ -127,6 +127,8 @@ CI note:
 5. Keep Stage-2 env contracts stable (`POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH`, `POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH`) across quick and closure profiles.
 6. Enable prefix cache for quick iteration lanes (`POCKETGPT_PREFIX_CACHE_ENABLED=1`) and track `prefix_cache_hits/misses` + `warm_vs_cold_first_token_delta_ms`.
 7. Treat closure lane as strict-only: requires `--models both --scenarios both`, strict thresholds, and runtime evidence validator PASS.
+8. Real-runtime lane preflight must reuse unchanged model artifacts via on-device `model-sync-v1.json` cache while still running provisioning probe each invocation.
+9. `POCKETGPT_FORCE_MODEL_SYNC=1` is reserved for debugging cache mismatches and should not be enabled in routine QA runs.
 
 ## Automation Boundary (CI vs Human)
 

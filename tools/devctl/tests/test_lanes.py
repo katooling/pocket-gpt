@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -13,8 +14,11 @@ from tools.devctl.lanes import (
     RuntimeContext,
     JourneyStepResult,
     _ensure_remote_dir,
+    _extract_instrumentation_failure,
     _media_path_fallbacks,
+    _model_sync_cache_dir,
     _normalize_test_mode,
+    _parse_model_sync_manifest,
     _parse_journey_args,
     _parse_package_uid,
     _resolve_available_instrumentation_runner,
@@ -107,13 +111,92 @@ class LanesTest(unittest.TestCase):
         self.assertEqual("filtered", parsed.logcat)
 
     def test_journey_parser_enforces_repeat_bounds(self) -> None:
-        parsed = _parse_journey_args(["--repeats", "2"], repeats_default=1, repeats_max=5)
+        parsed = _parse_journey_args(
+            ["--repeats", "2"],
+            repeats_default=1,
+            repeats_max=5,
+            reply_timeout_default=90,
+            capture_intervals_default=[5, 15, 30, 60, 90],
+            prompt_default="ola, how you doin",
+        )
         self.assertEqual(2, parsed.repeats)
+        self.assertEqual(90, parsed.reply_timeout_seconds)
+        self.assertEqual([0, 5, 15, 30, 60, 90], parsed.capture_intervals)
+        self.assertEqual("ola, how you doin", parsed.prompt)
 
         with self.assertRaises(DevctlError):
-            _parse_journey_args(["--repeats", "0"], repeats_default=1, repeats_max=5)
+            _parse_journey_args(
+                ["--repeats", "0"],
+                repeats_default=1,
+                repeats_max=5,
+                reply_timeout_default=90,
+                capture_intervals_default=[5, 15, 30, 60, 90],
+                prompt_default="ola, how you doin",
+            )
         with self.assertRaises(DevctlError):
-            _parse_journey_args(["--repeats", "8"], repeats_default=1, repeats_max=5)
+            _parse_journey_args(
+                ["--repeats", "8"],
+                repeats_default=1,
+                repeats_max=5,
+                reply_timeout_default=90,
+                capture_intervals_default=[5, 15, 30, 60, 90],
+                prompt_default="ola, how you doin",
+            )
+
+    def test_journey_parser_applies_timeout_and_capture_overrides(self) -> None:
+        parsed = _parse_journey_args(
+            [
+                "--reply-timeout-seconds",
+                "45",
+                "--capture-intervals",
+                "3,9,15,60",
+                "--prompt",
+                "probe prompt",
+            ],
+            repeats_default=1,
+            repeats_max=5,
+            reply_timeout_default=90,
+            capture_intervals_default=[5, 15, 30, 60, 90],
+            prompt_default="ola, how you doin",
+        )
+        self.assertEqual(45, parsed.reply_timeout_seconds)
+        self.assertEqual([0, 3, 9, 15, 45], parsed.capture_intervals)
+        self.assertEqual("probe prompt", parsed.prompt)
+
+    def test_extract_instrumentation_failure_detects_short_msg(self) -> None:
+        output = "\n".join(
+            [
+                "INSTRUMENTATION_STATUS: class=com.pocketagent.android.RealRuntimeProvisioningInstrumentationTest",
+                "INSTRUMENTATION_RESULT: shortMsg=Process crashed.",
+                "INSTRUMENTATION_CODE: 0",
+            ]
+        )
+        self.assertEqual("Process crashed.", _extract_instrumentation_failure(output))
+
+    def test_extract_instrumentation_failure_detects_failed_marker(self) -> None:
+        output = "INSTRUMENTATION_FAILED: Process crashed."
+        self.assertEqual("Process crashed.", _extract_instrumentation_failure(output))
+
+    def test_extract_instrumentation_failure_ignores_success_output(self) -> None:
+        output = "\n".join(
+            [
+                "INSTRUMENTATION_STATUS: class=com.pocketagent.android.RealRuntimeJourneyInstrumentationTest",
+                "INSTRUMENTATION_STATUS_CODE: -1",
+                "INSTRUMENTATION_RESULT: stream=",
+                "OK (1 test)",
+            ]
+        )
+        self.assertIsNone(_extract_instrumentation_failure(output))
+
+    def test_model_sync_cache_dir_maps_models_to_devctl_cache(self) -> None:
+        self.assertEqual(
+            "/sdcard/Android/media/com.pocketagent.android/devctl-cache",
+            _model_sync_cache_dir("/sdcard/Android/media/com.pocketagent.android/models"),
+        )
+
+    def test_parse_model_sync_manifest_rejects_invalid_schema(self) -> None:
+        with self.assertRaises(ValueError):
+            _parse_model_sync_manifest('{"schema":"wrong","models":{}}')
 
     def test_stage2_closure_requires_models_both(self) -> None:
         configs = load_devctl_configs(REPO_ROOT)
@@ -401,13 +484,246 @@ class LanesTest(unittest.TestCase):
                 model_push_calls = [
                     cmd
                     for cmd in issued_commands
-                    if len(cmd) >= 4 and cmd[:4] == ["adb", "-s", "SER123", "push"]
+                    if len(cmd) >= 4 and cmd[:4] == ["adb", "-s", "SER123", "push"] and cmd[-1].endswith(".gguf")
                 ]
                 self.assertEqual([], model_push_calls)
                 self.assertEqual(
                     "com.pocketagent.android.standard.test/androidx.test.runner.AndroidJUnitRunner",
                     prepared.instrumentation_runner,
                 )
+        finally:
+            lanes._resolve_real_runtime_model_paths = original_resolve
+            lanes._run_instrumentation_class = original_run_instrumentation
+
+    def test_prepare_real_runtime_env_force_sync_pushes_models_even_when_sizes_match(self) -> None:
+        from tools.devctl import lanes
+
+        original_resolve = lanes._resolve_real_runtime_model_paths
+        original_run_instrumentation = lanes._run_instrumentation_class
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = Path(tmp)
+                model_0_8b = tmp_path / "Qwen3.5-0.8B-Q4_0.gguf"
+                model_2b = tmp_path / "Qwen3.5-2B-Q4_0.gguf"
+                model_0_8b.write_bytes(b"abc")
+                model_2b.write_bytes(b"12345")
+
+                lanes._resolve_real_runtime_model_paths = lambda _context: {
+                    "qwen3.5-0.8b-q4": str(model_0_8b),
+                    "qwen3.5-2b-q4": str(model_2b),
+                }
+                lanes._run_instrumentation_class = lambda **_kwargs: subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="ok",
+                    stderr="",
+                )
+
+                configs = load_devctl_configs(REPO_ROOT)
+                issued_commands: list[list[str]] = []
+
+                class Result:
+                    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                        self.returncode = returncode
+                        self.stdout = stdout
+                        self.stderr = stderr
+
+                def fake_run(command, **_kwargs):
+                    cmd = list(command)
+                    issued_commands.append(cmd)
+                    if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:7] == ["pm", "list", "instrumentation"]:
+                        return Result(
+                            stdout=(
+                                "instrumentation:com.pocketagent.android.standard.test/"
+                                "androidx.test.runner.AndroidJUnitRunner "
+                                "(target=com.pocketagent.android.standard)\n"
+                            )
+                        )
+                    if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:6] == ["sh", "-c"]:
+                        script = cmd[6]
+                        if "qwen3.5-0.8b-q4.gguf" in script:
+                            return Result(stdout="3\n")
+                        if "qwen3.5-2b-q4.gguf" in script:
+                            return Result(stdout="5\n")
+                        return Result(stdout="")
+                    return Result()
+
+                context = RuntimeContext(
+                    repo_root=REPO_ROOT,
+                    configs=configs,
+                    env={"POCKETGPT_FORCE_MODEL_SYNC": "1"},
+                    run=fake_run,
+                )
+                lanes.prepare_real_runtime_env(context, "SER123")
+
+                model_push_calls = [
+                    cmd
+                    for cmd in issued_commands
+                    if len(cmd) >= 4 and cmd[:4] == ["adb", "-s", "SER123", "push"] and cmd[-1].endswith(".gguf")
+                ]
+                self.assertEqual(2, len(model_push_calls))
+        finally:
+            lanes._resolve_real_runtime_model_paths = original_resolve
+            lanes._run_instrumentation_class = original_run_instrumentation
+
+    def test_prepare_real_runtime_env_self_heals_corrupt_sync_manifest(self) -> None:
+        from tools.devctl import lanes
+
+        original_resolve = lanes._resolve_real_runtime_model_paths
+        original_run_instrumentation = lanes._run_instrumentation_class
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = Path(tmp)
+                model_0_8b = tmp_path / "Qwen3.5-0.8B-Q4_0.gguf"
+                model_2b = tmp_path / "Qwen3.5-2B-Q4_0.gguf"
+                model_0_8b.write_bytes(b"abc")
+                model_2b.write_bytes(b"12345")
+                lanes._resolve_real_runtime_model_paths = lambda _context: {
+                    "qwen3.5-0.8b-q4": str(model_0_8b),
+                    "qwen3.5-2b-q4": str(model_2b),
+                }
+                lanes._run_instrumentation_class = lambda **_kwargs: subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="ok",
+                    stderr="",
+                )
+
+                configs = load_devctl_configs(REPO_ROOT)
+                issued_commands: list[list[str]] = []
+
+                class Result:
+                    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                        self.returncode = returncode
+                        self.stdout = stdout
+                        self.stderr = stderr
+
+                def fake_run(command, **_kwargs):
+                    cmd = list(command)
+                    issued_commands.append(cmd)
+                    if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:7] == ["pm", "list", "instrumentation"]:
+                        return Result(
+                            stdout=(
+                                "instrumentation:com.pocketagent.android.standard.test/"
+                                "androidx.test.runner.AndroidJUnitRunner "
+                                "(target=com.pocketagent.android.standard)\n"
+                            )
+                        )
+                    if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:6] == ["sh", "-c"]:
+                        script = cmd[6]
+                        if "model-sync-v1.json" in script and "cat" in script:
+                            return Result(stdout="{corrupt-json")
+                        if "qwen3.5-0.8b-q4.gguf" in script:
+                            return Result(stdout="3\n")
+                        if "qwen3.5-2b-q4.gguf" in script:
+                            return Result(stdout="5\n")
+                        return Result(stdout="")
+                    return Result()
+
+                context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+                lanes.prepare_real_runtime_env(context, "SER123")
+
+                model_push_calls = [
+                    cmd
+                    for cmd in issued_commands
+                    if len(cmd) >= 4 and cmd[:4] == ["adb", "-s", "SER123", "push"] and cmd[-1].endswith(".gguf")
+                ]
+                manifest_push_calls = [
+                    cmd
+                    for cmd in issued_commands
+                    if len(cmd) >= 4 and cmd[:4] == ["adb", "-s", "SER123", "push"] and cmd[-1].endswith("model-sync-v1.json")
+                ]
+                self.assertEqual([], model_push_calls)
+                self.assertEqual(1, len(manifest_push_calls))
+        finally:
+            lanes._resolve_real_runtime_model_paths = original_resolve
+            lanes._run_instrumentation_class = original_run_instrumentation
+
+    def test_prepare_real_runtime_env_pushes_when_manifest_path_is_stale(self) -> None:
+        from tools.devctl import lanes
+
+        original_resolve = lanes._resolve_real_runtime_model_paths
+        original_run_instrumentation = lanes._run_instrumentation_class
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = Path(tmp)
+                model_0_8b = tmp_path / "Qwen3.5-0.8B-Q4_0.gguf"
+                model_2b = tmp_path / "Qwen3.5-2B-Q4_0.gguf"
+                model_0_8b.write_bytes(b"abc")
+                model_2b.write_bytes(b"12345")
+
+                model_0_sha = hashlib.sha256(b"abc").hexdigest()
+                model_2_sha = hashlib.sha256(b"12345").hexdigest()
+                stale_manifest = json.dumps(
+                    {
+                        "schema": "model-sync-v1",
+                        "selected_model_dir": "/sdcard/Android/media/com.pocketagent.android/models",
+                        "models": {
+                            "qwen3.5-0.8b-q4": {
+                                "host_sha256": model_0_sha,
+                                "host_size": 3,
+                                "device_path": "/sdcard/Android/media/com.pocketagent.android/models/qwen3.5-0.8b-q4.gguf",
+                            },
+                            "qwen3.5-2b-q4": {
+                                "host_sha256": model_2_sha,
+                                "host_size": 5,
+                                "device_path": "/sdcard/Android/media/com.pocketagent.android/models/qwen3.5-2b-q4.gguf",
+                            },
+                        },
+                    }
+                )
+
+                lanes._resolve_real_runtime_model_paths = lambda _context: {
+                    "qwen3.5-0.8b-q4": str(model_0_8b),
+                    "qwen3.5-2b-q4": str(model_2b),
+                }
+                lanes._run_instrumentation_class = lambda **_kwargs: subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="ok",
+                    stderr="",
+                )
+
+                configs = load_devctl_configs(REPO_ROOT)
+                issued_commands: list[list[str]] = []
+
+                class Result:
+                    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                        self.returncode = returncode
+                        self.stdout = stdout
+                        self.stderr = stderr
+
+                def fake_run(command, **_kwargs):
+                    cmd = list(command)
+                    issued_commands.append(cmd)
+                    if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:7] == ["pm", "list", "instrumentation"]:
+                        return Result(
+                            stdout=(
+                                "instrumentation:com.pocketagent.android.standard.test/"
+                                "androidx.test.runner.AndroidJUnitRunner "
+                                "(target=com.pocketagent.android.standard)\n"
+                            )
+                        )
+                    if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:6] == ["sh", "-c"]:
+                        script = cmd[6]
+                        if "model-sync-v1.json" in script and "cat" in script:
+                            return Result(stdout=stale_manifest)
+                        if "qwen3.5-0.8b-q4.gguf" in script:
+                            return Result(stdout="0\n")
+                        if "qwen3.5-2b-q4.gguf" in script:
+                            return Result(stdout="0\n")
+                        return Result(stdout="")
+                    return Result()
+
+                context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+                lanes.prepare_real_runtime_env(context, "SER123")
+
+                model_push_calls = [
+                    cmd
+                    for cmd in issued_commands
+                    if len(cmd) >= 4 and cmd[:4] == ["adb", "-s", "SER123", "push"] and cmd[-1].endswith(".gguf")
+                ]
+                self.assertEqual(2, len(model_push_calls))
         finally:
             lanes._resolve_real_runtime_model_paths = original_resolve
             lanes._run_instrumentation_class = original_run_instrumentation

@@ -66,3 +66,13 @@ Scope: Revalidation after single-build download-manager de-gating and Maestro re
      - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/maestro-debug/scenario-b/maestro-output.txt`
      - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/maestro-debug/scenario-c/maestro-output.txt`
      - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/maestro-debug/scenario-activation-send-smoke/maestro-output.txt`
+
+## Addendum (P1.6 Preflight Reuse Contract Update)
+
+Date: 2026-03-06  
+Scope: Documented behavioral contract update only (no new lane execution in this note).
+
+1. Real-runtime preflight now persists `model-sync-v1.json` on device under app media path with download fallback.
+2. Lane runs retain mandatory provisioning instrumentation probe on every invocation.
+3. `real-runtime-preflight.json` now records per-model sync decisions (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`).
+4. Follow-up rerun packet is required to attach concrete consecutive-run evidence for zero model `adb push` behavior.

@@ -1,6 +1,6 @@
 # Android DX and Test Playbook
 
-Last updated: 2026-03-05
+Last updated: 2026-03-06
 
 ## Source of truth
 
@@ -49,19 +49,30 @@ bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models
 1. Espresso: `python3 tools/devctl/main.py lane android-instrumented`
 2. Maestro: `python3 tools/devctl/main.py lane maestro`
 3. Combined real-runtime user journey gate: `python3 tools/devctl/main.py lane journey`
-4. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
-5. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
-6. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
-7. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
-8. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
-9. Device lanes run health preflight before execution:
+4. Canonical stuck-reply gate command:
+   - `python3 tools/devctl/main.py lane journey --repeats 1 --reply-timeout-seconds 90`
+5. `lane journey` supports deterministic send diagnostics:
+   - `--reply-timeout-seconds` (default `90`)
+   - `--capture-intervals` (default `5,15,30,60,90`; `t+0` and timeout are always captured)
+   - `--prompt` (default probe prompt: `"ola, how you doin"`)
+6. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
+7. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
+8. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
+9. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
+10. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
+11. Device lanes run health preflight before execution:
    - wake/unlock attempt
    - `/data` utilization guard
    - writable runtime-media probe under app media path (with retry/fallback to `/sdcard/Download/<package>/...` for busy media-path edge cases)
    - installed package owner metadata check (`dumpsys package`)
-10. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
-11. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
-12. Model preflight reuses existing device artifacts when file sizes match to reduce rerun latency and wireless flake.
+12. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
+13. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
+14. Model preflight uses persistent on-device cache manifest `model-sync-v1.json`:
+   - primary path: `/sdcard/Android/media/<app>/devctl-cache/model-sync-v1.json`
+   - fallback path: `/sdcard/Download/<app>/devctl-cache/model-sync-v1.json`
+   - each lane run still performs provisioning instrumentation probe.
+15. Cache decisions are written to `real-runtime-preflight.json` (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`) for operator auditability.
+16. Debug override: set `POCKETGPT_FORCE_MODEL_SYNC=1` to force model push even when cache matches.
 
 Maestro install (validated against `v1.39.13`):
 
@@ -111,6 +122,37 @@ This test validates:
 - `scripts/benchmarks/runs/YYYY-MM-DD/<device>/journey/<stamp>/journey-report.json`
 - `scripts/benchmarks/runs/YYYY-MM-DD/<device>/journey/<stamp>/journey-summary.md`
 - per-run screenshots/debug bundles/logcat under sibling directories
+
+For each run, the send-capture stage includes:
+
+1. Timed screenshots (`t+0`, configured checkpoints, timeout checkpoint)
+2. Timed UI hierarchy dumps (`window_dump_tXXX.xml`)
+3. App-scoped snapshots (`run-as` shared prefs for chat/runtime model/download state)
+4. Send-window logcat slice
+5. `journey-report.json` step fields:
+   - `phase` (`startup|send|first_token|completed|timeout|error`)
+   - `elapsed_ms`
+   - `runtime_status`
+   - `backend`
+   - `active_model_id`
+   - `placeholder_visible`
+   - `response_visible`
+   - `response_role`
+   - `response_non_empty`
+   - `first_token_seen`
+   - `request_id`
+   - `finish_reason`
+   - `terminal_event_seen`
+   - `first_token_ms`
+   - `completion_ms`
+
+Interpretation rubric for send-capture:
+
+1. Pass: `phase=completed`, `placeholder_visible=false`, `response_non_empty=true`, `terminal_event_seen=true`.
+   Runtime may transiently show `Loading` immediately after completion; use the bounded post-completion grace window.
+2. Timeout fail: `phase=timeout`, placeholder or loading persists at SLA.
+3. First-token fail: `phase=first_token`, tokens started but no terminal event by SLA (`no_terminal_event` / `cancel_ack_missing`).
+4. Error fail: `phase=error` with failure signature + kickoff/debug output path.
 
 ## Regression Rules (Fail Stage)
 
