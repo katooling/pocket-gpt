@@ -37,7 +37,7 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 8 | Yes | WP-07 | Backlog | Post-MVP |
 | WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | Done | Week 6 |
 | WP-12 | Backend production runtime closure (native inference, model distribution, Android-native data plane) | Engineering | QA, Product, Security | 7 | Yes | WP-07, WP-11 | Done | Week 7-8 |
-| WP-13 | UX quality closure (onboarding, runtime clarity, usability gate, listing readiness) | Product | Eng, QA, Design, Marketing | 8 | Yes | WP-11 | In Progress | Week 8 |
+| WP-13 | UX quality closure (onboarding, runtime clarity, usability gate, listing readiness) | Product | Eng, QA, Design, Marketing | 8 | Yes | WP-11 | Blocked | Week 8 |
 
 ## Current Sprint Board
 
@@ -51,21 +51,13 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] ENG support: stage-2 runtime evidence integrity gate active for closure packet validation
 - [ ] DX-01 layered test profiles + Stage-2 quick/closure efficiency rollout (devctl/scripts/docs)
 - [ ] DX-02 provider-style caching rollout (native prefix/KV reuse + runtime cache telemetry + Stage-2 cache metrics)
-- [ ] WP-13 run-01 usability gate execution packet (A/B/C workflow evidence + thresholds)
+- [ ] WP-13 run-01 usability gate closure (blocked: moderated 5-user metrics + session artifacts not yet collected)
 - [ ] APP runtime integration hardening (app-path runtime wiring + in-app model provisioning recovery)
 
 ### Ready
 
 - [ ] MKT-03 first 7-day scorecard execution window
 - [ ] APP-STORE-01 Play Store listing spec + screenshot shotlist finalization (`docs/ux/play-store-listing-spec.md`)
-- [ ] TEST-ENG-01 test architecture and ownership matrix publish (`docs/testing/test-strategy.md`)
-- [ ] TEST-ENG-02 persistence codec unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/state/SessionPersistenceCodecTest.kt`)
-- [ ] TEST-ENG-03 runtime facade delegation unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/runtime/DefaultMvpRuntimeFacadeTest.kt`)
-- [ ] TEST-ENG-04 runtime benchmark runner unit coverage (`packages/app-runtime/src/commonTest/kotlin/com/pocketagent/runtime/StageBenchmarkRunnerTest.kt`)
-- [ ] TEST-ENG-05 instrumentation smoke extension for onboarding/runtime/privacy/NL tool flow (`apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/MainActivityUiSmokeTest.kt`)
-- [ ] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
-- [ ] TEST-QA-02 release-promotion checklist update with instrumentation/Maestro pass-id requirements (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`)
-- [ ] TEST-PROD-01 WP-13 usability gate packet operational template publication (`docs/operations/wp-13-usability-gate-packet-template.md`)
 
 ### Done
 
@@ -107,6 +99,14 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] QA-WP12 rerun validated refreshed ENG-13 artifact chain and reconfirmed WP-12 close recommendation (`docs/operations/evidence/wp-12/2026-03-05-qa-wp12-closeout-rerun.md`)
 - [x] PROD-WP12 final acceptance/signoff complete (`docs/operations/evidence/wp-12/2026-03-04-prod-wp12-final-signoff.md`)
 - [x] WP-12 package closeout complete (ENG-12..ENG-17 + QA-WP12 evidence aligned)
+- [x] TEST-ENG-01 test architecture and ownership matrix publish (`docs/testing/test-strategy.md`)
+- [x] TEST-ENG-02 persistence codec unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/state/SessionPersistenceCodecTest.kt`)
+- [x] TEST-ENG-03 runtime facade delegation unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/runtime/DefaultMvpRuntimeFacadeTest.kt`)
+- [x] TEST-ENG-04 runtime benchmark runner unit coverage (`packages/app-runtime/src/commonTest/kotlin/com/pocketagent/runtime/StageBenchmarkRunnerTest.kt`)
+- [x] TEST-ENG-05 instrumentation smoke extension for onboarding/runtime/privacy/NL tool flow (`apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/MainActivityUiSmokeTest.kt`)
+- [x] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
+- [x] TEST-QA-02 release-promotion checklist update with instrumentation/Maestro pass-id requirements (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`)
+- [x] TEST-PROD-01 WP-13 usability gate packet operational template publication (`docs/operations/wp-13-usability-gate-packet-template.md`)
 - [x] MKT-02 external competitor snapshot sourced (ChatGPT/Gemini/Claude) (`docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`)
 - [x] ENG-18 UI accessibility + error-state hardening complete (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`)
 - [x] QA-10 weekly UI regression matrix run 01 complete (`docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`)

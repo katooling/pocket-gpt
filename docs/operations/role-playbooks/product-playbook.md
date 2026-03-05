@@ -31,13 +31,15 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 - [x] PROD-06 beta rollout process and user feedback loop kickoff
 - [x] WP-12/ENG-12 product input delivered: model distribution path + provenance policy decision published
 - [x] PROD-04 monetization scope and pricing hypothesis kickoff (v0 draft published)
+- [ ] WP-13 usability gate closure (blocked until moderated cohort metrics and session artifacts are attached)
 
 ## Product Dispatch Timing
 
 1. WP-07 and WP-11 gates are closed with complete evidence.
 2. Continue WP-09/PROD-06 planning and rollout sequencing.
 3. WP-12 decision gate and acceptance/signoff are closed.
-4. Keep launch claims/evidence synchronized as distribution operations advance.
+4. WP-13 run-01 is currently `hold`; complete moderated cohort metrics before promotion.
+5. Keep launch claims/evidence synchronized as distribution operations advance.
 
 ## Task Queue
 

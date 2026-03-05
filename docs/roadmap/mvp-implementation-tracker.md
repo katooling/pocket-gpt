@@ -20,6 +20,7 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 | WP-07 | Beta hardening + go/no-go packet | QA + Product + Eng | Done | Must close for external beta |
 | WP-11 | Android MVP user experience (chat/session/image/tool UX) | Engineering + Product + QA | Done | Must close for external beta |
 | WP-12 | Backend production runtime closure (native/runtime/data-plane hardening) | Engineering + QA + Product + Security | Done | Must close before production-claim hardening signoff |
+| WP-13 | UX quality closure (onboarding/runtime clarity/usability gate/listing readiness) | Product + QA + Eng + Design + Marketing | Blocked | Must close before promotion beyond current cohort |
 
 External beta signoff policy:
 
@@ -104,6 +105,16 @@ Current status:
 
 - `ENG-13` native backend proof is complete with `NATIVE_JNI` evidence and full `0.8B`/`2B` + memory/PSS packet (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`).
 - QA closeout rerun is complete with recommendation to close WP-12 (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`).
+
+## Stage 6.6 Checklist (Usable Product Integration)
+
+- [x] App launch path runtime now loads from in-app provisioning metadata (not shell-only env exports).
+- [x] In-app model setup flow supports import/replace of required `0.8B` and `2B` GGUF files.
+- [x] Runtime backend identity is visible in chat header + advanced controls.
+- [x] Release-candidate real-runtime app-path instrumentation test is added.
+- [x] Maestro Scenario C flow is added for context continuity/user journey coverage.
+- [ ] WP-13 usability gate run packet finalized with participant threshold data.
+  - Blocker state (2026-03-05): run-01 decision is `hold` pending moderated 5-user cohort metrics and qualitative session artifacts (`docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`).
 
 ## WP-11 UI Gate Checklist
 

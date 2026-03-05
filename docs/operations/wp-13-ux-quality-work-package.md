@@ -1,9 +1,9 @@
 # WP-13 UX Quality Work Package
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 Owner: Product
 Support: Engineering, QA, Design, Marketing
-Status: Ready
+Status: Blocked (awaiting moderated cohort metrics for gate closure)
 
 ## Objective
 
@@ -16,6 +16,7 @@ Add a usability gate on top of technical correctness so MVP can ship with strong
 3. Message readability and chat ergonomics.
 4. Privacy comprehension and trust signaling.
 5. Tool discoverability through natural language prompts.
+6. Model provisioning recovery and runtime backend transparency.
 
 ## Ticket Set
 
@@ -60,3 +61,17 @@ Pass only if all are true:
 1. `ENG-13` must be closed before publishing performance claims.
 2. `QA-10` weekly regression cadence remains active.
 3. `PROD-08` feedback taxonomy and synthesis template used as intake source.
+
+## Active Blocker
+
+1. WP-13 run-01 decision is currently `hold` because moderated 5-user usability metrics and qualitative session artifacts are not yet collected.
+2. Blocking evidence item: `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
+
+## Operational Updates (2026-03-04)
+
+1. WP-13 run-01 packet initialized:
+   - `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
+2. Reusable automation now includes Scenario C flow:
+   - `tests/maestro/scenario-c.yaml`
+3. Real-runtime app-path smoke test added for release-candidate windows:
+   - `apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/RealRuntimeAppPathInstrumentationTest.kt`
