@@ -699,14 +699,14 @@ run_model_sweep() {
 
 resolve_apk_path() {
   local pattern="$1"
-  find apps/mobile-android/build/outputs/apk -type f -name "${pattern}" | sort | head -n 1
+  find apps/mobile-android/build/outputs/apk -type f -name "${pattern}" | sort
 }
 
 install_app_if_needed() {
   local apk_install_skipped=0
 
   if [[ "${INSTALL_MODE}" == "skip" ]]; then
-    echo "Skipping installDebug/installDebugAndroidTest (--install-mode skip)"
+    echo "Skipping installDebug/installDebugAndroidTest (--install-mode skip)" >&2
     apk_install_skipped=1
     echo "${apk_install_skipped}"
     return
@@ -741,7 +741,7 @@ install_app_if_needed() {
   fi
 
   if [[ "${INSTALL_MODE}" == "auto" && "${app_sha}" == "${cached_app_sha}" && "${test_sha}" == "${cached_test_sha}" ]]; then
-    echo "Skipping installDebug/installDebugAndroidTest (APK hashes unchanged)."
+    echo "Skipping installDebug/installDebugAndroidTest (APK hashes unchanged)." >&2
     apk_install_skipped=1
     echo "${apk_install_skipped}"
     return

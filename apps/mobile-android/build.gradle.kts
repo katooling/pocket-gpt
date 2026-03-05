@@ -44,6 +44,7 @@ android {
                 cmake {
                     arguments += listOf("-DANDROID_STL=c++_shared")
                     cppFlags += listOf("-std=c++17", "-fexceptions", "-frtti")
+                    targets += listOf("pocket_llama")
                 }
             }
         }
