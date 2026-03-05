@@ -32,7 +32,7 @@ object UiErrorMapper {
             normalized.contains("runtime backend is adb_fallback") || normalized.contains("runtime backend is unavailable") ->
                 "Native runtime backend is unavailable. Confirm device/runtime setup and retry."
             normalized.contains("startup checks timed out") || normalized.contains("timed out") ->
-                "Runtime checks timed out. Refresh runtime checks and retry."
+                "Runtime checks timed out. You can still send a message, but first output may take longer on older devices."
             else ->
                 "Runtime setup is incomplete. Open model setup, refresh checks, and retry."
         }

@@ -51,28 +51,34 @@ bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models
 3. Combined real-runtime user journey gate: `python3 tools/devctl/main.py lane journey`
 4. Canonical stuck-reply gate command:
    - `python3 tools/devctl/main.py lane journey --repeats 1 --reply-timeout-seconds 90`
-5. `lane journey` supports deterministic send diagnostics:
+5. Valid-output gate for slower/older phones:
+   - `python3 tools/devctl/main.py lane journey --repeats 1 --mode valid-output --steps instrumentation,send-capture`
+   - Defaults in `valid-output` mode: timeout `480s`, capture timeline through timeout.
+6. `lane journey` supports deterministic send diagnostics:
    - `--reply-timeout-seconds` (default `90`)
    - `--capture-intervals` (default `5,15,30,60,90`; `t+0` and timeout are always captured)
    - `--prompt` (default probe prompt: `"ola, how you doin"`)
-6. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
-7. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
-8. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
-9. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
-10. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
-11. Device lanes run health preflight before execution:
+   - `--mode strict|valid-output` (`strict` keeps SLA-oriented checks; `valid-output` prioritizes terminal proof of response)
+   - `--steps instrumentation,send-capture,maestro` (run only the stage(s) you need for fast feedback)
+   - `--maestro-flows` (optional comma list to run a subset of Maestro flows during journey lane)
+7. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
+8. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
+9. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
+10. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
+11. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
+12. Device lanes run health preflight before execution:
    - wake/unlock attempt
    - `/data` utilization guard
    - writable runtime-media probe under app media path (with retry/fallback to `/sdcard/Download/<package>/...` for busy media-path edge cases)
    - installed package owner metadata check (`dumpsys package`)
-12. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
-13. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
-14. Model preflight uses persistent on-device cache manifest `model-sync-v1.json`:
+13. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
+14. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
+15. Model preflight uses persistent on-device cache manifest `model-sync-v1.json`:
    - primary path: `/sdcard/Android/media/<app>/devctl-cache/model-sync-v1.json`
    - fallback path: `/sdcard/Download/<app>/devctl-cache/model-sync-v1.json`
    - each lane run still performs provisioning instrumentation probe.
-15. Cache decisions are written to `real-runtime-preflight.json` (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`) for operator auditability.
-16. Debug override: set `POCKETGPT_FORCE_MODEL_SYNC=1` to force model push even when cache matches.
+16. Cache decisions are written to `real-runtime-preflight.json` (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`) for operator auditability.
+17. Debug override: set `POCKETGPT_FORCE_MODEL_SYNC=1` to force model push even when cache matches.
 
 Maestro install (validated against `v1.39.13`):
 

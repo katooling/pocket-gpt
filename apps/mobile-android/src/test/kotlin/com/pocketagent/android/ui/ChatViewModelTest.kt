@@ -414,7 +414,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `startup probe timeout maps to startup ui error code`() = runTest(dispatcher) {
+    fun `startup probe timeout maps to degraded startup state without blocking error`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade(
             startupDelayMs = 200L,
         )
@@ -428,9 +428,78 @@ class ChatViewModelTest {
         Thread.sleep(250L)
 
         val runtimeState = viewModel.uiState.value.runtime
-        assertEquals("UI-STARTUP-001", runtimeState.lastErrorCode)
-        assertTrue(runtimeState.lastErrorUserMessage?.contains("timed out") == true)
-        assertEquals("Startup checks timed out after 1s.", runtimeState.modelStatusDetail)
+        assertEquals(null, runtimeState.lastErrorCode)
+        assertEquals(null, runtimeState.lastErrorUserMessage)
+        assertEquals(
+            "Startup checks exceeded the probe window. Chat is still available; first output may take longer on older devices.",
+            runtimeState.modelStatusDetail,
+        )
+        assertEquals(com.pocketagent.android.ui.state.ModelRuntimeStatus.LOADING, runtimeState.modelRuntimeStatus)
+        assertTrue(runtimeState.startupWarnings.any { it.contains("timed out", ignoreCase = true) })
+        assertEquals(com.pocketagent.android.ui.state.StartupProbeState.DEGRADED, runtimeState.startupProbeState)
+    }
+
+    @Test
+    fun `startup probe timeout remains send-allowed in degraded mode`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupDelayMs = 200L,
+            streamTerminal = StreamTerminal.COMPLETED,
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = Dispatchers.IO,
+            runtimeStartupProbeTimeoutMs = 50L,
+            runtimeGenerationTimeoutMs = 500L,
+        )
+        Thread.sleep(250L)
+
+        viewModel.onComposerChanged("hello degraded mode")
+        viewModel.sendMessage()
+        Thread.sleep(120L)
+
+        val active = viewModel.uiState.value.activeSession!!
+        assertTrue(active.messages.any { it.role == MessageRole.USER && it.content == "hello degraded mode" })
+    }
+
+    @Test
+    fun `routing mode qwen 2b uses extended adaptive timeout`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.setRoutingMode(RoutingMode.QWEN_2B)
+        viewModel.onComposerChanged("hello with 2b")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        assertEquals(480_000L, runtime.lastStreamRequest?.requestTimeoutMs)
+    }
+
+    @Test
+    fun `cancel active send delegates request scoped cancellation`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            streamDelayMs = 500L,
+            streamTokens = listOf("a "),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+            runtimeGenerationTimeoutMs = 1_000L,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("cancel me")
+        viewModel.sendMessage()
+        viewModel.cancelActiveSend()
+        advanceUntilIdle()
+
+        assertTrue(runtime.cancelledRequestIds.isNotEmpty())
     }
 
     @Test
@@ -539,6 +608,7 @@ private class RecordingRuntimeFacade(
     val restoredTurns = mutableListOf<Pair<SessionId, List<Turn>>>()
     val cancelledSessions = mutableListOf<SessionId>()
     val cancelledRequestIds = mutableListOf<String>()
+    var lastStreamRequest: StreamUserMessageRequest? = null
 
     override fun createSession(): SessionId {
         sessionCounter += 1
@@ -546,6 +616,7 @@ private class RecordingRuntimeFacade(
     }
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = flow {
+        lastStreamRequest = request
         emit(
             ChatStreamEvent.Started(
                 requestId = request.requestId,

@@ -81,6 +81,7 @@ class JourneyStepResult:
     terminal_event_seen: bool | None = None
     first_token_ms: int | None = None
     completion_ms: int | None = None
+    mode: str | None = None
 
 
 @dataclass
@@ -114,6 +115,7 @@ _DEFAULT_HEALTH_TEST_PACKAGE = "com.pocketagent.android.test"
 _REMOTE_DIR_RETRY_ATTEMPTS = 3
 _REMOTE_DIR_RETRY_BACKOFF_SECONDS = 0.5
 _SEND_CAPTURE_READY_GRACE_SECONDS = 5
+_SEND_CAPTURE_POST_TERMINAL_GRACE_SECONDS = 30
 _MODEL_SYNC_MANIFEST_FILE = "model-sync-v1.json"
 _MODEL_SYNC_MANIFEST_SCHEMA = "model-sync-v1"
 _FORCE_MODEL_SYNC_ENV = "POCKETGPT_FORCE_MODEL_SYNC"
@@ -1470,6 +1472,7 @@ def _run_send_capture_stage(
     prompt: str,
     reply_timeout_seconds: int,
     capture_intervals: Sequence[int],
+    mode: str,
 ) -> JourneyStepResult:
     capture_root = run_root / "send-capture"
     capture_root.mkdir(parents=True, exist_ok=True)
@@ -1477,6 +1480,15 @@ def _run_send_capture_stage(
     debug_output_dir.mkdir(parents=True, exist_ok=True)
 
     kickoff_flow = capture_root / "send-kickoff.yaml"
+    strict_mode = mode == "strict"
+    ready_wait_lines = [
+        "- extendedWaitUntil:",
+        "    visible: \"Runtime: Ready\"",
+        f"    timeout: {reply_timeout_seconds * 1000}",
+    ] if strict_mode else []
+    runtime_clean_assert_lines = [
+        "- assertNotVisible: \"UI-RUNTIME-001\"",
+    ] if strict_mode else []
     kickoff_flow.write_text(
         "\n".join(
             [
@@ -1498,9 +1510,7 @@ def _run_send_capture_stage(
                 "      visible: \"PocketAgent\"",
                 "    commands:",
                 "      - tapOn: \"PocketAgent\"",
-                "- extendedWaitUntil:",
-                "    visible: \"Runtime: Ready\"",
-                f"    timeout: {reply_timeout_seconds * 1000}",
+                *ready_wait_lines,
                 "- tapOn: \"Advanced\"",
                 "- runFlow:",
                 "    when:",
@@ -1516,7 +1526,7 @@ def _run_send_capture_stage(
                 "- extendedWaitUntil:",
                 "    visible: \"Model: QWEN_0_8B\"",
                 "    timeout: 5000",
-                "- assertNotVisible: \"UI-RUNTIME-001\"",
+                *runtime_clean_assert_lines,
                 "- takeScreenshot: \"send-kickoff-02-ready\"",
                 "- tapOn: \"Message\"",
                 "- takeScreenshot: \"send-kickoff-03-message-tab\"",
@@ -1533,9 +1543,6 @@ def _run_send_capture_stage(
                 "      visible: \"PocketAgent\"",
                 "    commands:",
                 "      - tapOn: \"PocketAgent\"",
-                "      - extendedWaitUntil:",
-                "          visible: \"Runtime: Ready\"",
-                f"          timeout: {reply_timeout_seconds * 1000}",
                 "      - tapOn: \"Message\"",
                 "      - eraseText",
                 f"      - inputText: {json.dumps(prompt)}",
@@ -1543,7 +1550,6 @@ def _run_send_capture_stage(
                 "- tapOn: \"Send\"",
                 f"- assertVisible: {json.dumps(prompt)}",
                 "- takeScreenshot: \"send-kickoff-06-after-send\"",
-                "- assertNotVisible: \"UI-RUNTIME-001\"",
             ]
         )
         + "\n",
@@ -1590,10 +1596,12 @@ def _run_send_capture_stage(
             logcat=_report_path(logcat_path),
             phase="error",
             elapsed_ms=elapsed_ms,
+            mode=mode,
         )
 
     snapshots: list[SendCaptureSnapshot] = []
     capture_started = time.monotonic()
+    terminal_capture_cutoff: int | None = None
     for second in capture_intervals:
         target = capture_started + float(second)
         wait_seconds = target - time.monotonic()
@@ -1610,6 +1618,22 @@ def _run_send_capture_stage(
         snapshots.append(snapshot)
         if snapshot.screenshot:
             screenshots.append(snapshot.screenshot)
+        if (
+            terminal_capture_cutoff is None
+            and snapshot.terminal_event_seen
+            and snapshot.response_visible
+            and snapshot.response_non_empty
+        ):
+            terminal_capture_cutoff = min(
+                reply_timeout_seconds,
+                second + _SEND_CAPTURE_POST_TERMINAL_GRACE_SECONDS,
+            )
+        if terminal_capture_cutoff is not None:
+            has_more_within_cutoff = any(
+                value > second and value <= terminal_capture_cutoff for value in capture_intervals
+            )
+            if not has_more_within_cutoff:
+                break
 
     snapshots_payload_path = capture_root / "send-snapshots.json"
     snapshots_payload_path.write_text(
@@ -1702,18 +1726,23 @@ def _run_send_capture_stage(
         failure_signature = "completion_after_sla"
     elif completion is not None:
         elapsed_ms = completion.second * 1000
-        grace_limit = min(reply_timeout_seconds, completion.second + _SEND_CAPTURE_READY_GRACE_SECONDS)
-        ready_window = [
-            item
-            for item in snapshots
-            if completion.second <= item.second <= grace_limit
-        ]
-        ready_within_grace = any((item.runtime_status or "").strip().lower() == "ready" for item in ready_window)
-        ready_window_has_signal = len(ready_window) > 1 or completion.second >= reply_timeout_seconds
-        if ready_window_has_signal and not ready_within_grace:
-            status = "failed"
-            phase = "timeout"
-            failure_signature = "completion_without_ready_within_grace"
+        if strict_mode:
+            grace_limit = min(reply_timeout_seconds, completion.second + _SEND_CAPTURE_READY_GRACE_SECONDS)
+            ready_window = [
+                item
+                for item in snapshots
+                if completion.second <= item.second <= grace_limit
+            ]
+            ready_within_grace = any((item.runtime_status or "").strip().lower() == "ready" for item in ready_window)
+            ready_window_has_signal = len(ready_window) > 1 or completion.second >= reply_timeout_seconds
+            if ready_window_has_signal and not ready_within_grace:
+                status = "failed"
+                phase = "timeout"
+                failure_signature = "completion_without_ready_within_grace"
+            elif utf8_error_snapshot is not None:
+                status = "failed"
+                phase = "error"
+                failure_signature = "utf8_stream_error"
         elif utf8_error_snapshot is not None:
             status = "failed"
             phase = "error"
@@ -1724,6 +1753,8 @@ def _run_send_capture_stage(
         elapsed_ms = reply_timeout_seconds * 1000
         if first_token is not None and not terminal_event_seen:
             failure_signature = "cancel_ack_missing"
+        elif first_token is None:
+            failure_signature = f"no_first_token_{reply_timeout_seconds}s"
         elif final.timeout_message_visible:
             failure_signature = "ui_timeout_message_visible_at_sla"
         else:
@@ -1750,7 +1781,7 @@ def _run_send_capture_stage(
     details_lines = [
         f"Prompt: {prompt}",
         f"Kickoff output: {_report_path(kickoff_output)}",
-        f"Capture intervals (s): {', '.join(str(value) for value in capture_intervals)}",
+        f"Capture intervals (s): {', '.join(str(snapshot.second) for snapshot in snapshots)}",
         f"Snapshot timeline: {_report_path(snapshots_payload_path)}",
         f"State snapshots: {_report_path(capture_root / 'state')}",
     ]
@@ -1778,6 +1809,7 @@ def _run_send_capture_stage(
         terminal_event_seen=terminal_event_seen,
         first_token_ms=first_token_ms,
         completion_ms=completion_ms,
+        mode=mode,
     )
 
 def _extract_summary_path(output: str) -> Path | None:
@@ -1928,6 +1960,15 @@ def _parse_journey_args(
     capture_intervals_default: Sequence[int],
     prompt_default: str,
 ) -> argparse.Namespace:
+    raw_arg_list = list(raw_args)
+    timeout_explicit = any(
+        token == "--reply-timeout-seconds" or token.startswith("--reply-timeout-seconds=")
+        for token in raw_arg_list
+    )
+    capture_explicit = any(
+        token == "--capture-intervals" or token.startswith("--capture-intervals=")
+        for token in raw_arg_list
+    )
     parser = argparse.ArgumentParser(prog="devctl lane journey")
     parser.add_argument("--repeats", type=int, default=repeats_default)
     parser.add_argument("--reply-timeout-seconds", type=int, default=reply_timeout_default)
@@ -1937,7 +1978,10 @@ def _parse_journey_args(
         default=",".join(str(value) for value in capture_intervals_default),
     )
     parser.add_argument("--prompt", type=str, default=prompt_default)
-    parsed = parser.parse_args(list(raw_args))
+    parser.add_argument("--mode", choices={"strict", "valid-output"}, default="strict")
+    parser.add_argument("--steps", type=str, default="instrumentation,send-capture,maestro")
+    parser.add_argument("--maestro-flows", type=str, default="")
+    parsed = parser.parse_args(raw_arg_list)
     if parsed.repeats <= 0:
         raise DevctlError("CONFIG_ERROR", "--repeats must be > 0")
     if parsed.repeats > repeats_max:
@@ -1945,7 +1989,13 @@ def _parse_journey_args(
     if parsed.reply_timeout_seconds <= 0:
         raise DevctlError("CONFIG_ERROR", "--reply-timeout-seconds must be > 0")
 
-    capture_intervals = _parse_capture_intervals(parsed.capture_intervals)
+    if parsed.mode == "valid-output" and not timeout_explicit:
+        parsed.reply_timeout_seconds = 480
+
+    if parsed.mode == "valid-output" and not capture_explicit:
+        capture_intervals = [0, 5, 15, 30, 60, 90, 120, 180, 240, 300, 420, parsed.reply_timeout_seconds]
+    else:
+        capture_intervals = _parse_capture_intervals(parsed.capture_intervals)
     capture_intervals = sorted({0, *capture_intervals})
     capture_intervals = [value for value in capture_intervals if value <= parsed.reply_timeout_seconds]
     if capture_intervals[-1] != parsed.reply_timeout_seconds:
@@ -1956,6 +2006,9 @@ def _parse_journey_args(
     if not prompt:
         raise DevctlError("CONFIG_ERROR", "--prompt must not be empty")
     parsed.prompt = prompt
+
+    parsed.steps = _parse_journey_steps(parsed.steps)
+    parsed.maestro_flows = _parse_maestro_flows(parsed.maestro_flows)
     return parsed
 
 
@@ -1975,6 +2028,50 @@ def _parse_capture_intervals(raw: str) -> list[int]:
     if not values:
         raise DevctlError("CONFIG_ERROR", "--capture-intervals must include at least one integer value")
     return values
+
+
+def _parse_journey_steps(raw: str) -> list[str]:
+    if not raw.strip():
+        raise DevctlError("CONFIG_ERROR", "--steps must not be empty")
+    allowed = {"instrumentation", "send-capture", "maestro"}
+    ordered = ["instrumentation", "send-capture", "maestro"]
+    requested = {token.strip().lower() for token in raw.split(",") if token.strip()}
+    if not requested:
+        raise DevctlError("CONFIG_ERROR", "--steps must include at least one step")
+    unknown = sorted(requested - allowed)
+    if unknown:
+        raise DevctlError("CONFIG_ERROR", f"Unknown journey step(s): {', '.join(unknown)}")
+    return [step for step in ordered if step in requested]
+
+
+def _parse_maestro_flows(raw: str) -> list[str]:
+    if not raw.strip():
+        return []
+    return [token.strip() for token in raw.split(",") if token.strip()]
+
+
+def _resolve_maestro_flow_selection(available_flows: Sequence[str], selected_tokens: Sequence[str]) -> list[str]:
+    if not selected_tokens:
+        return list(available_flows)
+
+    resolved: list[str] = []
+    for token in selected_tokens:
+        if token in available_flows:
+            resolved.append(token)
+            continue
+        normalized = token.removesuffix(".yaml")
+        match = next(
+            (
+                flow
+                for flow in available_flows
+                if Path(flow).stem == normalized or flow.endswith(f"/{normalized}.yaml")
+            ),
+            None,
+        )
+        if match is None:
+            raise DevctlError("CONFIG_ERROR", f"Unknown Maestro flow selection: {token}")
+        resolved.append(match)
+    return resolved
 
 
 def _write_journey_report(
@@ -2015,6 +2112,7 @@ def _write_journey_report(
                 "terminal_event_seen": step.terminal_event_seen,
                 "first_token_ms": step.first_token_ms,
                 "completion_ms": step.completion_ms,
+                "mode": step.mode,
             }
             for step in steps
         ],
@@ -2030,13 +2128,13 @@ def _write_journey_report(
         f"- Run host: `{run_host}`",
         f"- Generated: `{payload['generated_at']}`",
         "",
-        "| Step | Phase | Status | Duration (s) | Elapsed (ms) | Runtime | Backend | Model | Placeholder | Response | Role | Non-empty | First token | Request ID | Finish reason | Terminal | First token ms | Completion ms |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Step | Mode | Phase | Status | Duration (s) | Elapsed (ms) | Runtime | Backend | Model | Placeholder | Response | Role | Non-empty | First token | Request ID | Finish reason | Terminal | First token ms | Completion ms |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for step in steps:
         lines.append(
             "| "
-            f"{step.name} | {step.phase or '-'} | {step.status} | {step.duration_seconds:.2f} | "
+            f"{step.name} | {step.mode or '-'} | {step.phase or '-'} | {step.status} | {step.duration_seconds:.2f} | "
             f"{step.elapsed_ms if step.elapsed_ms is not None else '-'} | "
             f"{step.runtime_status or '-'} | {step.backend or '-'} | {step.active_model_id or '-'} | "
             f"{step.placeholder_visible if step.placeholder_visible is not None else '-'} | "
@@ -2462,6 +2560,10 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
 
         preflight = prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
         runner_args = _instrumentation_args_from_model_paths(preflight.model_device_paths_by_id)
+        selected_flows = _resolve_maestro_flow_selection(
+            context.configs.lanes.lanes.maestro.flows,
+            args.maestro_flows,
+        )
 
         for index in range(args.repeats):
             run_label = f"run-{index + 1:02d}"
@@ -2474,28 +2576,34 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
             instrumentation_args["journey_artifact_dir"] = device_journey_dir
             instrumentation_args["journey_reply_timeout_seconds"] = str(args.reply_timeout_seconds)
 
-            started = time.monotonic()
             instrumentation_output_path = run_root / "instrumentation-output.txt"
-            try:
-                result = _run_instrumentation_class(
-                    context=context,
-                    serial=serial,
-                    test_class=real_runtime_cfg.journey_test_class,
-                    runner=preflight.instrumentation_runner or real_runtime_cfg.instrumentation_runner,
-                    args=instrumentation_args,
-                    timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
-                )
-                instrumentation_output_path.write_text(
-                    (result.stdout or "") + (result.stderr or ""),
-                    encoding="utf-8",
-                )
-                instrumentation_status = "passed"
+            if "instrumentation" in args.steps:
+                started = time.monotonic()
+                try:
+                    result = _run_instrumentation_class(
+                        context=context,
+                        serial=serial,
+                        test_class=real_runtime_cfg.journey_test_class,
+                        runner=preflight.instrumentation_runner or real_runtime_cfg.instrumentation_runner,
+                        args=instrumentation_args,
+                        timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
+                    )
+                    instrumentation_output_path.write_text(
+                        (result.stdout or "") + (result.stderr or ""),
+                        encoding="utf-8",
+                    )
+                    instrumentation_status = "passed"
+                    instrumentation_failure = None
+                except DevctlError as exc:
+                    instrumentation_output_path.write_text(exc.message + "\n", encoding="utf-8")
+                    instrumentation_status = "failed"
+                    instrumentation_failure = exc.message
+                duration = time.monotonic() - started
+            else:
+                instrumentation_output_path.write_text("Instrumentation skipped by --steps.\n", encoding="utf-8")
+                instrumentation_status = "skipped"
                 instrumentation_failure = None
-            except DevctlError as exc:
-                instrumentation_output_path.write_text(exc.message + "\n", encoding="utf-8")
-                instrumentation_status = "failed"
-                instrumentation_failure = exc.message
-            duration = time.monotonic() - started
+                duration = 0.0
 
             local_instrumentation_shots = run_root / real_runtime_cfg.screenshot_dir_name / "instrumentation"
             local_instrumentation_shots.mkdir(parents=True, exist_ok=True)
@@ -2516,45 +2624,55 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
                 details=_report_path(instrumentation_output_path),
                 screenshots=_collect_maestro_screenshots(local_instrumentation_shots),
                 failure_signature=instrumentation_failure,
-                phase="startup" if instrumentation_status == "passed" else "error",
+                phase=(
+                    "startup"
+                    if instrumentation_status == "passed"
+                    else ("skipped" if instrumentation_status == "skipped" else "error")
+                ),
                 elapsed_ms=int(duration * 1000),
+                mode=args.mode,
             )
             steps.append(step)
-            if instrumentation_status != "passed":
+            if instrumentation_status == "failed":
                 _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
                 continue
 
-            send_step = _run_send_capture_stage(
-                context=context,
-                maestro_bin=maestro_bin,
-                serial=serial,
-                app_package=real_runtime_cfg.app_package,
-                run_root=run_root,
-                prompt=args.prompt,
-                reply_timeout_seconds=args.reply_timeout_seconds,
-                capture_intervals=args.capture_intervals,
-            )
-            send_step.name = f"{run_label}:send-capture"
-            steps.append(send_step)
-            if send_step.status != "passed":
-                _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
-                continue
-
-            for flow in context.configs.lanes.lanes.maestro.flows:
-                flow_path = REPO_ROOT / flow
-                if not flow_path.exists():
-                    raise DevctlError("CONFIG_ERROR", f"Missing Maestro flow: {flow_path}")
-                flow_step = _run_maestro_flow(
+            if "send-capture" in args.steps:
+                send_step = _run_send_capture_stage(
                     context=context,
                     maestro_bin=maestro_bin,
                     serial=serial,
-                    flow_path=flow_path,
-                    debug_output_dir=run_root / real_runtime_cfg.maestro_debug_dir_name / flow_path.stem,
+                    app_package=real_runtime_cfg.app_package,
+                    run_root=run_root,
+                    prompt=args.prompt,
+                    reply_timeout_seconds=args.reply_timeout_seconds,
+                    capture_intervals=args.capture_intervals,
+                    mode=args.mode,
                 )
-                flow_step.name = f"{run_label}:{flow_step.name}"
-                steps.append(flow_step)
-                if flow_step.status != "passed":
-                    break
+                send_step.name = f"{run_label}:send-capture"
+                send_step.mode = args.mode
+                steps.append(send_step)
+                if send_step.status != "passed":
+                    _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
+                    continue
+
+            if "maestro" in args.steps:
+                for flow in selected_flows:
+                    flow_path = REPO_ROOT / flow
+                    if not flow_path.exists():
+                        raise DevctlError("CONFIG_ERROR", f"Missing Maestro flow: {flow_path}")
+                    flow_step = _run_maestro_flow(
+                        context=context,
+                        maestro_bin=maestro_bin,
+                        serial=serial,
+                        flow_path=flow_path,
+                        debug_output_dir=run_root / real_runtime_cfg.maestro_debug_dir_name / flow_path.stem,
+                    )
+                    flow_step.name = f"{run_label}:{flow_step.name}"
+                    flow_step.mode = args.mode
+                    steps.append(flow_step)
+                    if flow_step.status != "passed":
+                        break
 
             _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
 
@@ -2562,7 +2680,7 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
         summary_path = artifact_root / real_runtime_cfg.summary_file_name
         _write_journey_report(report_path=report_path, summary_path=summary_path, serial=serial, steps=steps)
 
-        failed = [step for step in steps if step.status != "passed"]
+        failed = [step for step in steps if step.status not in {"passed", "skipped"}]
         if failed:
             names = ", ".join(step.name for step in failed)
             raise DevctlError(

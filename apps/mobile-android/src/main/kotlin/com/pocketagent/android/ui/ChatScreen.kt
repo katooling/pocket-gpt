@@ -236,6 +236,18 @@ private fun OfflineAndStatusHeader(
         }
     }
 
+    if (state.runtime.sendSlowState != null) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Card(modifier = Modifier.testTag("runtime_send_slow_hint")) {
+            Text(
+                text = state.runtime.sendSlowState,
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
     state.runtime.lastError?.let { error ->
         if (state.runtime.lastErrorUserMessage != null) {
             return@let
@@ -489,14 +501,16 @@ private fun renderInlineBold(text: String): AnnotatedString {
 internal fun ComposerBar(
     text: String,
     isSending: Boolean,
-    isRuntimeReady: Boolean,
+    isSendAllowed: Boolean,
+    isModelActionsReady: Boolean,
     onTextChanged: (String) -> Unit,
     onSend: () -> Unit,
+    onCancelSend: () -> Unit,
     onAttachImage: () -> Unit,
 ) {
     val sendStateDescription = when {
         isSending -> stringResource(id = R.string.a11y_send_state_sending)
-        !isRuntimeReady -> stringResource(id = R.string.a11y_send_state_runtime_not_ready)
+        !isSendAllowed -> stringResource(id = R.string.a11y_send_state_runtime_not_ready)
         text.isBlank() -> stringResource(id = R.string.a11y_send_state_disabled)
         else -> stringResource(id = R.string.a11y_send_state_enabled)
     }
@@ -511,7 +525,7 @@ internal fun ComposerBar(
     ) {
         IconButton(
             onClick = onAttachImage,
-            enabled = !isSending && isRuntimeReady,
+            enabled = !isSending && isModelActionsReady,
         ) {
             Icon(Icons.Default.Image, contentDescription = attachImageDescription)
         }
@@ -532,10 +546,18 @@ internal fun ComposerBar(
                     contentDescription = sendButtonDescription
                     stateDescription = sendStateDescription
                 },
-            onClick = onSend,
-            enabled = text.isNotBlank() && !isSending && isRuntimeReady,
+            onClick = if (isSending) onCancelSend else onSend,
+            enabled = if (isSending) true else text.isNotBlank() && isSendAllowed,
         ) {
-            Text(stringResource(id = R.string.ui_send_button))
+            Text(
+                stringResource(
+                    id = if (isSending) {
+                        R.string.ui_cancel_button
+                    } else {
+                        R.string.ui_send_button
+                    },
+                ),
+            )
         }
     }
 }

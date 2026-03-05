@@ -30,6 +30,7 @@
     <string name="ui_tool_message_label">Tool: %1$s</string>
     <string name="ui_composer_label">Message</string>
     <string name="ui_send_button">Send</string>
+    <string name="ui_cancel_button">Cancel</string>
     <string name="ui_local_tools_title">Local tools</string>
     <string name="ui_tool_prompt_helper">Tool execution now works through natural language prompts.</string>
     <string name="ui_tool_calculator_prompt">calculate 4*9</string>

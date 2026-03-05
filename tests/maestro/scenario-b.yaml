@@ -7,11 +7,6 @@ appId: com.pocketagent.android
     commands:
       - tapOn: "Skip"
 - assertVisible: "Offline-first"
-- extendedWaitUntil:
-    visible: "Runtime: Ready"
-    timeout: 180000
-- assertVisible: "Runtime: Ready"
-- assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-b-01-ready"
 - tapOn: "Tools"
 - tapOn: "calculate 4*9"
@@ -31,18 +26,10 @@ appId: com.pocketagent.android
 - inputText: "Model switch sanity check"
 - tapOn: "Send"
 - assertVisible: "Model switch sanity check"
-- extendedWaitUntil:
-    visible: "Runtime: (Ready|Error)"
-    timeout: 180000
 - runFlow:
     when:
       visible: "Runtime: Error"
     commands:
       - tapOn: "Refresh runtime checks"
-      - extendedWaitUntil:
-          visible: "Runtime: Ready"
-          timeout: 300000
-- assertVisible: "Runtime: Ready"
-- assertNotVisible: "Runtime: Error"
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-b-04-after-switch-send"

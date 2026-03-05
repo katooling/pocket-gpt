@@ -123,6 +123,8 @@ class LanesTest(unittest.TestCase):
         self.assertEqual(90, parsed.reply_timeout_seconds)
         self.assertEqual([0, 5, 15, 30, 60, 90], parsed.capture_intervals)
         self.assertEqual("ola, how you doin", parsed.prompt)
+        self.assertEqual("strict", parsed.mode)
+        self.assertEqual(["instrumentation", "send-capture", "maestro"], parsed.steps)
 
         with self.assertRaises(DevctlError):
             _parse_journey_args(
@@ -162,6 +164,42 @@ class LanesTest(unittest.TestCase):
         self.assertEqual(45, parsed.reply_timeout_seconds)
         self.assertEqual([0, 3, 9, 15, 45], parsed.capture_intervals)
         self.assertEqual("probe prompt", parsed.prompt)
+
+    def test_journey_parser_valid_output_mode_applies_long_timeout_defaults(self) -> None:
+        parsed = _parse_journey_args(
+            [
+                "--mode",
+                "valid-output",
+            ],
+            repeats_default=1,
+            repeats_max=5,
+            reply_timeout_default=90,
+            capture_intervals_default=[5, 15, 30, 60, 90],
+            prompt_default="ola, how you doin",
+        )
+        self.assertEqual("valid-output", parsed.mode)
+        self.assertEqual(480, parsed.reply_timeout_seconds)
+        self.assertEqual([0, 5, 15, 30, 60, 90, 120, 180, 240, 300, 420, 480], parsed.capture_intervals)
+
+    def test_journey_parser_supports_step_and_flow_filters(self) -> None:
+        parsed = _parse_journey_args(
+            [
+                "--steps",
+                "send-capture,maestro",
+                "--maestro-flows",
+                "tests/maestro/scenario-a.yaml,tests/maestro/scenario-c.yaml",
+            ],
+            repeats_default=1,
+            repeats_max=5,
+            reply_timeout_default=90,
+            capture_intervals_default=[5, 15, 30, 60, 90],
+            prompt_default="ola, how you doin",
+        )
+        self.assertEqual(["send-capture", "maestro"], parsed.steps)
+        self.assertEqual(
+            ["tests/maestro/scenario-a.yaml", "tests/maestro/scenario-c.yaml"],
+            parsed.maestro_flows,
+        )
 
     def test_extract_instrumentation_failure_detects_short_msg(self) -> None:
         output = "\n".join(

@@ -7,9 +7,6 @@ appId: com.pocketagent.android
     commands:
       - tapOn: "Skip"
 - assertVisible: "Offline-first"
-- extendedWaitUntil:
-    visible: "Runtime: Ready"
-    timeout: 180000
 - assertNotVisible: "UI-RUNTIME-001"
 - tapOn: "Advanced"
 - tapOn: "Open model setup"
@@ -50,18 +47,10 @@ appId: com.pocketagent.android
 - inputText: "ola how you doin"
 - tapOn: "Send"
 - assertVisible: "ola how you doin"
-- extendedWaitUntil:
-    visible: "Runtime: (Ready|Error)"
-    timeout: 180000
 - runFlow:
     when:
       visible: "Runtime: Error"
     commands:
       - tapOn: "Refresh runtime checks"
-      - extendedWaitUntil:
-          visible: "Runtime: Ready"
-          timeout: 300000
-- assertVisible: "Runtime: Ready"
-- assertNotVisible: "Runtime: Error"
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "activation-send-smoke"

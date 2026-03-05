@@ -65,6 +65,8 @@ fun PocketAgentApp(
     val drawerState = rememberDrawerState(
         initialValue = if (state.isSessionDrawerOpen) DrawerValue.Open else DrawerValue.Closed,
     )
+    val runtimeReadyForSend = state.runtime.startupProbeState == StartupProbeState.READY ||
+        state.runtime.startupProbeState == StartupProbeState.DEGRADED
     val runtimeReadyForModelActions = state.runtime.startupProbeState == StartupProbeState.READY &&
         state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
     val scope = rememberCoroutineScope()
@@ -228,9 +230,11 @@ fun PocketAgentApp(
                 ComposerBar(
                     text = state.composer.text,
                     isSending = state.composer.isSending,
-                    isRuntimeReady = runtimeReadyForModelActions,
+                    isSendAllowed = runtimeReadyForSend,
+                    isModelActionsReady = runtimeReadyForModelActions,
                     onTextChanged = viewModel::onComposerChanged,
                     onSend = viewModel::sendMessage,
+                    onCancelSend = viewModel::cancelActiveSend,
                     onAttachImage = { imagePicker.launch("image/*") },
                 )
             },

@@ -160,9 +160,11 @@ Human-required checkpoints:
 
 1. Espresso instrumentation lane: `python3 tools/devctl/main.py lane android-instrumented`
 2. Maestro E2E lane: `python3 tools/devctl/main.py lane maestro`
-3. Real-runtime user journey gate (aggregated): `python3 tools/devctl/main.py lane journey --repeats 1 --reply-timeout-seconds 90`
+3. Real-runtime user journey gate (aggregated):
+   - strict SLA: `python3 tools/devctl/main.py lane journey --repeats 1 --mode strict --reply-timeout-seconds 90`
+   - valid-output reliability (slow devices): `python3 tools/devctl/main.py lane journey --repeats 1 --mode valid-output --steps instrumentation,send-capture`
 4. Release promotion requires latest PASS ids for both real-runtime instrumentation journey and real-runtime Maestro journey.
-5. Journey send-capture step must report `phase=completed`, `placeholder_visible=false`, and runtime status transitioned out of `Loading` within SLA.
+5. Journey send-capture pass requires terminal proof (`terminal_event_seen=true`) and non-empty response; strict mode additionally enforces SLA-oriented timing checks.
 
 ## Lane Selection Policy
 

@@ -53,10 +53,13 @@ data class RuntimeUiState(
     val lastFirstTokenLatencyMs: Long? = null,
     val lastTotalLatencyMs: Long? = null,
     val startupChecks: List<String> = emptyList(),
+    val startupWarnings: List<String> = emptyList(),
     val lastErrorCode: String? = null,
     val lastErrorUserMessage: String? = null,
     val lastErrorTechnicalDetail: String? = null,
     val lastError: String? = null,
+    val sendElapsedMs: Long? = null,
+    val sendSlowState: String? = null,
 )
 
 enum class ModelRuntimeStatus {
@@ -70,6 +73,7 @@ enum class StartupProbeState {
     IDLE,
     RUNNING,
     READY,
+    DEGRADED,
     BLOCKED,
 }
 
