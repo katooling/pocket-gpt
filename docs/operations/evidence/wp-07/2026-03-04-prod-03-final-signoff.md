@@ -25,7 +25,7 @@ Record final dated owner signatures for the WP-07 Stage-6 go/no-go packet after 
 
 ## Referenced Raw Artifacts
 
-1. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-06-soak-20260304-095133/`
+1. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/qa-06-soak-20260304-095133/`
 2. `scripts/benchmarks/runs/2026-03-04/ci-host/eng-wp07-resilience-closeout/`
 
 ## Decision

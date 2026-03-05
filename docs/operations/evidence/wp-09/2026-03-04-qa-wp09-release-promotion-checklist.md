@@ -10,6 +10,7 @@ Usage: Cohort expansion and release promotion gate
 - [ ] `bash scripts/dev/test.sh ci` latest result attached.
 - [ ] Latest `android-instrumented` run id and status attached.
 - [ ] Latest `maestro` run id and status attached.
+- [ ] Release-candidate real-runtime app-path smoke run id attached (when promotion target includes runtime claims).
 - [ ] No newly introduced `S0`/`S1` defects since prior promotion point.
 
 ## Gate B: Device and Reliability Signal
@@ -36,6 +37,7 @@ Usage: Cohort expansion and release promotion gate
 - [ ] Runtime/model status confusion signal reviewed and within threshold.
 - [ ] Privacy comprehension signal reviewed and within threshold.
 - [ ] Natural-language tool path PASS evidence attached from latest QA matrix run.
+- [ ] Scenario C context follow-up Maestro evidence attached (`tests/maestro/scenario-c.yaml`).
 
 ## Promotion Decision
 
@@ -51,4 +53,4 @@ Usage: Cohort expansion and release promotion gate
 1. QA checkpoint packet: `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`
 2. Incident triage template: `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`
 3. Weekly QA summary template: `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md`
-4. Example raw artifact root: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-06-soak-20260304-095133/`
+4. Example raw artifact root: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/qa-06-soak-20260304-095133/`

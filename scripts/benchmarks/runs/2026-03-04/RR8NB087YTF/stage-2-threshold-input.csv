@@ -1,3 +1,0 @@
-date,platform,device_class,device_name,backend,runtime,model,scenario,first_token_ms,decode_tps,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom
-2026-03-04,android,mid,RR8NB087YTF,NATIVE_JNI,llama.cpp-native-jni,qwen3.5-0.8b-q4,A,167619,2000.0000,574.66,0,captured,false
-2026-03-04,android,mid,RR8NB087YTF,NATIVE_JNI,llama.cpp-native-jni,qwen3.5-0.8b-q4,B,247441,2000.0000,578.94,0,captured,false

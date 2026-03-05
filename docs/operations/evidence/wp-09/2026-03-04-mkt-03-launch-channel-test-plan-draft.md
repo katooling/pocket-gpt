@@ -22,4 +22,4 @@ Owner: Growth Lead / Product Marketing
 
 ## Referenced Raw Artifacts
 
-1. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/wp-11-ui-gate-20260304-111118/02-maestro.log`
+1. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/wp-11-ui-gate-20260304-111118/02-maestro.log`

@@ -53,9 +53,9 @@ Daemon will be stopped at the end of the build
 > Task :apps:mobile-android:generateDebugUnitTestConfig
 
 > Task :apps:mobile-android:compileDebugKotlin
-w: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt:196:5 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
-w: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt:407:32 'val Icons.Filled.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Send.
-w: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt:477:9 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file://<repo-root>/apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt:196:5 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file://<repo-root>/apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt:407:32 'val Icons.Filled.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Send.
+w: file://<repo-root>/apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt:477:9 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
 
 > Task :apps:mobile-android:compileDebugJavaWithJavac
 > Task :apps:mobile-android:processDebugJavaRes
@@ -66,7 +66,7 @@ w: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/apps/mobile-android/src/mai
 > Task :apps:mobile-android:processDebugUnitTestJavaRes
 > Task :apps:mobile-android:testDebugUnitTest
 
-[Incubating] Problems report is available at: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/build/reports/problems/problems-report.html
+[Incubating] Problems report is available at: file://<repo-root>/build/reports/problems/problems-report.html
 
 Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
 

@@ -93,7 +93,7 @@ Daemon will be stopped at the end of the build
 > Task :apps:mobile-android:processDebugUnitTestJavaRes UP-TO-DATE
 > Task :apps:mobile-android:testDebugUnitTest
 
-[Incubating] Problems report is available at: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/build/reports/problems/problems-report.html
+[Incubating] Problems report is available at: file://<repo-root>/build/reports/problems/problems-report.html
 
 Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
 

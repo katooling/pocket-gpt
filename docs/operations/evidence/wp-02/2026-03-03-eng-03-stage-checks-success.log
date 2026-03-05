@@ -4,7 +4,7 @@ Version 36.0.2-14143358
 Installed as /opt/homebrew/bin/adb
 Running on Darwin 25.3.0 (arm64)
 [2/5] Verifying one adb-ready device...
-Using device serial: RR8NB087YTF
+Using device serial: DEVICE_SERIAL_REDACTED
 [3/5] Reading device identity...
 samsung
 SM-A515F

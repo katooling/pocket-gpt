@@ -23,8 +23,8 @@ Align launch messaging and asset selection to validated in-app UI proof only.
 
 ## Raw Artifact References
 
-1. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/eng-18-qa-10-ui-hardening-20260304-131620/02-android-instrumented.log`
-2. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/eng-18-qa-10-ui-hardening-20260304-131620/03-maestro.log`
+1. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/02-android-instrumented.log`
+2. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/03-maestro.log`
 
 ## Claim Governance Result
 

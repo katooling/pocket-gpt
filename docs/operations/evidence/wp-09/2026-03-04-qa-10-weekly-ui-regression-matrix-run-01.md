@@ -18,7 +18,7 @@ Execute week-01 UI regression matrix mapped to `UI-01..UI-10` and publish pass/f
 
 ## Device Coverage
 
-1. Required-tier physical device: `RR8NB087YTF` (`SM_A515F`, Android 13) - executed.
+1. Required-tier physical device: `DEVICE_SERIAL_REDACTED` (`SM_A515F`, Android 13) - executed.
 2. Best-effort physical device: unavailable in current environment.
 3. Best-effort fallback lane: host + Maestro workflow verification with explicit caveat.
 
@@ -26,7 +26,7 @@ Execute week-01 UI regression matrix mapped to `UI-01..UI-10` and publish pass/f
 
 Run root:
 
-- `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/eng-18-qa-10-ui-hardening-20260304-131620/`
+- `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/`
 
 1. `./gradlew --no-daemon :apps:mobile-android:testDebugUnitTest`
    - Outcome: PASS

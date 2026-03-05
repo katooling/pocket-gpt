@@ -12,7 +12,7 @@ Usage:
 
 Example:
   bash scripts/android/provision_sideload_models.sh \
-    --device RR8NB087YTF \
+    --device DEVICE_SERIAL_REDACTED \
     --model-0-8b-local /models/qwen3.5-0.8b-q4.gguf \
     --model-2b-local /models/qwen3.5-2b-q4.gguf \
     --device-dir /sdcard/Download/pocketgpt-models

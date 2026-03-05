@@ -36,7 +36,7 @@ Validate WP-02 acceptance criteria after adding runtime-bridge fallback executio
    - Performs: device checks, baseline capture, benchmark config apply, 10-run loop, config reset.
    - Loop summary: all 10 runs exited `0`; `crash_detected=false`; `oom_detected=false`.
    - Main run log: `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-test-loop-rerun.log`
-   - Summary: `docs/operations/evidence/wp-02/runs/2026-03-03/RR8NB087YTF/wp02-close-rerun-20260303-200256/summary.csv`
+   - Summary: `docs/operations/evidence/wp-02/runs/2026-03-03/DEVICE_SERIAL_REDACTED/wp02-close-rerun-20260303-200256/summary.csv`
 
 5. `bash scripts/android/configure_device_for_benchmark.sh status`
    - Outcome: PASS

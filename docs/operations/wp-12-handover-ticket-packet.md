@@ -273,7 +273,7 @@ Close the gap between policy checks and Android platform-level network enforceme
 ## Ticket 7: QA-WP12 Closeout Packet (QA Engineer)
 
 - Title: `QA-WP12 | Validate backend production runtime closure packet (ENG-12..ENG-17)`
-- Status: Done (executed 2026-03-04; recommendation: hold WP-12 closure pending ENG-13)
+- Status: Done (executed 2026-03-04; recommendation: close WP-12 after ENG-13 evidence landed)
 - Owner: QA Engineer
 - Prereq: Evidence notes for `ENG-12..ENG-17`
 
@@ -320,6 +320,6 @@ For every ticket above, assignee must do all four:
 ## Assumptions and Defaults
 
 1. Date format is `YYYY-MM-DD` (current cycle date: `2026-03-04`).
-2. Primary target device is Samsung `RR8NB087YTF` unless QA declares a device change.
+2. Primary target device is Samsung `DEVICE_SERIAL_REDACTED` unless QA declares a device change.
 3. Side-load is the only `ENG-12` distribution path in this phase.
 4. Execution remains within `WP-12`; `WP-09` and `WP-10` scope is unchanged.

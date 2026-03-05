@@ -3,7 +3,7 @@
 Date: 2026-03-04  
 Work package: WP-11  
 Task: QA-08  
-Device: `RR8NB087YTF` (`SM_A515F`, Android 13)  
+Device: `DEVICE_SERIAL_REDACTED` (`SM_A515F`, Android 13)  
 Status: Done (gate criteria satisfied)
 
 ## Objective
@@ -14,23 +14,23 @@ Re-run WP-11 UI validation on physical device, close remaining `UI-01`..`UI-10` 
 
 1. `./gradlew --no-daemon -Pkotlin.incremental=false :apps:mobile-android:testDebugUnitTest`
    - Outcome: PASS (`BUILD SUCCESSFUL`)
-   - Artifact: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/wp-11-ui-closeout-20260304-114817/01-testDebugUnitTest.log`
+   - Artifact: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/wp-11-ui-closeout-20260304-114817/01-testDebugUnitTest.log`
 
-2. `env ANDROID_HOME=/Users/mkamar/Library/Android/sdk ANDROID_SDK_ROOT=/Users/mkamar/Library/Android/sdk ./gradlew --no-daemon -Pkotlin.incremental=false :apps:mobile-android:connectedDebugAndroidTest`
+2. `env ANDROID_HOME=$HOME/Library/Android/sdk ANDROID_SDK_ROOT=$HOME/Library/Android/sdk ./gradlew --no-daemon -Pkotlin.incremental=false :apps:mobile-android:connectedDebugAndroidTest`
    - Outcome: PASS (`BUILD SUCCESSFUL`, 6 tests on physical device, 0 failed)
-   - Artifact: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/wp-11-ui-closeout-20260304-114817/02-connectedDebugAndroidTest.log`
+   - Artifact: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/wp-11-ui-closeout-20260304-114817/02-connectedDebugAndroidTest.log`
 
-3. `export PATH="$PATH:$HOME/.maestro/bin" && env ANDROID_HOME=/Users/mkamar/Library/Android/sdk ANDROID_SDK_ROOT=/Users/mkamar/Library/Android/sdk python3 tools/devctl/main.py lane maestro`
+3. `export PATH="$PATH:$HOME/.maestro/bin" && env ANDROID_HOME=$HOME/Library/Android/sdk ANDROID_SDK_ROOT=$HOME/Library/Android/sdk python3 tools/devctl/main.py lane maestro`
    - Outcome: PASS (`scenario-a` + `scenario-b` completed)
-   - Artifact: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/wp-11-ui-closeout-20260304-114817/03-maestro.log`
+   - Artifact: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/wp-11-ui-closeout-20260304-114817/03-maestro.log`
 
 4. `for i in 1..10: maestro scenario-a + scenario-b` soak loop with logcat capture and app-specific crash/OOM/ANR scan
    - Outcome: PASS (`10/10` runs PASS, app-specific crash/OOM/ANR matches = `0/0/0`)
    - Artifacts:
-     - `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/wp-11-ui-soak-20260304-113110/soak-summary.txt`
-     - `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/wp-11-ui-soak-20260304-113110/app-crash-signature-matches.txt`
-     - `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/wp-11-ui-soak-20260304-113110/app-oom-signature-matches.txt`
-     - `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/wp-11-ui-soak-20260304-113110/app-anr-signature-matches.txt`
+     - `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/wp-11-ui-soak-20260304-113110/soak-summary.txt`
+     - `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/wp-11-ui-soak-20260304-113110/app-crash-signature-matches.txt`
+     - `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/wp-11-ui-soak-20260304-113110/app-oom-signature-matches.txt`
+     - `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/wp-11-ui-soak-20260304-113110/app-anr-signature-matches.txt`
 
 ## UI Acceptance Matrix (`UI-01`..`UI-10`)
 

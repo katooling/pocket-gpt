@@ -5,7 +5,7 @@ Owner: Platform Engineering
 Scope: Reconcile PM next-step request with current repo state and close any remaining governance gaps.
 
 Reference raw artifact root:
-`scripts/benchmarks/runs/2026-03-03/RR8NB087YTF/qa-02-phase-b-20260303-203909/`
+`scripts/benchmarks/runs/2026-03-03/DEVICE_SERIAL_REDACTED/qa-02-phase-b-20260303-203909/`
 
 ## PM Recommendation Reconciliation
 

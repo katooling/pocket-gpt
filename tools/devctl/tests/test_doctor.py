@@ -29,7 +29,7 @@ class DoctorTest(unittest.TestCase):
 
             def fake_run(command, **_kwargs):
                 if command[:3] == ["adb", "devices", "-l"]:
-                    return _Result(0, "List of devices attached\nRR8NB087YTF device\n", "")
+                    return _Result(0, "List of devices attached\nDEVICE_SERIAL_REDACTED device\n", "")
                 return _Result(0, "", "")
 
             doctor.run_subprocess = fake_run
@@ -72,7 +72,7 @@ class DoctorTest(unittest.TestCase):
 
             def fake_run(command, **_kwargs):
                 if command[:3] == ["adb", "devices", "-l"]:
-                    return _Result(0, "List of devices attached\nRR8NB087YTF device\n", "")
+                    return _Result(0, "List of devices attached\nDEVICE_SERIAL_REDACTED device\n", "")
                 if command[:2] == ["./gradlew", "--no-daemon"]:
                     return _Result(1, "", "install failed")
                 return _Result(0, "", "")

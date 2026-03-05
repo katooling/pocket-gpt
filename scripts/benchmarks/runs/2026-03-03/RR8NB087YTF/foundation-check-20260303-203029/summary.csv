@@ -1,2 +1,0 @@
-run,exit_code,crash_detected,oom_detected,log_file,command_output
-1,0,false,false,scripts/benchmarks/runs/2026-03-03/RR8NB087YTF/foundation-check-20260303-203029/run-1-logcat.txt,scripts/benchmarks/runs/2026-03-03/RR8NB087YTF/foundation-check-20260303-203029/run-1.log

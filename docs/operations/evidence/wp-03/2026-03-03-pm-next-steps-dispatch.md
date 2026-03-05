@@ -89,7 +89,7 @@ Acceptance criteria:
    - `bash scripts/dev/device-test.sh [runs] [label] [-- <command...>]`
    - `bash scripts/dev/bench.sh stage2 --device <id> [--date <YYYY-MM-DD>]`
 3. Keep raw artifact vs human evidence split strict:
-   - raw benchmark run root: `scripts/benchmarks/runs/2026-03-03/RR8NB087YTF/qa-02-phase-b-20260303-203909/`
+   - raw benchmark run root: `scripts/benchmarks/runs/2026-03-03/DEVICE_SERIAL_REDACTED/qa-02-phase-b-20260303-203909/`
    - evidence notes: `docs/operations/evidence/...`
 
 ## Commands Run for This Dispatch

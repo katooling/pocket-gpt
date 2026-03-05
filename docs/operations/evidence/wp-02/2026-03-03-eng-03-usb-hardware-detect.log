@@ -1,7 +1,7 @@
 64:  | +-o SAMSUNG_Android@01100000  <class IOUSBHostDevice, id 0x100011a34, registered, matched, active, busy 0 (258 ms), retain 31>
 70:  |       "idProduct" = 26720
 80:  |       "USB Product Name" = "SAMSUNG_Android"
-84:  |       "kUSBSerialNumberString" = "RR8NB087YTF"
+84:  |       "kUSBSerialNumberString" = "DEVICE_SERIAL_REDACTED"
 93:  |       "idVendor" = 1256
 94:  |       "kUSBProductString" = "SAMSUNG_Android"
 127:    |     "kUSBSerialNumberString" = "DLC124201JCKD56AE"

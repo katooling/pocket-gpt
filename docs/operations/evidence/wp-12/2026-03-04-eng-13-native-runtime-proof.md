@@ -11,20 +11,20 @@ Produce closure-path proof that runtime executes on `NATIVE_JNI` backend on Sams
 
 ## Final Closure Execution
 
-Target device: `RR8NB087YTF` (`SM-A515F`)  
-Run directory: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/`
+Target device: `DEVICE_SERIAL_REDACTED` (`SM-A515F`)  
+Run directory: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/`
 
 ### Commands and outcomes
 
-1. `ADB_SERIAL=RR8NB087YTF bash scripts/android/ensure_device.sh`  
+1. `ADB_SERIAL=DEVICE_SERIAL_REDACTED bash scripts/android/ensure_device.sh`  
    - Outcome: PASS
-2. `ADB_SERIAL=RR8NB087YTF bash scripts/android/run_stage_checks.sh`  
+2. `ADB_SERIAL=DEVICE_SERIAL_REDACTED bash scripts/android/run_stage_checks.sh`  
    - Outcome: PASS
-3. `bash scripts/dev/bench.sh stage2 --device RR8NB087YTF --date 2026-03-04`  
+3. `bash scripts/dev/bench.sh stage2 --device DEVICE_SERIAL_REDACTED --date 2026-03-04`  
    - Outcome: PASS (`NATIVE_JNI` metrics for 0.8B + 2B, scenario A/B)
-4. `python3 scripts/benchmarks/evaluate_thresholds.py scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/stage-2-threshold-input.csv`  
+4. `python3 scripts/benchmarks/evaluate_thresholds.py scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/stage-2-threshold-input.csv`  
    - Outcome: PASS (script execution), report result: `Overall: FAIL` on first-token threshold checks
-5. `python3 scripts/benchmarks/validate_stage2_runtime_evidence.py scripts/benchmarks/runs/2026-03-04/RR8NB087YTF`  
+5. `python3 scripts/benchmarks/validate_stage2_runtime_evidence.py scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED`  
    - Outcome: PASS
 6. `./gradlew --no-daemon :apps:mobile-android:testDebugUnitTest`  
    - Outcome: PASS
@@ -42,18 +42,18 @@ Run directory: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/`
 
 ## Artifact Set
 
-1. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/scenario-a.csv`
-2. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/scenario-b.csv`
-3. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/model-2b-metrics.csv`
-4. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/stage-2-threshold-input.csv`
-5. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-0-8b-scenario-a.txt`
-6. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-0-8b-scenario-b.txt`
-7. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-2b-scenario-a.txt`
-8. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/meminfo-2b-scenario-b.txt`
-9. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/logcat.txt`
-10. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/runtime-evidence-validation.txt`
-11. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/threshold-report.txt`
-12. `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/notes.md`
+1. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/scenario-a.csv`
+2. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/scenario-b.csv`
+3. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/model-2b-metrics.csv`
+4. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/stage-2-threshold-input.csv`
+5. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/meminfo-0-8b-scenario-a.txt`
+6. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/meminfo-0-8b-scenario-b.txt`
+7. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/meminfo-2b-scenario-a.txt`
+8. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/meminfo-2b-scenario-b.txt`
+9. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/logcat.txt`
+10. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/runtime-evidence-validation.txt`
+11. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/threshold-report.txt`
+12. `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/notes.md`
 
 ## Lane/Workflow Hardening Landed During ENG-13
 

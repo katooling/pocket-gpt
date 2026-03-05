@@ -16,7 +16,7 @@ Define a repeatable weekly UI regression loop for WP-09 rollout operations, mapp
 
 Current week hardware state (2026-03-04):
 
-1. Required-tier physical device available: `RR8NB087YTF` (`SM_A515F`, Android 13).
+1. Required-tier physical device available: `DEVICE_SERIAL_REDACTED` (`SM_A515F`, Android 13).
 2. Best-effort physical device available: No.
 3. Best-effort fallback lane used: host regression lane + Maestro flow verification with caveat.
 
@@ -43,6 +43,7 @@ Current week hardware state (2026-03-04):
 | UX-MODEL-01 | Runtime status is visible and consistent (`Not ready`/`Loading`/`Ready`/`Error`) | Instrumentation assertions + advanced-sheet check | Instrumentation fallback | QA + Eng |
 | UX-PRIVACY-01 | Privacy sheet opens and copy is visible | Instrumentation + Maestro sanity | Maestro fallback | QA + Product |
 | UX-TOOL-01 | Natural-language tool prompt path executes deterministic result | Instrumentation + Maestro | Maestro fallback | QA + Eng |
+| UX-SCENARIO-C-01 | Context follow-up flow remains stable and image entry point is visible | Instrumentation + Maestro (`scenario-c`) | Maestro fallback | QA + Product + Eng |
 
 ## Weekly Run Checklist
 

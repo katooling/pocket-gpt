@@ -48,5 +48,5 @@ Owner: QA Lead
 ## 6) Evidence Links
 
 1. Incident list / triage records:
-2. Raw artifact paths (example): `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-06-soak-20260304-095133/`
+2. Raw artifact paths (example): `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/qa-06-soak-20260304-095133/`
 3. Related evidence notes (`docs/operations/evidence/...`):

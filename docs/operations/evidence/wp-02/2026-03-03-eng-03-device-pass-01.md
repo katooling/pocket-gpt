@@ -8,7 +8,7 @@ USB debugging was enabled on the attached Samsung device and the phone became vi
 
 1. `adb kill-server; adb start-server; adb devices -l`
    - Outcome: PASS (device detected)
-   - Device: `RR8NB087YTF` (`SM-A515F`, Android 13)
+   - Device: `DEVICE_SERIAL_REDACTED` (`SM-A515F`, Android 13)
    - Log: `docs/operations/evidence/wp-02/2026-03-03-eng-03-adb-devices.log`
 
 2. `bash scripts/android/ensure_device.sh`
@@ -21,7 +21,7 @@ USB debugging was enabled on the attached Samsung device and the phone became vi
 4. `bash scripts/android/capture_device_baseline.sh`
    - Outcome: PASS
    - Capture log: `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-baseline-capture.log`
-   - Baseline file: `docs/operations/evidence/wp-02/device-baselines/20260303-194908-RR8NB087YTF-baseline.txt`
+   - Baseline file: `docs/operations/evidence/wp-02/device-baselines/20260303-194908-DEVICE_SERIAL_REDACTED-baseline.txt`
 
 5. `bash scripts/android/configure_device_for_benchmark.sh status`
    - Outcome: PASS (pre-run settings captured)
@@ -35,7 +35,7 @@ USB debugging was enabled on the attached Samsung device and the phone became vi
    - Outcome: PARTIAL
    - Loop summary: all 10 command invocations exited `0`; crash/OOM scanner found no crash/OOM signals in collected logcat files.
    - Critical finding: each run prints `Startup checks failed: Failed to load baseline runtime model: qwen3.5-0.8b-q4.`
-   - Summary file: `docs/operations/evidence/wp-02/runs/2026-03-03/RR8NB087YTF/stage-run-host-20260303-194922/summary.csv`
+   - Summary file: `docs/operations/evidence/wp-02/runs/2026-03-03/DEVICE_SERIAL_REDACTED/stage-run-host-20260303-194922/summary.csv`
    - Loop log: `docs/operations/evidence/wp-02/2026-03-03-eng-03-short-loop-stage-run.log`
 
 8. `bash scripts/android/configure_device_for_benchmark.sh reset`

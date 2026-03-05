@@ -12,7 +12,7 @@ Usage:
 
 Examples:
   bash scripts/marketing/capture_mobile_demo_assets.sh --output docs/operations/assets/mkt-04/2026-03-04
-  bash scripts/marketing/capture_mobile_demo_assets.sh --output docs/operations/assets/mkt-04/2026-03-04 --serial RR8NB087YTF --record-seconds 30
+  bash scripts/marketing/capture_mobile_demo_assets.sh --output docs/operations/assets/mkt-04/2026-03-04 --serial DEVICE_SERIAL_REDACTED --record-seconds 30
 USAGE
 }
 

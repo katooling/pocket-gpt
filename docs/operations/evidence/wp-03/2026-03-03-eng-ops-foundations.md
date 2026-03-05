@@ -29,8 +29,8 @@ Scope: strict governance gates, single-source docs, benchmark automation wrapper
    - Outcome: pass.
 
 6. `bash scripts/dev/device-test.sh 1 foundation-check`
-   - Outcome: pass on physical device `RR8NB087YTF`.
-   - Summary: `scripts/benchmarks/runs/2026-03-03/RR8NB087YTF/foundation-check-20260303-203029/summary.csv`
+   - Outcome: pass on physical device `DEVICE_SERIAL_REDACTED`.
+   - Summary: `scripts/benchmarks/runs/2026-03-03/DEVICE_SERIAL_REDACTED/foundation-check-20260303-203029/summary.csv`
 
 ## Output Artifacts Referenced
 
@@ -41,8 +41,8 @@ Scope: strict governance gates, single-source docs, benchmark automation wrapper
 - `scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/logcat.txt`
 - `scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/notes.md`
 - `scripts/benchmarks/runs/2026-03-03/MOCK-DEVICE/summary.json`
-- `scripts/benchmarks/runs/2026-03-03/RR8NB087YTF/baseline-20260303-203026.txt`
-- `scripts/benchmarks/runs/2026-03-03/RR8NB087YTF/foundation-check-20260303-203029/summary.csv`
+- `scripts/benchmarks/runs/2026-03-03/DEVICE_SERIAL_REDACTED/baseline-20260303-203026.txt`
+- `scripts/benchmarks/runs/2026-03-03/DEVICE_SERIAL_REDACTED/foundation-check-20260303-203029/summary.csv`
 
 ## Board/Playbook Alignment
 

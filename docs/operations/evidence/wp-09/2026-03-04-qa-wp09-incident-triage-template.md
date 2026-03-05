@@ -17,7 +17,7 @@ Usage: Beta-ops incident intake and triage
 9. Expected behavior:
 10. Actual behavior:
 11. Raw evidence links:
-   - `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-06-soak-20260304-095133/`
+   - `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/qa-06-soak-20260304-095133/`
    - logcat file path
    - screenshot/video path (if available)
 

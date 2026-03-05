@@ -18,7 +18,7 @@ Daemon will be stopped at the end of the build
 > Task :packages:inference-adapters:testClasses UP-TO-DATE
 > Task :packages:inference-adapters:test UP-TO-DATE
 
-[Incubating] Problems report is available at: file:///Users/mkamar/Non_Work/Projects/pocket-gpt/build/reports/problems/problems-report.html
+[Incubating] Problems report is available at: file://<repo-root>/build/reports/problems/problems-report.html
 
 Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
 

@@ -10,15 +10,15 @@ Re-run WP-12 validation against landed ENG evidence for `ENG-12..ENG-17` and iss
 
 ## Commands Run and Outcomes
 
-1. `ADB_SERIAL=RR8NB087YTF bash scripts/android/ensure_device.sh`  
+1. `ADB_SERIAL=DEVICE_SERIAL_REDACTED bash scripts/android/ensure_device.sh`  
    - Outcome: PASS
-2. `ADB_SERIAL=RR8NB087YTF bash scripts/android/run_stage_checks.sh`  
+2. `ADB_SERIAL=DEVICE_SERIAL_REDACTED bash scripts/android/run_stage_checks.sh`  
    - Outcome: PASS
-3. `bash scripts/dev/bench.sh stage2 --device RR8NB087YTF --date 2026-03-04`  
+3. `bash scripts/dev/bench.sh stage2 --device DEVICE_SERIAL_REDACTED --date 2026-03-04`  
    - Outcome: PASS (real `NATIVE_JNI` packet with 0.8B + 2B scenario A/B metrics and meminfo snapshots)
-4. `python3 scripts/benchmarks/evaluate_thresholds.py scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/stage-2-threshold-input.csv`  
+4. `python3 scripts/benchmarks/evaluate_thresholds.py scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/stage-2-threshold-input.csv`  
    - Outcome: PASS (script execution), report indicates first-token threshold failures
-5. `python3 scripts/benchmarks/validate_stage2_runtime_evidence.py scripts/benchmarks/runs/2026-03-04/RR8NB087YTF`  
+5. `python3 scripts/benchmarks/validate_stage2_runtime_evidence.py scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED`  
    - Outcome: PASS
 
 ## Referenced ENG Evidence
@@ -32,7 +32,7 @@ Re-run WP-12 validation against landed ENG evidence for `ENG-12..ENG-17` and iss
 
 ## Raw Artifact Directory
 
-- `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/`
+- `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/`
 
 ## QA Decision
 

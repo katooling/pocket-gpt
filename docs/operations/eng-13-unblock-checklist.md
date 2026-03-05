@@ -16,7 +16,7 @@ Close ENG-13 by removing environment/artifact provisioning friction and publishi
 
 ## Closure Run Evidence
 
-- Run directory: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/`
+- Run directory: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/`
 - Required files present:
   - `scenario-a.csv`
   - `scenario-b.csv`
@@ -29,8 +29,8 @@ Close ENG-13 by removing environment/artifact provisioning friction and publishi
 ## Executed Commands
 
 1. `bash scripts/android/run_stage_checks.sh`
-2. `bash scripts/dev/bench.sh stage2 --device RR8NB087YTF --date 2026-03-04`
-3. `python3 scripts/benchmarks/validate_stage2_runtime_evidence.py scripts/benchmarks/runs/2026-03-04/RR8NB087YTF`
+2. `bash scripts/dev/bench.sh stage2 --device DEVICE_SERIAL_REDACTED --date 2026-03-04`
+3. `python3 scripts/benchmarks/validate_stage2_runtime_evidence.py scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED`
 
 ## Result
 

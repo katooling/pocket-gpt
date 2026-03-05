@@ -37,19 +37,19 @@ Harden WP-11 UI for accessibility, deterministic user-readable error handling, a
 
 Run root:
 
-- `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/eng-18-qa-10-ui-hardening-20260304-131620/`
+- `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/`
 
 Commands:
 
 1. `./gradlew --no-daemon :apps:mobile-android:testDebugUnitTest`
    - Outcome: PASS
-   - Artifact: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/eng-18-qa-10-ui-hardening-20260304-131620/01-testDebugUnitTest.log`
+   - Artifact: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/01-testDebugUnitTest.log`
 2. `python3 tools/devctl/main.py lane android-instrumented`
    - Outcome: PASS (6 tests on `SM-A515F - 13`)
-   - Artifact: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/eng-18-qa-10-ui-hardening-20260304-131620/02-android-instrumented.log`
+   - Artifact: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/02-android-instrumented.log`
 3. `python3 tools/devctl/main.py lane maestro`
    - Outcome: PASS (`scenario-a`, `scenario-b`)
-   - Artifact: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/eng-18-qa-10-ui-hardening-20260304-131620/03-maestro.log`
+   - Artifact: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/03-maestro.log`
 
 ## Acceptance Mapping
 

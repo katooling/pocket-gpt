@@ -27,7 +27,7 @@ Define QA-owned rollout quality checkpoints to support WP-09 distribution and be
    - Best-effort-tier caveats explicitly documented in rollout notes.
 3. Incident triage loop:
    - Severity buckets (`S0`/`S1`/`S2`/`S3`) mapped to owner + response SLA.
-   - Crash/OOM/ANR evidence path convention enforced (for example: `scripts/benchmarks/runs/2026-03-04/RR8NB087YTF/qa-06-soak-20260304-095133/`).
+   - Crash/OOM/ANR evidence path convention enforced (for example: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/qa-06-soak-20260304-095133/`).
 4. Beta feedback quality gate:
    - Reproduction template includes app version, device model, Android version, prompt/workflow, and observed behavior.
    - Reports missing reproducibility fields are marked `Needs-Info`.
@@ -37,8 +37,8 @@ Define QA-owned rollout quality checkpoints to support WP-09 distribution and be
 6. UX quality extension gate (WP-13 aligned):
    - Onboarding path regression status captured weekly.
    - Runtime/model status clarity checks captured weekly.
-   - Privacy sheet and natural-language tool path checks captured weekly.
-   - Promotion notes include latest instrumentation + Maestro PASS run ids.
+   - Privacy sheet, natural-language tool path, and Scenario C continuity checks captured weekly.
+   - Promotion notes include latest instrumentation + Maestro PASS run ids and RC real-runtime app-path smoke id when applicable.
 
 ## QA Deliverables for WP-09 (Next)
 
