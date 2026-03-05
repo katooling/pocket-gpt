@@ -1,14 +1,37 @@
-name: Nightly Hardware Lane Stub
+name: Hardware Truth Lane
 
 on:
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
+    inputs:
+      profile:
+        description: "Stage-2 profile to run on attached hardware"
+        required: true
+        default: "quick"
+        type: choice
+        options:
+          - quick
+          - closure
+      device:
+        description: "ADB serial for target hardware device"
+        required: true
+        default: "RR8NB087YTF"
+      run_date:
+        description: "Run date for output folder (YYYY-MM-DD). Leave blank for today."
+        required: false
+        default: ""
 
 jobs:
-  nightly-hardware-check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  hardware-stage2:
+    runs-on: [self-hosted, pocketgpt-android]
+    timeout-minutes: 180
+    env:
+      WORKFLOW_PROFILE: ${{ github.event_name == 'schedule' && 'quick' || inputs.profile }}
+      WORKFLOW_DEVICE: ${{ github.event_name == 'schedule' && 'RR8NB087YTF' || inputs.device }}
+      WORKFLOW_DATE: ${{ inputs.run_date }}
+      POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH: ${{ vars.POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH }}
+      POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH: ${{ vars.POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,8 +45,64 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Resolve run date
+        run: |
+          set -euo pipefail
+          if [[ -n "${WORKFLOW_DATE}" ]]; then
+            echo "RUN_DATE=${WORKFLOW_DATE}" >> "${GITHUB_ENV}"
+          else
+            echo "RUN_DATE=$(date +%F)" >> "${GITHUB_ENV}"
+          fi
 
-      - name: Run hardware lane preflight/stub (devctl)
-        run: python3 tools/devctl/main.py lane nightly-hardware
+      - name: Hardware preflight
+        env:
+          ADB_SERIAL: ${{ env.WORKFLOW_DEVICE }}
+        run: |
+          bash scripts/android/ensure_device.sh
+          bash scripts/android/run_stage_checks.sh
+
+      - name: Run Stage-2 quick (nightly schedule)
+        if: github.event_name == 'schedule'
+        env:
+          ADB_SERIAL: ${{ env.WORKFLOW_DEVICE }}
+        run: |
+          python3 tools/devctl/main.py lane stage2 \
+            --device "${WORKFLOW_DEVICE}" \
+            --date "${RUN_DATE}" \
+            --profile quick \
+            --models 0.8b \
+            --scenarios both \
+            --install-mode auto \
+            --logcat filtered
+
+      - name: Run Stage-2 profile (manual dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ADB_SERIAL: ${{ env.WORKFLOW_DEVICE }}
+        run: |
+          set -euo pipefail
+          models="0.8b"
+          scenarios="both"
+          logcat_mode="filtered"
+          if [[ "${WORKFLOW_PROFILE}" == "closure" ]]; then
+            models="both"
+            scenarios="both"
+            logcat_mode="full"
+          fi
+
+          python3 tools/devctl/main.py lane stage2 \
+            --device "${WORKFLOW_DEVICE}" \
+            --date "${RUN_DATE}" \
+            --profile "${WORKFLOW_PROFILE}" \
+            --models "${models}" \
+            --scenarios "${scenarios}" \
+            --install-mode auto \
+            --logcat "${logcat_mode}"
+
+      - name: Upload hardware lane artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardware-stage2-${{ env.WORKFLOW_DEVICE }}-${{ env.RUN_DATE }}
+          path: scripts/benchmarks/runs/${{ env.RUN_DATE }}/${{ env.WORKFLOW_DEVICE }}/
+          if-no-files-found: warn
