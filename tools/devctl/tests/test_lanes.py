@@ -8,12 +8,14 @@ from tools.devctl.config_models import load_devctl_configs
 from tools.devctl.lanes import (
     RuntimeContext,
     _normalize_test_mode,
+    _parse_journey_args,
     _parse_stage2_args,
     _select_gradle_tasks_for_changed_files,
     _ensure_serial,
     _evaluate_loop_output,
     build_artifact_dir,
     dispatch_lane,
+    lane_stage2,
     lane_maestro,
     parse_device_lane_args,
     validate_threshold_columns,
@@ -93,6 +95,53 @@ class LanesTest(unittest.TestCase):
         self.assertEqual("auto", parsed.install_mode)
         self.assertEqual("filtered", parsed.logcat)
 
+    def test_journey_parser_enforces_repeat_bounds(self) -> None:
+        parsed = _parse_journey_args(["--repeats", "2"], repeats_default=1, repeats_max=5)
+        self.assertEqual(2, parsed.repeats)
+
+        with self.assertRaises(DevctlError):
+            _parse_journey_args(["--repeats", "0"], repeats_default=1, repeats_max=5)
+        with self.assertRaises(DevctlError):
+            _parse_journey_args(["--repeats", "8"], repeats_default=1, repeats_max=5)
+
+    def test_stage2_closure_requires_models_both(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=lambda *_a, **_k: None)
+        with self.assertRaises(DevctlError) as raised:
+            lane_stage2(
+                [
+                    "--device",
+                    "SER123",
+                    "--profile",
+                    "closure",
+                    "--models",
+                    "0.8b",
+                    "--scenarios",
+                    "both",
+                ],
+                context,
+            )
+        self.assertEqual("CONFIG_ERROR", raised.exception.code)
+
+    def test_stage2_closure_requires_scenarios_both(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=lambda *_a, **_k: None)
+        with self.assertRaises(DevctlError) as raised:
+            lane_stage2(
+                [
+                    "--device",
+                    "SER123",
+                    "--profile",
+                    "closure",
+                    "--models",
+                    "both",
+                    "--scenarios",
+                    "a",
+                ],
+                context,
+            )
+        self.assertEqual("CONFIG_ERROR", raised.exception.code)
+
     def test_validate_threshold_columns_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             csv_file = Path(tmp) / "stage2.csv"
@@ -158,6 +207,7 @@ class LanesTest(unittest.TestCase):
         from tools.devctl import lanes
 
         original_which = lanes.shutil.which
+        original_prepare = lanes.prepare_real_runtime_env
         issued_commands: list[list[str]] = []
         configs = load_devctl_configs(REPO_ROOT)
         ensure_command = configs.device.preflight.ensure_device_command
@@ -174,12 +224,27 @@ class LanesTest(unittest.TestCase):
                 return Result(returncode=0, stdout="SER123\n")
             return Result(returncode=0, stdout="", stderr="")
 
+        def fake_prepare(_context, device_serial: str, artifact_root=None):
+            return lanes.RealRuntimePreparedEnv(
+                serial=device_serial,
+                model_device_paths_by_id={
+                    "qwen3.5-0.8b-q4": "/sdcard/Android/media/com.pocketagent.android/models/qwen3.5-0.8b-q4.gguf",
+                    "qwen3.5-2b-q4": "/sdcard/Android/media/com.pocketagent.android/models/qwen3.5-2b-q4.gguf",
+                },
+                model_host_paths_by_id={
+                    "qwen3.5-0.8b-q4": "/tmp/qwen3.5-0.8b-q4.gguf",
+                    "qwen3.5-2b-q4": "/tmp/qwen3.5-2b-q4.gguf",
+                },
+            )
+
         try:
             lanes.shutil.which = lambda name: "/usr/bin/maestro" if name == "maestro" else None
+            lanes.prepare_real_runtime_env = fake_prepare
             context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
             lane_maestro([], context)
         finally:
             lanes.shutil.which = original_which
+            lanes.prepare_real_runtime_env = original_prepare
 
         maestro_calls = [cmd for cmd in issued_commands if cmd and cmd[0] == "/usr/bin/maestro"]
         self.assertGreaterEqual(len(maestro_calls), 1)

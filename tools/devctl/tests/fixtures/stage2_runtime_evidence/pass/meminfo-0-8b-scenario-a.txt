@@ -1,0 +1,5 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 123456 Realtime: 123456
+
+** MEMINFO in pid 1234 [com.pocketagent.android] **
+TOTAL PSS: 321000

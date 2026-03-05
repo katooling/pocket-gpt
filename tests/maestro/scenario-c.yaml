@@ -1,0 +1,26 @@
+appId: com.pocketagent.android
+---
+- launchApp
+- runFlow:
+    when:
+      visible: "Welcome to Pocket GPT"
+    commands:
+      - tapOn: "Skip"
+- assertVisible: "Offline-first"
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 90000
+- assertVisible: "Runtime: Ready"
+- assertNotVisible: "UI-RUNTIME-001"
+- takeScreenshot: "scenario-c-01-ready"
+- tapOn: "Message"
+- inputText: "Remember this launch risk list for scenario C."
+- tapOn: "Send"
+- assertVisible: "Remember this launch risk list for scenario C."
+- takeScreenshot: "scenario-c-02-first-turn"
+- tapOn: "Message"
+- inputText: "What did I ask you to remember earlier?"
+- tapOn: "Send"
+- assertVisible: "What did I ask you to remember earlier?"
+- assertNotVisible: "UI-RUNTIME-001"
+- takeScreenshot: "scenario-c-03-follow-up"

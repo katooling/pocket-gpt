@@ -1,12 +1,35 @@
 appId: com.pocketagent.android
 ---
 - launchApp
+- runFlow:
+    when:
+      visible: "Welcome to Pocket GPT"
+    commands:
+      - tapOn: "Skip"
 - assertVisible: "Offline-first"
-- assertVisible: "Model: AUTO"
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 90000
+- assertVisible: "Runtime: Ready"
+- assertNotVisible: "UI-RUNTIME-001"
+- takeScreenshot: "scenario-b-01-ready"
 - tapOn: "Tools"
-- tapOn: "Calculator (4*9)"
+- tapOn: "calculate 4*9"
+- tapOn: "Send"
 - assertVisible: "Tool: calculator"
+- assertNotVisible: "UI-RUNTIME-001"
+- takeScreenshot: "scenario-b-02-tool"
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
-- tapOn: "QWEN_0_8B"
+- assertVisible: "Backend: NATIVE_JNI"
+- tapOn: "QWEN_2B"
 - tapOn: "Export diagnostics"
+- assertVisible: "diag=ok"
+- takeScreenshot: "scenario-b-03-advanced"
+- back
+- tapOn: "Message"
+- inputText: "Model switch sanity check"
+- tapOn: "Send"
+- assertVisible: "Model switch sanity check"
+- assertNotVisible: "UI-RUNTIME-001"
+- takeScreenshot: "scenario-b-04-after-switch-send"

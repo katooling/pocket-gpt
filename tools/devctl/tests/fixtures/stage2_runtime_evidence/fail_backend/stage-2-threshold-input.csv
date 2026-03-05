@@ -1,0 +1,3 @@
+scenario,backend,first_token_ms,decode_tps
+A,NATIVE_JNI,120.0,18.5
+B,NATIVE_JNI,180.0,15.1

@@ -73,8 +73,18 @@ lanes:
     requires_android_sdk: true
     requires_device: true
     artifacts:
-      output_dir_template: build/outputs/androidTest-results
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/android-instrumented/{stamp}
     commands:
+      - name: install_debug
+        argv:
+          - ./gradlew
+          - --no-daemon
+          - :apps:mobile-android:installDebug
+      - name: install_debug_android_test
+        argv:
+          - ./gradlew
+          - --no-daemon
+          - :apps:mobile-android:installDebugAndroidTest
       - name: connected_debug_android_test
         argv:
           - ./gradlew
@@ -85,7 +95,7 @@ lanes:
     requires_android_sdk: false
     requires_device: true
     artifacts:
-      output_dir_template: scripts/benchmarks/runs/{date}/{device}/maestro
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/maestro/{stamp}
     version: 1.39.13
     preflight_commands:
       -
@@ -95,6 +105,15 @@ lanes:
     flows:
       - tests/maestro/scenario-a.yaml
       - tests/maestro/scenario-b.yaml
+      - tests/maestro/scenario-c.yaml
+
+  journey:
+    requires_android_sdk: true
+    requires_device: true
+    artifacts:
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/journey/{stamp}
+    repeats_default: 1
+    repeats_max: 5
 
   nightly-hardware:
     requires_android_sdk: false
@@ -102,3 +121,38 @@ lanes:
     artifacts:
       output_dir_template: scripts/benchmarks/runs/{date}/{device}/nightly
     commands: []
+
+  real-runtime:
+    cache_root_candidates:
+      - ~/.cache/pocket-gpt/models/qwen3.5
+      - ~/.cache/pocket-gpt/models
+    device_model_dir: /sdcard/Android/media/com.pocketagent.android/models
+    models:
+      - model_id: qwen3.5-0.8b-q4
+        cache_patterns:
+          - Qwen3.5-0.8B-Q4_0.gguf
+          - Qwen3.5-0.8B-UD-IQ2_XXS.gguf
+          - qwen3.5-0.8b-q4.gguf
+          - "**/Qwen3.5-0.8B-Q4_0.gguf"
+          - "**/Qwen3.5-0.8B-UD-IQ2_XXS.gguf"
+          - "**/qwen3.5-0.8b-q4.gguf"
+        device_file_name: qwen3.5-0.8b-q4.gguf
+      - model_id: qwen3.5-2b-q4
+        cache_patterns:
+          - Qwen3.5-2B-Q4_0.gguf
+          - Qwen3.5-2B-UD-IQ2_XXS.gguf
+          - qwen3.5-2b-q4.gguf
+          - "**/Qwen3.5-2B-Q4_0.gguf"
+          - "**/Qwen3.5-2B-UD-IQ2_XXS.gguf"
+          - "**/qwen3.5-2b-q4.gguf"
+        device_file_name: qwen3.5-2b-q4.gguf
+    app_package: com.pocketagent.android
+    instrumentation_runner: com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner
+    provisioning_test_class: com.pocketagent.android.RealRuntimeProvisioningInstrumentationTest#seedModelsAndVerifyStartupChecks
+    journey_test_class: com.pocketagent.android.RealRuntimeJourneyInstrumentationTest#runCoreJourneyGate
+    startup_probe_timeout_seconds: 300
+    screenshot_dir_name: screenshots
+    maestro_debug_dir_name: maestro-debug
+    logcat_file_name: logcat.txt
+    summary_file_name: journey-summary.md
+    report_file_name: journey-report.json

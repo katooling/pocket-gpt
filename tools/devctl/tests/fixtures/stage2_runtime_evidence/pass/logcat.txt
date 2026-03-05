@@ -1,0 +1,2 @@
+03-04 10:10:10.100  1234  1234 I stage2: runtime backend=NATIVE_JNI
+03-04 10:10:10.200  1234  1234 I stage2: native lane healthy

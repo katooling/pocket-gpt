@@ -71,6 +71,36 @@ class NightlyHardwareLaneConfig(_StrictModel):
     commands: list[CommandStep] = Field(default_factory=list)
 
 
+class JourneyLaneConfig(_StrictModel):
+    requires_android_sdk: bool
+    requires_device: bool
+    artifacts: ArtifactsConfig
+    repeats_default: int = 1
+    repeats_max: int = 5
+
+
+class RealRuntimeModelConfig(_StrictModel):
+    model_id: str
+    cache_patterns: list[str]
+    device_file_name: str
+
+
+class RealRuntimeConfig(_StrictModel):
+    cache_root_candidates: list[str]
+    device_model_dir: str
+    models: list[RealRuntimeModelConfig]
+    app_package: str
+    instrumentation_runner: str
+    provisioning_test_class: str
+    journey_test_class: str
+    startup_probe_timeout_seconds: float = 180.0
+    screenshot_dir_name: str = "screenshots"
+    maestro_debug_dir_name: str = "maestro-debug"
+    logcat_file_name: str = "logcat.txt"
+    summary_file_name: str = "journey-summary.md"
+    report_file_name: str = "journey-report.json"
+
+
 class LanesContainer(_StrictModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -79,7 +109,9 @@ class LanesContainer(_StrictModel):
     stage2: Stage2LaneConfig
     android_instrumented: AndroidInstrumentedLaneConfig = Field(alias="android-instrumented")
     maestro: MaestroLaneConfig
+    journey: JourneyLaneConfig
     nightly_hardware: NightlyHardwareLaneConfig = Field(alias="nightly-hardware")
+    real_runtime: RealRuntimeConfig = Field(alias="real-runtime")
 
 
 class LanesRoot(_StrictModel):
