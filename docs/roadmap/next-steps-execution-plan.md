@@ -1,6 +1,6 @@
 # Next Steps Execution Plan (Android-First MVP)
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 This plan turns current scaffolding into validated MVP capability with explicit DX, test, and reliability gates per stage.
 
@@ -112,7 +112,7 @@ Exit criteria:
 
 Goal: gather confidence evidence and make a defensible go/no-go call.
 
-Status (2026-03-04): Closed for WP-07. QA-06 soak evidence, Engineering Stage-6 startup/crash resilience support closeout, and final Product/QA/Engineering dated signatures are complete; external beta signoff is now gated by WP-11 closure.
+Status (2026-03-05): Closed for WP-07. QA-06 soak evidence, Engineering Stage-6 startup/crash resilience support closeout, and final Product/QA/Engineering dated signatures are complete. Promotion beyond current cohort is now governed by WP-13 moderated usability closure under the soft-gate pilot policy.
 
 Deliverables:
 
@@ -126,6 +126,18 @@ Exit criteria:
 2. No repeatable blocker issues in soak runs.
 3. WP-11 UI acceptance suite (`UI-01`..`UI-10`) is complete with evidence links.
 4. Beta go/no-go decision recorded with Product + QA + Engineering signatures.
+
+## Rebased Release Overlay (March 6-15, 2026)
+
+This overlay applies after WP-07/WP-11/WP-12 closure:
+
+1. `DOC-01`: reconcile roadmap/ops/playbook status and date drift.
+2. `ENG-19`: make device preflight robust to busy media paths with deterministic retry/fallback.
+3. `QA-11`: rerun `android-instrumented`, `maestro`, and `journey` lanes after `ENG-19`.
+4. `PROD-09`: run pilot under `internalDownload` + `soft gate` policy.
+5. `QA-WP13-RUN02`: complete moderated 5-user usability metrics packet.
+6. `MKT-08`, `MKT-09`: execute proof-asset pass and first 7-day channel scorecard.
+7. `PROD-10`: run promote/hold decision through launch gate matrix.
 
 ## Stage 6.5 - Backend Production Runtime Closure
 

@@ -4,70 +4,57 @@ Last updated: 2026-03-05
 
 ## Mission
 
-Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, and drive cross-team decision quality.
+Keep MVP scope focused, maintain release-governance coherence, and run promote/hold decisions from complete evidence.
 
-## Where To Start
+## Current Operating Truth
 
-1. Check `docs/operations/execution-board.md` for milestone status.
-2. Confirm product dependencies and acceptance criteria by stage and package.
-3. Keep roadmap, feature catalog, and open questions current.
+1. `WP-00` to `WP-12` are closed.
+2. `WP-09` is in progress.
+3. `WP-13` is open (`run-01` hold; moderated metrics missing).
+4. Active policy: `internalDownload first` + `soft gate` pilot.
 
-## What Is Done
+## Done
 
-- [x] Phase 0 PRD and MVP boundary documented
-- [x] MVP stage plan, tracker, and go/no-go structure defined
-- [x] Feature catalog and roadmap horizons documented
-- [x] PROD-01 launch workflow lock finalized (2026-03-04)
-- [x] PROD-02 launch device policy lock finalized (2026-03-04)
-- [x] PROD-03 Stage 6 final acceptance packet signed and closed (2026-03-04)
-- [x] PROD-07 WP-11 UI story + acceptance governance closed (rerun evidence complete)
-- [x] WP-12 handover ticket packet published for `ENG-12..ENG-17` + `QA-WP12` dispatch
-- [x] PROD-WP12-SIGNOFF complete (ENG-13 closure evidence + QA close recommendation landed)
-- [x] WP-12 close state reaffirmed after ENG-13/QA rerun evidence refresh (2026-03-05)
-- [x] PROD-08 UX feedback taxonomy + intake policy published with pilot usage note
+- [x] `PROD-01` launch workflow lock
+- [x] `PROD-02` launch device policy lock
+- [x] `PROD-03` stage acceptance signoff packet
+- [x] `PROD-08` UX feedback taxonomy + intake policy
+- [x] `PROD-09` soft-gate pilot policy (`docs/operations/prod-09-soft-gate-pilot-policy.md`)
+- [x] `UX-12` recovery journey story spec (`docs/ux/ux-12-recovery-journey-spec.md`)
 
-## What Is In Progress
+## In Progress
 
-- [x] PROD-06 beta rollout process and user feedback loop kickoff
-- [x] WP-12/ENG-12 product input delivered: model distribution path + provenance policy decision published
-- [x] PROD-04 monetization scope and pricing hypothesis kickoff (v0 draft published)
-- [ ] WP-13 usability gate closure (blocked until moderated cohort metrics and session artifacts are attached)
+- [ ] `DOC-01` reconcile timeline/status drift across roadmap + operations docs
+- [ ] `PROD-04` monetization hypothesis (parallel, non-blocking for MVP gate)
+- [ ] `WP-13` usability gate closure prep and moderated run scheduling
 
-## Product Dispatch Timing
+## Ready Queue
 
-1. WP-07 and WP-11 gates are closed with complete evidence.
-2. Continue WP-09/PROD-06 planning and rollout sequencing.
-3. WP-12 decision gate and acceptance/signoff are closed.
-4. WP-13 run-01 is currently `hold`; complete moderated cohort metrics before promotion.
-5. Keep launch claims/evidence synchronized as distribution operations advance.
+- [ ] `QA-WP13-RUN02` moderated packet execution (with QA)
+- [ ] `PROD-10` launch gate matrix decision run
+- [ ] Promotion memo publish (`promote`/`iterate`/`hold`) after matrix review
 
 ## Task Queue
 
-| Task ID | Task | Status | Prerequisites | Owner | References |
-|---|---|---|---|---|---|
-| PROD-01 | Lock launch workflows (top 2-3 user journeys) | Done | WP-03 | Product Lead | `docs/prd/phase-0-prd.md` |
-| PROD-02 | Define launch device support policy (required vs best-effort) | Done | WP-03 | Product Lead | `docs/feasibility/device-matrix.md` |
-| PROD-03 | Finalize MVP acceptance checklist by stage | Done | PROD-01 | Product + QA + Engineering | `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
-| PROD-07 | WP-11 UI story and acceptance governance | Done | WP-06 | Product Lead | `docs/prd/phase-0-prd.md`, `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
-| PROD-WP12-HANDOFF | Publish WP-12 decision-complete ticket packet and owner sequencing | Done | ENG-11A, PROD ENG-12 decision note | Product Lead | `docs/operations/wp-12-handover-ticket-packet.md`, `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md` |
-| PROD-WP12-SIGNOFF | Final WP-12 acceptance/signoff | Done | ENG-12..ENG-17, QA-WP12 | Product Lead | `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`, `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`, `docs/operations/evidence/wp-12/2026-03-04-prod-wp12-final-signoff.md` |
-| PROD-04 | Monetization scope and pricing hypothesis | In Progress (v0 hypothesis drafted) | PROD-01 | Product Lead | `docs/operations/prod-04-monetization-hypothesis-v0.md`, `docs/product/open-questions-log.md` |
-| PROD-08 | UX feedback taxonomy + intake policy for beta operations | Done | WP-11, PROD-06 | Product Ops | `docs/operations/evidence/wp-09/2026-03-04-prod-08-ux-feedback-taxonomy-pilot.md`, `docs/operations/wp-09-ux-feedback-taxonomy-intake-policy.md` |
-| PROD-05 | Post-MVP voice product requirements (STT/TTS) | Backlog | WP-07 | Product Lead | `docs/roadmap/product-roadmap.md` |
-| PROD-06 | Beta rollout process and user feedback loop | In Progress | WP-07, WP-08, WP-11 | Product Ops | `docs/roadmap/mvp-beta-go-no-go-packet.md` |
+| Task ID | Task | Status | Owner | References |
+|---|---|---|---|---|
+| DOC-01 | Reconcile roadmap/board/playbook statuses and dates | In Progress | Product Ops | `docs/operations/execution-board.md`, `docs/roadmap/phase-1-mvp-plan.md`, `docs/roadmap/product-roadmap.md`, `docs/roadmap/team-workstreams.md` |
+| PROD-09 | Publish soft-gate pilot policy | Done | Product Ops | `docs/operations/prod-09-soft-gate-pilot-policy.md` |
+| UX-12 | Publish recovery journey acceptance spec | Done | Product + Design + Android | `docs/ux/ux-12-recovery-journey-spec.md` |
+| QA-WP13-RUN02 | Execute moderated 5-user packet and thresholds | Ready | Product + QA | `docs/operations/wp-13-usability-gate-packet-template.md`, `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` |
+| PROD-10 | Run promotion decision through unified launch gate matrix | Ready | Product Lead | `docs/operations/prod-10-launch-gate-matrix.md` |
+| PROD-04 | Monetization scope and pricing hypothesis | In Progress | Product Lead | `docs/operations/prod-04-monetization-hypothesis-v0.md` |
 
-## Product Definition of Done
+## Product Decision Rule
 
-1. Scope boundaries and non-goals are explicit.
-2. Acceptance criteria are measurable and testable.
-3. Dependencies are reflected on execution board.
-4. Decisions and unresolved questions are documented.
+1. Pilot expansion allowed only under `PROD-09` hard-stop rules.
+2. Broader promotion requires completed moderated packet + all required matrix rows PASS.
+3. Every publishable claim must be linked to evidence IDs in `PROD-10`.
 
 ## Product References
 
 - `docs/operations/execution-board.md`
-- `docs/prd/phase-0-prd.md`
+- `docs/operations/prod-09-soft-gate-pilot-policy.md`
+- `docs/operations/prod-10-launch-gate-matrix.md`
 - `docs/roadmap/mvp-implementation-tracker.md`
-- `docs/roadmap/mvp-beta-go-no-go-packet.md`
-- `docs/product/feature-catalog.md`
-- `docs/product/open-questions-log.md`
+- `docs/prd/phase-0-prd.md`

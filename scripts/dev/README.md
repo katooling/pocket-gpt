@@ -155,6 +155,12 @@ Device-lock behavior:
 
 1. These lanes now acquire an exclusive per-device lock under `scripts/benchmarks/device-env/locks/` to avoid concurrent uninstall/reinstall collisions.
 2. Override only for emergency/manual troubleshooting: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
+3. Before lane execution, `devctl` runs device-health preflight (wake/unlock, `/data` utilization check, runtime-media storage probe, package-owner metadata check).
+4. Runtime-media probe includes retry/backoff and fallback to `/sdcard/Download/<package>/...` when `/sdcard/Android/media/...` returns busy/resource errors.
+5. Optional run owner metadata for journey reports:
+   - `export POCKETGPT_RUN_OWNER='<your-name-or-handle>'`
+6. Real-runtime provisioning auto-resolves the currently installed instrumentation runner before sanity probes (avoids flavor/package-name drift failures).
+7. Model artifacts are re-pushed only when remote file size does not match the selected host artifact.
 
 Wrapper:
 

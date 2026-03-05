@@ -1,8 +1,8 @@
 # Team Workstreams and Independent Execution
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
-This document defines parallel workstreams so multiple team members can execute independently while staying aligned to shared contracts.
+This document defines parallel workstreams that map directly to the rebased release ticket set.
 
 Role playbooks:
 
@@ -13,50 +13,60 @@ Role playbooks:
 
 ## Workstream Map
 
-| Workstream | Primary Scope | Core Deliverables | Depends On |
+| Workstream | Primary Scope | Current Focus Tickets | Depends On |
 |---|---|---|---|
-| Runtime | model loading/generation/routing | real `llama.cpp` bridge, routing matrix, perf metrics | inference contracts |
-| Android App UX (`WP-11`) | chat-first app surface + lifecycle integration | Compose chat timeline, session UX, image/tool UX, advanced controls | runtime facade contracts |
-| Tools & Safety | tool schema/runtime + policy checks | strict validation, allowlist enforcement, abuse tests | tool/policy contracts |
-| Memory & Multimodal | retention/retrieval + image path | shared file-backed memory backend, scenario C pipeline | memory/inference contracts |
-| QA & Evidence | benchmarks, regression, artifacts | scenario runs, threshold reports, soak evidence, UI acceptance evidence | benchmark protocol + UX acceptance matrix |
-| Product & GTM | roadmap, differentiation, launch prep | feature prioritization, messaging, distribution strategy, go/no-go package | validated technical constraints |
+| Product Ops | release policy, docs coherence, decision governance | `DOC-01`, `PROD-09`, `PROD-10` | execution board + tracker + evidence contracts |
+| Runtime + DX | lane robustness, deterministic preflight/recovery behavior | `ENG-19` | devctl lane architecture + device policy |
+| QA Operations | lane reruns, packet closure, weekly regression signal | `QA-11`, `QA-WP13-RUN02`, `QA-12` | ENG-19 patch + WP-13 packet template |
+| UX/Product Design | first-run recovery comprehension and measurable UX contracts | `UX-12` | model-management flow + runtime states |
+| Marketing Ops | evidence-safe proof assets and channel experiment execution | `MKT-08`, `MKT-09` | moderated packet + launch gate matrix |
 
-## Interface Contracts (No Direct Coupling)
+## Interface Contracts
 
-1. Android App UX talks to runtime through `MvpRuntimeFacade` only.
-2. Runtime internals remain behind `InferenceModule`/`RoutingModule`/`ToolModule`/`MemoryModule`/`PolicyModule` contracts.
-3. Tool integration remains through `ToolModule`; no direct shell/system execution path.
-4. Policy checks remain authoritative for network/data-boundary behavior.
+1. Product decision interface is `docs/operations/prod-10-launch-gate-matrix.md`.
+2. WP-13 packet interface requires `run_owner`, `run_host`, and lane pass IDs.
+3. Publishable marketing claims must map to evidence IDs and gate-matrix rows.
+4. Runtime/app integration remains through `MvpRuntimeFacade`; no direct coupling to runtime internals.
 
-## Active Work Package Ownership
+## Active Ticket Ownership (March 6-15)
 
-| Package/Task | Owner | Support | Status |
+| Ticket | Owner | Support | Status |
 |---|---|---|---|
-| WP-07 / QA-06 + packet closure | QA Lead | Eng + Product | In Progress |
-| WP-11 / ENG-10 (Compose UI + facade + persistence) | Runtime Eng | Product + QA | In Progress |
-| WP-11 / QA-08 (UI acceptance suite) | QA Engineer | Eng + Product | Ready |
-| WP-11 / PROD-07 (UI stories + UX gate governance) | Product Lead | Eng + QA | In Progress |
+| DOC-01 | Product Ops | Eng, QA, Marketing | In Progress |
+| ENG-19 | Engineering | QA | In Progress |
+| QA-11 | QA | Engineering | Ready |
+| PROD-09 | Product Ops | QA, Marketing | Done |
+| UX-12 | Product + Design + Android | QA | Done |
+| QA-WP13-RUN02 | QA + Product | Design, Engineering | Ready |
+| MKT-08 | Marketing | Product | Ready |
+| MKT-09 | Marketing | Product, QA | Ready |
+| PROD-10 | Product | QA, Eng, Marketing | Ready |
 
-## Sprint Structure (Suggested)
+## Weekly Decision Questions
 
-1. Weekly planning around stage goals.
-2. Mid-week checkpoint on risk and blockers.
-3. End-week demo with evidence artifacts (not only code diffs).
+### UI/UX
 
-## Definition of Done (Per Task)
+1. What first-run setup time is acceptable for launch (P50/P90)?
+2. Which recovery copy still causes confusion in moderated sessions?
 
-1. Code or document deliverable complete.
-2. Tests updated and passing.
-3. Evidence artifacts produced where required.
-4. Tracker docs updated:
-   - `docs/roadmap/mvp-implementation-tracker.md`
-   - `docs/roadmap/next-steps-execution-plan.md`
+### Backend/Runtime
 
-## Escalation Triggers
+1. Which preflight failures should hard-fail vs warn-and-continue?
+2. What is the fallback behavior if internal manifest fetch is empty/unreachable?
 
-1. Missed benchmark threshold on target device class.
-2. Repeated OOM/ANR not solved within one sprint.
-3. Security/privacy control ambiguity.
-4. UI acceptance suite failures in core user workflows.
-5. Scope creep threatening MVP timeline.
+### Marketing
+
+1. Which claim blocks are evidence-safe for week-1 publishing?
+2. Which proof asset set is mandatory before broader promotion?
+
+### Product/Ops
+
+1. What pilot size/duration triggers promote vs hold under soft gate?
+2. Which metrics are mandatory versus advisory for expansion?
+
+## Definition of Done (Per Ticket)
+
+1. Deliverable updated in source-of-truth docs or code.
+2. Acceptance criteria met and evidence linked.
+3. Status reflected in `docs/operations/execution-board.md`.
+4. Relevant role playbook updated.

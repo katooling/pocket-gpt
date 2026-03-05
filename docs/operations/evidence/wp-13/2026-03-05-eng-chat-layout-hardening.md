@@ -20,7 +20,11 @@ Investigate and harden the mobile chat viewport issue where messages appeared cu
 3. Removed shared-device runner hackiness by codifying exclusive device locks in lane execution:
    - `tools/devctl/lanes.py`
    - `android-instrumented`, `maestro`, `journey`, and `device` lanes now acquire per-serial locks.
-4. Added lock behavior tests + operator docs:
+4. Added explicit device-health preflight for mobile lanes:
+   - wake/unlock signal, `/data` utilization guard, runtime-media path write probe, package owner metadata check.
+5. Added run-owner metadata in journey report payload + summary:
+   - `run_owner` and `run_host` fields in `journey-report.json` and `journey-summary.md`.
+6. Added lock/preflight/metadata tests + operator docs:
    - `tools/devctl/tests/test_lanes.py`
    - `scripts/dev/README.md`
    - `docs/testing/android-dx-and-test-playbook.md`
@@ -34,6 +38,9 @@ Investigate and harden the mobile chat viewport issue where messages appeared cu
    - includes lock behavior tests:
      - `test_device_lock_is_reentrant_for_same_process`
      - `test_device_lock_times_out_when_held_by_another_process`
+   - includes device-health and report metadata tests:
+     - `test_run_device_health_preflight_happy_path`
+     - `test_write_journey_report_includes_owner_metadata`
 3. Governance:
    - `python3 tools/devctl/main.py governance docs-drift`
 4. Device install:
@@ -41,7 +48,15 @@ Investigate and harden the mobile chat viewport issue where messages appeared cu
 
 ## Runtime Notes
 
-`connectedStandardDebugAndroidTest` and direct `adb am instrument` runs were interrupted by package uninstall churn on shared device execution windows (`deletePackageX`, app/test package removed mid-run), producing instrumentation process crashes unrelated to the viewport assertion logic.
+Earlier same-day attempts were interrupted by shared-device uninstall churn (`deletePackageX`).  
+Final lock-safe wireless reruns (with per-device lock + run-owner metadata) passed for all gate lanes:
+
+1. Android instrumented:
+   - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/android-instrumented/20260305-152034/`
+2. Maestro:
+   - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-153028/`
+3. Journey (instrumentation + Scenario A/B/C with screenshots and summary):
+   - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/journey/20260305-153850/`
 
 ## Raw Artifacts
 

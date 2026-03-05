@@ -39,24 +39,35 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-12 | Backend production runtime closure (native inference, model distribution, Android-native data plane) | Engineering | QA, Product, Security | 7 | Yes | WP-07, WP-11 | Done | Week 7-8 |
 | WP-13 | UX quality closure (onboarding, runtime clarity, usability gate, listing readiness) | Product | Eng, QA, Design, Marketing | 8 | Yes | WP-11 | In Progress | Week 8 |
 
+## Current Release Policy (Locked)
+
+1. Build policy: `internalDownload first`.
+2. Gate policy: `soft gate` for controlled pilot expansion only.
+3. Promotion beyond pilot requires completed moderated WP-13 packet.
+4. Launch claims must map to lane pass ids + evidence links.
+
 ## Current Sprint Board
 
 ### In Progress
 
-- [ ] MKT-03 launch channel test plan draft (execution now unblocked by gate closure)
-- [ ] MKT-04 landing page + launch copy v1 prep draft (publish-readiness now unblocked by gate closure)
+- [ ] DOC-01 timeline/status reconciliation across roadmap + board + role playbooks
+- [ ] ENG-19 devctl preflight robustness for busy media paths (retry/fallback behavior landed; full rerun packet pending)
 - [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
-- [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
-- [ ] PROD-04 monetization scope and pricing hypothesis kickoff (v0 hypothesis doc published)
-- [ ] ENG support: stage-2 runtime evidence integrity gate active for closure packet validation
-- [ ] DX-01 layered test profiles + Stage-2 quick/closure efficiency rollout (devctl/scripts/docs)
-- [ ] DX-02 provider-style caching rollout (native prefix/KV reuse + runtime cache telemetry + Stage-2 cache metrics)
-- [ ] WP-13 run-01 usability gate closure (collect moderated 5-user metrics + session artifacts)
-- [ ] APP runtime integration hardening (app-path runtime wiring + in-app model provisioning recovery)
+- [ ] QA WP-09 weekly rollout quality execution support (templates delivered; cadence in progress)
+- [ ] MKT-03 launch channel test plan draft finalization
+- [ ] MKT-04 landing page + launch copy v1 prep draft
+- [ ] PROD-04 monetization scope and pricing hypothesis kickoff (v0 doc published)
+- [ ] DX-01 layered test profiles + Stage-2 quick/closure efficiency rollout
+- [ ] DX-02 provider-style caching rollout (prefix/KV reuse + telemetry)
+- [ ] WP-13 run-01 hold closure prep (moderated cohort scheduling + packet readiness)
 
 ### Ready
 
-- [ ] MKT-03 first 7-day scorecard execution window
+- [ ] QA-11 rerun `android-instrumented` + `maestro` + `journey` after ENG-19 and publish pass ids
+- [ ] QA-WP13-RUN02 moderated 5-user usability run execution and packet completion
+- [ ] MKT-08 proof asset capture + Play Store shotlist finalization (`docs/ux/play-store-listing-spec.md`)
+- [ ] MKT-09 first 7-day channel scorecard execution window
+- [ ] PROD-10 launch gate matrix decision run (promote/hold memo)
 - [ ] APP-STORE-01 Play Store listing spec + screenshot shotlist finalization (`docs/ux/play-store-listing-spec.md`)
 
 ### Done
@@ -107,7 +118,9 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-P1 model manager phase-2 implemented (download/progress/retry/storage controls/versioned installs + manual activation policy) (`docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
 - [x] UX-P1 recovery copy refinement implemented for checksum/provenance/runtime-compatibility failures (`docs/ux/error-recovery-guide.md`, `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
 - [x] UI-P1 NotReady/Error flow polish implemented (CTA hierarchy + transition feedback after import/download/refresh/activate) (`docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
-- [x] WP-13 wireless device lane rerun complete (`android-instrumented` + `maestro` on attached wireless device) (`docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`)
+- [x] WP-13 wireless device lane rerun complete (`android-instrumented` + `maestro` + `journey` on attached wireless device) (`docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`)
+- [x] PROD-09 soft-gate pilot policy published (`internalDownload first`, 25 testers/7 days, hard-stop and fallback rules) (`docs/operations/prod-09-soft-gate-pilot-policy.md`)
+- [x] UX-12 recovery journey spec published (`NotReady -> setup -> Ready` with event schema + success targets) (`docs/ux/ux-12-recovery-journey-spec.md`)
 - [x] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
 - [x] TEST-QA-02 release-promotion checklist update with instrumentation/Maestro pass-id requirements (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`)
 - [x] TEST-PROD-01 WP-13 usability gate packet operational template publication (`docs/operations/wp-13-usability-gate-packet-template.md`)
@@ -120,26 +133,21 @@ All teams should update status here first, then mirror updates in role playbooks
 ## Immediate Assignments (Current Owners)
 
 1. Engineering (Lead/Core/Runtime):
-   - WP-11 gate is closed with QA-08 evidence pack.
-   - WP-12 implementation tickets `ENG-12`..`ENG-17` are complete with dated evidence.
-   - Track post-closure performance optimization follow-ups from ENG-13 threshold report (first-token latency).
-   - `ENG-18` is complete with accessibility/error-state hardening evidence (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`).
-   - P1 model manager phase-2 delivery is implemented under flavor-gated download channel (`standard` offline-safe default, `internalDownload` network-enabled) with wireless device rerun evidence attached.
+   - Finalize `ENG-19` packet with deterministic preflight retry/fallback behavior validated on target hardware.
+   - Support `QA-11` same-device rerun for `android-instrumented`, `maestro`, and `journey`.
+   - Keep post-WP12 runtime performance follow-ups tracked (first-token latency).
 2. QA:
-   - QA-08 acceptance gate is complete; continue QA-09 weekly triage/promotion/signal cadence.
-   - `QA-WP12` closeout rerun is complete with close recommendation.
-   - `QA-10` week-01 regression matrix run is complete (`docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`).
+   - Execute `QA-11` lane rerun and publish explicit pass ids.
+   - Execute `QA-WP13-RUN02` moderated 5-user workflow packet and fill thresholds.
+   - Continue weekly WP-09/WP-13 regression matrix cadence.
 3. Product:
-   - External beta signoff dependency on WP-11 is cleared; continue WP-09 planning.
-   - ENG-12 model distribution decision is approved (side-load/manual-internal only + strict provenance checks) and unblocked (`docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`).
-   - WP-12 acceptance/signoff is complete; focus shifted to WP-13 usability gate and launch readiness.
-   - `PROD-08` taxonomy + intake policy is complete (`docs/operations/evidence/wp-09/2026-03-04-prod-08-ux-feedback-taxonomy-pilot.md`).
-   - `PROD-04` monetization scope/pricing hypothesis is in progress (`docs/operations/prod-04-monetization-hypothesis-v0.md`).
+   - Close `DOC-01` drift reconciliation across roadmap + ops + playbooks.
+   - Operate pilot under `PROD-09` policy and run `PROD-10` promote/hold decision matrix.
+   - Keep `PROD-04` monetization hypothesis in parallel without impacting MVP gate scope.
 4. Marketing:
-   - Run real screenshot/video capture using `docs/operations/mkt-04-demo-asset-capture-runbook.md`.
-   - Advance MKT-03/MKT-04 from draft toward publish-ready assets under release sequencing.
-   - `MKT-07` UI-proof messaging pass is complete (`docs/operations/evidence/wp-09/2026-03-04-mkt-07-ui-proof-messaging-pass.md`).
-   - Execute MKT-03 weekly scorecard cadence (`docs/operations/mkt-03-7-day-scorecard-template.md`).
+   - Execute `MKT-08` proof asset capture and listing shotlist QA.
+   - Execute `MKT-09` first 7-day scorecard with evidence-safe claims only.
+   - Keep launch copy aligned to completed gate-matrix claim rows.
 
 ## Evidence Log
 
@@ -205,7 +213,11 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-13 (Usability gate run-01 operational packet): `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
 - WP-13 (Engineering chat layout hardening + viewport regression guard): `docs/operations/evidence/wp-13/2026-03-05-eng-chat-layout-hardening.md`
 - WP-13 (Engineering P1 model manager phase-2 + recovery UX/UI closure): `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`
-- WP-13 (QA/Engineering wireless rerun for device lanes `android-instrumented` + `maestro`): `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`
+- WP-13 (QA/Engineering wireless rerun for device lanes `android-instrumented` + `maestro` + `journey`): `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`
+- WP-13 (Product soft-gate pilot policy): `docs/operations/prod-09-soft-gate-pilot-policy.md`
+- WP-13 (Recovery journey acceptance contract): `docs/ux/ux-12-recovery-journey-spec.md`
+- WP-13/WP-09 (Launch decision interface): `docs/operations/prod-10-launch-gate-matrix.md`
+- Rebased release orchestration plan (March 5 baseline): `docs/operations/rebased-release-plan-2026-03-05.md`
 
 ## Dependency Flow
 
@@ -225,6 +237,8 @@ Wp07 --> Wp09
 Wp08 --> Wp09
 Wp11 --> Wp09
 Wp11 --> Wp12
+Wp11 --> Wp13
+Wp12 --> Wp13
 Wp07 --> Wp10
 ```
 
@@ -242,7 +256,7 @@ Wp07 --> Wp10
 - WP-10: STT/TTS spike report with latency/power budgets
 - WP-11: UI acceptance suite (Compose/instrumentation/Maestro), UX evidence notes, and in-app workflow validation packet
 - WP-12: native-runtime proof logs, model-delivery artifact provenance evidence, Android-native persistence validation, and network-policy enforcement checks
-- WP-13: usability gate packet (5 tester workflow completion), onboarding completion metrics, runtime-state comprehension notes, and launch-asset readiness checklist
+- WP-13: usability gate packet (5 tester workflow completion), onboarding/runtime/privacy comprehension metrics, `run_owner` + `run_host` metadata, lane pass ids (`android-instrumented`/`maestro`/`journey`), and launch-asset readiness checklist
 
 ## Cadence
 

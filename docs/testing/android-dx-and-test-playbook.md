@@ -54,6 +54,14 @@ bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models
 6. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
 7. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
 8. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
+9. Device lanes run health preflight before execution:
+   - wake/unlock attempt
+   - `/data` utilization guard
+   - writable runtime-media probe under app media path (with retry/fallback to `/sdcard/Download/<package>/...` for busy media-path edge cases)
+   - installed package owner metadata check (`dumpsys package`)
+10. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
+11. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
+12. Model preflight reuses existing device artifacts when file sizes match to reduce rerun latency and wireless flake.
 
 Maestro install (validated against `v1.39.13`):
 

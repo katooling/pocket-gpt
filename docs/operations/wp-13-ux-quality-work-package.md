@@ -3,75 +3,53 @@
 Last updated: 2026-03-05
 Owner: Product
 Support: Engineering, QA, Design, Marketing
-Status: Blocked (awaiting moderated cohort metrics for gate closure)
+Status: In Progress (`run-01` hold; moderated metrics pending)
 
 ## Objective
 
-Add a usability gate on top of technical correctness so MVP can ship with strong first-session UX.
+Close the gap between technical correctness and real first-session usability so promotion decisions are defensible.
 
 ## Scope
 
 1. Onboarding and first-value flow quality.
-2. Runtime/model status clarity.
+2. Runtime/model status clarity and recovery.
 3. Message readability and chat ergonomics.
 4. Privacy comprehension and trust signaling.
 5. Tool discoverability through natural language prompts.
-6. Model provisioning recovery and runtime backend transparency.
+6. Listing-ready proof assets tied to evidence-safe claims.
 
-## Ticket Set
+## Current Gate State
 
-1. `UX-ONBOARD-01` first-run onboarding flow.
-2. `UX-MODEL-01` runtime/model loading status indicators.
-3. `UX-CHAT-01` markdown rendering baseline for assistant output.
-4. `UX-EMPTY-01` rich empty state with suggested prompts.
-5. `UX-CHAT-02/03/04` copy action, auto-scroll, session naming polish.
-6. `UX-PRIVACY-01` in-app privacy explanation screen.
-7. `UX-TOOL-01` natural language tool invocation path.
+1. Technical lanes are passing on target device (`android-instrumented`, `maestro`, `journey`).
+2. `run-01` packet decision is `hold` due missing moderated cohort metrics.
+3. Pilot policy is active under `internalDownload first` + `soft gate` (`docs/operations/prod-09-soft-gate-pilot-policy.md`).
 
-## Usability Gate (Required for WP-13 closure)
+## Ticket Set (Current)
+
+1. `UX-12` recovery story contract (`NotReady -> setup -> Ready`) - Done.
+2. `QA-WP13-RUN02` moderated 5-user workflow execution - Ready.
+3. `MKT-08` proof asset capture + listing shotlist finalization - Ready.
+4. `PROD-10` launch gate matrix decision run - Ready.
+
+## Usability Gate (Required for Broader Promotion)
 
 Pass only if all are true:
 
 1. 5 non-technical testers complete Workflow A/B/C without moderator help.
-2. >= 80% onboarding completion in first session.
-3. <= 10% tester-reported confusion on runtime/model state.
-4. <= 10% tester-reported confusion on privacy behavior.
-5. No blocker UI accessibility regressions in weekly matrix.
+2. Onboarding completion >= 80%.
+3. Recovery completion (`NotReady -> Ready`) >= 85%.
+4. Runtime/model confusion <= 10%.
+5. Privacy confusion <= 10%.
+6. No open `UX-S0`/`UX-S1` blockers.
 
 ## Evidence Required
 
-1. Usability run script and participant worksheet.
-2. Completion-rate table and task drop-off notes.
-3. Qualitative UX feedback synthesis (mapped to PROD-08 taxonomy).
-4. Video/screenshot proof set for app-store and launch messaging.
-5. Filled packet based on `docs/operations/wp-13-usability-gate-packet-template.md`.
-
-## Quantitative Thresholds (Operational)
-
-1. Workflow A completion >= 90% (minimum 5 participants).
-2. Workflow B completion >= 90% (minimum 5 participants).
-3. Workflow C completion >= 80% (minimum 5 participants).
-4. Onboarding completion >= 80% in first session.
-5. Runtime/model confusion reports <= 10%.
-6. Privacy confusion reports <= 10%.
-7. Open `S0`/`S1` UX blockers = 0 at decision point.
-
-## Dependencies
-
-1. `ENG-13` must be closed before publishing performance claims.
-2. `QA-10` weekly regression cadence remains active.
-3. `PROD-08` feedback taxonomy and synthesis template used as intake source.
+1. Filled packet from `docs/operations/wp-13-usability-gate-packet-template.md`.
+2. Lane pass ids and report links for `android-instrumented`, `maestro`, `journey`.
+3. `run_owner` and `run_host` metadata in journey artifacts.
+4. Qualitative synthesis mapped to PROD-08 taxonomy.
+5. Listing-ready proof set mapped to `docs/operations/prod-10-launch-gate-matrix.md`.
 
 ## Active Blocker
 
-1. WP-13 run-01 decision is currently `hold` because moderated 5-user usability metrics and qualitative session artifacts are not yet collected.
-2. Blocking evidence item: `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
-
-## Operational Updates (2026-03-04)
-
-1. WP-13 run-01 packet initialized:
-   - `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
-2. Reusable automation now includes Scenario C flow:
-   - `tests/maestro/scenario-c.yaml`
-3. Real-runtime app-path smoke test added for release-candidate windows:
-   - `apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/RealRuntimeAppPathInstrumentationTest.kt`
+1. Missing moderated 5-user packet metrics and session artifacts from `QA-WP13-RUN02`.

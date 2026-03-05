@@ -1,34 +1,47 @@
 # WP-13 Usability Gate Packet Template
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 Owner: Product
 Support: QA, Design, Engineering, Marketing
 
 ## Purpose
 
-Operational template for WP-13 closure decisions. This packet complements technical gates with measurable usability outcomes.
+Operational template for WP-13 closure and promotion decisions.
+This packet complements technical gates with moderated usability outcomes.
 
 ## Cohort Metadata
 
 1. Cohort id:
 2. Build id + commit:
-3. Device set used (required-tier + best-effort):
-4. Session window (UTC):
-5. Moderator(s):
+3. Build flavor (`standard`/`internalDownload`):
+4. Device set used (required-tier + best-effort):
+5. Session window (UTC):
+6. Moderator(s):
+7. Run owner (`run_owner`):
+8. Run host (`run_host`):
+
+## Lane Pass IDs (Required)
+
+1. `android-instrumented` pass id:
+2. `maestro` pass id:
+3. `journey` pass id:
+4. Journey report path (`journey-report.json`):
+5. Journey summary path (`journey-summary.md`):
 
 ## Task Script (Workflow A/B/C)
 
 Each participant executes without intervention:
 
-1. Workflow A - Offline quick answer
-2. Workflow B - Local tool task
-3. Workflow C - Context follow-up (with optional image)
+1. Workflow A - Offline quick answer.
+2. Workflow B - Local tool task.
+3. Workflow C - Context follow-up (optional image).
 
-Record:
+Record per participant:
 
-- completion (`yes`/`no`)
-- time-to-complete (seconds)
-- blocker reason (if failed)
+1. completion (`yes`/`no`)
+2. time-to-complete (seconds)
+3. blocker reason (if failed)
+4. confusion notes (runtime/model/privacy)
 
 ## Quantitative Gate Table
 
@@ -38,9 +51,23 @@ Record:
 | Workflow B completion (n=5+) | `>= 90%` |  |  |
 | Workflow C completion (n=5+) | `>= 80%` |  |  |
 | Onboarding completion | `>= 80%` |  |  |
+| Recovery completion (`NotReady -> Ready`) | `>= 85%` |  |  |
 | Runtime/model confusion reports | `<= 10%` |  |  |
 | Privacy confusion reports | `<= 10%` |  |  |
 | Critical UX blockers (`S0`/`S1`) | `0 open` |  |  |
+
+## UX Event Evidence (Recovery Contract)
+
+Include sampled rows or export references for:
+
+1. `onboarding_completed`
+2. `runtime_not_ready_visible`
+3. `model_setup_opened`
+4. `model_import_started`
+5. `model_download_started`
+6. `model_version_activated`
+7. `runtime_ready`
+8. `first_useful_answer_ms`
 
 ## Qualitative Synthesis (PROD-08 Taxonomy)
 
@@ -55,27 +82,24 @@ For each category, provide top findings and owner:
 ## Evidence Links
 
 1. QA weekly matrix run:
-2. Real-runtime instrumentation journey run id:
-3. Real-runtime Maestro journey run id:
-4. User session notes:
-5. Video/screenshot proof set:
-6. Raw artifact root:
+2. User session notes:
+3. Video/screenshot proof set:
+4. Raw artifact root:
+5. Claim-map row ids impacted (`PROD-10`):
 
-## Automation Attachments (Reusable)
+## Soft-Gate Decision Inputs
 
-Attach latest PASS ids and artifact paths for:
-
-1. Real-runtime journey instrumentation (`RealRuntimeJourneyInstrumentationTest`)
-2. Real-runtime app-path smoke (`RealRuntimeAppPathInstrumentationTest`, RC only)
-3. Maestro Scenario A (`tests/maestro/scenario-a.yaml`)
-4. Maestro Scenario B (`tests/maestro/scenario-b.yaml`)
-5. Maestro Scenario C (`tests/maestro/scenario-c.yaml`)
-6. Journey aggregate report (`journey-report.json` + `journey-summary.md`)
+1. Pilot cohort size:
+2. Pilot duration:
+3. Hard-stop triggered (`yes`/`no`):
+4. If yes, blocker + owner + ETA:
+5. Recommendation scope (`promote`/`iterate`/`hold`):
 
 ## Decision
 
-1. Product recommendation (`promote`/`hold`):
+1. Product recommendation (`promote`/`iterate`/`hold`):
 2. QA concurrence (`yes`/`no`):
 3. Engineering concurrence (`yes`/`no`):
-4. Conditions to close WP-13 (if hold):
-5. Decision date (UTC):
+4. Marketing concurrence (`yes`/`no`):
+5. Conditions to close WP-13 (if not promote):
+6. Decision date (UTC):

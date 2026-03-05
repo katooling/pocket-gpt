@@ -20,13 +20,28 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 | WP-07 | Beta hardening + go/no-go packet | QA + Product + Eng | Done | Must close for external beta |
 | WP-11 | Android MVP user experience (chat/session/image/tool UX) | Engineering + Product + QA | Done | Must close for external beta |
 | WP-12 | Backend production runtime closure (native/runtime/data-plane hardening) | Engineering + QA + Product + Security | Done | Must close before production-claim hardening signoff |
-| WP-13 | UX quality closure (onboarding/runtime clarity/usability gate/listing readiness) | Product + QA + Eng + Design + Marketing | Blocked | Must close before promotion beyond current cohort |
+| WP-13 | UX quality closure (onboarding/runtime clarity/usability gate/listing readiness) | Product + QA + Eng + Design + Marketing | In Progress (`hold` pending moderated cohort metrics) | Must close before promotion beyond current cohort |
 
-External beta signoff policy:
+Pilot promotion policy:
 
 1. `WP-07` must be `Done`.
 2. `WP-11` must be `Done`.
 3. `PROD-03` signoff must be stamped by Product, QA, and Engineering.
+4. Broader promotion requires `WP-13` moderated packet completion and launch-gate matrix review.
+
+## Rebased Release Tickets (March 6-15, 2026)
+
+| Ticket | Scope | Owner | Status | Acceptance |
+|---|---|---|---|---|
+| DOC-01 | Timeline/status reconciliation across roadmap + board + playbooks | Product Ops | In Progress | No contradictory statuses/dates in source docs |
+| ENG-19 | Devctl preflight robustness for busy media paths | Engineering | In Progress | Maestro preflight stable on target device across 3 reruns |
+| QA-11 | Post-ENG-19 lane rerun (`android-instrumented` + `maestro` + `journey`) | QA | Ready | Pass ids and evidence note published |
+| PROD-09 | Soft-gate pilot policy | Product Ops | Done | Policy approved and linked on execution board |
+| UX-12 | Recovery journey story spec (`NotReady -> setup -> Ready`) | Product + Design + Android | Done | Story-to-test mapping published |
+| QA-WP13-RUN02 | Moderated 5-user usability run | QA + Product | Ready | Packet complete with measured values |
+| MKT-08 | Proof asset capture + listing shotlist finalization | Marketing | Ready | Claim-safe asset set approved |
+| MKT-09 | First 7-day channel scorecard execution | Marketing | Ready | Scorecard completed with keep/iterate/stop decision |
+| PROD-10 | Unified launch gate matrix and promote/hold decision run | Product | Ready | Single matrix maps story->flow->test->evidence->claim |
 
 ## Stage-wide Quality Gates (apply to every stage)
 
@@ -34,6 +49,7 @@ External beta signoff policy:
 - [ ] Stage evidence artifacts committed/attached in expected paths:
   - raw machine artifacts in `scripts/benchmarks/runs/...`
   - human evidence notes in `docs/operations/evidence/...`
+- [ ] Lane evidence includes pass ids and report links for `android-instrumented`, `maestro`, and `journey` when release-promotion scope is touched.
 - [ ] Regression checks run for previously completed stages.
 - [ ] `docs/roadmap/next-steps-execution-plan.md` updated with current status/date.
 - [ ] CI lane + CLI phone lane workflow kept current in `docs/testing/just-cli-android-validation-plan.md`.
@@ -113,6 +129,7 @@ Current status:
 - [x] Runtime backend identity is visible in chat header + advanced controls.
 - [x] Release-candidate real-runtime app-path instrumentation test is added.
 - [x] Maestro Scenario C flow is added for context continuity/user journey coverage.
+- [x] Journey artifacts include run metadata (`run_owner`, `run_host`) for traceability.
 - [ ] WP-13 usability gate run packet finalized with participant threshold data.
   - Blocker state (2026-03-05): run-01 decision is `hold` pending moderated 5-user cohort metrics and qualitative session artifacts (`docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`).
 

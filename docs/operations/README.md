@@ -18,6 +18,11 @@ This section is the project operating system for cross-functional execution.
 ## Documents
 
 - `execution-board.md`
+- `rebased-release-plan-2026-03-05.md`
+- `prod-09-soft-gate-pilot-policy.md`
+- `prod-10-launch-gate-matrix.md`
+- `mkt-08-proof-asset-capture-and-listing-finalization.md`
+- `mkt-09-channel-scorecard-run-01.md`
 - `wp-13-ux-quality-work-package.md`
 - `wp-13-usability-gate-packet-template.md`
 - `evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`

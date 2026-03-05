@@ -1,73 +1,75 @@
 # Phase 1 MVP Plan
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Objective
 
-Ship a usable, privacy-first offline assistant MVP with:
+Ship a usable, privacy-first Android MVP under an `internalDownload`-first pilot policy, with technical lanes stable and moderated usability evidence completed before broader promotion.
 
-1. productionized runtime reliability
-2. user-facing chat-first Android UX
-3. evidence-backed beta go/no-go decision
+## Current Truth (2026-03-05)
+
+1. `WP-00` to `WP-12` are closed.
+2. `WP-09` is in progress.
+3. `WP-13` remains open (`run-01` decision = `hold`) until moderated cohort metrics are attached.
+4. Technical signal is strong (`:apps:mobile-android:testDebugUnitTest`, `connectedStandardDebugAndroidTest`, and devctl lane evidence are available), while operational UX signal is incomplete.
+5. Active launch policy: `internalDownload first` + `soft gate` for pilot expansion.
 
 Execution tracker:
 
 - `docs/roadmap/mvp-implementation-tracker.md`
-- `docs/roadmap/next-steps-execution-plan.md`
 - `docs/operations/execution-board.md`
-- `docs/testing/test-strategy.md`
+- `docs/operations/prod-09-soft-gate-pilot-policy.md`
+- `docs/operations/prod-10-launch-gate-matrix.md`
 
-## Priority Backlog (Current)
+## Rebased Release Phases (Decision Complete)
 
-1. Close WP-07 Stage-6 packet (final signoff stamps)
-2. Close WP-11 user-facing MVP UX package
-3. Execute UI acceptance suite (`UI-01`..`UI-10`) on device lane
-4. Finalize external beta release packet after dual-track gate closure
+### Phase 1: Rebase + Stability (March 6-7, 2026)
 
-## Completed Foundations
+1. `DOC-01` reconcile status/date drift across roadmap and operations docs.
+2. `ENG-19` harden devctl preflight behavior for busy media paths with deterministic retry/fallback.
+3. `QA-11` rerun `android-instrumented`, `maestro`, and `journey` on the same target device and publish pass ids.
 
-1. Runtime baseline (`llama.cpp`) and artifact benchmark reliability
-2. Routing/policy/diagnostics hardening
-3. Tool runtime safety productionization
-4. Memory + image productionization
-5. Marketing/product lock pass artifacts
+Exit criteria:
 
-## Active Milestones
+1. No contradictory statuses/dates in core roadmap/ops docs.
+2. Maestro lane not blocked by false storage preflight failures.
 
-### M4-A (Now): Reliability Gate Closure
+### Phase 2: InternalDownload Pilot + UX Evidence (March 8-12, 2026)
 
-- WP-07 Stage-6 closure
-- final risk/register + signoff stamps
+1. `PROD-09` soft-gate pilot policy published with explicit cohort size, duration, and escalation thresholds.
+2. `UX-12` recovery journey spec published (`NotReady -> setup -> Ready`) with measurable acceptance.
+3. `QA-WP13-RUN02` executes moderated 5-user packet and fills all threshold fields.
+4. `MKT-08` captures proof assets and finalizes listing shotlist.
 
-### M4-B (Now): User-Facing UX Closure
+Exit criteria:
 
-- WP-11 Compose app UX closure
-- UI acceptance evidence and gate signoff
+1. Pilot running under documented policy.
+2. Moderated packet has measured values (no `not collected` placeholders).
+3. Claim-safe proof assets are approved for decision review.
 
-### M4-C (Release): External Beta Decision
+### Phase 3: Promotion Decision + Ops Loop (March 13-15, 2026)
 
-- requires M4-A + M4-B complete
+1. `MKT-09` executes first 7-day channel scorecard.
+2. `QA-12` publishes required-tier + best-effort weekly matrix.
+3. `PROD-10` runs promote/hold decision through a single launch gate matrix.
 
-## Go/No-Go Rule (Current)
+Exit criteria:
 
-Go only if all are true:
+1. Decision memo includes rationale, risk, and next-step scope.
+2. `promote` path defines next cohort cap and support SLA.
+3. `hold` path defines top-3 blockers with owners/dates.
 
-1. Stage-6 technical hardening is closed (`WP-07 Done`)
-2. User-facing MVP UX package is closed (`WP-11 Done`)
-3. UI acceptance suite (`UI-01`..`UI-10`) is PASS
-4. Product, QA, Engineering all signed go/no-go packet
+## Promotion Rule
 
-No-Go if any are true:
-
-1. Sustained thermal regressions remain unresolved
-2. Frequent OOM/ANR/startup instability persists
-3. Privacy/policy controls are not enforceable in implemented flows
-4. Core user-facing chat/image/tool/session flows fail acceptance suite
+1. Soft gate allows controlled pilot expansion only.
+2. Broad promotion remains blocked until moderated WP-13 packet is complete and reviewed.
+3. Launch claims must map to evidence IDs and lane pass IDs.
 
 ## MVP Completion Definition
 
-MVP is complete when all are true:
+MVP release decision is valid only when all are true:
 
-1. Stage 1-6 exit criteria in `docs/roadmap/next-steps-execution-plan.md` are satisfied.
-2. Required evidence artifacts are present for benchmark, soak, and UI acceptance runs.
-3. Cross-functional go/no-go packet is approved.
+1. Core workflow, stability, and policy lanes pass on required-tier device.
+2. `WP-13` moderated usability packet is complete with threshold outcomes.
+3. Launch gate matrix links story -> flow -> tests -> evidence -> claim for every publishable claim.
+4. Product, QA, Engineering, and Marketing record a dated promote/hold decision.

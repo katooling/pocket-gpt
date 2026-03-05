@@ -12,6 +12,8 @@ from tools.devctl.config_models import load_devctl_configs
 from tools.devctl.lanes import (
     RuntimeContext,
     JourneyStepResult,
+    _ensure_remote_dir,
+    _media_path_fallbacks,
     _normalize_test_mode,
     _parse_journey_args,
     _parse_package_uid,
@@ -267,6 +269,44 @@ class LanesTest(unittest.TestCase):
     def test_parse_package_uid(self) -> None:
         self.assertEqual(10635, _parse_package_uid("pkgFlags=[ HAS_CODE ]\nuserId=10635\ngids=[3003]"))
         self.assertIsNone(_parse_package_uid("pkgFlags=[ HAS_CODE ]\ngids=[3003]"))
+
+    def test_media_path_fallbacks_maps_to_download_dir(self) -> None:
+        self.assertEqual(
+            ["/sdcard/Download/com.pocketagent.android/models"],
+            _media_path_fallbacks("/sdcard/Android/media/com.pocketagent.android/models"),
+        )
+        self.assertEqual([], _media_path_fallbacks("/data/local/tmp/models"))
+
+    def test_ensure_remote_dir_falls_back_when_media_path_busy(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+
+        class Result:
+            def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        def fake_run(command, **_kwargs):
+            cmd = list(command)
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:7] == ["mkdir", "-p", "/sdcard/Android/media/com.pocketagent.android/models"]:
+                return Result(returncode=1, stderr="mkdir: Device or resource busy")
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:7] == ["ls", "-ld", "/sdcard/Android/media/com.pocketagent.android/models"]:
+                return Result(returncode=1, stderr="ls: cannot access")
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:7] == ["mkdir", "-p", "/sdcard/Download/com.pocketagent.android/models"]:
+                return Result(returncode=0)
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:7] == ["ls", "-ld", "/sdcard/Download/com.pocketagent.android/models"]:
+                return Result(returncode=0)
+            return Result()
+
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+        resolved = _ensure_remote_dir(
+            context=context,
+            serial="SER123",
+            path="/sdcard/Android/media/com.pocketagent.android/models",
+            fallback_paths=["/sdcard/Download/com.pocketagent.android/models"],
+            failure_label="failed",
+        )
+        self.assertEqual("/sdcard/Download/com.pocketagent.android/models", resolved)
 
     def test_resolve_available_instrumentation_runner_prefers_target_match(self) -> None:
         configs = load_devctl_configs(REPO_ROOT)

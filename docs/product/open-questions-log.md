@@ -1,27 +1,33 @@
 # Open Questions Log
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 Track these questions continuously so engineering, product, and go-to-market stay aligned.
 
 ## Development Questions
 
-1. What are hard limits for first-token latency and battery drain by tier?
-2. What is the minimum acceptable image quality rubric for MVP?
-3. What are pass/fail thresholds for UI responsiveness under sustained on-device load?
+1. For device preflight checks, which failure classes should be strict-fail versus warn-and-continue?
+2. What fallback behavior is required when `internalDownload` manifest fetch is empty/unreachable?
+3. What are hard limits for first-token latency and battery drain by tier?
+4. What is the minimum acceptable image quality rubric for MVP?
+5. What are pass/fail thresholds for UI responsiveness under sustained on-device load?
 
 ## Product Questions
 
-1. What should be free vs paid in early pricing (if monetization starts at beta)?
-2. What UX language best explains local-first privacy without overclaiming?
-3. Which features are explicitly excluded from MVP despite high demand?
-4. Which device classes are mandatory for WP-11 UI acceptance evidence beyond the current primary test phone?
+1. What pilot size and duration should trigger promote/iterate/hold decisions under soft gate?
+2. Which metrics are mandatory versus advisory for the first expansion step?
+3. What should be free vs paid in early pricing (if monetization starts at beta)?
+4. What UX language best explains local-first privacy without overclaiming?
+5. Which features are explicitly excluded from MVP despite high demand?
+6. Which device classes are mandatory for WP-11/WP-13 evidence beyond the current primary test phone?
 
 ## Marketing Questions
 
-1. Is positioning centered on privacy, offline reliability, or both equally?
-2. Which competitor comparisons are safe and evidence-backed?
-3. Which user proof points (latency, offline behavior, no-cloud path) should be shown publicly?
+1. Which claim blocks are sufficiently validated for week-1 publishing versus internal-only use?
+2. What minimum proof asset set is required before broader promotion?
+3. Is positioning centered on privacy, offline reliability, or both equally?
+4. Which competitor comparisons are safe and evidence-backed?
+5. Which user proof points (latency, offline behavior, no-cloud path) should be shown publicly?
 
 ## Business and Distribution Questions
 
@@ -35,7 +41,7 @@ Track these questions continuously so engineering, product, and go-to-market sta
 1. Review weekly.
 2. Convert resolved questions into ADRs, roadmap updates, or release checklist items.
 
-## Resolved (2026-03-04)
+## Resolved (2026-03-05)
 
 1. Which Android device classes are required for launch support, and which are best-effort?
    - Resolved by `docs/feasibility/device-matrix.md` (MVP Launch Device Policy decision table).
@@ -109,3 +115,15 @@ Track these questions continuously so engineering, product, and go-to-market sta
    - References:
      - `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
      - `docs/operations/execution-board.md`
+18. Should pilot launch proceed with `internalDownload` or stay import-only?
+   - Resolved by rebased release policy.
+   - Decision: run `internalDownload first` for controlled pilot cohorts, with soft-gate hard-stop rules and manifest outage fallback defined.
+   - References:
+     - `docs/operations/prod-09-soft-gate-pilot-policy.md`
+     - `docs/operations/execution-board.md`
+19. Is WP-13 closure a hard gate for any promotion, or can pilot continue with partial evidence?
+   - Resolved by gate policy split.
+   - Decision: soft gate allows controlled pilot continuation, but broader promotion remains blocked until moderated WP-13 packet is complete.
+   - References:
+     - `docs/operations/prod-09-soft-gate-pilot-policy.md`
+     - `docs/operations/prod-10-launch-gate-matrix.md`

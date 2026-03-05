@@ -1,4 +1,4 @@
-# WP-13 QA Evidence: Wireless Device Lane Rerun (Android Instrumented + Maestro)
+# WP-13 QA Evidence: Wireless Device Lane Rerun (Android Instrumented + Maestro + Journey)
 
 Date: 2026-03-05  
 Owner: Engineering + QA  
@@ -10,6 +10,7 @@ Re-run previously blocked device lanes after wireless-debug attachment:
 
 1. `python3 tools/devctl/main.py lane android-instrumented`
 2. `python3 tools/devctl/main.py lane maestro`
+3. `python3 tools/devctl/main.py lane journey --repeats 1`
 
 ## Commands and Outcomes
 
@@ -17,6 +18,8 @@ Re-run previously blocked device lanes after wireless-debug attachment:
    - Result: PASS (`BUILD SUCCESSFUL`; connected instrumentation completed, `0 failed`, RC-only classes skipped by explicit gating flags).
 2. `ADB_SERIAL='adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp' python3 tools/devctl/main.py lane maestro`
    - Result: PASS (Scenario A/B/C flows all completed; no runtime error banner assertions failed).
+3. `ADB_SERIAL='adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp' python3 tools/devctl/main.py lane journey --repeats 1`
+   - Result: PASS (instrumentation journey + Maestro Scenario A/B/C all passed; report and summary generated).
 
 ## Artifact Paths
 
@@ -29,6 +32,12 @@ Re-run previously blocked device lanes after wireless-debug attachment:
    - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-153028/maestro-debug/scenario-a/maestro-output.txt`
    - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-153028/maestro-debug/scenario-b/maestro-output.txt`
    - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-153028/maestro-debug/scenario-c/maestro-output.txt`
+3. Journey lane:
+   - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/journey/20260305-153850/journey-report.json`
+   - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/journey/20260305-153850/journey-summary.md`
+   - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/journey/20260305-153850/run-01/maestro-debug/scenario-a/maestro-output.txt`
+   - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/journey/20260305-153850/run-01/maestro-debug/scenario-b/maestro-output.txt`
+   - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/journey/20260305-153850/run-01/maestro-debug/scenario-c/maestro-output.txt`
 
 ## Notes
 
@@ -37,4 +46,3 @@ Re-run previously blocked device lanes after wireless-debug attachment:
 2. Lane robustness updates validated during this rerun:
    - remote media path preflight no longer depends on fragile `sh -lc` quoting
    - `lane maestro` now ensures test APK install before provisioning instrumentation probe
-

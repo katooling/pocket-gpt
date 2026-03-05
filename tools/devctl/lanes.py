@@ -72,6 +72,8 @@ def _now_stamp() -> str:
 
 _DEFAULT_HEALTH_APP_PACKAGE = "com.pocketagent.android"
 _DEFAULT_HEALTH_TEST_PACKAGE = "com.pocketagent.android.test"
+_REMOTE_DIR_RETRY_ATTEMPTS = 3
+_REMOTE_DIR_RETRY_BACKOFF_SECONDS = 0.5
 
 
 def _append_native_build_flag(command: Sequence[str]) -> list[str]:
@@ -312,11 +314,13 @@ def _run_device_health_preflight(
             f"Device /data usage is too high ({usage}%). Free up space before running lanes.",
         )
 
-    health_dir = f"/sdcard/Android/media/{app_package}/devctl-health"
-    _ensure_remote_dir(
+    primary_health_dir = f"/sdcard/Android/media/{app_package}/devctl-health"
+    fallback_health_dir = f"/sdcard/Download/{app_package}/devctl-health"
+    health_dir = _ensure_remote_dir(
         context=context,
         serial=serial,
-        path=health_dir,
+        path=primary_health_dir,
+        fallback_paths=[fallback_health_dir],
         failure_label="Device external storage preflight failed while creating runtime media path.",
     )
 
@@ -449,37 +453,80 @@ def _run_instrumentation_class(
     return result
 
 
-def _ensure_remote_dir(
+def _remote_dir_exists(
     *,
     context: RuntimeContext,
     serial: str,
     path: str,
-    failure_label: str,
-) -> None:
-    mkdir_result = context.run(
-        ["adb", "-s", serial, "shell", "mkdir", "-p", path],
-        check=False,
-        capture_output=True,
-        env=context.env,
-    )
-    if mkdir_result.returncode == 0:
-        return
-
-    # Some devices intermittently return EBUSY on MediaProvider-backed paths
-    # even though the directory exists and is writable.
+) -> bool:
     exists_result = context.run(
         ["adb", "-s", serial, "shell", "ls", "-ld", path],
         check=False,
         capture_output=True,
         env=context.env,
     )
-    if exists_result.returncode == 0:
-        return
+    return exists_result.returncode == 0
 
-    detail = "\n".join(
-        part for part in [(mkdir_result.stdout or "").strip(), (mkdir_result.stderr or "").strip()] if part
-    )
-    raise DevctlError("DEVICE_ERROR", f"{failure_label}\n{detail}")
+
+def _media_path_fallbacks(path: str) -> list[str]:
+    # Fallback from MediaProvider-backed locations to a more stable shared-storage path.
+    match = re.match(r"^/sdcard/Android/media/([^/]+)/(.+)$", path.strip())
+    if match is None:
+        return []
+    app_package, rest = match.groups()
+    return [f"/sdcard/Download/{app_package}/{rest}"]
+
+
+def _ensure_remote_dir(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    path: str,
+    failure_label: str,
+    fallback_paths: Sequence[str] | None = None,
+) -> str:
+    candidate_paths = [path, *(fallback_paths or ())]
+    errors: list[str] = []
+
+    for idx, candidate in enumerate(candidate_paths):
+        candidate_errors: list[str] = []
+        for attempt in range(1, _REMOTE_DIR_RETRY_ATTEMPTS + 1):
+            mkdir_result = context.run(
+                ["adb", "-s", serial, "shell", "mkdir", "-p", candidate],
+                check=False,
+                capture_output=True,
+                env=context.env,
+            )
+            if mkdir_result.returncode == 0:
+                if idx > 0:
+                    print_step(f"Using fallback remote directory: {candidate}")
+                return candidate
+
+            # Some devices intermittently return EBUSY on MediaProvider-backed paths
+            # even though the directory exists and remains writable.
+            if _remote_dir_exists(context=context, serial=serial, path=candidate):
+                if idx > 0:
+                    print_step(f"Using fallback remote directory: {candidate}")
+                return candidate
+
+            detail = "\n".join(
+                part
+                for part in [
+                    (mkdir_result.stdout or "").strip(),
+                    (mkdir_result.stderr or "").strip(),
+                ]
+                if part
+            )
+            candidate_errors.append(
+                f"path={candidate} attempt={attempt}/{_REMOTE_DIR_RETRY_ATTEMPTS} detail={detail or '<no-output>'}"
+            )
+            if attempt < _REMOTE_DIR_RETRY_ATTEMPTS:
+                time.sleep(_REMOTE_DIR_RETRY_BACKOFF_SECONDS * attempt)
+
+        errors.extend(candidate_errors)
+
+    detail_block = "\n".join(errors)
+    raise DevctlError("DEVICE_ERROR", f"{failure_label}\n{detail_block}")
 
 
 def _shell_single_quote(value: str) -> str:
@@ -564,16 +611,18 @@ def prepare_real_runtime_env(
     model_host_paths_by_id = _resolve_real_runtime_model_paths(context)
     model_device_paths_by_id: dict[str, str] = {}
 
-    _ensure_remote_dir(
+    candidate_model_dirs = [real_runtime_cfg.device_model_dir, *_media_path_fallbacks(real_runtime_cfg.device_model_dir)]
+    resolved_model_dir = _ensure_remote_dir(
         context=context,
         serial=device_serial,
-        path=real_runtime_cfg.device_model_dir,
+        path=candidate_model_dirs[0],
+        fallback_paths=candidate_model_dirs[1:],
         failure_label="Failed to prepare remote model directory.",
     )
 
     for model in real_runtime_cfg.models:
         host_path = model_host_paths_by_id[model.model_id]
-        device_path = f"{real_runtime_cfg.device_model_dir.rstrip('/')}/{model.device_file_name}"
+        device_path = f"{resolved_model_dir.rstrip('/')}/{model.device_file_name}"
         host_size = Path(host_path).stat().st_size
         remote_size = _remote_file_size_bytes(context, device_serial, device_path)
         if remote_size == host_size:
@@ -593,7 +642,7 @@ def prepare_real_runtime_env(
             _ensure_remote_dir(
                 context=context,
                 serial=device_serial,
-                path=real_runtime_cfg.device_model_dir,
+                path=resolved_model_dir,
                 failure_label="Failed to ensure remote model directory before push.",
             )
             result = context.run(

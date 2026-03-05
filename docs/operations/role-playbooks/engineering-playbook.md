@@ -4,85 +4,46 @@ Last updated: 2026-03-05
 
 ## Mission
 
-Deliver reliable local runtime capability and user-facing MVP experience while preserving modular boundaries and privacy/safety guarantees.
+Ship stable runtime and UX infrastructure while preserving privacy/safety contracts and reproducible lane behavior.
 
-## Where To Start
+## Current Operating Truth
 
-1. Check `docs/operations/execution-board.md`.
-2. Pull engineering-owned tasks in `Ready`/`In Progress` state.
-3. Confirm prerequisites are complete.
-4. Update this playbook status table when you start/finish.
+1. WP-11 and WP-12 are closed with evidence.
+2. WP-13 is open due moderated UX evidence gap.
+3. Current engineering release-critical item is lane robustness (`ENG-19`).
 
-## What Is Done
+## Done
 
-- [x] Core module interfaces scaffolded (`Conversation`, `Inference`, `Routing`, `Tool`, `Memory`, `Policy`, `Observability`)
-- [x] Android-first scaffolding and benchmark scripts established
-- [x] ENG-01 completed: Gradle wrapper + one-command verification baseline
-- [x] ENG-02 completed: CI workflow baseline
-- [x] ENG-03 completed: real Android runtime bridge + physical-device evidence
-- [x] ENG-04 completed: artifact-manifest startup validation + checksum lifecycle gate
-- [x] ENG-05 completed: routing/policy/diagnostics hardening
-- [x] ENG-06 completed: strict schema-safe tool runtime productionization
-- [x] ENG-07 completed: shared memory backend + pruning
-- [x] ENG-08 completed: runtime image path hardening
-- [x] ENG-10 completed: WP-11 Compose MVP UI implementation foundation
-- [x] ENG-11A completed: native-runtime truth gate for startup/closure-path checks
-- [x] ENG-12 completed: side-load/manual-internal model distribution with strict verify-before-load hard-block policy
-- [x] ENG-13 completed: native JNI runtime proof and Samsung 0.8B/2B evidence packet
-- [x] ENG-13 rerun completed: refreshed full closure artifact chain on Samsung (`NATIVE_JNI` evidence + runtime validator PASS)
-- [x] ENG-14 completed: Android-native runtime memory backend migration
-- [x] ENG-15 completed: local tool store integration for notes/search/reminders
-- [x] ENG-16 completed: production runtime-backed image path wiring
-- [x] ENG-17 completed: platform network policy wiring + regression checks
-- [x] ENG-18 completed: UI accessibility + deterministic error-state hardening for beta rollout
-- [x] ENG-13 support completed: Stage-2 runtime evidence integrity validator + runbook wiring
+- [x] `ENG-01` through `ENG-18` core MVP and hardening tickets
+- [x] WP-12 backend/runtime closure and reruns
+- [x] P1 model manager phase-2 and recovery UX wiring
 
-## What Is In Progress
+## In Progress
 
-- [ ] WP-09 rollout support and stabilization backlog
-- [ ] DX-01 layered test profiles + Stage-2 quick/closure efficiency rollout
-- [ ] DX-02 provider-style caching rollout (native prefix/KV reuse + runtime cache telemetry)
+- [ ] `ENG-19` preflight robustness for busy media path cases (retry/fallback behavior landed, rerun packet pending)
+- [ ] DX-01 layered test profile rollout
+- [ ] DX-02 provider-style cache rollout
+- [ ] WP-09 stabilization support
 
-## Lead Eng Dispatch (Now)
+## Ready Queue
 
-1. Support WP-09 rollout readiness and stabilization backlog.
-2. Keep regression/lane stability for external beta.
-3. Track post-WP12 performance optimization follow-ups from ENG-13 threshold report.
+- [ ] Support `QA-11` full lane rerun and pass-id publication
+- [ ] Support `QA-WP13-RUN02` moderated run instrumentation/debug readiness
 
 ## Task Queue
 
-| Task ID | Task | Status | Prerequisites | Owner | References |
-|---|---|---|---|---|---|
-| ENG-01 | Implement Gradle wrapper + stable local build command | Done | WP-01 | Eng Lead | `docs/operations/evidence/wp-01/2026-03-03-eng-01.md` |
-| ENG-02 | Add CI for module tests and app tests | Done | ENG-01 | Eng Platform | `docs/operations/evidence/wp-01/2026-03-03-eng-02.md` |
-| ENG-03 | Integrate real Android `llama.cpp` runtime bridge | Done | WP-01 complete | Runtime Eng | `docs/operations/evidence/wp-02/2026-03-03-eng-03-device-pass-02.md` |
-| ENG-04 | Artifact manifest/checksum/version lifecycle | Done | ENG-03 | Runtime Eng | `docs/operations/evidence/wp-03/2026-03-03-eng-04-closeout.md` |
-| ENG-05 | Routing + policy hardening with boundary tests | Done | ENG-04 | Runtime Eng | `docs/operations/evidence/wp-04/2026-03-04-eng-05.md` |
-| ENG-06 | Tool runtime strict schema validation | Done | ENG-04 | Platform Eng | `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md` |
-| ENG-07 | Shared memory backend + pruning | Done | ENG-05 | Core Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md` |
-| ENG-08 | Image path production hardening | Done | ENG-07 | Runtime Eng | `docs/operations/evidence/wp-06/2026-03-04-eng-08.md` |
-| ENG-10 | WP-11 Compose chat UX + runtime facade + session persistence + advanced controls | Done | WP-06 | Android Runtime Eng | `docs/operations/evidence/wp-11/2026-03-04-eng-wp11-ui-foundation.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
-| ENG-WP07-SIGNOFF | WP-07 Stage-6 final engineering signoff for go/no-go packet | Done | QA-06, ENG-WP07-S6 | Engineering Lead | `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
-| ENG-11A | Native-runtime truth gate (block closure startup checks on `ADB_FALLBACK`) | Done | WP-11 | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md` |
-| ENG-12 | Side-load model distribution + strict manifest/SHA/provenance hard-block policy | Done | ENG-11A, Product decision note | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`, `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md` |
-| ENG-13 | Native JNI runtime proof on Samsung + perf/memory characterization (0.8B/2B) | Done | ENG-11A | Runtime Eng, QA | `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`, `docs/operations/evidence/wp-12/2026-03-05-eng-13-native-runtime-rerun.md`, `docs/testing/stage-2-benchmark-runbook.md` |
-| ENG-13-SUPPORT | Stage-2 closure artifact integrity validator (`NATIVE_JNI`/non-placeholder guard) | Done | ENG-11A | Eng Platform | `scripts/benchmarks/validate_stage2_runtime_evidence.py`, `docs/testing/stage-2-benchmark-runbook.md` |
-| ENG-14 | Replace JVM-JDBC memory path with shared file-backed memory backend | Done | ENG-12 artifact-path contract stable | Core Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md` |
-| ENG-15 | Replace placeholder notes/search/reminder responses with real local stores | Done | ENG-12 artifact-path contract stable | Platform Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md` |
-| ENG-16 | Replace smoke image adapter with production multimodal runtime path | Done | ENG-12 artifact-path contract stable | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md` |
-| ENG-17 | Wire policy module to Android platform network behavior + regressions | Done | ENG-12..ENG-16 integration available | Security Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md` |
-| ENG-18 | UI accessibility + error-state hardening for beta rollout | Done | WP-11 | Android Eng | `docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`, `docs/testing/test-strategy.md` |
-| DX-01 | Layered test profiles + Stage-2 quick/closure efficiency automation | In Progress | WP-12 closeout | Eng Platform + Runtime | `docs/testing/test-lane-profiles-and-selection.md`, `scripts/dev/README.md` |
-| DX-02 | Provider-style caching rollout (native prefix reuse + runtime response cache + Stage-2 cache telemetry) | In Progress | DX-01 baseline | Runtime Eng + Platform Eng | `packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/RuntimeBridgeContracts.kt`, `apps/mobile-android/src/main/cpp/pocket_llama.cpp`, `docs/testing/stage-2-benchmark-runbook.md` |
-| ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | WP-07 | Runtime Eng | `docs/roadmap/product-roadmap.md` |
-| ENG-OPS | Engineering foundations simplification (governance + docs + automation + Android module alignment) | Done | ENG-03 | Eng Platform | `docs/operations/evidence/wp-03/2026-03-03-eng-ops-foundations.md` |
+| Task ID | Task | Status | Owner | References |
+|---|---|---|---|---|
+| ENG-19 | Devctl preflight robustness (busy media path retry/fallback + deterministic behavior) | In Progress | Eng Platform | `tools/devctl/lanes.py`, `tools/devctl/tests/test_lanes.py`, `docs/testing/android-dx-and-test-playbook.md` |
+| DX-01 | Layered test profiles + Stage-2 quick/closure efficiency automation | In Progress | Eng Platform + Runtime | `docs/testing/test-lane-profiles-and-selection.md`, `scripts/dev/README.md` |
+| DX-02 | Provider-style caching rollout + telemetry | In Progress | Runtime + Platform | `docs/testing/stage-2-benchmark-runbook.md` |
+| ENG-09 | STT/TTS technical spikes (post-MVP) | Backlog | Runtime Eng | `docs/roadmap/product-roadmap.md` |
 
-## Engineering Definition of Done
+## Engineering Decision Rule
 
-1. Tests added/updated for changed behavior.
-2. No policy/security regressions introduced.
-3. Required benchmark/runtime/UI evidence attached for stage tasks.
-4. `execution-board.md` and this file status updated.
+1. Preflight behavior must avoid false-negative hard failures from transient/busy storage states.
+2. Lane changes require unit coverage and rerun evidence on target device.
+3. Release-claim impacting code changes must include updated docs and evidence pointers.
 
 ## Engineering References
 
@@ -90,4 +51,3 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 - `docs/roadmap/mvp-implementation-tracker.md`
 - `docs/testing/test-strategy.md`
 - `docs/testing/android-dx-and-test-playbook.md`
-- `docs/architecture/modular-monolith.md`
