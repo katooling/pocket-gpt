@@ -1,6 +1,6 @@
 # Product Playbook
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Mission
 
@@ -23,6 +23,7 @@ Keep MVP scope focused, ensure user-value priority, maintain roadmap clarity, an
 - [x] PROD-07 WP-11 UI story + acceptance governance closed (rerun evidence complete)
 - [x] WP-12 handover ticket packet published for `ENG-12..ENG-17` + `QA-WP12` dispatch
 - [x] PROD-WP12-SIGNOFF complete (ENG-13 closure evidence + QA close recommendation landed)
+- [x] WP-12 close state reaffirmed after ENG-13/QA rerun evidence refresh (2026-03-05)
 - [x] PROD-08 UX feedback taxonomy + intake policy published with pilot usage note
 
 ## What Is In Progress

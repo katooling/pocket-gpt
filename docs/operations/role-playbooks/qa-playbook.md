@@ -23,6 +23,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 - [x] QA-08 WP-11 UI acceptance suite gate completion (`UI-01`..`UI-10` evidence complete)
 - [x] QA-10 weekly UI regression matrix run 01 completed for WP-09 rollout operations
 - [x] QA-WP12 rerun completed with WP-12 close recommendation
+- [x] QA-WP12 post-rerun validation completed after refreshed ENG-13 artifact chain
 
 ## What Is In Progress
 
@@ -43,7 +44,7 @@ Ensure performance, reliability, safety, privacy, and user-facing UX quality gat
 | QA-08 | WP-11 UI acceptance suite (`UI-01`..`UI-10`) | Done (rerun complete; gate closed 2026-03-04) | WP-11 first integrated slice | QA Engineer | `docs/prd/phase-0-prd.md`, `docs/roadmap/mvp-implementation-tracker.md`, `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md` |
 | QA-09 | WP-09 rollout quality checkpoints + beta operations QA support | Done (template packet delivered 2026-03-04) | WP-07, WP-11 | QA Lead | `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-rollout-quality-checkpoints.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`, `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-weekly-rollout-summary-template.md` |
 | QA-10 | Weekly UI regression matrix execution for beta operations | Done (run 01 complete; weekly cadence active) | WP-11, QA-08 | QA Lead | `docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`, `docs/testing/wp-09-ui-regression-matrix.md` |
-| QA-WP12 | Validate backend production runtime closure packet (ENG-12..ENG-17) | Done (rerun executed 2026-03-04; recommendation: close WP-12) | ENG-12, ENG-13, ENG-14, ENG-15, ENG-16, ENG-17 evidence notes | QA Engineer | `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`, `docs/testing/android-dx-and-test-playbook.md`, `docs/testing/test-strategy.md` |
+| QA-WP12 | Validate backend production runtime closure packet (ENG-12..ENG-17) | Done (reruns executed 2026-03-04 and 2026-03-05; recommendation: keep WP-12 closed) | ENG-12, ENG-13, ENG-14, ENG-15, ENG-16, ENG-17 evidence notes | QA Engineer | `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`, `docs/operations/evidence/wp-12/2026-03-05-qa-wp12-closeout-rerun.md`, `docs/testing/android-dx-and-test-playbook.md`, `docs/testing/test-strategy.md` |
 | QA-DX-01 | Validate Stage-2 quick/closure profile behavior + resume artifact integrity | In Progress | DX-01 implementation | QA Engineer | `docs/testing/stage-2-benchmark-runbook.md`, `docs/testing/test-lane-profiles-and-selection.md` |
 | QA-DX-02 | Validate prefix-cache counters, warm-vs-cold deltas, and closure artifact compatibility | In Progress | DX-02 implementation | QA Engineer | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/summary.json`, `docs/testing/stage-2-benchmark-runbook.md` |
 | QA-07 | Voice STT/TTS quality benchmark framework (post-MVP) | Backlog | WP-10 | QA Lead | `docs/roadmap/product-roadmap.md` |

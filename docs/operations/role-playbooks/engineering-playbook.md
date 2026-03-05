@@ -29,6 +29,7 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 - [x] ENG-11A completed: native-runtime truth gate for startup/closure-path checks
 - [x] ENG-12 completed: side-load/manual-internal model distribution with strict verify-before-load hard-block policy
 - [x] ENG-13 completed: native JNI runtime proof and Samsung 0.8B/2B evidence packet
+- [x] ENG-13 rerun completed: refreshed full closure artifact chain on Samsung (`NATIVE_JNI` evidence + runtime validator PASS)
 - [x] ENG-14 completed: Android-native runtime memory backend migration
 - [x] ENG-15 completed: local tool store integration for notes/search/reminders
 - [x] ENG-16 completed: production runtime-backed image path wiring
@@ -64,7 +65,7 @@ Deliver reliable local runtime capability and user-facing MVP experience while p
 | ENG-WP07-SIGNOFF | WP-07 Stage-6 final engineering signoff for go/no-go packet | Done | QA-06, ENG-WP07-S6 | Engineering Lead | `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md` |
 | ENG-11A | Native-runtime truth gate (block closure startup checks on `ADB_FALLBACK`) | Done | WP-11 | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md` |
 | ENG-12 | Side-load model distribution + strict manifest/SHA/provenance hard-block policy | Done | ENG-11A, Product decision note | Runtime Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`, `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md` |
-| ENG-13 | Native JNI runtime proof on Samsung + perf/memory characterization (0.8B/2B) | Done | ENG-11A | Runtime Eng, QA | `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`, `docs/testing/stage-2-benchmark-runbook.md` |
+| ENG-13 | Native JNI runtime proof on Samsung + perf/memory characterization (0.8B/2B) | Done | ENG-11A | Runtime Eng, QA | `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`, `docs/operations/evidence/wp-12/2026-03-05-eng-13-native-runtime-rerun.md`, `docs/testing/stage-2-benchmark-runbook.md` |
 | ENG-13-SUPPORT | Stage-2 closure artifact integrity validator (`NATIVE_JNI`/non-placeholder guard) | Done | ENG-11A | Eng Platform | `scripts/benchmarks/validate_stage2_runtime_evidence.py`, `docs/testing/stage-2-benchmark-runbook.md` |
 | ENG-14 | Replace JVM-JDBC memory path with shared file-backed memory backend | Done | ENG-12 artifact-path contract stable | Core Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md` |
 | ENG-15 | Replace placeholder notes/search/reminder responses with real local stores | Done | ENG-12 artifact-path contract stable | Platform Eng | `docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md` |

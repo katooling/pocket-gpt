@@ -103,6 +103,8 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-17 Android platform network policy wiring/regression checks landed (`docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`)
 - [x] ENG-13 native JNI runtime proof landed with full Samsung `NATIVE_JNI` 0.8B/2B scenario A/B + meminfo artifact chain (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`)
 - [x] QA-WP12 closeout validation packet rerun executed (recommendation: close WP-12) (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`)
+- [x] ENG-13 rerun executed with fresh full closure artifact chain on Samsung (`NATIVE_JNI` 0.8B/2B A/B + runtime validator PASS; strict threshold gate remains a performance follow-up) (`docs/operations/evidence/wp-12/2026-03-05-eng-13-native-runtime-rerun.md`)
+- [x] QA-WP12 rerun validated refreshed ENG-13 artifact chain and reconfirmed WP-12 close recommendation (`docs/operations/evidence/wp-12/2026-03-05-qa-wp12-closeout-rerun.md`)
 - [x] PROD-WP12 final acceptance/signoff complete (`docs/operations/evidence/wp-12/2026-03-04-prod-wp12-final-signoff.md`)
 - [x] WP-12 package closeout complete (ENG-12..ENG-17 + QA-WP12 evidence aligned)
 - [x] MKT-02 external competitor snapshot sourced (ChatGPT/Gemini/Claude) (`docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`)
@@ -184,11 +186,13 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-12 (ENG-11 runtime truth gate): `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`
 - WP-12 (ENG-12 side-load distribution + strict provenance/runtime verification hard-block): `docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`
 - WP-12 (ENG-13 native runtime proof complete on Samsung with `NATIVE_JNI` and 0.8B/2B evidence): `docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`
+- WP-12 (ENG-13 rerun artifact refresh on Samsung with runtime validator PASS): `docs/operations/evidence/wp-12/2026-03-05-eng-13-native-runtime-rerun.md`
 - WP-12 (ENG-14 Android-native runtime memory backend): `docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md`
 - WP-12 (ENG-15 local tool store integration): `docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md`
 - WP-12 (ENG-16 production runtime image path): `docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md`
 - WP-12 (ENG-17 platform network policy wiring): `docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`
 - WP-12 (QA closeout validation packet rerun; recommendation close): `docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`
+- WP-12 (QA closeout rerun validation after ENG-13 artifact refresh): `docs/operations/evidence/wp-12/2026-03-05-qa-wp12-closeout-rerun.md`
 - WP-12 (Product final signoff): `docs/operations/evidence/wp-12/2026-03-04-prod-wp12-final-signoff.md`
 - WP-12 (Product ENG-12 model distribution path + provenance decision): `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
 - WP-12 (Handover ticket packet for ENG-12..ENG-17 + QA closeout): `docs/operations/wp-12-handover-ticket-packet.md`
