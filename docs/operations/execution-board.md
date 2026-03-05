@@ -107,6 +107,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] ENG-P1 model manager phase-2 implemented (download/progress/retry/storage controls/versioned installs + manual activation policy) (`docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
 - [x] UX-P1 recovery copy refinement implemented for checksum/provenance/runtime-compatibility failures (`docs/ux/error-recovery-guide.md`, `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
 - [x] UI-P1 NotReady/Error flow polish implemented (CTA hierarchy + transition feedback after import/download/refresh/activate) (`docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
+- [x] WP-13 wireless device lane rerun complete (`android-instrumented` + `maestro` on attached wireless device) (`docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`)
 - [x] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
 - [x] TEST-QA-02 release-promotion checklist update with instrumentation/Maestro pass-id requirements (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`)
 - [x] TEST-PROD-01 WP-13 usability gate packet operational template publication (`docs/operations/wp-13-usability-gate-packet-template.md`)
@@ -123,7 +124,7 @@ All teams should update status here first, then mirror updates in role playbooks
    - WP-12 implementation tickets `ENG-12`..`ENG-17` are complete with dated evidence.
    - Track post-closure performance optimization follow-ups from ENG-13 threshold report (first-token latency).
    - `ENG-18` is complete with accessibility/error-state hardening evidence (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`).
-   - P1 model manager phase-2 delivery is implemented under flavor-gated download channel (`standard` offline-safe default, `internalDownload` network-enabled); device-lane rerun evidence is pending attached hardware.
+   - P1 model manager phase-2 delivery is implemented under flavor-gated download channel (`standard` offline-safe default, `internalDownload` network-enabled) with wireless device rerun evidence attached.
 2. QA:
    - QA-08 acceptance gate is complete; continue QA-09 weekly triage/promotion/signal cadence.
    - `QA-WP12` closeout rerun is complete with close recommendation.
@@ -204,6 +205,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-13 (Usability gate run-01 operational packet): `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
 - WP-13 (Engineering chat layout hardening + viewport regression guard): `docs/operations/evidence/wp-13/2026-03-05-eng-chat-layout-hardening.md`
 - WP-13 (Engineering P1 model manager phase-2 + recovery UX/UI closure): `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`
+- WP-13 (QA/Engineering wireless rerun for device lanes `android-instrumented` + `maestro`): `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`
 
 ## Dependency Flow
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import tempfile
 import time
@@ -9,12 +11,17 @@ from pathlib import Path
 from tools.devctl.config_models import load_devctl_configs
 from tools.devctl.lanes import (
     RuntimeContext,
+    JourneyStepResult,
     _normalize_test_mode,
     _parse_journey_args,
+    _parse_package_uid,
+    _resolve_available_instrumentation_runner,
     _parse_stage2_args,
+    _run_device_health_preflight,
     _select_gradle_tasks_for_changed_files,
     _ensure_serial,
     _evaluate_loop_output,
+    _write_journey_report,
     build_artifact_dir,
     dispatch_lane,
     lane_stage2,
@@ -210,6 +217,7 @@ class LanesTest(unittest.TestCase):
 
         original_which = lanes.shutil.which
         original_prepare = lanes.prepare_real_runtime_env
+        original_health_preflight = lanes._run_device_health_preflight
         issued_commands: list[list[str]] = []
         configs = load_devctl_configs(REPO_ROOT)
         ensure_command = configs.device.preflight.ensure_device_command
@@ -242,17 +250,188 @@ class LanesTest(unittest.TestCase):
         try:
             lanes.shutil.which = lambda name: "/usr/bin/maestro" if name == "maestro" else None
             lanes.prepare_real_runtime_env = fake_prepare
+            lanes._run_device_health_preflight = lambda *_args, **_kwargs: None
             context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
             lane_maestro([], context)
         finally:
             lanes.shutil.which = original_which
             lanes.prepare_real_runtime_env = original_prepare
+            lanes._run_device_health_preflight = original_health_preflight
 
         maestro_calls = [cmd for cmd in issued_commands if cmd and cmd[0] == "/usr/bin/maestro"]
         self.assertGreaterEqual(len(maestro_calls), 1)
         for call in maestro_calls:
             self.assertEqual("--device", call[1])
             self.assertEqual("SER123", call[2])
+
+    def test_parse_package_uid(self) -> None:
+        self.assertEqual(10635, _parse_package_uid("pkgFlags=[ HAS_CODE ]\nuserId=10635\ngids=[3003]"))
+        self.assertIsNone(_parse_package_uid("pkgFlags=[ HAS_CODE ]\ngids=[3003]"))
+
+    def test_resolve_available_instrumentation_runner_prefers_target_match(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+
+        class Result:
+            def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        def fake_run(command, **_kwargs):
+            if list(command) == ["adb", "-s", "SER123", "shell", "pm", "list", "instrumentation"]:
+                return Result(
+                    stdout=(
+                        "instrumentation:com.other.app.test/androidx.test.runner.AndroidJUnitRunner "
+                        "(target=com.other.app)\n"
+                        "instrumentation:com.pocketagent.android.standard.test/"
+                        "androidx.test.runner.AndroidJUnitRunner "
+                        "(target=com.pocketagent.android.standard)\n"
+                    )
+                )
+            return Result()
+
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+        resolved = _resolve_available_instrumentation_runner(
+            context=context,
+            serial="SER123",
+            preferred_runner="com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner",
+            app_package="com.pocketagent.android",
+        )
+        self.assertEqual(
+            "com.pocketagent.android.standard.test/androidx.test.runner.AndroidJUnitRunner",
+            resolved,
+        )
+
+    def test_prepare_real_runtime_env_skips_push_when_remote_size_matches(self) -> None:
+        from tools.devctl import lanes
+
+        original_resolve = lanes._resolve_real_runtime_model_paths
+        original_run_instrumentation = lanes._run_instrumentation_class
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = Path(tmp)
+                model_0_8b = tmp_path / "Qwen3.5-0.8B-Q4_0.gguf"
+                model_2b = tmp_path / "Qwen3.5-2B-Q4_0.gguf"
+                model_0_8b.write_bytes(b"abc")
+                model_2b.write_bytes(b"12345")
+
+                lanes._resolve_real_runtime_model_paths = lambda _context: {
+                    "qwen3.5-0.8b-q4": str(model_0_8b),
+                    "qwen3.5-2b-q4": str(model_2b),
+                }
+                lanes._run_instrumentation_class = lambda **_kwargs: subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="ok",
+                    stderr="",
+                )
+
+                configs = load_devctl_configs(REPO_ROOT)
+                issued_commands: list[list[str]] = []
+
+                class Result:
+                    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                        self.returncode = returncode
+                        self.stdout = stdout
+                        self.stderr = stderr
+
+                def fake_run(command, **_kwargs):
+                    cmd = list(command)
+                    issued_commands.append(cmd)
+                    if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:7] == ["pm", "list", "instrumentation"]:
+                        return Result(
+                            stdout=(
+                                "instrumentation:com.pocketagent.android.standard.test/"
+                                "androidx.test.runner.AndroidJUnitRunner "
+                                "(target=com.pocketagent.android.standard)\n"
+                            )
+                        )
+                    if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:6] == ["sh", "-c"]:
+                        script = cmd[6]
+                        if "qwen3.5-0.8b-q4.gguf" in script:
+                            return Result(stdout="3\n")
+                        if "qwen3.5-2b-q4.gguf" in script:
+                            return Result(stdout="5\n")
+                        return Result(stdout="")
+                    return Result()
+
+                context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+                prepared = lanes.prepare_real_runtime_env(context, "SER123")
+
+                model_push_calls = [
+                    cmd
+                    for cmd in issued_commands
+                    if len(cmd) >= 4 and cmd[:4] == ["adb", "-s", "SER123", "push"]
+                ]
+                self.assertEqual([], model_push_calls)
+                self.assertEqual(
+                    "com.pocketagent.android.standard.test/androidx.test.runner.AndroidJUnitRunner",
+                    prepared.instrumentation_runner,
+                )
+        finally:
+            lanes._resolve_real_runtime_model_paths = original_resolve
+            lanes._run_instrumentation_class = original_run_instrumentation
+
+    def test_run_device_health_preflight_happy_path(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+
+        class Result:
+            def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        def fake_run(command, **_kwargs):
+            cmd = list(command)
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:] == ["df", "/data"]:
+                return Result(stdout="Filesystem 1K-blocks Used Available Use% Mounted on\n/data 100 40 60 40% /data\n")
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:8] == ["pm", "list", "packages", "--user"]:
+                package = cmd[-1]
+                return Result(stdout=f"package:{package}\n")
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:6] == ["dumpsys", "package"]:
+                return Result(stdout="Packages:\n  userId=10635\n")
+            return Result()
+
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+        _run_device_health_preflight(context, "SER123")
+
+    def test_write_journey_report_includes_owner_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "journey-report.json"
+            summary_path = Path(tmp) / "journey-summary.md"
+            old_owner = os.environ.get("POCKETGPT_RUN_OWNER")
+            old_host = os.environ.get("HOSTNAME")
+            try:
+                os.environ["POCKETGPT_RUN_OWNER"] = "qa-owner"
+                os.environ["HOSTNAME"] = "qa-host"
+                _write_journey_report(
+                    report_path=report_path,
+                    summary_path=summary_path,
+                    serial="SER123",
+                    steps=[
+                        JourneyStepResult(
+                            name="run-01:instrumentation",
+                            status="passed",
+                            duration_seconds=1.23,
+                        ),
+                    ],
+                )
+            finally:
+                if old_owner is None:
+                    os.environ.pop("POCKETGPT_RUN_OWNER", None)
+                else:
+                    os.environ["POCKETGPT_RUN_OWNER"] = old_owner
+                if old_host is None:
+                    os.environ.pop("HOSTNAME", None)
+                else:
+                    os.environ["HOSTNAME"] = old_host
+
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual("qa-owner", payload["run_owner"])
+            self.assertEqual("qa-host", payload["run_host"])
+            summary = summary_path.read_text(encoding="utf-8")
+            self.assertIn("Run owner: `qa-owner`", summary)
+            self.assertIn("Run host: `qa-host`", summary)
 
     def test_device_lock_is_reentrant_for_same_process(self) -> None:
         from tools.devctl import lanes

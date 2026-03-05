@@ -23,6 +23,7 @@ This section is the project operating system for cross-functional execution.
 - `evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
 - `evidence/wp-13/2026-03-05-eng-chat-layout-hardening.md`
 - `evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`
+- `evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`
 - `eng-13-unblock-checklist.md`
 - `role-playbooks/engineering-playbook.md`
 - `role-playbooks/product-playbook.md`

@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -51,6 +52,7 @@ class RealRuntimePreparedEnv:
     serial: str
     model_device_paths_by_id: dict[str, str]
     model_host_paths_by_id: dict[str, str]
+    instrumentation_runner: str | None = None
 
 
 @dataclass
@@ -66,6 +68,10 @@ class JourneyStepResult:
 
 def _now_stamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+_DEFAULT_HEALTH_APP_PACKAGE = "com.pocketagent.android"
+_DEFAULT_HEALTH_TEST_PACKAGE = "com.pocketagent.android.test"
 
 
 def _append_native_build_flag(command: Sequence[str]) -> list[str]:
@@ -264,6 +270,117 @@ def _validate_required_device_props(context: RuntimeContext, serial: str) -> Non
         raise DevctlError("DEVICE_ERROR", f"Required device properties are unavailable: {', '.join(missing)}")
 
 
+def _parse_package_uid(dumpsys_text: str) -> int | None:
+    match = re.search(r"\buserId=(\d+)\b", dumpsys_text)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _run_device_health_preflight(
+    context: RuntimeContext,
+    serial: str,
+    *,
+    app_package: str = _DEFAULT_HEALTH_APP_PACKAGE,
+    test_package: str = _DEFAULT_HEALTH_TEST_PACKAGE,
+) -> None:
+    print_step("Running device health preflight (wake/unlock/storage/package checks).")
+
+    context.run(["adb", "-s", serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"], check=False, env=context.env)
+    context.run(["adb", "-s", serial, "shell", "wm", "dismiss-keyguard"], check=False, env=context.env)
+
+    storage = context.run(
+        ["adb", "-s", serial, "shell", "df", "/data"],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if storage.returncode != 0:
+        stderr = (storage.stderr or "").strip()
+        raise DevctlError("DEVICE_ERROR", f"Failed to query device storage health via df /data.\n{stderr}")
+
+    usage_values = [int(match.group(1)) for match in re.finditer(r"(\d+)%", storage.stdout or "")]
+    if not usage_values:
+        raise DevctlError(
+            "DEVICE_ERROR",
+            "Unable to parse /data usage from `adb shell df /data` output during preflight.",
+        )
+    usage = usage_values[-1]
+    if usage >= 98:
+        raise DevctlError(
+            "DEVICE_ERROR",
+            f"Device /data usage is too high ({usage}%). Free up space before running lanes.",
+        )
+
+    health_dir = f"/sdcard/Android/media/{app_package}/devctl-health"
+    _ensure_remote_dir(
+        context=context,
+        serial=serial,
+        path=health_dir,
+        failure_label="Device external storage preflight failed while creating runtime media path.",
+    )
+
+    probe_local = Path(tempfile.gettempdir()) / f"devctl-probe-{os.getpid()}.txt"
+    probe_remote = f"{health_dir}/probe.txt"
+    probe_local.write_text("preflight\n", encoding="utf-8")
+    try:
+        push_result = context.run(
+            ["adb", "-s", serial, "push", str(probe_local), probe_remote],
+            check=False,
+            capture_output=True,
+            env=context.env,
+        )
+        if push_result.returncode != 0:
+            detail = "\n".join(part for part in [(push_result.stdout or "").strip(), (push_result.stderr or "").strip()] if part)
+            raise DevctlError(
+                "DEVICE_ERROR",
+                "Device external storage preflight failed while writing probe file.\n"
+                f"{detail}",
+            )
+        context.run(
+            ["adb", "-s", serial, "shell", "rm", "-f", probe_remote],
+            check=False,
+            env=context.env,
+        )
+    finally:
+        probe_local.unlink(missing_ok=True)
+
+    for package_name in (app_package, test_package):
+        package_result = context.run(
+            ["adb", "-s", serial, "shell", "pm", "list", "packages", "--user", "0", package_name],
+            check=False,
+            capture_output=True,
+            env=context.env,
+        )
+        if package_result.returncode != 0:
+            stderr = (package_result.stderr or "").strip()
+            raise DevctlError(
+                "DEVICE_ERROR",
+                f"Failed package visibility preflight for {package_name}.\n{stderr}",
+            )
+        listed = f"package:{package_name}" in (package_result.stdout or "")
+        if not listed:
+            continue
+        dumpsys = context.run(
+            ["adb", "-s", serial, "shell", "dumpsys", "package", package_name],
+            check=False,
+            capture_output=True,
+            env=context.env,
+        )
+        if dumpsys.returncode != 0:
+            stderr = (dumpsys.stderr or "").strip()
+            raise DevctlError(
+                "DEVICE_ERROR",
+                f"Failed to inspect installed package owner metadata for {package_name}.\n{stderr}",
+            )
+        uid = _parse_package_uid(dumpsys.stdout or "")
+        if uid is None:
+            raise DevctlError(
+                "DEVICE_ERROR",
+                f"Package {package_name} is installed but userId could not be resolved from dumpsys package output.",
+            )
+
+
 def _resolve_real_runtime_model_paths(context: RuntimeContext) -> dict[str, str]:
     real_runtime_cfg = context.configs.lanes.lanes.real_runtime
     roots = [Path(root).expanduser() for root in real_runtime_cfg.cache_root_candidates]
@@ -332,6 +449,112 @@ def _run_instrumentation_class(
     return result
 
 
+def _ensure_remote_dir(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    path: str,
+    failure_label: str,
+) -> None:
+    mkdir_result = context.run(
+        ["adb", "-s", serial, "shell", "mkdir", "-p", path],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if mkdir_result.returncode == 0:
+        return
+
+    # Some devices intermittently return EBUSY on MediaProvider-backed paths
+    # even though the directory exists and is writable.
+    exists_result = context.run(
+        ["adb", "-s", serial, "shell", "ls", "-ld", path],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if exists_result.returncode == 0:
+        return
+
+    detail = "\n".join(
+        part for part in [(mkdir_result.stdout or "").strip(), (mkdir_result.stderr or "").strip()] if part
+    )
+    raise DevctlError("DEVICE_ERROR", f"{failure_label}\n{detail}")
+
+
+def _shell_single_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _remote_file_size_bytes(context: RuntimeContext, serial: str, path: str) -> int | None:
+    # Use sh+wc to avoid dependence on toybox stat variants across devices.
+    quoted = _shell_single_quote(path)
+    probe = context.run(
+        ["adb", "-s", serial, "shell", "sh", "-c", f"if [ -f {quoted} ]; then wc -c < {quoted}; fi"],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if probe.returncode != 0:
+        return None
+
+    output = (probe.stdout or "").strip()
+    if not output:
+        return None
+
+    last_line = output.splitlines()[-1].strip()
+    try:
+        return int(last_line)
+    except ValueError:
+        return None
+
+
+def _resolve_available_instrumentation_runner(
+    *,
+    context: RuntimeContext,
+    serial: str,
+    preferred_runner: str,
+    app_package: str,
+) -> str:
+    listings = context.run(
+        ["adb", "-s", serial, "shell", "pm", "list", "instrumentation"],
+        check=False,
+        capture_output=True,
+        env=context.env,
+    )
+    if listings.returncode != 0:
+        return preferred_runner
+
+    parsed: list[tuple[str, str]] = []
+    for raw_line in (listings.stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("instrumentation:"):
+            continue
+        runner_match = re.search(r"^instrumentation:([^\s]+)", line)
+        if runner_match is None:
+            continue
+        runner = runner_match.group(1)
+        target_match = re.search(r"\(target=([^)]+)\)", line)
+        target = target_match.group(1) if target_match is not None else ""
+        parsed.append((runner, target))
+
+    if not parsed:
+        return preferred_runner
+
+    if any(runner == preferred_runner for runner, _ in parsed):
+        return preferred_runner
+
+    for runner, target in parsed:
+        if target == app_package or target.startswith(f"{app_package}."):
+            return runner
+
+    for runner, _ in parsed:
+        if runner.startswith(f"{app_package}."):
+            return runner
+
+    return parsed[0][0]
+
+
 def prepare_real_runtime_env(
     context: RuntimeContext,
     device_serial: str,
@@ -341,15 +564,25 @@ def prepare_real_runtime_env(
     model_host_paths_by_id = _resolve_real_runtime_model_paths(context)
     model_device_paths_by_id: dict[str, str] = {}
 
-    context.run(
-        ["adb", "-s", device_serial, "shell", "mkdir", "-p", real_runtime_cfg.device_model_dir],
-        check=True,
-        env=context.env,
+    _ensure_remote_dir(
+        context=context,
+        serial=device_serial,
+        path=real_runtime_cfg.device_model_dir,
+        failure_label="Failed to prepare remote model directory.",
     )
 
     for model in real_runtime_cfg.models:
         host_path = model_host_paths_by_id[model.model_id]
         device_path = f"{real_runtime_cfg.device_model_dir.rstrip('/')}/{model.device_file_name}"
+        host_size = Path(host_path).stat().st_size
+        remote_size = _remote_file_size_bytes(context, device_serial, device_path)
+        if remote_size == host_size:
+            print_step(
+                f"Model {model.model_id} already present at {device_path} with matching size; skipping push."
+            )
+            model_device_paths_by_id[model.model_id] = device_path
+            continue
+
         print_step(f"Pushing {model.model_id} to device path {device_path}")
         for attempt in range(2):
             if attempt > 0:
@@ -357,10 +590,11 @@ def prepare_real_runtime_env(
                     f"Retrying push for {model.model_id} after ensuring remote directory exists "
                     f"(attempt {attempt + 1}/2)."
                 )
-            context.run(
-                ["adb", "-s", device_serial, "shell", "mkdir", "-p", real_runtime_cfg.device_model_dir],
-                check=True,
-                env=context.env,
+            _ensure_remote_dir(
+                context=context,
+                serial=device_serial,
+                path=real_runtime_cfg.device_model_dir,
+                failure_label="Failed to ensure remote model directory before push.",
             )
             result = context.run(
                 ["adb", "-s", device_serial, "push", host_path, device_path],
@@ -382,6 +616,12 @@ def prepare_real_runtime_env(
             time.sleep(1.0)
         model_device_paths_by_id[model.model_id] = device_path
 
+    instrumentation_runner = _resolve_available_instrumentation_runner(
+        context=context,
+        serial=device_serial,
+        preferred_runner=real_runtime_cfg.instrumentation_runner,
+        app_package=real_runtime_cfg.app_package,
+    )
     runner_args = _instrumentation_args_from_model_paths(model_device_paths_by_id)
     provisioning_args = dict(runner_args)
     provisioning_args["stage2_enable_provisioning_test"] = "true"
@@ -389,7 +629,7 @@ def prepare_real_runtime_env(
         context=context,
         serial=device_serial,
         test_class=real_runtime_cfg.provisioning_test_class,
-        runner=real_runtime_cfg.instrumentation_runner,
+        runner=instrumentation_runner,
         args=provisioning_args,
         timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
     )
@@ -398,6 +638,7 @@ def prepare_real_runtime_env(
         serial=device_serial,
         model_device_paths_by_id=model_device_paths_by_id,
         model_host_paths_by_id=model_host_paths_by_id,
+        instrumentation_runner=instrumentation_runner,
     )
 
     if artifact_root is not None:
@@ -410,6 +651,7 @@ def prepare_real_runtime_env(
                     "prepared_at": datetime.now().isoformat(timespec="seconds"),
                     "model_host_paths_by_id": model_host_paths_by_id,
                     "model_device_paths_by_id": model_device_paths_by_id,
+                    "instrumentation_runner": instrumentation_runner,
                 },
                 indent=2,
             )
@@ -606,9 +848,13 @@ def _write_journey_report(
     serial: str,
     steps: Sequence[JourneyStepResult],
 ) -> None:
+    run_owner = os.environ.get("POCKETGPT_RUN_OWNER") or os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
+    run_host = os.environ.get("HOSTNAME") or os.uname().nodename
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "serial": serial,
+        "run_owner": run_owner,
+        "run_host": run_host,
         "steps": [
             {
                 "name": step.name,
@@ -629,6 +875,8 @@ def _write_journey_report(
         "# Journey Summary",
         "",
         f"- Device: `{serial}`",
+        f"- Run owner: `{run_owner}`",
+        f"- Run host: `{run_host}`",
         f"- Generated: `{payload['generated_at']}`",
         "",
         "| Step | Status | Duration (s) |",
@@ -870,6 +1118,7 @@ def lane_android_instrumented(raw_args: Sequence[str], context: RuntimeContext, 
 
     serial = _ensure_serial(context)
     with _device_lock(serial, owner="lane:android-instrumented"):
+        _run_device_health_preflight(context, serial)
         lane_cfg = context.configs.lanes.lanes.android_instrumented
         artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "android-instrumented")
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -968,11 +1217,18 @@ def lane_maestro(raw_args: Sequence[str], context: RuntimeContext, strict: bool 
     with _device_lock(serial, owner="lane:maestro"):
         lane_cfg = context.configs.lanes.lanes.maestro
         real_runtime_cfg = context.configs.lanes.lanes.real_runtime
+        _run_device_health_preflight(context, serial, app_package=real_runtime_cfg.app_package)
         artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "maestro")
         artifact_root.mkdir(parents=True, exist_ok=True)
         debug_root = artifact_root / real_runtime_cfg.maestro_debug_dir_name
         debug_root.mkdir(parents=True, exist_ok=True)
         print_step(f"maestro artifacts: {artifact_root}")
+
+        # Ensure instrumentation package exists before real-runtime provisioning sanity probe.
+        install_test_command = _append_native_build_flag(
+            ["./gradlew", "--no-daemon", ":apps:mobile-android:installDebugAndroidTest"],
+        )
+        context.run(install_test_command, check=True, env=context.env)
 
         for command in lane_cfg.preflight_commands:
             prepared = _append_native_build_flag(command)
@@ -1022,6 +1278,7 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
     serial = _ensure_serial(context)
     with _device_lock(serial, owner="lane:journey"):
         real_runtime_cfg = context.configs.lanes.lanes.real_runtime
+        _run_device_health_preflight(context, serial, app_package=real_runtime_cfg.app_package)
         artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "journey")
         artifact_root.mkdir(parents=True, exist_ok=True)
         print_step(f"journey artifacts: {artifact_root}")
@@ -1052,7 +1309,7 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
                     context=context,
                     serial=serial,
                     test_class=real_runtime_cfg.journey_test_class,
-                    runner=real_runtime_cfg.instrumentation_runner,
+                    runner=preflight.instrumentation_runner or real_runtime_cfg.instrumentation_runner,
                     args=instrumentation_args,
                     timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
                 )
@@ -1125,6 +1382,7 @@ def lane_device(raw_args: Sequence[str], context: RuntimeContext) -> None:
     parsed = parse_device_lane_args(raw_args, lane_cfg.default_scenario_command)
     serial = _ensure_serial(context)
     with _device_lock(serial, owner="lane:device"):
+        _run_device_health_preflight(context, serial)
         _validate_required_device_props(context, serial)
 
         date_value = datetime.now().strftime("%Y-%m-%d")
