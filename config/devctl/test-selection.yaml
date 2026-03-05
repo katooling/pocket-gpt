@@ -1,0 +1,48 @@
+defaults:
+  fallback_profile: core
+
+rules:
+  - pattern: packages/app-runtime/**
+    gradle_tasks:
+      - :packages:app-runtime:test
+
+  - pattern: packages/native-bridge/**
+    gradle_tasks:
+      - :packages:native-bridge:test
+
+  - pattern: packages/memory/**
+    gradle_tasks:
+      - :packages:memory:test
+
+  - pattern: packages/core-domain/**
+    gradle_tasks:
+      - :packages:core-domain:test
+
+  - pattern: apps/mobile-android/src/main/cpp/**
+    gradle_tasks:
+      - :packages:native-bridge:test
+    recommended_lanes:
+      - "stage2 --profile quick --device <device-id>"
+
+  - pattern: apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/**
+    include_android_unit: true
+    gradle_tasks:
+      - :apps:mobile-android:testDebugUnitTest
+    recommended_lanes:
+      - android-instrumented
+
+  - pattern: tools/devctl/**
+    gradle_tasks:
+      - :packages:core-domain:test
+
+  - pattern: scripts/android/**
+    recommended_lanes:
+      - "stage2 --profile quick --device <device-id>"
+
+  - pattern: scripts/dev/**
+    gradle_tasks:
+      - :packages:core-domain:test
+
+  - pattern: config/devctl/**
+    gradle_tasks:
+      - :packages:core-domain:test

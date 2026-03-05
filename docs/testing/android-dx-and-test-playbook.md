@@ -28,6 +28,13 @@ Use only commands documented in `scripts/dev/README.md` for:
 4. Framework lanes (`android-instrumented`, `maestro`)
 5. Governance checks (`docs-drift-check`, `evidence-check`)
 
+Stage-2 profile examples:
+
+```bash
+bash scripts/dev/bench.sh stage2 --profile quick --device <device-id> --models 0.8b --resume --install-mode auto
+bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models both --scenarios both --install-mode auto
+```
+
 ## Device Validation Loop
 
 1. Run `python3 tools/devctl/main.py doctor` and resolve failures.

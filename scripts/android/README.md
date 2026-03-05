@@ -13,8 +13,8 @@ These scripts support repeatable Android device testing for MVP stages.
 - `capture_device_baseline.sh`: captures device + battery + thermal + memory baseline
 - `configure_device_for_benchmark.sh`: benchmark-friendly device settings (`status|apply|reset`)
 - `run_short_loop.sh`: runs any command `N` times and captures crash/OOM signals from logcat
-- `run_stage2_native.sh`: executes real Stage-2 native JNI benchmark runs on-device (model-sweep path keeps a model loaded across Scenario A/B per sweep; cleans stale Stage-2 artifacts; deduplicates metrics; emits 0.8B + 2B + meminfo/logcat artifacts)
-- `provision_sideload_models.sh`: pushes local GGUF models to device storage and prints export-ready side-load env vars
+- `run_stage2_native.sh`: executes real Stage-2 native JNI benchmark runs on-device (supports profile-driven quick/closure execution, partial model/scenario runs, resume manifest, install caching, and run metadata output)
+- `provision_sideload_models.sh`: pushes local GGUF models with SHA-aware skip behavior and emits export-ready env files under `scripts/benchmarks/device-env/`
 
 ## Usage
 
@@ -27,7 +27,7 @@ bash scripts/android/configure_device_for_benchmark.sh status
 bash scripts/android/configure_device_for_benchmark.sh apply
 bash scripts/android/run_short_loop.sh --runs 10 --label wp02 -- bash scripts/dev/verify.sh
 bash scripts/android/provision_sideload_models.sh --device <device-id> --model-0-8b-local <host-path> --model-2b-local <host-path>
-bash scripts/android/run_stage2_native.sh --device <device-id>
+bash scripts/android/run_stage2_native.sh --device <device-id> --profile quick --models 0.8b --scenarios both --resume --install-mode auto
 ```
 
 Fast-iteration runtime controls:
@@ -38,7 +38,14 @@ Fast-iteration runtime controls:
 - `POCKETGPT_STAGE2_MAX_TOKENS_B=<n>`
 - `POCKETGPT_STAGE2_MIN_TOKENS=<n>`
 - `POCKETGPT_STAGE2_WARMUP_MAX_TOKENS=<n>`
+- `POCKETGPT_STAGE2_MODEL_PROVISION_SKIPPED=<0|1|unknown>`
 
 The second parameter in `collect_logcat.sh` is capture duration in seconds.
 
 `run_short_loop.sh` is command-agnostic; use it with the stage command you want to validate.
+
+Caching outputs:
+
+- Model provisioning metadata: `scripts/benchmarks/cache/<device>/model-provision-state.env`
+- APK install metadata: `scripts/benchmarks/cache/<device>/apk-install-state.env`
+- Device export env file: `scripts/benchmarks/device-env/<device>.env`

@@ -14,6 +14,8 @@ class ConfigModelsTest(unittest.TestCase):
         configs = config_models.load_devctl_configs(REPO_ROOT)
         self.assertEqual("./gradlew", configs.lanes.lanes.test.gradle_binary)
         self.assertEqual("scripts/android/ensure_device.sh", configs.device.preflight.ensure_device_command[1])
+        self.assertEqual("merge", configs.test_profiles.defaults.default_profile)
+        self.assertEqual("core", configs.test_profiles.aliases["quick"])
 
     def test_load_devctl_configs_invalid_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -23,6 +25,8 @@ class ConfigModelsTest(unittest.TestCase):
             (config_dir / "lanes.yaml").write_text("lanes: [", encoding="utf-8")
             (config_dir / "device.yaml").write_text("{}", encoding="utf-8")
             (config_dir / "stage2.yaml").write_text("{}", encoding="utf-8")
+            (config_dir / "test-profiles.yaml").write_text("{}", encoding="utf-8")
+            (config_dir / "test-selection.yaml").write_text("{}", encoding="utf-8")
 
             with self.assertRaises(DevctlError) as raised:
                 config_models.load_devctl_configs(root)
@@ -36,6 +40,8 @@ class ConfigModelsTest(unittest.TestCase):
             (config_dir / "lanes.yaml").write_text("lanes: {}", encoding="utf-8")
             (config_dir / "device.yaml").write_text("{}", encoding="utf-8")
             (config_dir / "stage2.yaml").write_text("{}", encoding="utf-8")
+            (config_dir / "test-profiles.yaml").write_text("{}", encoding="utf-8")
+            (config_dir / "test-selection.yaml").write_text("{}", encoding="utf-8")
 
             with self.assertRaises(DevctlError) as raised:
                 config_models.load_devctl_configs(root)

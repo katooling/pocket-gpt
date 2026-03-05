@@ -21,6 +21,8 @@ lanes:
       - :packages:inference-adapters:test
       - :packages:tool-runtime:test
       - :packages:memory:test
+      - :packages:native-bridge:test
+      - :packages:app-runtime:test
       - :apps:mobile-android-host:test
     android_tasks:
       - :apps:mobile-android:testDebugUnitTest

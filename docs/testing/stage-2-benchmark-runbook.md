@@ -28,7 +28,7 @@ Required files:
 ## Recommended Execution
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id>
+bash scripts/dev/bench.sh stage2 --profile closure --device <device-id>
 ```
 
 Runner behavior note:
@@ -36,8 +36,9 @@ Runner behavior note:
 1. `scripts/android/run_stage2_native.sh` executes model-sweep instrumentation.
 2. Each model is loaded once per sweep and reused for Scenario A/B in the same instrumentation invocation.
 3. This reduces repeated load/unload overhead versus per-scenario process restarts.
-4. Runner cleans prior Stage-2 artifacts in the target run directory before each invocation.
+4. Runner supports partial execution (`--models`, `--scenarios`) and resume mode (`--resume`) using run manifest state.
 5. Runner deduplicates captured `STAGE2_METRIC` lines before writing CSV rows.
+6. Runner writes metadata to `stage2-run-meta.env` for summary/evidence generation.
 
 Required environment:
 
@@ -55,7 +56,7 @@ bash scripts/android/provision_sideload_models.sh \
   --model-2b-local <host-path-to-qwen3.5-2b-q4.gguf>
 ```
 
-After run completion, add a human evidence note in `docs/operations/evidence/wp-03/` linking the generated run directory.
+After run completion, runner generates `evidence-draft.md` in the run directory. Promote that draft into the correct `docs/operations/evidence/...` note path and add ticket-specific acceptance mapping.
 
 Validate closure-path artifact integrity before evidence submission:
 
@@ -64,23 +65,43 @@ python3 scripts/benchmarks/validate_stage2_runtime_evidence.py \
   scripts/benchmarks/runs/YYYY-MM-DD/<device-id>
 ```
 
-## Fast Iteration Profile (Engineering)
+## Profiles
+
+### Quick Profile (Engineering Iteration)
 
 Use this profile for local iteration before final closure packet reruns:
 
 ```bash
-export POCKETGPT_STAGE2_SKIP_INSTALL=1
-export POCKETGPT_STAGE2_RUNS=1
-export POCKETGPT_STAGE2_MAX_TOKENS_A=4
-export POCKETGPT_STAGE2_MAX_TOKENS_B=4
-export POCKETGPT_STAGE2_MIN_TOKENS=1
-export POCKETGPT_STAGE2_WARMUP_MAX_TOKENS=0
+bash scripts/dev/bench.sh stage2 \
+  --profile quick \
+  --device <device-id> \
+  --models 0.8b \
+  --scenarios both \
+  --install-mode auto \
+  --resume
 ```
 
-Then run:
+Quick profile characteristics:
+
+1. Defaults to 0.8B model, low token/runs configuration.
+2. Supports partial scenarios (`a` or `b`) for targeted reruns.
+3. Supports resume to avoid repeating completed sweeps.
+4. Uses filtered logcat by default.
+
+### Closure Profile (Gate/Signoff)
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id>
+bash scripts/dev/bench.sh stage2 \
+  --profile closure \
+  --device <device-id> \
+  --models both \
+  --scenarios both \
+  --install-mode auto
 ```
 
-When publishing closure evidence, rerun with closure-approved token/runs settings and include those values in `notes.md`.
+Closure profile requirements:
+
+1. Must produce full artifact contract (`model-2b-metrics.csv`, meminfo snapshots, threshold/runtime reports).
+2. Must pass strict threshold evaluation.
+3. Must pass runtime evidence validator (`NATIVE_JNI` required, `ADB_FALLBACK` forbidden).
+4. Must be linked from dated evidence note under `docs/operations/evidence/...`.

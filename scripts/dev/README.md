@@ -44,14 +44,18 @@ Use this as a quick pre-PR baseline. For broader coverage, run `bash scripts/dev
 ## Standard (CI + Local)
 
 ```bash
-bash scripts/dev/test.sh [full|quick|ci]
+bash scripts/dev/test.sh [fast|core|merge|auto|full|quick|ci]
 ```
 
 Modes:
 
-- `full` (default): clean + module tests (plus Android unit tests when SDK is configured)
-- `quick`: no clean
-- `ci`: CI-safe alias
+- `fast`: changed-file selected Gradle tasks + deterministic lane recommendations output (`build/devctl/recommended-lanes.txt`)
+- `core`: full module unit tests + Android unit tests when SDK is configured, no clean
+- `merge`: clean + full merge gate task set (CI-equivalent)
+- `auto`: changed-file selected tasks with Android unit tests included when rules require them
+- `quick`: compatibility alias for `core`
+- `full`: compatibility alias for `merge`
+- `ci`: compatibility alias for `merge`
 
 Compatibility wrapper:
 
@@ -82,7 +86,7 @@ Examples:
 ## Stage-2 Benchmark Wrapper
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id> [--date YYYY-MM-DD]
+bash scripts/dev/bench.sh stage2 --device <device-id> [--date YYYY-MM-DD] [--profile quick|closure] [--models 0.8b|2b|both] [--scenarios a|b|both] [--resume] [--install-mode auto|force|skip] [--logcat filtered|full] [--evidence-note-path <abs-path>]
 ```
 
 Required environment (device file paths for side-loaded models):
@@ -104,6 +108,7 @@ Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
 8. `logcat.txt`
 9. `notes.md`
 10. `summary.json`
+11. `evidence-draft.md`
 
 Evidence integrity gate:
 
@@ -111,6 +116,24 @@ Evidence integrity gate:
 python3 scripts/benchmarks/validate_stage2_runtime_evidence.py \
   scripts/benchmarks/runs/YYYY-MM-DD/<device-id>
 ```
+
+Profile behavior:
+
+1. `quick`:
+   - defaults to `--models 0.8b`
+   - uses low-run/token defaults for iteration
+   - supports `--resume` and partial model/scenario execution
+   - threshold/runtime reports are still emitted; runtime evidence validator is not enforced as a closure gate
+2. `closure`:
+   - requires `--models both --scenarios both`
+   - enforces strict threshold mode
+   - enforces full runtime evidence validator gate
+
+Install controls:
+
+1. `--install-mode auto`: assemble APKs and skip reinstall when hashes are unchanged
+2. `--install-mode force`: always install app + test APK
+3. `--install-mode skip`: never install in this run
 
 ## Framework Lanes (Direct)
 

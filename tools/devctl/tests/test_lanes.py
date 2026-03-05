@@ -7,6 +7,9 @@ from pathlib import Path
 from tools.devctl.config_models import load_devctl_configs
 from tools.devctl.lanes import (
     RuntimeContext,
+    _normalize_test_mode,
+    _parse_stage2_args,
+    _select_gradle_tasks_for_changed_files,
     _ensure_serial,
     _evaluate_loop_output,
     build_artifact_dir,
@@ -42,6 +45,53 @@ class LanesTest(unittest.TestCase):
         with self.assertRaises(DevctlError) as raised:
             parse_device_lane_args(["--unknown"], ["echo"])
         self.assertEqual("CONFIG_ERROR", raised.exception.code)
+
+    def test_test_profile_aliases_resolve(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=lambda *_a, **_k: None)
+        self.assertEqual("core", _normalize_test_mode("quick", context))
+        self.assertEqual("merge", _normalize_test_mode("ci", context))
+
+    def test_changed_file_selection_maps_tasks_and_lanes(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=lambda *_a, **_k: None)
+        tasks, lanes, include_android = _select_gradle_tasks_for_changed_files(
+            [
+                "packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/NativeJniLlamaCppBridge.kt",
+                "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatScreen.kt",
+            ],
+            context,
+        )
+        self.assertIn(":packages:native-bridge:test", tasks)
+        self.assertIn(":apps:mobile-android:testDebugUnitTest", tasks)
+        self.assertIn("android-instrumented", lanes)
+        self.assertTrue(include_android)
+
+    def test_stage2_parser_supports_profiles_and_resume(self) -> None:
+        parsed = _parse_stage2_args(
+            [
+                "--device",
+                "SER123",
+                "--profile",
+                "quick",
+                "--models",
+                "0.8b",
+                "--scenarios",
+                "a",
+                "--resume",
+                "--install-mode",
+                "auto",
+                "--logcat",
+                "filtered",
+            ]
+        )
+        self.assertEqual("SER123", parsed.device)
+        self.assertEqual("quick", parsed.profile)
+        self.assertEqual("0.8b", parsed.models)
+        self.assertEqual("a", parsed.scenarios)
+        self.assertTrue(parsed.resume)
+        self.assertEqual("auto", parsed.install_mode)
+        self.assertEqual("filtered", parsed.logcat)
 
     def test_validate_threshold_columns_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

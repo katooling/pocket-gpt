@@ -18,7 +18,7 @@ Last updated: 2026-03-04
 
 1. Unit tests (required on every change)
 2. Module integration tests
-3. UI state/wiring tests (Compose + ViewModel + façade)
+3. UI state/wiring tests (Compose + ViewModel + facade)
 4. Device validation tests (Scenario A/B/C + UI acceptance)
 5. Soak/reliability tests
 
@@ -26,10 +26,12 @@ Last updated: 2026-03-04
 
 | Lane | Owner | Goal | Cadence | Main Commands | Primary Artifacts |
 |---|---|---|---|---|---|
-| Dev fast lane | Engineering | Catch regressions before PR | every change | `bash scripts/dev/test.sh quick` | local test output |
-| Merge gate lane | Engineering + CI | enforce baseline quality gates | every PR | `python3 tools/devctl/main.py lane test ci` + governance checks | CI reports and artifacts |
-| QA device lane | QA | verify real-device UI/runtime behavior | weekly + pre-promotion | `python3 tools/devctl/main.py lane android-instrumented`, `python3 tools/devctl/main.py lane maestro`, `bash scripts/dev/device-test.sh` | weekly QA packets under `docs/operations/evidence/wp-09/` |
-| Runtime proof lane | Engineering + QA | closure-path native runtime evidence | ENG-13/WP-12 closure windows | `bash scripts/dev/bench.sh stage2 --device <id>` + evidence validator | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` |
+| L0 Dev fast lane | Engineering | fast local confidence with changed-file selection | every change | `bash scripts/dev/test.sh fast` | `build/devctl/recommended-lanes.txt`, local test output |
+| L1 Core contracts lane | Engineering | run full module + Android unit safety net | before PR | `bash scripts/dev/test.sh core` | unit test reports |
+| L2 Merge gate lane | Engineering + CI | clean merge gate and governance checks | every PR | `bash scripts/dev/test.sh merge` + governance checks | CI reports and artifacts |
+| L3 Android smoke lane | QA + Engineering | device/emulator UI wiring confidence | weekly + pre-promotion | `python3 tools/devctl/main.py lane android-instrumented`, `python3 tools/devctl/main.py lane maestro` | weekly QA packets under `docs/operations/evidence/wp-09/` |
+| L4 Stage-2 quick lane | Engineering | fast native runtime sanity/perf loop | runtime/native edits | `bash scripts/dev/bench.sh stage2 --profile quick --device <id>` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` |
+| L5 Stage-2 closure lane | Engineering + QA | strict closure evidence (native JNI + thresholds + validator) | closure/signoff windows | `bash scripts/dev/bench.sh stage2 --profile closure --device <id>` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` + evidence note |
 | Product usability lane | Product + QA + Design | release decision from usability signals | beta cohort windows | WP-13 usability packet workflow | `docs/operations/evidence/wp-13/...` |
 
 ## Core Flow Coverage Matrix (Mandatory)
@@ -92,11 +94,12 @@ CI note:
 
 ## Runtime Lane Optimization Rules
 
-1. Prefer model-sweep execution that reuses a loaded model for Scenario A/B in one instrumentation invocation.
-2. For local iteration, use `POCKETGPT_STAGE2_SKIP_INSTALL=1` after APKs are already installed.
-3. Use low-run/token profile for rapid iteration (`RUNS=1`, `MAX_TOKENS_A/B=4`, `WARMUP_MAX_TOKENS=0`); rerun closure packet with closure-approved profile before evidence signoff.
-4. Keep Stage-2 env contracts stable (`POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH`, `POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH`) across fast and closure profiles.
-5. Run directory must be fresh/clean per invocation to prevent stale artifact contamination in validator outcomes.
+1. Prefer model-sweep execution that reuses a loaded model for Scenario A/B in one instrumentation invocation (`keepModelLoaded=true` path).
+2. Use profile-driven Stage-2 commands (`quick` for iteration, `closure` for signoff) instead of ad-hoc env toggles.
+3. Use `--install-mode auto` to skip reinstall when app/test APK hashes are unchanged.
+4. Use `--resume` for interrupted runs; runner uses a per-run manifest to skip already completed model/scenario sweeps.
+5. Keep Stage-2 env contracts stable (`POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH`, `POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH`) across quick and closure profiles.
+6. Treat closure lane as strict-only: requires `--models both --scenarios both`, strict thresholds, and runtime evidence validator PASS.
 
 ## Automation Boundary (CI vs Human)
 
@@ -129,14 +132,9 @@ Human-required checkpoints:
 1. Espresso instrumentation lane: `python3 tools/devctl/main.py lane android-instrumented`
 2. Maestro E2E lane: `python3 tools/devctl/main.py lane maestro`
 
-## Non-Blocking Sequencing Rule (ENG-13 Safe)
+## Lane Selection Policy
 
-1. Test improvements can proceed in parallel with ENG-13 as long as they do not change:
-   - Stage-2 command contracts
-   - runtime evidence validator rules
-   - side-load model env variable contracts
-2. During ENG-13 active execution, prioritize:
-   - unit and instrumentation assertions
-   - docs and checklist alignment
-   - QA/Product gate packet quality
-3. Defer runtime-lane contract changes until ENG-13 closure evidence is accepted.
+1. `fast` and `auto` rely on changed-file rules from `config/devctl/test-selection.yaml`.
+2. Any change under `packages/native-bridge/**` or `apps/mobile-android/src/main/cpp/**` must trigger Stage-2 quick lane before merge.
+3. Any UI layer change under `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/**` must trigger Android instrumented smoke lane before merge.
+4. Closure evidence is only valid from Stage-2 closure profile artifacts generated in the same run directory and date window.

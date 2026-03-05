@@ -7,6 +7,7 @@ Canonical ownership by concern:
 3. Android device lane execution details: `docs/testing/android-dx-and-test-playbook.md`
 4. Maestro flow assets: `tests/maestro/`
 5. Weekly QA UI regression matrix (WP-09 + WP-13 UX extension): `docs/testing/wp-09-ui-regression-matrix.md`
+6. Lane profiles and changed-file selection matrix: `docs/testing/test-lane-profiles-and-selection.md`
 
 Pointer-only companions:
 

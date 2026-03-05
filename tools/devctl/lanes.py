@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fnmatch
 import json
 import os
 import re
@@ -42,21 +43,17 @@ def build_artifact_dir(template: str, date: str, device: str, label: str, stamp:
     return REPO_ROOT / template.format(date=date, device=device, label=label, stamp=stamp)
 
 
-def build_gradle_test_command(mode: str, android_configured: bool, lane_cfg: object) -> list[str]:
-    if mode not in {"full", "quick", "ci"}:
-        raise DevctlError("CONFIG_ERROR", f"Unsupported test mode: {mode}")
-
-    gradle_binary = getattr(lane_cfg, "gradle_binary")
-    gradle_flags = list(getattr(lane_cfg, "gradle_flags"))
-    common_tasks = list(getattr(lane_cfg, "common_tasks"))
-    android_tasks = list(getattr(lane_cfg, "android_tasks"))
-
+def build_gradle_test_command(
+    *,
+    gradle_binary: str,
+    gradle_flags: Sequence[str],
+    gradle_tasks: Sequence[str],
+    clean: bool,
+) -> list[str]:
     command = [gradle_binary, *gradle_flags]
-    if mode in {"full", "ci"}:
+    if clean:
         command.append("clean")
-    command.extend(common_tasks)
-    if android_configured:
-        command.extend(android_tasks)
+    command.extend(list(gradle_tasks))
     return command
 
 
@@ -258,12 +255,152 @@ def parse_device_lane_args(raw_args: Sequence[str], default_scenario_command: Se
     )
 
 
+def _normalize_test_mode(mode: str, context: RuntimeContext) -> str:
+    canonical = mode.strip().lower()
+    aliases = context.configs.test_profiles.aliases
+    canonical = aliases.get(canonical, canonical)
+    if canonical not in context.configs.test_profiles.profiles:
+        allowed = sorted(set(context.configs.test_profiles.profiles.keys()) | set(aliases.keys()))
+        raise DevctlError("CONFIG_ERROR", f"Unsupported test mode '{mode}'. Allowed: {', '.join(allowed)}")
+    return canonical
+
+
+def _collect_changed_files(context: RuntimeContext) -> list[str]:
+    result = context.run(["git", "status", "--porcelain"], check=False, capture_output=True, env=context.env)
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        raise DevctlError("CONFIG_ERROR", f"Unable to detect changed files via git status.\n{stderr}")
+
+    changed: list[str] = []
+    for line in (result.stdout or "").splitlines():
+        if not line:
+            continue
+        raw_path = line[3:].strip()
+        if " -> " in raw_path:
+            raw_path = raw_path.split(" -> ", 1)[1].strip()
+        if raw_path:
+            changed.append(raw_path)
+    return sorted(set(changed))
+
+
+def _path_matches(path: str, pattern: str) -> bool:
+    normalized = path.replace("\\", "/")
+    normalized_pattern = pattern.replace("\\", "/")
+    return fnmatch.fnmatch(normalized, normalized_pattern)
+
+
+def _select_gradle_tasks_for_changed_files(
+    changed_files: Sequence[str],
+    context: RuntimeContext,
+) -> tuple[list[str], list[str], bool]:
+    selected_tasks: set[str] = set()
+    recommended_lanes: set[str] = set()
+    include_android = False
+
+    rules = context.configs.test_selection.rules
+    for path in changed_files:
+        for rule in rules:
+            if _path_matches(path, rule.pattern):
+                selected_tasks.update(rule.gradle_tasks)
+                recommended_lanes.update(rule.recommended_lanes)
+                include_android = include_android or bool(rule.include_android_unit)
+
+    return sorted(selected_tasks), sorted(recommended_lanes), include_android
+
+
+def _resolve_auto_fallback_profile(context: RuntimeContext) -> str:
+    fallback = context.configs.test_selection.defaults.fallback_profile
+    aliases = context.configs.test_profiles.aliases
+    fallback = aliases.get(fallback, fallback)
+    if fallback not in context.configs.test_profiles.profiles:
+        raise DevctlError("CONFIG_ERROR", f"Unknown fallback profile configured for test auto mode: {fallback}")
+    return fallback
+
+
+def _write_recommendation_file(
+    context: RuntimeContext,
+    profile: str,
+    changed_files: Sequence[str],
+    selected_tasks: Sequence[str],
+    recommended_lanes: Sequence[str],
+) -> Path:
+    rel = context.configs.test_profiles.defaults.recommendation_output
+    output_path = REPO_ROOT / rel
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        "# Devctl Lane Recommendations",
+        "",
+        f"- Generated: {datetime.now().isoformat(timespec='seconds')}",
+        f"- Profile: {profile}",
+        f"- Changed files: {len(changed_files)}",
+        "",
+        "## Changed Files",
+    ]
+    if changed_files:
+        lines.extend([f"- {path}" for path in changed_files])
+    else:
+        lines.append("- (none detected)")
+
+    lines.extend(["", "## Selected Gradle Tasks"])
+    if selected_tasks:
+        lines.extend([f"- `{task}`" for task in selected_tasks])
+    else:
+        lines.append("- (none)")
+
+    lines.extend(["", "## Recommended Follow-up Lanes"])
+    if recommended_lanes:
+        lines.extend([f"- `{lane}`" for lane in recommended_lanes])
+    else:
+        lines.append("- (none)")
+
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return output_path
+
+
+def _load_stage2_run_meta(run_dir: Path) -> dict[str, str]:
+    meta_path = run_dir / "stage2-run-meta.env"
+    if not meta_path.exists():
+        return {}
+    meta: dict[str, str] = {}
+    for line in meta_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        meta[key.strip()] = value.strip()
+    return meta
+
+
+def _read_csv_scenarios(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        scenarios: set[str] = set()
+        for row in reader:
+            scenario = (row.get("scenario") or "").strip().upper()
+            if scenario:
+                scenarios.add(scenario)
+    return scenarios
+
+
+def _write_report(path: Path, text: str) -> None:
+    path.write_text(text.rstrip() + "\n", encoding="utf-8")
+
+
 def lane_test(raw_args: Sequence[str], context: RuntimeContext) -> None:
-    mode = raw_args[0] if raw_args else "full"
+    default_profile = context.configs.test_profiles.defaults.default_profile
+    raw_mode = raw_args[0] if raw_args else default_profile
     if len(raw_args) > 1:
-        raise DevctlError("CONFIG_ERROR", "Usage: devctl lane test [full|quick|ci]")
+        raise DevctlError(
+            "CONFIG_ERROR",
+            "Usage: devctl lane test [fast|core|merge|auto|full|quick|ci]",
+        )
+    mode = _normalize_test_mode(raw_mode, context)
 
     lane_cfg = context.configs.lanes.lanes.test
+    profile_cfg = context.configs.test_profiles.profiles[mode]
 
     for step in lane_cfg.commands:
         if step.name == "python_unit_tests":
@@ -273,7 +410,55 @@ def lane_test(raw_args: Sequence[str], context: RuntimeContext) -> None:
     if not android_configured:
         print_step("Android SDK not configured; running host/JVM test lane only.")
 
-    gradle_command = build_gradle_test_command(mode, android_configured, lane_cfg)
+    gradle_tasks: list[str] = list(lane_cfg.common_tasks)
+    recommended_lanes: list[str] = []
+    changed_files: list[str] = []
+    include_android_from_selection = False
+
+    if profile_cfg.use_changed_selection:
+        changed_files = _collect_changed_files(context)
+        selected_tasks, recommended_lanes, include_android_from_selection = _select_gradle_tasks_for_changed_files(
+            changed_files,
+            context,
+        )
+        if selected_tasks:
+            gradle_tasks = selected_tasks
+        else:
+            fallback = _resolve_auto_fallback_profile(context)
+            gradle_tasks = list(context.configs.test_profiles.profiles[fallback].extra_gradle_tasks) or list(
+                lane_cfg.common_tasks
+            )
+            print_step(
+                f"No changed-file rule matched for profile '{mode}'. Falling back to '{fallback}' Gradle task set."
+            )
+
+        recommendation_path = _write_recommendation_file(
+            context=context,
+            profile=mode,
+            changed_files=changed_files,
+            selected_tasks=gradle_tasks,
+            recommended_lanes=recommended_lanes,
+        )
+        print_step(f"Wrote lane recommendations to {recommendation_path}")
+
+    for extra_task in profile_cfg.extra_gradle_tasks:
+        if extra_task not in gradle_tasks:
+            gradle_tasks.append(extra_task)
+
+    include_android_tasks = profile_cfg.include_android_when_available and android_configured
+    if include_android_from_selection and android_configured:
+        include_android_tasks = True
+    if include_android_tasks:
+        for task in lane_cfg.android_tasks:
+            if task not in gradle_tasks:
+                gradle_tasks.append(task)
+
+    gradle_command = build_gradle_test_command(
+        gradle_binary=lane_cfg.gradle_binary,
+        gradle_flags=lane_cfg.gradle_flags,
+        gradle_tasks=gradle_tasks,
+        clean=bool(profile_cfg.clean),
+    )
     context.run(gradle_command, check=True, env=resolved_env)
 
 
@@ -397,6 +582,13 @@ def _parse_stage2_args(raw_args: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="devctl lane stage2")
     parser.add_argument("--device", required=True)
     parser.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
+    parser.add_argument("--profile", choices={"quick", "closure"}, default="closure")
+    parser.add_argument("--models", choices={"0.8b", "2b", "both"})
+    parser.add_argument("--scenarios", choices={"a", "b", "both"}, default="both")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--install-mode", choices={"auto", "force", "skip"}, default="auto")
+    parser.add_argument("--logcat", choices={"filtered", "full"})
+    parser.add_argument("--evidence-note-path")
     parser.add_argument("--scenario-a")
     parser.add_argument("--scenario-b")
     return parser.parse_args(list(raw_args))
@@ -406,6 +598,17 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
     args = _parse_stage2_args(raw_args)
     lane_cfg = context.configs.lanes.lanes.stage2
     stage2_cfg = context.configs.stage2
+    models = args.models or ("0.8b" if args.profile == "quick" else "both")
+    scenarios = args.scenarios.upper()
+    strict_thresholds = args.profile == "closure"
+    logcat_mode = args.logcat or ("filtered" if args.profile == "quick" else "full")
+    evidence_note_path = Path(args.evidence_note_path).resolve() if args.evidence_note_path else None
+
+    if args.profile == "closure":
+        if models != "both":
+            raise DevctlError("CONFIG_ERROR", "stage2 closure profile requires --models both")
+        if scenarios != "BOTH":
+            raise DevctlError("CONFIG_ERROR", "stage2 closure profile requires --scenarios both")
 
     run_dir = REPO_ROOT / lane_cfg.artifacts.output_dir_template.format(date=args.date, device=args.device)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -419,50 +622,91 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
     logcat_path = run_dir / "logcat.txt"
     notes_path = run_dir / "notes.md"
     summary_path = run_dir / "summary.json"
+    evidence_draft_path = run_dir / "evidence-draft.md"
 
     if args.scenario_a or args.scenario_b:
         print_step("stage2 --scenario-a/--scenario-b overrides are ignored in native closure mode.")
 
+    lane_env = dict(context.env)
+    lane_env["POCKETGPT_STAGE2_STRICT_THRESHOLDS"] = "1" if strict_thresholds else "0"
+
+    native_command = [
+        "bash",
+        "scripts/android/run_stage2_native.sh",
+        "--device",
+        args.device,
+        "--date",
+        args.date,
+        "--run-dir",
+        str(run_dir),
+        "--profile",
+        args.profile,
+        "--models",
+        models,
+        "--scenarios",
+        scenarios.lower(),
+        "--install-mode",
+        args.install_mode,
+        "--logcat",
+        logcat_mode,
+    ]
+    if args.resume:
+        native_command.append("--resume")
+
     context.run(
-        [
-            "bash",
-            "scripts/android/run_stage2_native.sh",
-            "--device",
-            args.device,
-            "--date",
-            args.date,
-            "--run-dir",
-            str(run_dir),
-        ],
+        native_command,
         check=True,
-        env=context.env,
+        env=lane_env,
     )
 
-    validate_threshold_columns(threshold_input_path, stage2_cfg.threshold_csv.columns)
+    threshold_exit_code = 0
+    threshold_output = ""
+    scenarios_seen = _read_csv_scenarios(threshold_input_path)
+    can_run_thresholds = {"A", "B"}.issubset(scenarios_seen)
+    if threshold_input_path.exists():
+        validate_threshold_columns(threshold_input_path, stage2_cfg.threshold_csv.columns)
 
-    threshold_result = context.run(
-        [*lane_cfg.threshold_command, str(threshold_input_path)],
-        check=False,
-        capture_output=True,
-        env=context.env,
-    )
-    threshold_report_path.write_text((threshold_result.stdout or "") + (threshold_result.stderr or ""), encoding="utf-8")
+    if can_run_thresholds:
+        threshold_result = context.run(
+            [*lane_cfg.threshold_command, str(threshold_input_path)],
+            check=False,
+            capture_output=True,
+            env=lane_env,
+        )
+        threshold_exit_code = threshold_result.returncode
+        threshold_output = (threshold_result.stdout or "") + (threshold_result.stderr or "")
+    else:
+        threshold_output = (
+            "Threshold evaluation skipped: partial scenario selection does not include both A and B rows.\n"
+            f"Detected scenarios: {', '.join(sorted(scenarios_seen)) or '(none)'}\n"
+        )
+    _write_report(threshold_report_path, threshold_output)
 
-    runtime_validation_result = context.run(
-        ["python3", "scripts/benchmarks/validate_stage2_runtime_evidence.py", str(run_dir)],
-        check=False,
-        capture_output=True,
-        env=context.env,
-    )
-    runtime_validation_report_path.write_text(
-        (runtime_validation_result.stdout or "") + (runtime_validation_result.stderr or ""),
-        encoding="utf-8",
-    )
+    runtime_exit_code = 0
+    runtime_output = ""
+    if args.profile == "closure":
+        runtime_validation_result = context.run(
+            ["python3", "scripts/benchmarks/validate_stage2_runtime_evidence.py", str(run_dir)],
+            check=False,
+            capture_output=True,
+            env=lane_env,
+        )
+        runtime_exit_code = runtime_validation_result.returncode
+        runtime_output = (runtime_validation_result.stdout or "") + (runtime_validation_result.stderr or "")
+    else:
+        runtime_output = "Runtime evidence validation skipped for quick profile.\n"
+    _write_report(runtime_validation_report_path, runtime_output)
 
+    run_meta = _load_stage2_run_meta(run_dir)
     summary_data = {
         "stage": "stage2",
         "device_id": args.device,
         "run_date": args.date,
+        "profile": args.profile,
+        "models": models,
+        "scenarios": scenarios,
+        "resume_used": args.resume,
+        "install_mode": args.install_mode,
         "run_dir": str(run_dir.relative_to(REPO_ROOT)),
         "scenario_a_csv": str(scenario_a_path.relative_to(REPO_ROOT)),
         "scenario_b_csv": str(scenario_b_path.relative_to(REPO_ROOT)),
@@ -472,28 +716,46 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
         "runtime_evidence_validation_report": str(runtime_validation_report_path.relative_to(REPO_ROOT)),
         "logcat": str(logcat_path.relative_to(REPO_ROOT)),
         "notes": str(notes_path.relative_to(REPO_ROOT)),
+        "evidence_draft": str(evidence_draft_path.relative_to(REPO_ROOT)),
+        "evidence_note_path": str(evidence_note_path) if evidence_note_path else "",
         "summary_json": str(summary_path.relative_to(REPO_ROOT)),
-        "threshold_exit_code": threshold_result.returncode,
-        "runtime_evidence_exit_code": runtime_validation_result.returncode,
+        "threshold_exit_code": threshold_exit_code,
+        "runtime_evidence_exit_code": runtime_exit_code,
+        "strict_thresholds": strict_thresholds,
+        "apk_install_skipped": run_meta.get("STAGE2_APK_INSTALL_SKIPPED", "unknown"),
+        "model_provision_skipped": run_meta.get("STAGE2_MODEL_PROVISION_SKIPPED", "unknown"),
+        "model_load_mode": run_meta.get("STAGE2_MODEL_LOAD_MODE", "warm_within_sweep"),
     }
     filtered = {field: summary_data[field] for field in stage2_cfg.summary_json.fields if field in summary_data}
     summary_path.write_text(json.dumps(filtered, indent=2) + "\n", encoding="utf-8")
 
-    missing_files = [name for name in stage2_cfg.required_files if not (run_dir / name).exists()]
+    evidence_command = [
+        "python3",
+        "tools/devctl/generate_stage2_evidence_draft.py",
+        str(run_dir),
+        "--output",
+        str(evidence_draft_path),
+    ]
+    if evidence_note_path is not None:
+        evidence_command.extend(["--evidence-note-path", str(evidence_note_path)])
+    context.run(evidence_command, check=True, env=lane_env)
+
+    required_files = stage2_cfg.required_files if args.profile == "closure" else stage2_cfg.quick_required_files
+    missing_files = [name for name in required_files if not (run_dir / name).exists()]
     if missing_files:
         raise DevctlError("SCHEMA_ERROR", f"stage2 lane did not produce required file(s): {', '.join(missing_files)}")
 
-    if runtime_validation_result.returncode != 0:
+    if runtime_exit_code != 0:
         raise DevctlError(
             "THRESHOLD_FAIL",
-            f"Runtime evidence validation failed with exit code {runtime_validation_result.returncode}. "
+            f"Runtime evidence validation failed with exit code {runtime_exit_code}. "
             f"See {runtime_validation_report_path}",
         )
 
-    if threshold_result.returncode != 0:
+    if threshold_exit_code != 0:
         raise DevctlError(
             "THRESHOLD_FAIL",
-            f"Threshold evaluation failed with exit code {threshold_result.returncode}. See {threshold_report_path}",
+            f"Threshold evaluation failed with exit code {threshold_exit_code}. See {threshold_report_path}",
         )
 
     print_step(f"Stage-2 benchmark artifacts: {run_dir}")

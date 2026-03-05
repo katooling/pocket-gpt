@@ -13,6 +13,16 @@ required_files:
   - notes.md
   - summary.json
 
+quick_required_files:
+  - scenario-a.csv
+  - scenario-b.csv
+  - stage-2-threshold-input.csv
+  - logcat.txt
+  - notes.md
+  - threshold-report.txt
+  - runtime-evidence-validation.txt
+  - summary.json
+
 threshold_csv:
   columns:
     - scenario
@@ -36,6 +46,17 @@ summary_json:
     - summary_json
     - threshold_exit_code
     - runtime_evidence_exit_code
+    - profile
+    - models
+    - scenarios
+    - resume_used
+    - install_mode
+    - apk_install_skipped
+    - model_provision_skipped
+    - strict_thresholds
+    - model_load_mode
+    - evidence_draft
+    - evidence_note_path
 
 adb_logcat_timeout_seconds: 15
 

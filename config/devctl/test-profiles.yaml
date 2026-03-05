@@ -1,0 +1,26 @@
+defaults:
+  default_profile: merge
+  recommendation_output: build/devctl/recommended-lanes.txt
+
+aliases:
+  quick: core
+  full: merge
+  ci: merge
+
+profiles:
+  fast:
+    clean: false
+    use_changed_selection: true
+    include_android_when_available: false
+  core:
+    clean: false
+    use_changed_selection: false
+    include_android_when_available: true
+  merge:
+    clean: true
+    use_changed_selection: false
+    include_android_when_available: true
+  auto:
+    clean: false
+    use_changed_selection: true
+    include_android_when_available: true

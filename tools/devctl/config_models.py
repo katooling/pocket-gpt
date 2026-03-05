@@ -119,10 +119,45 @@ class TemplatesConfig(_StrictModel):
 
 class Stage2Config(_StrictModel):
     required_files: list[str]
+    quick_required_files: list[str] = Field(default_factory=list)
     threshold_csv: ThresholdCsvConfig
     summary_json: SummaryJsonConfig
     templates: TemplatesConfig
     adb_logcat_timeout_seconds: float = 15.0
+
+
+class TestProfileDefaults(_StrictModel):
+    default_profile: str
+    recommendation_output: str
+
+
+class TestProfileEntry(_StrictModel):
+    clean: bool = False
+    use_changed_selection: bool = False
+    include_android_when_available: bool = True
+    extra_gradle_tasks: list[str] = Field(default_factory=list)
+
+
+class TestProfilesConfig(_StrictModel):
+    defaults: TestProfileDefaults
+    aliases: dict[str, str] = Field(default_factory=dict)
+    profiles: dict[str, TestProfileEntry]
+
+
+class TestSelectionDefaults(_StrictModel):
+    fallback_profile: str = "core"
+
+
+class TestSelectionRule(_StrictModel):
+    pattern: str
+    gradle_tasks: list[str] = Field(default_factory=list)
+    recommended_lanes: list[str] = Field(default_factory=list)
+    include_android_unit: bool = False
+
+
+class TestSelectionConfig(_StrictModel):
+    defaults: TestSelectionDefaults = Field(default_factory=TestSelectionDefaults)
+    rules: list[TestSelectionRule]
 
 
 @dataclass(frozen=True)
@@ -130,6 +165,8 @@ class DevctlConfigs:
     lanes: LanesRoot
     device: DeviceConfig
     stage2: Stage2Config
+    test_profiles: TestProfilesConfig
+    test_selection: TestSelectionConfig
 
 
 def _load_yaml_file(path: Path) -> dict[str, Any]:
@@ -166,13 +203,27 @@ def load_devctl_configs(repo_root: Path = REPO_ROOT) -> DevctlConfigs:
     lanes_path = config_root / "lanes.yaml"
     device_path = config_root / "device.yaml"
     stage2_path = config_root / "stage2.yaml"
+    test_profiles_path = config_root / "test-profiles.yaml"
+    test_selection_path = config_root / "test-selection.yaml"
 
     lanes = _validate_model(LanesRoot, _load_yaml_file(lanes_path), lanes_path)
     device = _validate_model(DeviceConfig, _load_yaml_file(device_path), device_path)
     stage2 = _validate_model(Stage2Config, _load_yaml_file(stage2_path), stage2_path)
+    test_profiles = _validate_model(
+        TestProfilesConfig,
+        _load_yaml_file(test_profiles_path),
+        test_profiles_path,
+    )
+    test_selection = _validate_model(
+        TestSelectionConfig,
+        _load_yaml_file(test_selection_path),
+        test_selection_path,
+    )
 
     return DevctlConfigs(
         lanes=lanes,  # type: ignore[arg-type]
         device=device,  # type: ignore[arg-type]
         stage2=stage2,  # type: ignore[arg-type]
+        test_profiles=test_profiles,  # type: ignore[arg-type]
+        test_selection=test_selection,  # type: ignore[arg-type]
     )
