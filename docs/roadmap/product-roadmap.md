@@ -41,7 +41,7 @@ Scope:
 
 1. iOS runtime slice and parity backlog
 2. Productionization of model artifact lifecycle (download, verify, version, eviction)
-3. SQLite memory backend + migration paths
+3. Shared file-backed memory backend + migration paths
 4. Tool schema hardening and policy integration with platform networking
 
 Exit criteria:

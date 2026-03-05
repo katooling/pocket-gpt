@@ -8,7 +8,7 @@ Status: In Progress (foundation delivered; QA UI acceptance still pending)
 ## Scope Delivered
 
 1. Replaced placeholder `MainActivity` runtime shell with Compose-based chat-first UI.
-2. Added app-facing runtime façade contract and stream lifecycle events.
+2. Added app-facing runtime facade contract and stream lifecycle events.
 3. Added routing-mode control contract (`AUTO`, `QWEN_0_8B`, `QWEN_2B`).
 4. Added ViewModel/UI state model and session persistence for restart continuity.
 5. Added image attach action, tool action UX, advanced controls sheet, and diagnostics export action.
@@ -19,14 +19,14 @@ Status: In Progress (foundation delivered; QA UI acceptance still pending)
 
 1. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/MainActivity.kt`
 2. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AndroidMvpContainer.kt`
-3. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/RoutingMode.kt`
-4. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/runtime/MvpRuntimeFacade.kt`
+3. `packages/core-domain/src/commonMain/kotlin/com/pocketagent/core/RoutingMode.kt`
+4. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/MvpRuntimeFacade.kt`
 5. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt`
 6. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt`
-7. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/state/ChatUiState.kt`
-8. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/state/SessionPersistence.kt`
-9. `packages/core-domain/src/commonMain/kotlin/com/pocketagent/core/ConversationContracts.kt`
-10. `packages/core-domain/src/commonMain/kotlin/com/pocketagent/core/InMemoryConversationModule.kt`
+7. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatScreen.kt`
+8. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/state/ChatUiState.kt`
+9. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/state/SessionPersistence.kt`
+10. `packages/core-domain/src/commonMain/kotlin/com/pocketagent/core/ConversationContracts.kt`
 
 ## Test/Validation Commands and Outcomes
 
@@ -53,7 +53,7 @@ Status: In Progress (foundation delivered; QA UI acceptance still pending)
 Delivered now:
 
 1. UI shell exists and supports chat/session/image/tool/advanced-control workflows.
-2. Runtime façade and routing control contracts are active in app layer.
+2. Runtime facade and routing control contracts are active in app layer.
 3. Session persistence + restore continuity path is implemented.
 4. Runtime wiring tests include routing override + restored session prompt continuity.
 

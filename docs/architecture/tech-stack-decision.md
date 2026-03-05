@@ -6,7 +6,7 @@
 2. iOS optimization track (post-baseline): Core ML + Metal
 3. Android optimization track (post-baseline): LiteRT/NNAPI evaluation
 4. Shared app-domain architecture: Kotlin Multiplatform + native UI (`SwiftUI`, `Jetpack Compose`)
-5. Local storage baseline: SQLite (+ lightweight vector retrieval abstraction)
+5. Local storage baseline: shared file-backed persistence (+ lightweight vector retrieval abstraction)
 6. Tool execution: strict JSON schema validation + local sandbox only
 
 ## Why This Stack
@@ -77,6 +77,6 @@ Decision: prefer KMP shared domain with native UI.
 | iOS optimization | Core ML + Metal | Planned; no active implementation yet |
 | Android optimization | LiteRT/NNAPI | Planned; no active implementation yet |
 | Shared architecture | KMP shared domain + native UI | Partial; Kotlin/JVM modular scaffolding in place |
-| Local storage | SQLite baseline | Planned; in-memory implementation used for scaffolding |
+| Local storage | Shared file-backed baseline | Implemented; in-memory path remains available for scaffold/test use |
 | Tool execution | strict schema validation + local sandbox | Partial; allowlist and lightweight validation implemented |
 | Voice (STT/TTS) | offline-preferred, policy-gated | Planned; post-MVP design and benchmark phase |

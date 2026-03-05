@@ -16,9 +16,9 @@ Role playbooks:
 | Workstream | Primary Scope | Core Deliverables | Depends On |
 |---|---|---|---|
 | Runtime | model loading/generation/routing | real `llama.cpp` bridge, routing matrix, perf metrics | inference contracts |
-| Android App UX (`WP-11`) | chat-first app surface + lifecycle integration | Compose chat timeline, session UX, image/tool UX, advanced controls | runtime façade contracts |
+| Android App UX (`WP-11`) | chat-first app surface + lifecycle integration | Compose chat timeline, session UX, image/tool UX, advanced controls | runtime facade contracts |
 | Tools & Safety | tool schema/runtime + policy checks | strict validation, allowlist enforcement, abuse tests | tool/policy contracts |
-| Memory & Multimodal | retention/retrieval + image path | SQLite memory backend, scenario C pipeline | memory/inference contracts |
+| Memory & Multimodal | retention/retrieval + image path | shared file-backed memory backend, scenario C pipeline | memory/inference contracts |
 | QA & Evidence | benchmarks, regression, artifacts | scenario runs, threshold reports, soak evidence, UI acceptance evidence | benchmark protocol + UX acceptance matrix |
 | Product & GTM | roadmap, differentiation, launch prep | feature prioritization, messaging, distribution strategy, go/no-go package | validated technical constraints |
 
@@ -34,7 +34,7 @@ Role playbooks:
 | Package/Task | Owner | Support | Status |
 |---|---|---|---|
 | WP-07 / QA-06 + packet closure | QA Lead | Eng + Product | In Progress |
-| WP-11 / ENG-10 (Compose UI + façade + persistence) | Runtime Eng | Product + QA | In Progress |
+| WP-11 / ENG-10 (Compose UI + facade + persistence) | Runtime Eng | Product + QA | In Progress |
 | WP-11 / QA-08 (UI acceptance suite) | QA Engineer | Eng + Product | Ready |
 | WP-11 / PROD-07 (UI stories + UX gate governance) | Product Lead | Eng + QA | In Progress |
 

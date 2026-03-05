@@ -19,7 +19,7 @@ Use these canonical sources instead:
 This historical report predates productionized updates that are now implemented, including:
 
 1. Real Android runtime bridge integration
-2. SQLite memory backend and pruning behavior
+2. Shared file-backed memory backend and pruning behavior
 3. Strict schema-safe tool runtime
 4. Image path production hardening
 5. User-facing Compose MVP UI implementation track (WP-11)

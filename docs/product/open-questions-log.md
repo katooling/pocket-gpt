@@ -63,7 +63,7 @@ Track these questions continuously so engineering, product, and go-to-market sta
    - Decision: external beta/go-live signoff requires both WP-07 (hardening) and WP-11 (user-facing UI) to be Done.
 9. Which UI architecture path should be used for MVP?
    - Resolved in product recovery implementation.
-   - Decision: Jetpack Compose + ViewModel with an app-facing runtime façade (`MvpRuntimeFacade`) and advanced controls in sheet UX.
+   - Decision: Jetpack Compose + ViewModel with an app-facing runtime facade (`MvpRuntimeFacade`) and advanced controls in sheet UX.
 10. Is external beta still blocked after WP-07 packet signoff and WP-11 closure?
    - Resolved by final Product/QA/Engineering gate approvals on 2026-03-04.
    - Decision: no remaining Product/QA gate blocker; proceed with WP-09 distribution + beta operations execution.

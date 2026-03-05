@@ -19,7 +19,7 @@ Use this tracker to execute the six MVP stages against explicit entry/exit crite
 |---|---|---|---|---|
 | WP-07 | Beta hardening + go/no-go packet | QA + Product + Eng | Done | Must close for external beta |
 | WP-11 | Android MVP user experience (chat/session/image/tool UX) | Engineering + Product + QA | Done | Must close for external beta |
-| WP-12 | Backend production runtime closure (native/runtime/data-plane hardening) | Engineering + QA + Product + Security | In Progress | Must close before production-claim hardening signoff |
+| WP-12 | Backend production runtime closure (native/runtime/data-plane hardening) | Engineering + QA + Product + Security | Done | Must close before production-claim hardening signoff |
 
 External beta signoff policy:
 
@@ -78,7 +78,7 @@ External beta signoff policy:
 - [x] Memory retrieval relevance on follow-up prompts
 - [x] Scenario C image benchmarks executed
 - [x] Latency and output quality notes captured
-- [x] SQLite persistence + retention/pruning validation
+- [x] Shared file-backed persistence + retention/pruning validation
 - [x] Deterministic image path contract tests
 
 ## Stage 6 Checklist
@@ -93,21 +93,21 @@ External beta signoff policy:
 - [x] Runtime backend identity (`NATIVE_JNI` vs `ADB_FALLBACK`) surfaced in stage runner output.
 - [x] Startup checks block closure-path execution on fallback runtime by default.
 - [x] Product decision approved for model distribution path/provenance policy (`ENG-12`): side-load/manual-internal only + strict verify-before-load contract.
-- [ ] Native Android ARM `llama.cpp` compile + real inference proof packet on target device.
+- [x] Native Android ARM `llama.cpp` compile + real inference proof packet on target device (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`).
 - [x] Model distribution strategy implemented with artifact provenance validation (`docs/operations/evidence/wp-12/2026-03-04-eng-12-model-distribution-implementation.md`).
 - [x] Android-native memory backend active on runtime path (no JVM JDBC dependency) (`docs/operations/evidence/wp-12/2026-03-04-eng-14-android-native-memory.md`).
 - [x] Tool data integrations remove placeholder runtime responses (`docs/operations/evidence/wp-12/2026-03-04-eng-15-tool-store-integration.md`).
 - [x] Real multimodal image path replaces smoke contract on production lane (`docs/operations/evidence/wp-12/2026-03-04-eng-16-image-runtime-path.md`).
 - [x] Platform network policy enforcement verified in runtime lane evidence (`docs/operations/evidence/wp-12/2026-03-04-eng-17-network-policy-wiring.md`).
 
-Current blocker:
+Current status:
 
-- `ENG-13` remains blocked on native backend proof (`NATIVE_JNI`) and full `0.8B`/`2B` + memory/PSS packet completion (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`).
-- QA closeout has been triggered and recommends holding WP-12 closure until ENG-13 is resolved (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`).
+- `ENG-13` native backend proof is complete with `NATIVE_JNI` evidence and full `0.8B`/`2B` + memory/PSS packet (`docs/operations/evidence/wp-12/2026-03-04-eng-13-native-runtime-proof.md`).
+- QA closeout rerun is complete with recommendation to close WP-12 (`docs/operations/evidence/wp-12/2026-03-04-qa-wp12-closeout.md`).
 
 ## WP-11 UI Gate Checklist
 
-- [x] Add app-facing runtime façade contract (`MvpRuntimeFacade`) with stream lifecycle + routing-mode controls.
+- [x] Add app-facing runtime facade contract (`MvpRuntimeFacade`) with stream lifecycle + routing-mode controls.
 - [x] Replace placeholder `MainActivity` shell with Compose chat-first UI.
 - [x] Add session list create/switch/delete UX and persisted restore path.
 - [x] Add image attach + tool action UX and clear error rendering.

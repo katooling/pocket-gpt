@@ -9,16 +9,16 @@ Package state: In Progress (`WP-06`, pending QA Scenario C acceptance packet)
 
 Land Stage-5 memory productionization core deliverables required to unblock QA-05:
 
-1. SQLite-backed memory persistence behavior.
+1. Shared file-backed memory persistence behavior.
 2. Deterministic retention/pruning enforcement with tests.
 3. Deterministic image-path contract coverage for Scenario C path hardening.
 
 ## Code + Test Delta
 
-1. Added JVM SQLite memory backend:
-   - `packages/memory/src/commonMain/kotlin/com/pocketagent/memory/SqliteMemoryModule.kt`
-2. Added SQLite persistence/retention tests:
-   - `packages/memory/src/commonTest/kotlin/com/pocketagent/memory/SqliteMemoryModuleTest.kt`
+1. Added shared file-backed memory backend:
+   - `packages/memory/src/commonMain/kotlin/com/pocketagent/memory/FileBackedMemoryModule.kt`
+2. Added file-backed persistence/retention tests:
+   - `packages/memory/src/commonTest/kotlin/com/pocketagent/memory/FileBackedMemoryModuleTest.kt`
 3. Expanded in-memory pruning regression coverage:
    - `packages/memory/src/commonTest/kotlin/com/pocketagent/memory/InMemoryMemoryModuleTest.kt`
 4. Added deterministic image-path contract behavior + tests:
@@ -32,9 +32,9 @@ Land Stage-5 memory productionization core deliverables required to unblock QA-0
 ## Behavior Validated
 
 1. Memory persistence:
-   - chunks written by one `SqliteMemoryModule` instance are retrievable after module re-instantiation against the same DB path.
+   - chunks written by one `FileBackedMemoryModule` instance are retrievable after module re-instantiation against the same storage path.
 2. Retention/pruning:
-   - `pruneMemory(maxChunks)` removes oldest rows first (`created_at_epoch_ms ASC, id ASC`) and returns deleted count.
+   - `pruneMemory(maxChunks)` removes oldest chunks first (oldest-first timestamp ordering) and returns deleted count.
 3. Image contract determinism:
    - output is normalized and stable (`v=1`, normalized extension, whitespace-collapsed/truncated prompt, non-negative token cap).
 
@@ -64,7 +64,7 @@ Land Stage-5 memory productionization core deliverables required to unblock QA-0
 
 Engineering deliverables that blocked QA-05 prep are now present:
 
-1. SQLite persistence path and retention/pruning tests are implemented.
+1. Shared file-backed persistence path and retention/pruning tests are implemented.
 2. Deterministic Scenario C image-path contract tests are implemented.
 
 QA can proceed with final device-side Scenario C + memory acceptance execution (`QA-05`) using current WP-06 code state.

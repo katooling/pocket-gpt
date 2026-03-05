@@ -84,7 +84,7 @@ Outcome: `ENG-13` closure evidence is now complete; this plan is retained as exe
 ### Executed now
 
 1. Added core-flow coverage + ownership matrix in `docs/testing/test-strategy.md`.
-2. Added missing unit tests for persistence codec, runtime facade delegation, and stage benchmark runner.
+2. Added missing unit tests for persistence codec, runtime facade delegation, and runtime benchmark runner.
 3. Extended instrumentation smoke for onboarding/runtime-status/privacy and natural-language tool flow.
 4. Published usability packet template: `docs/operations/wp-13-usability-gate-packet-template.md`.
 

@@ -10,13 +10,13 @@ The product requires local memory and retrieval while preserving privacy guarant
 
 ## Decision
 
-Use local SQLite as canonical persistence with a lightweight retrieval index abstraction. Enforce explicit retention policy defaults and local-only data boundaries.
+Use shared file-backed local persistence as the canonical backend with a lightweight retrieval index abstraction. Enforce explicit retention policy defaults and local-only data boundaries.
 
 ## Consequences
 
 Positive:
 
-1. Reliable local storage with mature tooling
+1. Reliable local storage shared across runtime surfaces
 2. Clear policy enforcement for privacy claims
 3. Bounded resource behavior via pruning controls
 

@@ -98,7 +98,7 @@ Status (2026-03-04): Completed for WP-06. ENG-07 + ENG-08 closeout and QA-05 Sce
 
 Deliverables:
 
-1. SQLite-backed memory implementation with pruning/retention enforcement.
+1. Shared file-backed memory implementation with pruning/retention enforcement.
 2. Stage image scenario path integrated with runtime contracts.
 3. Retrieval relevance and latency regression tests.
 
@@ -131,7 +131,7 @@ Exit criteria:
 
 Goal: close post-signoff backend/runtime truth gaps so production claims are backed by native execution and Android-native data paths.
 
-Status (2026-03-04): In progress for WP-12. ENG-11A landed runtime-backend truth gating so closure startup checks block `ADB_FALLBACK` by default.
+Status (2026-03-04): Completed for WP-12. Runtime truth gating, native JNI evidence, model distribution, shared memory path, tool data integration, image runtime path, and policy wiring are complete with closeout evidence.
 
 Deliverables:
 

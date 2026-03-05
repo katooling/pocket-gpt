@@ -10,16 +10,16 @@ Close the remaining Engineering-owned Stage-6 resilience gap by hardening startu
 
 ## Scope Delivered
 
-1. Added startup-check assessment contract in `ResilienceGuards` that classifies startup checks into blocking vs recoverable outcomes.
-2. Added crash-recovery decision contract in `ResilienceGuards` for repeated/fatal runtime failures.
+1. Added startup-check assessment contract in runtime guards that classifies startup checks into blocking vs recoverable outcomes.
+2. Added crash-recovery decision contract in runtime guards for repeated/fatal runtime failures.
 3. Wired stage runner startup path to fail only on blocking checks and emit warnings for recoverable checks.
 4. Added unit coverage for prompt/task guards, startup assessment behavior, and runtime reset decisions.
 
 ## Code + Test Delta
 
-1. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ResilienceGuards.kt`
-2. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/StageRunnerMain.kt`
-3. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/ResilienceGuardsTest.kt`
+1. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/ResilienceGuards.kt`
+2. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/StageRunnerMain.kt`
+3. `packages/app-runtime/src/commonTest/kotlin/com/pocketagent/runtime/ResilienceGuardsTest.kt`
 
 ## Commands Run and Outcomes
 

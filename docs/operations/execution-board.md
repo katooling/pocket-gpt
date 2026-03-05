@@ -49,6 +49,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; operating cadence in progress)
 - [ ] PROD-04 monetization scope and pricing hypothesis kickoff (v0 hypothesis doc published)
 - [ ] ENG support: stage-2 runtime evidence integrity gate active for closure packet validation
+- [ ] DX-01 layered test profiles + Stage-2 quick/closure efficiency rollout (devctl/scripts/docs)
 
 ### Ready
 
@@ -58,7 +59,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] TEST-ENG-01 test architecture and ownership matrix publish (`docs/testing/test-strategy.md`)
 - [ ] TEST-ENG-02 persistence codec unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/state/SessionPersistenceCodecTest.kt`)
 - [ ] TEST-ENG-03 runtime facade delegation unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/runtime/DefaultMvpRuntimeFacadeTest.kt`)
-- [ ] TEST-ENG-04 stage benchmark runner unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/StageBenchmarkRunnerTest.kt`)
+- [ ] TEST-ENG-04 runtime benchmark runner unit coverage (`packages/app-runtime/src/commonTest/kotlin/com/pocketagent/runtime/StageBenchmarkRunnerTest.kt`)
 - [ ] TEST-ENG-05 instrumentation smoke extension for onboarding/runtime/privacy/NL tool flow (`apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/MainActivityUiSmokeTest.kt`)
 - [ ] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
 - [ ] TEST-QA-02 release-promotion checklist update with instrumentation/Maestro pass-id requirements (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`)
@@ -79,7 +80,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] QA-03 routing/policy boundary regression rerun passed on incoming WP-04 state (`docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`)
 - [x] QA-04 tool safety adversarial regression rerun passed on final WP-05 state (`docs/operations/evidence/wp-05/2026-03-04-qa-04-rerun.md`)
 - [x] ENG-06 closeout gate: tool runtime schema safety productionization completed with package-level acceptance and deterministic error-contract stability checks (`docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`)
-- [x] ENG-07 closeout gate: SQLite memory backend + retention/pruning tests + deterministic Scenario C image contract tests landed; QA-05 unblocked for device acceptance execution (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
+- [x] ENG-07 closeout gate: shared file-backed memory backend + retention/pruning tests + deterministic Scenario C image contract tests landed; QA-05 unblocked for device acceptance execution (`docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`)
 - [x] QA-05 Scenario C image + memory acceptance packet executed and passed (`docs/operations/evidence/wp-06/2026-03-04-qa-05.md`)
 - [x] ENG-08 closeout gate: runtime image flow integrated with routing/model lifecycle contracts plus deterministic image validation coverage (`docs/operations/evidence/wp-06/2026-03-04-eng-08.md`)
 - [x] WP-06 package closeout complete (ENG-07 + ENG-08 + QA-05 evidence aligned)

@@ -30,7 +30,7 @@ Harden WP-11 UI for accessibility, deterministic user-readable error handling, a
 2. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/state/UiErrorMapper.kt`
 3. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt`
 4. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt`
-5. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AdbDeviceLlamaCppRuntimeBridge.kt`
+5. `packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/AdbDeviceLlamaCppBridge.kt`
 6. `apps/mobile-android/src/main/res/values/strings.xml`
 
 ## Validation Commands and Outcomes

@@ -10,12 +10,12 @@ Prevent closure-path startup validation from passing on `ADB_FALLBACK` runtime, 
 
 ## Scope Delivered
 
-1. Added explicit runtime backend contract (`NATIVE_JNI`, `ADB_FALLBACK`, `UNAVAILABLE`) to the Android runtime bridge layer.
-2. Wired backend reporting into `AndroidLlamaCppInferenceModule` and `AndroidMvpContainer` startup checks.
+1. Added explicit runtime backend contract (`NATIVE_JNI`, `ADB_FALLBACK`, `UNAVAILABLE`) in the runtime bridge layer.
+2. Wired backend reporting into `LlamaCppInferenceModule` and startup checks through the runtime orchestration layer.
 3. Enforced startup-check failure when backend is not `NATIVE_JNI` (default behavior).
 4. Enforced non-zero process exit on blocking startup checks so closure lanes fail hard instead of only logging warnings.
 5. Added local-scaffolding override env (`POCKETGPT_REQUIRE_NATIVE_RUNTIME_STARTUP=0`) to keep non-closure smoke lanes usable.
-6. Updated resilience guard signatures so runtime backend fallback/unavailable checks are classified as blocking.
+6. Updated resilience-guard signatures so runtime backend fallback/unavailable checks are classified as blocking.
 7. Expanded unit tests for runtime backend reporting and startup-check enforcement behavior.
 
 ## Commands Run and Outcomes
@@ -36,18 +36,17 @@ Prevent closure-path startup validation from passing on `ADB_FALLBACK` runtime, 
 
 ## Files Updated
 
-1. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AndroidLlamaCppRuntimeBridge.kt`
-2. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AdbDeviceLlamaCppRuntimeBridge.kt`
-3. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AndroidLlamaCppInferenceModule.kt`
-4. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AndroidMvpContainer.kt`
-5. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/StageRunnerMain.kt`
-6. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ResilienceGuards.kt`
-7. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/AndroidLlamaCppRuntimeBridgeTest.kt`
-8. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/AdbDeviceLlamaCppRuntimeBridgeTest.kt`
-9. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/AndroidLlamaCppInferenceModuleTest.kt`
+1. `packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/NativeJniLlamaCppBridge.kt`
+2. `packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/AdbDeviceLlamaCppBridge.kt`
+3. `packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/LlamaCppInferenceModule.kt`
+4. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/RuntimeOrchestrator.kt`
+5. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/StageRunnerMain.kt`
+6. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/ResilienceGuards.kt`
+7. `packages/native-bridge/src/commonTest/kotlin/com/pocketagent/nativebridge/NativeJniLlamaCppBridgeTest.kt`
+8. `packages/native-bridge/src/commonTest/kotlin/com/pocketagent/nativebridge/AdbDeviceLlamaCppBridgeTest.kt`
+9. `packages/native-bridge/src/commonTest/kotlin/com/pocketagent/nativebridge/LlamaCppInferenceModuleTest.kt`
 10. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/AndroidMvpContainerTest.kt`
-11. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/ResilienceGuardsTest.kt`
-12. `apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/RuntimeInstrumentationSmokeTest.kt`
+11. `packages/app-runtime/src/commonTest/kotlin/com/pocketagent/runtime/ResilienceGuardsTest.kt`
 
 ## Result
 

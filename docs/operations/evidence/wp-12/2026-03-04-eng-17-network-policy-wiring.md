@@ -11,7 +11,7 @@ Wire policy decisions to Android platform network posture and verify runtime beh
 
 ## Scope Delivered
 
-1. Added policy-aware network client for startup posture checks and action-level enforcement decisions.
+1. Added policy-aware network client in the runtime layer for startup posture checks and action-level enforcement decisions.
 2. Integrated network startup checks and runtime probe enforcement into startup-check flow.
 3. Hardened manifest posture:
    - cleartext traffic disabled
@@ -20,12 +20,12 @@ Wire policy decisions to Android platform network posture and verify runtime beh
 
 ## Code + Test Delta
 
-1. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/PolicyAwareNetworkClient.kt`
-2. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AndroidMvpContainer.kt`
-3. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ResilienceGuards.kt`
+1. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/PolicyAwareNetworkClient.kt`
+2. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/RuntimeOrchestrator.kt`
+3. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/ResilienceGuards.kt`
 4. `apps/mobile-android/src/main/AndroidManifest.xml`
 5. `apps/mobile-android/src/main/res/xml/network_security_config.xml`
-6. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/PolicyAwareNetworkClientTest.kt`
+6. `packages/app-runtime/src/commonTest/kotlin/com/pocketagent/runtime/PolicyAwareNetworkClientTest.kt`
 7. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/NetworkPolicyManifestConfigTest.kt`
 
 ## Commands Run and Outcomes

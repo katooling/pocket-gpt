@@ -10,17 +10,18 @@ Remove Android runtime dependence on JVM-only JDBC assumptions and provide Andro
 
 ## Scope Delivered
 
-1. Added Android-native runtime memory module and switched runtime defaults to it.
-2. Updated runtime wiring in stage runner and app runtime facade to use Android-native module.
+1. Added file-backed runtime memory module in the shared memory package and switched runtime defaults to it.
+2. Updated runtime wiring in stage runner and runtime facade to use the shared file-backed module.
 3. Added regression tests for save/retrieve/prune and persistence across module re-instantiation.
 
 ## Code + Test Delta
 
-1. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AndroidNativeMemoryModule.kt`
-2. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/StageRunnerMain.kt`
-3. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/runtime/MvpRuntimeFacade.kt`
-4. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AndroidMvpContainer.kt`
-5. `apps/mobile-android/src/test/kotlin/com/pocketagent/android/AndroidNativeMemoryModuleTest.kt`
+1. `packages/memory/src/commonMain/kotlin/com/pocketagent/memory/FileBackedMemoryModule.kt`
+2. `packages/memory/src/commonMain/kotlin/com/pocketagent/memory/MemoryRetrievalScorer.kt`
+3. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/StageRunnerMain.kt`
+4. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/MvpRuntimeFacade.kt`
+5. `packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/RuntimeOrchestrator.kt`
+6. `packages/memory/src/commonTest/kotlin/com/pocketagent/memory/FileBackedMemoryModuleTest.kt`
 
 ## Commands Run and Outcomes
 

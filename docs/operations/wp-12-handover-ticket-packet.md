@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-04
 Owner: Product Lead
-Status: Active execution (ENG-12/14/15/16/17 complete, ENG-13 blocked)
+Status: Execution complete (ENG-12..ENG-17 complete)
 
 ## Summary
 
@@ -17,9 +17,9 @@ This packet splits WP-12 execution into decision-complete tickets so owners can 
 
 1. Runtime truth gate is in place and closure-path startup checks block `ADB_FALLBACK` by default:
    - `docs/operations/evidence/wp-12/2026-03-04-eng-11-runtime-truth-gate.md`
-2. Product model-distribution decision is approved and unblocked:
+2. Product model-distribution decision is approved and implemented:
    - `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
-3. WP-12 is active on the board with `ENG-12` in progress and `ENG-13..ENG-17` queued:
+3. WP-12 is closed on the board with `ENG-12..ENG-17` completed:
    - `docs/operations/execution-board.md`
 4. Ops framework references:
    - `docs/operations/README.md`
@@ -95,7 +95,7 @@ Implement one production model distribution path: manual/internal side-load with
 ## Ticket 2: ENG-13 Runtime Proof (Runtime Eng + QA Support)
 
 - Title: `ENG-13 | Native JNI inference proof on Samsung + perf/memory characterization (0.8B/2B)`
-- Status: Blocked (`NATIVE_JNI` evidence pending; current closure lane reports `ADB_FALLBACK`)
+- Status: Done (`NATIVE_JNI` evidence complete on Samsung with `0.8B`/`2B` runs)
 - Owner: Runtime Eng
 - Support: QA
 
@@ -135,7 +135,7 @@ Produce real-device proof that native JNI runtime executes real inference and ca
 
 ## Ticket 3: ENG-14 Android-Native Memory Backend (Core Eng)
 
-- Title: `ENG-14 | Replace JVM-JDBC memory path with Android-native SQLite backend`
+- Title: `ENG-14 | Replace JVM-JDBC memory path with shared file-backed memory backend`
 - Status: Done
 - Owner: Core Eng
 - Prereq: `ENG-12` artifact-path contract stable
@@ -146,8 +146,8 @@ Ensure runtime memory persistence on Android does not rely on JVM-only JDBC assu
 
 ### In Scope
 
-1. Introduce Android-native storage implementation.
-2. Migrate runtime wiring to Android-native backend.
+1. Introduce shared file-backed storage implementation.
+2. Migrate runtime orchestration wiring to the shared backend.
 3. Retention/pruning parity with current behavior.
 4. Regression tests for save/retrieve/prune semantics.
 

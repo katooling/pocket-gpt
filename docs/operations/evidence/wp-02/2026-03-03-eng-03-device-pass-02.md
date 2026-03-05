@@ -7,8 +7,8 @@ Validate WP-02 acceptance criteria after adding runtime-bridge fallback executio
 ## Implementation Updates
 
 1. Runtime bridge now supports a device-backed fallback path when native `pocket_llama` library is unavailable:
-   - `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AndroidLlamaCppRuntimeBridge.kt`
-   - `apps/mobile-android/src/main/kotlin/com/pocketagent/android/AdbDeviceLlamaCppRuntimeBridge.kt`
+   - `packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/NativeJniLlamaCppBridge.kt`
+   - `packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/AdbDeviceLlamaCppBridge.kt`
 2. Standardized test entrypoints:
    - `scripts/dev/test.sh` (CI/local default)
    - `scripts/dev/device-test.sh` (physical-device lane)
