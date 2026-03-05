@@ -6,7 +6,51 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ci_tests: ${{ steps.filter.outputs.ci_tests }}
+      android_runtime: ${{ steps.filter.outputs.android_runtime }}
+      android_instrumented: ${{ steps.filter.outputs.android_instrumented }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ci_tests:
+              - "apps/**"
+              - "packages/**"
+              - "tools/**"
+              - "scripts/**"
+              - "config/**"
+              - "settings.gradle.kts"
+              - "build.gradle.kts"
+              - "**/*.gradle"
+              - "**/*.gradle.kts"
+              - ".github/workflows/ci.yml"
+            android_runtime:
+              - "apps/mobile-android/**"
+              - "packages/**"
+              - "tools/devctl/**"
+              - "scripts/android/**"
+              - "scripts/benchmarks/**"
+              - "config/devctl/**"
+              - "third_party/llama.cpp/**"
+            android_instrumented:
+              - "apps/mobile-android/**"
+              - "packages/**"
+              - "tools/devctl/**"
+              - "config/devctl/**"
+
   pr-governance:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -54,7 +98,9 @@ jobs:
       - name: Governance self-tests
         run: python3 tools/devctl/main.py governance self-test
 
-  build-and-test:
+  unit-and-host-tests:
+    needs: changes
+    if: needs.changes.outputs.ci_tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -90,4 +136,113 @@ jobs:
           path: |
             **/build/reports/tests/**
             **/build/test-results/**
+          if-no-files-found: warn
+
+  android-lint:
+    needs: changes
+    if: needs.changes.outputs.android_runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Android lint
+        run: ./gradlew --no-daemon :apps:mobile-android:lintDebug
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-lint-reports
+          path: |
+            **/build/reports/lint-results*.html
+            **/build/reports/lint-results*.xml
+          if-no-files-found: warn
+
+  native-build-package-check:
+    needs: changes
+    if: needs.changes.outputs.android_runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Assemble debug APK with native build enabled
+        run: ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+
+      - name: Verify packaged native library
+        run: |
+          set -euo pipefail
+          apk_path="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
+          if [[ -z "${apk_path}" ]]; then
+            echo "No debug APK produced under apps/mobile-android/build/outputs/apk/debug" >&2
+            exit 1
+          fi
+          echo "Inspecting APK: ${apk_path}"
+          if ! unzip -l "${apk_path}" | grep -q 'lib/arm64-v8a/libpocket_llama.so'; then
+            echo "Missing lib/arm64-v8a/libpocket_llama.so in ${apk_path}" >&2
+            exit 1
+          fi
+
+  android-instrumented-smoke:
+    needs: changes
+    if: needs.changes.outputs.android_instrumented == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Run instrumentation smoke on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          script: ./gradlew --no-daemon :apps:mobile-android:connectedDebugAndroidTest
+
+      - name: Upload instrumentation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumented-smoke-reports
+          path: |
+            **/build/outputs/androidTest-results/**
+            **/build/reports/androidTests/**
           if-no-files-found: warn
