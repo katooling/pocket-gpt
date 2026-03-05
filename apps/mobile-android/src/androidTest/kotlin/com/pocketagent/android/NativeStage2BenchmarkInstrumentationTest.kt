@@ -23,6 +23,10 @@ class NativeStage2BenchmarkInstrumentationTest {
     fun runConfiguredScenario() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(
+            "Skipping Stage-2 native benchmark instrumentation test. Set stage2_enable_benchmark=true to run benchmark suite.",
+            parseBooleanArg(args, ARG_ENABLE_BENCHMARK, defaultValue = false),
+        )
+        assumeTrue(
             "Skipping Stage-2 native benchmark instrumentation test. Missing model path arguments.",
             hasRequiredModelPaths(args),
         )
@@ -87,6 +91,10 @@ class NativeStage2BenchmarkInstrumentationTest {
     @Test
     fun runConfiguredModelSweep() {
         val args = InstrumentationRegistry.getArguments()
+        assumeTrue(
+            "Skipping Stage-2 native benchmark instrumentation sweep. Set stage2_enable_benchmark=true to run benchmark suite.",
+            parseBooleanArg(args, ARG_ENABLE_BENCHMARK, defaultValue = false),
+        )
         assumeTrue(
             "Skipping Stage-2 native benchmark instrumentation sweep. Missing model path arguments.",
             hasRequiredModelPaths(args),
@@ -455,6 +463,7 @@ class NativeStage2BenchmarkInstrumentationTest {
 
     companion object {
         private const val ARG_SCENARIO = "stage2_scenario"
+        private const val ARG_ENABLE_BENCHMARK = "stage2_enable_benchmark"
         private const val ARG_MODEL_ID = "stage2_model_id"
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"

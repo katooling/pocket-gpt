@@ -4,13 +4,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,11 +30,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +55,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
@@ -57,10 +68,20 @@ import com.pocketagent.android.ui.state.ModelRuntimeStatus
 internal fun ChatScreenBody(
     state: ChatUiState,
     onSuggestedPrompt: (String) -> Unit,
+    onOpenModelSetup: () -> Unit,
+    onRefreshRuntimeChecks: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.padding(12.dp)) {
-        OfflineAndStatusHeader(state = state)
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(12.dp),
+    ) {
+        OfflineAndStatusHeader(
+            state = state,
+            onOpenModelSetup = onOpenModelSetup,
+            onRefreshRuntimeChecks = onRefreshRuntimeChecks,
+        )
         Spacer(modifier = Modifier.height(8.dp))
         MessageList(
             activeSession = state.activeSession,
@@ -74,49 +95,78 @@ internal fun ChatScreenBody(
 }
 
 @Composable
-private fun OfflineAndStatusHeader(state: ChatUiState) {
+private fun OfflineAndStatusHeader(
+    state: ChatUiState,
+    onOpenModelSetup: () -> Unit,
+    onRefreshRuntimeChecks: () -> Unit,
+) {
+    var showTechnicalDetails by remember(state.runtime.lastErrorTechnicalDetail) {
+        mutableStateOf(false)
+    }
     val modelStatusText = when (state.runtime.modelRuntimeStatus) {
         ModelRuntimeStatus.NOT_READY -> stringResource(id = R.string.ui_model_status_not_ready)
         ModelRuntimeStatus.LOADING -> stringResource(id = R.string.ui_model_status_loading)
         ModelRuntimeStatus.READY -> stringResource(id = R.string.ui_model_status_ready)
         ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
     }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        AssistChip(
-            modifier = Modifier.testTag("offline_indicator"),
-            onClick = { },
-            label = { Text(stringResource(id = R.string.ui_offline_first)) },
-            colors = AssistChipDefaults.assistChipColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ),
-        )
-        AssistChip(
-            onClick = { },
-            label = {
-                Text(
-                    text = stringResource(
-                        id = R.string.ui_model_label,
-                        state.runtime.routingMode.name,
-                    ),
+    val backendLabel = state.runtime.runtimeBackend?.trim().orEmpty()
+
+    @OptIn(ExperimentalLayoutApi::class)
+    @Composable
+    fun StatusChips() {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AssistChip(
+                modifier = Modifier.testTag("offline_indicator"),
+                onClick = { },
+                label = { StatusChipLabel(stringResource(id = R.string.ui_offline_first)) },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            )
+            AssistChip(
+                onClick = { },
+                label = {
+                    StatusChipLabel(
+                        text = stringResource(
+                            id = R.string.ui_model_label,
+                            state.runtime.routingMode.name,
+                        ),
+                    )
+                },
+            )
+            AssistChip(
+                onClick = { },
+                label = {
+                    StatusChipLabel(
+                        text = stringResource(
+                            id = R.string.ui_model_status_label,
+                            modelStatusText,
+                        ),
+                    )
+                },
+            )
+            if (backendLabel.isNotEmpty()) {
+                AssistChip(
+                    onClick = { },
+                    label = {
+                        StatusChipLabel(
+                            text = stringResource(
+                                id = R.string.ui_runtime_backend_label,
+                                backendLabel,
+                            ),
+                        )
+                    },
                 )
-            },
-        )
-        AssistChip(
-            onClick = { },
-            label = {
-                Text(
-                    text = stringResource(
-                        id = R.string.ui_model_status_label,
-                        modelStatusText,
-                    ),
-                )
-            },
-        )
+            }
+        }
     }
+
+    StatusChips()
 
     if (state.runtime.lastErrorUserMessage != null && state.runtime.lastErrorCode != null) {
         Spacer(modifier = Modifier.height(8.dp))
@@ -137,13 +187,48 @@ private fun OfflineAndStatusHeader(state: ChatUiState) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
-                state.runtime.lastErrorTechnicalDetail?.let { detail ->
-                    Spacer(modifier = Modifier.height(4.dp))
+                if (showTechnicalDetails) {
+                    state.runtime.lastErrorTechnicalDetail?.let { detail ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = detail,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (state.runtime.modelRuntimeStatus == ModelRuntimeStatus.NOT_READY ||
+                    state.runtime.modelRuntimeStatus == ModelRuntimeStatus.ERROR
+                ) {
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = detail,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = stringResource(id = R.string.ui_model_setup_hint),
+                        style = MaterialTheme.typography.bodySmall,
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(onClick = onOpenModelSetup) {
+                            Text(stringResource(id = R.string.ui_fix_model_setup))
+                        }
+                        OutlinedButton(onClick = onRefreshRuntimeChecks) {
+                            Text(stringResource(id = R.string.ui_refresh_runtime_checks))
+                        }
+                    }
+                    TextButton(
+                        onClick = { showTechnicalDetails = !showTechnicalDetails },
+                    ) {
+                        Text(
+                            text = stringResource(
+                                id = if (showTechnicalDetails) {
+                                    R.string.ui_hide_technical_details
+                                } else {
+                                    R.string.ui_show_technical_details
+                                },
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -166,6 +251,16 @@ private fun OfflineAndStatusHeader(state: ChatUiState) {
 }
 
 @Composable
+private fun StatusChipLabel(text: String) {
+    Text(
+        text = text,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.widthIn(max = 220.dp),
+    )
+}
+
+@Composable
 private fun MessageList(
     activeSession: ChatSessionUiModel?,
     onSuggestedPrompt: (String) -> Unit,
@@ -174,10 +269,10 @@ private fun MessageList(
     val clipboardManager = LocalClipboardManager.current
     val listState = rememberLazyListState()
 
-    LaunchedEffect(activeSession?.messages?.size, activeSession?.messages?.lastOrNull()?.content) {
+    LaunchedEffect(activeSession?.id, activeSession?.messages?.size) {
         val messages = activeSession?.messages ?: return@LaunchedEffect
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(index = messages.lastIndex)
+            listState.scrollToItem(index = messages.lastIndex)
         }
     }
 
@@ -225,7 +320,9 @@ private fun MessageList(
     LazyColumn(
         state = listState,
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        reverseLayout = false,
+        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp, alignment = Alignment.Top),
     ) {
         items(
             items = activeSession.messages,
@@ -379,12 +476,14 @@ private fun renderInlineBold(text: String): AnnotatedString {
 internal fun ComposerBar(
     text: String,
     isSending: Boolean,
+    isRuntimeReady: Boolean,
     onTextChanged: (String) -> Unit,
     onSend: () -> Unit,
     onAttachImage: () -> Unit,
 ) {
     val sendStateDescription = when {
         isSending -> stringResource(id = R.string.a11y_send_state_sending)
+        !isRuntimeReady -> stringResource(id = R.string.a11y_send_state_runtime_not_ready)
         text.isBlank() -> stringResource(id = R.string.a11y_send_state_disabled)
         else -> stringResource(id = R.string.a11y_send_state_enabled)
     }
@@ -397,7 +496,10 @@ internal fun ComposerBar(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = onAttachImage) {
+        IconButton(
+            onClick = onAttachImage,
+            enabled = !isSending && isRuntimeReady,
+        ) {
             Icon(Icons.Default.Image, contentDescription = attachImageDescription)
         }
         OutlinedTextField(
@@ -418,7 +520,7 @@ internal fun ComposerBar(
                     stateDescription = sendStateDescription
                 },
             onClick = onSend,
-            enabled = text.isNotBlank() && !isSending,
+            enabled = text.isNotBlank() && !isSending && isRuntimeReady,
         ) {
             Text(stringResource(id = R.string.ui_send_button))
         }

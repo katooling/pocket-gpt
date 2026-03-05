@@ -37,13 +37,14 @@ Private, offline-first AI chat with local tools, image help, and memory.
 4. Tool invocation/result in thread.
 5. Image attach + contextual response.
 6. Advanced controls and diagnostics action.
+7. Model setup sheet with runtime provisioning state.
 
 ## Asset Rules
 
 1. Only show validated features from WP-11/WP-12 evidence.
 2. No voice/STT/TTS claims in MVP listing.
 3. No cloud-sync claims.
-4. If ENG-13 remains open, avoid benchmark performance claims.
+4. Benchmark claims require current dated Stage-2 closure evidence links (do not use stale numbers).
 
 ## Metadata Checklist
 

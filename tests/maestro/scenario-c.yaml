@@ -21,6 +21,7 @@ appId: com.pocketagent.android
 - tapOn: "Message"
 - inputText: "What did I ask you to remember earlier?"
 - tapOn: "Send"
-- assertVisible: "What did I ask you to remember earlier?"
+- assertVisible: "Remember this launch risk list for scenario C."
+- assertVisible: "Attach image"
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-c-03-follow-up"

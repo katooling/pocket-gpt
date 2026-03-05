@@ -53,6 +53,7 @@ class ChatViewModelTest {
             sessionPersistence = persistence,
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.onComposerChanged("hello ui")
         viewModel.sendMessage()
@@ -76,6 +77,7 @@ class ChatViewModelTest {
             sessionPersistence = persistence,
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.onComposerChanged("calculate 4*9")
         viewModel.sendMessage()
@@ -95,6 +97,7 @@ class ChatViewModelTest {
             sessionPersistence = persistence,
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.showOnboarding)
 
@@ -116,6 +119,7 @@ class ChatViewModelTest {
             sessionPersistence = persistence,
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.onComposerChanged("long stream")
         viewModel.sendMessage()
@@ -180,6 +184,7 @@ class ChatViewModelTest {
             sessionPersistence = persistence,
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.onComposerChanged("session one message")
         viewModel.sendMessage()
@@ -210,6 +215,7 @@ class ChatViewModelTest {
             sessionPersistence = RecordingPersistence(),
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.attachImage("/tmp/test-image.jpg")
         advanceUntilIdle()
@@ -227,6 +233,7 @@ class ChatViewModelTest {
             sessionPersistence = RecordingPersistence(),
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.attachImage("/tmp/bad-image.jpg")
         advanceUntilIdle()
@@ -244,6 +251,7 @@ class ChatViewModelTest {
             sessionPersistence = RecordingPersistence(),
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.attachImage("/tmp/invalid.tiff")
         advanceUntilIdle()
@@ -261,6 +269,7 @@ class ChatViewModelTest {
             sessionPersistence = RecordingPersistence(),
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.runTool("calculator", """{"expression":"4*9"}""")
         advanceUntilIdle()
@@ -293,7 +302,29 @@ class ChatViewModelTest {
 
         advanceUntilIdle()
         assertEquals("UI-STARTUP-001", viewModel.uiState.value.runtime.lastErrorCode)
-        assertTrue(viewModel.uiState.value.runtime.lastErrorUserMessage?.contains("Model startup is unavailable") == true)
+        assertTrue(viewModel.uiState.value.runtime.lastErrorUserMessage?.contains("Runtime setup is incomplete") == true)
+    }
+
+    @Test
+    fun `send path blocks when runtime startup probe is not ready`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupChecks = listOf("Missing runtime model(s): qwen"),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("hello while blocked")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        assertFalse(active.messages.any { it.role == MessageRole.USER && it.content == "hello while blocked" })
+        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-STARTUP-001") })
+        assertEquals("UI-STARTUP-001", viewModel.uiState.value.runtime.lastErrorCode)
     }
 
     @Test
@@ -304,6 +335,7 @@ class ChatViewModelTest {
             sessionPersistence = RecordingPersistence(),
             ioDispatcher = dispatcher,
         )
+        advanceUntilIdle()
 
         viewModel.setRoutingMode(RoutingMode.QWEN_2B)
         viewModel.exportDiagnostics()
@@ -311,6 +343,61 @@ class ChatViewModelTest {
 
         assertEquals(RoutingMode.QWEN_2B, viewModel.uiState.value.runtime.routingMode)
         assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("diag=ok") })
+    }
+
+    @Test
+    fun `refresh runtime readiness updates backend and startup state`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.refreshRuntimeReadiness()
+        advanceUntilIdle()
+
+        assertEquals("NATIVE_JNI", viewModel.uiState.value.runtime.runtimeBackend)
+        assertEquals(null, viewModel.uiState.value.runtime.lastErrorCode)
+    }
+
+    @Test
+    fun `refresh runtime readiness does not mask blocking startup failures with override text`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupChecks = listOf("Missing runtime model(s): qwen"),
+            runtimeBackend = "NATIVE_JNI",
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.refreshRuntimeReadiness(statusDetailOverride = "verified and active")
+        advanceUntilIdle()
+
+        val runtimeState = viewModel.uiState.value.runtime
+        assertEquals("UI-STARTUP-001", runtimeState.lastErrorCode)
+        assertEquals("Missing runtime model(s): qwen", runtimeState.modelStatusDetail)
+    }
+
+    @Test
+    fun `refresh runtime readiness applies override text only when startup checks pass`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.refreshRuntimeReadiness(statusDetailOverride = "verified and active")
+        advanceUntilIdle()
+
+        val runtimeState = viewModel.uiState.value.runtime
+        assertEquals(null, runtimeState.lastErrorCode)
+        assertEquals("verified and active", runtimeState.modelStatusDetail)
     }
 }
 
@@ -333,6 +420,7 @@ private class RecordingRuntimeFacade(
     private val returnImageValidationError: Boolean = false,
     private val startupChecks: List<String> = emptyList(),
     private val streamTokens: List<String> = listOf("stream ", "token "),
+    private val runtimeBackend: String? = null,
 ) : MvpRuntimeFacade {
     private var sessionCounter = 0
     private var routingMode: RoutingMode = RoutingMode.AUTO
@@ -399,4 +487,6 @@ private class RecordingRuntimeFacade(
     }
 
     override fun deleteSession(sessionId: SessionId): Boolean = true
+
+    override fun runtimeBackend(): String? = runtimeBackend
 }

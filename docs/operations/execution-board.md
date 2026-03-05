@@ -37,7 +37,7 @@ All teams should update status here first, then mirror updates in role playbooks
 | WP-10 | Voice horizon discovery (STT/TTS spikes) | Engineering | Product, QA | 8 | Yes | WP-07 | Backlog | Post-MVP |
 | WP-11 | Android MVP user experience (chat + session + image/tool UX) | Engineering | Product, QA, Design | 6 | Yes | WP-06 | Done | Week 6 |
 | WP-12 | Backend production runtime closure (native inference, model distribution, Android-native data plane) | Engineering | QA, Product, Security | 7 | Yes | WP-07, WP-11 | Done | Week 7-8 |
-| WP-13 | UX quality closure (onboarding, runtime clarity, usability gate, listing readiness) | Product | Eng, QA, Design, Marketing | 8 | Yes | WP-11 | Blocked | Week 8 |
+| WP-13 | UX quality closure (onboarding, runtime clarity, usability gate, listing readiness) | Product | Eng, QA, Design, Marketing | 8 | Yes | WP-11 | In Progress | Week 8 |
 
 ## Current Sprint Board
 
@@ -51,7 +51,7 @@ All teams should update status here first, then mirror updates in role playbooks
 - [ ] ENG support: stage-2 runtime evidence integrity gate active for closure packet validation
 - [ ] DX-01 layered test profiles + Stage-2 quick/closure efficiency rollout (devctl/scripts/docs)
 - [ ] DX-02 provider-style caching rollout (native prefix/KV reuse + runtime cache telemetry + Stage-2 cache metrics)
-- [ ] WP-13 run-01 usability gate closure (blocked: moderated 5-user metrics + session artifacts not yet collected)
+- [ ] WP-13 run-01 usability gate closure (collect moderated 5-user metrics + session artifacts)
 - [ ] APP runtime integration hardening (app-path runtime wiring + in-app model provisioning recovery)
 
 ### Ready
@@ -104,6 +104,9 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] TEST-ENG-03 runtime facade delegation unit coverage (`apps/mobile-android/src/test/kotlin/com/pocketagent/android/ui/runtime/DefaultMvpRuntimeFacadeTest.kt`)
 - [x] TEST-ENG-04 runtime benchmark runner unit coverage (`packages/app-runtime/src/commonTest/kotlin/com/pocketagent/runtime/StageBenchmarkRunnerTest.kt`)
 - [x] TEST-ENG-05 instrumentation smoke extension for onboarding/runtime/privacy/NL tool flow (`apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/MainActivityUiSmokeTest.kt`)
+- [x] ENG-P1 model manager phase-2 implemented (download/progress/retry/storage controls/versioned installs + manual activation policy) (`docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
+- [x] UX-P1 recovery copy refinement implemented for checksum/provenance/runtime-compatibility failures (`docs/ux/error-recovery-guide.md`, `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
+- [x] UI-P1 NotReady/Error flow polish implemented (CTA hierarchy + transition feedback after import/download/refresh/activate) (`docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
 - [x] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
 - [x] TEST-QA-02 release-promotion checklist update with instrumentation/Maestro pass-id requirements (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`)
 - [x] TEST-PROD-01 WP-13 usability gate packet operational template publication (`docs/operations/wp-13-usability-gate-packet-template.md`)
@@ -120,6 +123,7 @@ All teams should update status here first, then mirror updates in role playbooks
    - WP-12 implementation tickets `ENG-12`..`ENG-17` are complete with dated evidence.
    - Track post-closure performance optimization follow-ups from ENG-13 threshold report (first-token latency).
    - `ENG-18` is complete with accessibility/error-state hardening evidence (`docs/operations/evidence/wp-09/2026-03-04-eng-18-ui-accessibility-error-hardening.md`).
+   - P1 model manager phase-2 delivery is implemented under flavor-gated download channel (`standard` offline-safe default, `internalDownload` network-enabled); device-lane rerun evidence is pending attached hardware.
 2. QA:
    - QA-08 acceptance gate is complete; continue QA-09 weekly triage/promotion/signal cadence.
    - `QA-WP12` closeout rerun is complete with close recommendation.
@@ -198,6 +202,8 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-12 (Handover ticket packet for ENG-12..ENG-17 + QA closeout): `docs/operations/wp-12-handover-ticket-packet.md`
 - WP-12 (Product dispatch evidence for handover ticket packet sync): `docs/operations/evidence/wp-12/2026-03-04-prod-wp12-handover-ticket-packet.md`
 - WP-13 (Usability gate run-01 operational packet): `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
+- WP-13 (Engineering chat layout hardening + viewport regression guard): `docs/operations/evidence/wp-13/2026-03-05-eng-chat-layout-hardening.md`
+- WP-13 (Engineering P1 model manager phase-2 + recovery UX/UI closure): `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`
 
 ## Dependency Flow
 

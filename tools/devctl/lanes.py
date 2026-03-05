@@ -10,10 +10,16 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, MutableMapping, Sequence
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - fcntl is unavailable on non-POSIX platforms.
+    fcntl = None
 
 from tools.devctl.subprocess_utils import DevctlError, REPO_ROOT, format_command, print_step, run_subprocess
 
@@ -100,6 +106,86 @@ def _append_gradle_instrumentation_args(command: Sequence[str], runner_args: Map
 
 def _sanitize_file_token(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip("-") or "artifact"
+
+
+_DEVICE_LOCKS_DIR = REPO_ROOT / "scripts/benchmarks/device-env/locks"
+_HELD_DEVICE_LOCKS: dict[str, tuple[Path, Any]] = {}
+
+
+def _device_lock_path(serial: str) -> Path:
+    return _DEVICE_LOCKS_DIR / f"{_sanitize_file_token(serial)}.lock"
+
+
+def _write_device_lock_metadata(lock_handle: Any, *, serial: str, owner: str) -> None:
+    lock_handle.seek(0)
+    lock_handle.truncate(0)
+    lock_handle.write(
+        "\n".join(
+            [
+                f"serial={serial}",
+                f"owner={owner}",
+                f"pid={os.getpid()}",
+                f"started={datetime.now().isoformat(timespec='seconds')}",
+            ]
+        )
+        + "\n"
+    )
+    lock_handle.flush()
+
+
+@contextmanager
+def _device_lock(serial: str, *, owner: str, timeout_seconds: int = 120) -> Any:
+    if os.environ.get("POCKETGPT_SKIP_DEVICE_LOCK") == "1":
+        yield
+        return
+
+    if serial in _HELD_DEVICE_LOCKS:
+        yield
+        return
+
+    lock_path = _device_lock_path(serial)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_handle = lock_path.open("a+", encoding="utf-8")
+
+    if fcntl is None:
+        print_step("fcntl is unavailable; skipping device lock enforcement.")
+        try:
+            yield
+        finally:
+            lock_handle.close()
+        return
+
+    start = time.monotonic()
+    while True:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            waited = time.monotonic() - start
+            if waited >= timeout_seconds:
+                lock_handle.close()
+                raise DevctlError(
+                    "DEVICE_ERROR",
+                    "Timed out waiting for device lock "
+                    f"{lock_path} after {int(waited)}s. "
+                    "Another run may still be using this device.",
+                )
+            time.sleep(1.0)
+
+    _write_device_lock_metadata(lock_handle, serial=serial, owner=owner)
+    _HELD_DEVICE_LOCKS[serial] = (lock_path, lock_handle)
+    print_step(f"Acquired device lock: {lock_path}")
+    try:
+        yield
+    finally:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        lock_handle.close()
+        _HELD_DEVICE_LOCKS.pop(serial, None)
+        print_step(f"Released device lock: {lock_path}")
+
 
 def build_artifact_dir(template: str, date: str, device: str, label: str, stamp: str) -> Path:
     return REPO_ROOT / template.format(date=date, device=device, label=label, stamp=stamp)
@@ -265,20 +351,46 @@ def prepare_real_runtime_env(
         host_path = model_host_paths_by_id[model.model_id]
         device_path = f"{real_runtime_cfg.device_model_dir.rstrip('/')}/{model.device_file_name}"
         print_step(f"Pushing {model.model_id} to device path {device_path}")
-        context.run(
-            ["adb", "-s", device_serial, "push", host_path, device_path],
-            check=True,
-            env=context.env,
-        )
+        for attempt in range(2):
+            if attempt > 0:
+                print_step(
+                    f"Retrying push for {model.model_id} after ensuring remote directory exists "
+                    f"(attempt {attempt + 1}/2)."
+                )
+            context.run(
+                ["adb", "-s", device_serial, "shell", "mkdir", "-p", real_runtime_cfg.device_model_dir],
+                check=True,
+                env=context.env,
+            )
+            result = context.run(
+                ["adb", "-s", device_serial, "push", host_path, device_path],
+                check=False,
+                capture_output=True,
+                env=context.env,
+            )
+            if result.returncode == 0:
+                break
+            if attempt == 1:
+                stderr = (result.stderr or "").strip()
+                stdout = (result.stdout or "").strip()
+                detail = "\n".join(part for part in [stdout, stderr] if part).strip()
+                raise DevctlError(
+                    "DEVICE_ERROR",
+                    f"Failed to push model artifact {host_path} to {device_path} after retry.\n{detail}",
+                )
+            # Small delay helps stabilize scoped-storage media directory writes on some devices.
+            time.sleep(1.0)
         model_device_paths_by_id[model.model_id] = device_path
 
     runner_args = _instrumentation_args_from_model_paths(model_device_paths_by_id)
+    provisioning_args = dict(runner_args)
+    provisioning_args["stage2_enable_provisioning_test"] = "true"
     _run_instrumentation_class(
         context=context,
         serial=device_serial,
         test_class=real_runtime_cfg.provisioning_test_class,
         runner=real_runtime_cfg.instrumentation_runner,
-        args=runner_args,
+        args=provisioning_args,
         timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
     )
 
@@ -757,20 +869,32 @@ def lane_android_instrumented(raw_args: Sequence[str], context: RuntimeContext, 
         return
 
     serial = _ensure_serial(context)
-    lane_cfg = context.configs.lanes.lanes.android_instrumented
-    artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "android-instrumented")
-    artifact_root.mkdir(parents=True, exist_ok=True)
-    print_step(f"android-instrumented artifacts: {artifact_root}")
+    with _device_lock(serial, owner="lane:android-instrumented"):
+        lane_cfg = context.configs.lanes.lanes.android_instrumented
+        artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "android-instrumented")
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        print_step(f"android-instrumented artifacts: {artifact_root}")
+        runner_args: dict[str, str] = {}
+        preflight_prepared = False
 
-    preflight = prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
-    runner_args = _instrumentation_args_from_model_paths(preflight.model_device_paths_by_id)
+        for step in lane_cfg.commands:
+            command = _append_native_build_flag(step.argv)
+            is_connected_step = "connected" in step.name.lower() or any(
+                "connected" in token and "androidtest" in token.lower()
+                for token in command
+            )
+            if not is_connected_step:
+                context.run(command, check=True, env=resolved_env)
+                continue
 
-    for step in lane_cfg.commands:
-        command = _append_native_build_flag(step.argv)
-        command = _append_gradle_instrumentation_args(command, runner_args)
-        context.run(command, check=True, env=resolved_env)
+            if not preflight_prepared:
+                preflight = prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
+                runner_args = _instrumentation_args_from_model_paths(preflight.model_device_paths_by_id)
+                preflight_prepared = True
+            command = _append_gradle_instrumentation_args(command, runner_args)
+            context.run(command, check=True, env=resolved_env)
 
-    _capture_logcat(context, serial, artifact_root / context.configs.lanes.lanes.real_runtime.logcat_file_name)
+        _capture_logcat(context, serial, artifact_root / context.configs.lanes.lanes.real_runtime.logcat_file_name)
 
 
 def _run_maestro_flow(
@@ -788,6 +912,7 @@ def _run_maestro_flow(
         check=False,
         capture_output=True,
         env=context.env,
+        cwd=debug_output_dir,
     )
     duration = time.monotonic() - started
     output_path = debug_output_dir / "maestro-output.txt"
@@ -840,41 +965,40 @@ def lane_maestro(raw_args: Sequence[str], context: RuntimeContext, strict: bool 
         return
 
     serial = _ensure_serial(context)
-    lane_cfg = context.configs.lanes.lanes.maestro
-    real_runtime_cfg = context.configs.lanes.lanes.real_runtime
-    artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "maestro")
-    artifact_root.mkdir(parents=True, exist_ok=True)
-    debug_root = artifact_root / real_runtime_cfg.maestro_debug_dir_name
-    debug_root.mkdir(parents=True, exist_ok=True)
-    print_step(f"maestro artifacts: {artifact_root}")
+    with _device_lock(serial, owner="lane:maestro"):
+        lane_cfg = context.configs.lanes.lanes.maestro
+        real_runtime_cfg = context.configs.lanes.lanes.real_runtime
+        artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "maestro")
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        debug_root = artifact_root / real_runtime_cfg.maestro_debug_dir_name
+        debug_root.mkdir(parents=True, exist_ok=True)
+        print_step(f"maestro artifacts: {artifact_root}")
 
-    preflight = prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
-    runner_args = _instrumentation_args_from_model_paths(preflight.model_device_paths_by_id)
+        for command in lane_cfg.preflight_commands:
+            prepared = _append_native_build_flag(command)
+            context.run(prepared, check=True, env=context.env)
 
-    for command in lane_cfg.preflight_commands:
-        prepared = _append_native_build_flag(command)
-        prepared = _append_gradle_instrumentation_args(prepared, runner_args)
-        context.run(prepared, check=True, env=context.env)
+        prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
 
-    for flow in lane_cfg.flows:
-        flow_path = REPO_ROOT / flow
-        if not flow_path.exists():
-            raise DevctlError("CONFIG_ERROR", f"Missing Maestro flow: {flow_path}")
-        step = _run_maestro_flow(
-            context=context,
-            maestro_bin=maestro_bin,
-            serial=serial,
-            flow_path=flow_path,
-            debug_output_dir=debug_root / flow_path.stem,
-        )
-        if step.status != "passed":
-            _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
-            raise DevctlError(
-                "DEVICE_ERROR",
-                f"Maestro flow failed: {flow_path}. Failure signature: {step.failure_signature}",
+        for flow in lane_cfg.flows:
+            flow_path = REPO_ROOT / flow
+            if not flow_path.exists():
+                raise DevctlError("CONFIG_ERROR", f"Missing Maestro flow: {flow_path}")
+            step = _run_maestro_flow(
+                context=context,
+                maestro_bin=maestro_bin,
+                serial=serial,
+                flow_path=flow_path,
+                debug_output_dir=debug_root / flow_path.stem,
             )
+            if step.status != "passed":
+                _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
+                raise DevctlError(
+                    "DEVICE_ERROR",
+                    f"Maestro flow failed: {flow_path}. Failure signature: {step.failure_signature}",
+                )
 
-    _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
+        _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
 
 
 def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
@@ -896,107 +1020,103 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
         raise DevctlError("ENVIRONMENT_ERROR", "Android SDK not configured for journey lane.")
 
     serial = _ensure_serial(context)
-    real_runtime_cfg = context.configs.lanes.lanes.real_runtime
-    artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "journey")
-    artifact_root.mkdir(parents=True, exist_ok=True)
-    print_step(f"journey artifacts: {artifact_root}")
+    with _device_lock(serial, owner="lane:journey"):
+        real_runtime_cfg = context.configs.lanes.lanes.real_runtime
+        artifact_root = _resolve_lane_artifact_dir(lane_cfg.artifacts.output_dir_template, serial, "journey")
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        print_step(f"journey artifacts: {artifact_root}")
+        steps: list[JourneyStepResult] = []
 
-    preflight = prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
-    runner_args = _instrumentation_args_from_model_paths(preflight.model_device_paths_by_id)
-    steps: list[JourneyStepResult] = []
+        install_command = _append_native_build_flag(["./gradlew", "--no-daemon", ":apps:mobile-android:installDebug"])
+        install_test_command = _append_native_build_flag(["./gradlew", "--no-daemon", ":apps:mobile-android:installDebugAndroidTest"])
+        context.run(install_command, check=True, env=resolved_env)
+        context.run(install_test_command, check=True, env=resolved_env)
 
-    install_command = _append_native_build_flag(["./gradlew", "--no-daemon", ":apps:mobile-android:installDebug"])
-    install_test_command = _append_native_build_flag(
-        ["./gradlew", "--no-daemon", ":apps:mobile-android:installDebugAndroidTest"],
-    )
-    context.run(install_command, check=True, env=resolved_env)
-    context.run(
-        _append_gradle_instrumentation_args(install_test_command, runner_args),
-        check=True,
-        env=resolved_env,
-    )
+        preflight = prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
+        runner_args = _instrumentation_args_from_model_paths(preflight.model_device_paths_by_id)
 
-    for index in range(args.repeats):
-        run_label = f"run-{index + 1:02d}"
-        run_root = artifact_root / run_label
-        run_root.mkdir(parents=True, exist_ok=True)
+        for index in range(args.repeats):
+            run_label = f"run-{index + 1:02d}"
+            run_root = artifact_root / run_label
+            run_root.mkdir(parents=True, exist_ok=True)
 
-        device_journey_dir = f"/sdcard/Android/media/{real_runtime_cfg.app_package}/journey/{_now_stamp()}-{index + 1}"
-        instrumentation_args = dict(runner_args)
-        instrumentation_args["journey_artifact_dir"] = device_journey_dir
+            device_journey_dir = f"/sdcard/Android/media/{real_runtime_cfg.app_package}/journey/{_now_stamp()}-{index + 1}"
+            instrumentation_args = dict(runner_args)
+            instrumentation_args["stage2_enable_journey_test"] = "true"
+            instrumentation_args["journey_artifact_dir"] = device_journey_dir
 
-        started = time.monotonic()
-        instrumentation_output_path = run_root / "instrumentation-output.txt"
-        try:
-            result = _run_instrumentation_class(
-                context=context,
-                serial=serial,
-                test_class=real_runtime_cfg.journey_test_class,
-                runner=real_runtime_cfg.instrumentation_runner,
-                args=instrumentation_args,
-                timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
+            started = time.monotonic()
+            instrumentation_output_path = run_root / "instrumentation-output.txt"
+            try:
+                result = _run_instrumentation_class(
+                    context=context,
+                    serial=serial,
+                    test_class=real_runtime_cfg.journey_test_class,
+                    runner=real_runtime_cfg.instrumentation_runner,
+                    args=instrumentation_args,
+                    timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
+                )
+                instrumentation_output_path.write_text(
+                    (result.stdout or "") + (result.stderr or ""),
+                    encoding="utf-8",
+                )
+                instrumentation_status = "passed"
+                instrumentation_failure = None
+            except DevctlError as exc:
+                instrumentation_output_path.write_text(exc.message + "\n", encoding="utf-8")
+                instrumentation_status = "failed"
+                instrumentation_failure = exc.message
+            duration = time.monotonic() - started
+
+            local_instrumentation_shots = run_root / real_runtime_cfg.screenshot_dir_name / "instrumentation"
+            local_instrumentation_shots.mkdir(parents=True, exist_ok=True)
+            context.run(
+                ["adb", "-s", serial, "pull", device_journey_dir, str(local_instrumentation_shots)],
+                check=False,
+                env=context.env,
             )
-            instrumentation_output_path.write_text(
-                (result.stdout or "") + (result.stderr or ""),
-                encoding="utf-8",
+            step = JourneyStepResult(
+                name=f"{run_label}:instrumentation",
+                status=instrumentation_status,
+                duration_seconds=duration,
+                details=str(instrumentation_output_path),
+                screenshots=_collect_maestro_screenshots(local_instrumentation_shots),
+                failure_signature=instrumentation_failure,
             )
-            instrumentation_status = "passed"
-            instrumentation_failure = None
-        except DevctlError as exc:
-            instrumentation_output_path.write_text(exc.message + "\n", encoding="utf-8")
-            instrumentation_status = "failed"
-            instrumentation_failure = exc.message
-        duration = time.monotonic() - started
+            steps.append(step)
+            if instrumentation_status != "passed":
+                _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
+                continue
 
-        local_instrumentation_shots = run_root / real_runtime_cfg.screenshot_dir_name / "instrumentation"
-        local_instrumentation_shots.mkdir(parents=True, exist_ok=True)
-        context.run(
-            ["adb", "-s", serial, "pull", device_journey_dir, str(local_instrumentation_shots)],
-            check=False,
-            env=context.env,
-        )
-        step = JourneyStepResult(
-            name=f"{run_label}:instrumentation",
-            status=instrumentation_status,
-            duration_seconds=duration,
-            details=str(instrumentation_output_path),
-            screenshots=_collect_maestro_screenshots(local_instrumentation_shots),
-            failure_signature=instrumentation_failure,
-        )
-        steps.append(step)
-        if instrumentation_status != "passed":
+            for flow in context.configs.lanes.lanes.maestro.flows:
+                flow_path = REPO_ROOT / flow
+                if not flow_path.exists():
+                    raise DevctlError("CONFIG_ERROR", f"Missing Maestro flow: {flow_path}")
+                flow_step = _run_maestro_flow(
+                    context=context,
+                    maestro_bin=maestro_bin,
+                    serial=serial,
+                    flow_path=flow_path,
+                    debug_output_dir=run_root / real_runtime_cfg.maestro_debug_dir_name / flow_path.stem,
+                )
+                steps.append(flow_step)
+                if flow_step.status != "passed":
+                    break
+
             _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
-            continue
 
-        for flow in context.configs.lanes.lanes.maestro.flows:
-            flow_path = REPO_ROOT / flow
-            if not flow_path.exists():
-                raise DevctlError("CONFIG_ERROR", f"Missing Maestro flow: {flow_path}")
-            flow_step = _run_maestro_flow(
-                context=context,
-                maestro_bin=maestro_bin,
-                serial=serial,
-                flow_path=flow_path,
-                debug_output_dir=run_root / real_runtime_cfg.maestro_debug_dir_name / flow_path.stem,
+        report_path = artifact_root / real_runtime_cfg.report_file_name
+        summary_path = artifact_root / real_runtime_cfg.summary_file_name
+        _write_journey_report(report_path=report_path, summary_path=summary_path, serial=serial, steps=steps)
+
+        failed = [step for step in steps if step.status != "passed"]
+        if failed:
+            names = ", ".join(step.name for step in failed)
+            raise DevctlError(
+                "DEVICE_ERROR",
+                f"Journey lane failed step(s): {names}. See {report_path}",
             )
-            steps.append(flow_step)
-            if flow_step.status != "passed":
-                break
-
-        _capture_logcat(context, serial, run_root / real_runtime_cfg.logcat_file_name)
-
-    report_path = artifact_root / real_runtime_cfg.report_file_name
-    summary_path = artifact_root / real_runtime_cfg.summary_file_name
-    _write_journey_report(report_path=report_path, summary_path=summary_path, serial=serial, steps=steps)
-
-    failed = [step for step in steps if step.status != "passed"]
-    if failed:
-        names = ", ".join(step.name for step in failed)
-        raise DevctlError(
-            "DEVICE_ERROR",
-            f"Journey lane failed step(s): {names}. See {report_path}",
-        )
-    print_step(f"Journey report: {report_path}")
+        print_step(f"Journey report: {report_path}")
 
 
 def lane_device(raw_args: Sequence[str], context: RuntimeContext) -> None:
@@ -1004,74 +1124,81 @@ def lane_device(raw_args: Sequence[str], context: RuntimeContext) -> None:
 
     parsed = parse_device_lane_args(raw_args, lane_cfg.default_scenario_command)
     serial = _ensure_serial(context)
-    _validate_required_device_props(context, serial)
+    with _device_lock(serial, owner="lane:device"):
+        _validate_required_device_props(context, serial)
 
-    date_value = datetime.now().strftime("%Y-%m-%d")
-    stamp_value = datetime.now().strftime("%Y%m%d-%H%M%S")
-    resolved_dir = build_artifact_dir(lane_cfg.artifacts.output_dir_template, date_value, serial, parsed.label, stamp_value)
-    print_step(f"Resolved artifact output directory: {resolved_dir}")
-
-    command_map = {step.name: step.argv for step in lane_cfg.commands}
-    required = {
-        "stage_checks",
-        "capture_baseline",
-        "apply_benchmark_settings",
-        "reset_benchmark_settings",
-        "run_short_loop",
-    }
-    missing = sorted(required - set(command_map))
-    if missing:
-        raise DevctlError("CONFIG_ERROR", f"lanes.device.commands missing required steps: {', '.join(missing)}")
-
-    context.run(command_map["stage_checks"], check=True, env=context.env)
-    context.run(command_map["capture_baseline"], check=True, env=context.env)
-    context.run(command_map["apply_benchmark_settings"], check=True, env=context.env)
-
-    try:
-        loop_command = [
-            *command_map["run_short_loop"],
-            "--runs",
-            str(parsed.runs),
-            "--label",
+        date_value = datetime.now().strftime("%Y-%m-%d")
+        stamp_value = datetime.now().strftime("%Y%m%d-%H%M%S")
+        resolved_dir = build_artifact_dir(
+            lane_cfg.artifacts.output_dir_template,
+            date_value,
+            serial,
             parsed.label,
-            "--",
-            *parsed.scenario_command,
-        ]
-        loop_result = context.run(loop_command, check=True, capture_output=True, env=context.env)
-        if loop_result.stdout:
-            print(loop_result.stdout, end="")
-        if loop_result.stderr:
-            print(loop_result.stderr, end="", file=sys.stderr)
+            stamp_value,
+        )
+        print_step(f"Resolved artifact output directory: {resolved_dir}")
 
-        summary_path = _extract_summary_path(loop_result.stdout or "")
-        if summary_path is not None:
-            _evaluate_loop_output(
-                summary_path,
-                context.configs.device.crash_signatures,
-                context.configs.device.oom_signatures,
-            )
-        else:
-            print_step("Short-loop summary path not found in output; skipping crash/OOM post-scan.")
+        command_map = {step.name: step.argv for step in lane_cfg.commands}
+        required = {
+            "stage_checks",
+            "capture_baseline",
+            "apply_benchmark_settings",
+            "reset_benchmark_settings",
+            "run_short_loop",
+        }
+        missing = sorted(required - set(command_map))
+        if missing:
+            raise DevctlError("CONFIG_ERROR", f"lanes.device.commands missing required steps: {', '.join(missing)}")
 
-        if parsed.framework in {"espresso", "both"}:
-            try:
-                lane_android_instrumented([], context, strict=parsed.framework_explicit)
-            except DevctlError as exc:
-                if not parsed.framework_explicit and exc.code == "ENVIRONMENT_ERROR":
-                    print_step(f"Skipping espresso lane (default framework mode): {exc.message}")
-                else:
-                    raise
+        context.run(command_map["stage_checks"], check=True, env=context.env)
+        context.run(command_map["capture_baseline"], check=True, env=context.env)
+        context.run(command_map["apply_benchmark_settings"], check=True, env=context.env)
 
-        if parsed.framework in {"maestro", "both"}:
-            try:
-                lane_maestro([], context, strict=parsed.framework_explicit)
-            except DevctlError as exc:
-                if not parsed.framework_explicit and exc.code == "ENVIRONMENT_ERROR":
-                    print_step(f"Skipping Maestro lane (default framework mode): {exc.message}")
-                else:
-                    raise
-    finally:
-        context.run(command_map["reset_benchmark_settings"], check=False, env=context.env)
+        try:
+            loop_command = [
+                *command_map["run_short_loop"],
+                "--runs",
+                str(parsed.runs),
+                "--label",
+                parsed.label,
+                "--",
+                *parsed.scenario_command,
+            ]
+            loop_result = context.run(loop_command, check=True, capture_output=True, env=context.env)
+            if loop_result.stdout:
+                print(loop_result.stdout, end="")
+            if loop_result.stderr:
+                print(loop_result.stderr, end="", file=sys.stderr)
+
+            summary_path = _extract_summary_path(loop_result.stdout or "")
+            if summary_path is not None:
+                _evaluate_loop_output(
+                    summary_path,
+                    context.configs.device.crash_signatures,
+                    context.configs.device.oom_signatures,
+                )
+            else:
+                print_step("Short-loop summary path not found in output; skipping crash/OOM post-scan.")
+
+            if parsed.framework in {"espresso", "both"}:
+                try:
+                    lane_android_instrumented([], context, strict=parsed.framework_explicit)
+                except DevctlError as exc:
+                    if not parsed.framework_explicit and exc.code == "ENVIRONMENT_ERROR":
+                        print_step(f"Skipping espresso lane (default framework mode): {exc.message}")
+                    else:
+                        raise
+
+            if parsed.framework in {"maestro", "both"}:
+                try:
+                    lane_maestro([], context, strict=parsed.framework_explicit)
+                except DevctlError as exc:
+                    if not parsed.framework_explicit and exc.code == "ENVIRONMENT_ERROR":
+                        print_step(f"Skipping Maestro lane (default framework mode): {exc.message}")
+                    else:
+                        raise
+        finally:
+            context.run(command_map["reset_benchmark_settings"], check=False, env=context.env)
 
 
 def _parse_stage2_args(raw_args: Sequence[str]) -> argparse.Namespace:

@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ComposerUiState
+import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
+import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
+import com.pocketagent.android.runtime.modelmanager.StorageSummary
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
@@ -13,6 +16,7 @@ import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
+import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.state.UiError
 import com.pocketagent.android.ui.state.UiErrorMapper
 import com.pocketagent.core.RoutingMode
@@ -24,10 +28,13 @@ import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 class ChatViewModel(
     private val runtimeFacade: MvpRuntimeFacade,
@@ -36,6 +43,7 @@ class ChatViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState = _uiState.asStateFlow()
+    private var startupProbeJob: Job? = null
 
     init {
         bootstrapState()
@@ -56,6 +64,26 @@ class ChatViewModel(
         }
 
         val toolIntent = parseToolIntent(prompt)
+        if (toolIntent == null && !isRuntimeReady(snapshot.runtime)) {
+            val uiError = startupBlockError(snapshot.runtime)
+            appendSystemMessage(
+                sessionId = activeSession.id,
+                content = formatUserFacingError(uiError),
+            )
+            _uiState.update { state ->
+                state.copy(
+                    runtime = state.runtime.copy(
+                        modelRuntimeStatus = if (state.runtime.startupProbeState == StartupProbeState.RUNNING) {
+                            ModelRuntimeStatus.LOADING
+                        } else {
+                            ModelRuntimeStatus.NOT_READY
+                        },
+                    ).withUiError(uiError),
+                )
+            }
+            persistState()
+            return
+        }
         val userMessage = createMessage(
             role = MessageRole.USER,
             content = prompt,
@@ -106,48 +134,56 @@ class ChatViewModel(
 
         viewModelScope.launch(ioDispatcher) {
             runCatching {
-                runtimeFacade.streamUserMessage(
-                    StreamUserMessageRequest(
-                        sessionId = SessionId(activeSession.id),
-                        userText = prompt,
-                        taskType = resolveTaskType(prompt),
-                        maxTokens = if (prompt.length >= LONG_PROMPT_LENGTH) 256 else 128,
-                        deviceState = DEFAULT_DEVICE_STATE,
-                    ),
-                ).collect { event ->
-                    when (event) {
-                        is ChatStreamEvent.Token -> {
-                            updateStreamingMessage(
-                                sessionId = activeSession.id,
-                                messageId = assistantMessageId,
-                                text = event.accumulatedText,
-                            )
-                        }
-
-                        is ChatStreamEvent.Completed -> {
-                            finalizeStreamingMessage(
-                                sessionId = activeSession.id,
-                                messageId = assistantMessageId,
-                                finalText = event.response.text,
-                            )
-                            _uiState.update { state ->
-                                state.copy(
-                                    composer = state.composer.copy(isSending = false),
-                                    runtime = state.runtime.copy(
-                                        modelRuntimeStatus = ModelRuntimeStatus.READY,
-                                        modelStatusDetail = "Runtime model ready",
-                                        activeModelId = event.response.modelId,
-                                        lastFirstTokenLatencyMs = event.response.firstTokenLatencyMs,
-                                        lastTotalLatencyMs = event.response.totalLatencyMs,
-                                    ).clearError(),
+                withTimeout(RUNTIME_GENERATION_TIMEOUT_MS) {
+                    runtimeFacade.streamUserMessage(
+                        StreamUserMessageRequest(
+                            sessionId = SessionId(activeSession.id),
+                            userText = prompt,
+                            taskType = resolveTaskType(prompt),
+                            maxTokens = if (prompt.length >= LONG_PROMPT_LENGTH) 256 else 128,
+                            deviceState = DEFAULT_DEVICE_STATE,
+                        ),
+                    ).collect { event ->
+                        when (event) {
+                            is ChatStreamEvent.Token -> {
+                                updateStreamingMessage(
+                                    sessionId = activeSession.id,
+                                    messageId = assistantMessageId,
+                                    text = event.accumulatedText,
                                 )
                             }
-                            persistState()
+
+                            is ChatStreamEvent.Completed -> {
+                                finalizeStreamingMessage(
+                                    sessionId = activeSession.id,
+                                    messageId = assistantMessageId,
+                                    finalText = event.response.text,
+                                )
+                                _uiState.update { state ->
+                                    state.copy(
+                                        composer = state.composer.copy(isSending = false),
+                                        runtime = state.runtime.copy(
+                                            runtimeBackend = runtimeFacade.runtimeBackend(),
+                                            startupProbeState = StartupProbeState.READY,
+                                            modelRuntimeStatus = ModelRuntimeStatus.READY,
+                                            modelStatusDetail = readyStatusDetail(runtimeFacade.runtimeBackend()),
+                                            activeModelId = event.response.modelId,
+                                            lastFirstTokenLatencyMs = event.response.firstTokenLatencyMs,
+                                            lastTotalLatencyMs = event.response.totalLatencyMs,
+                                        ).clearError(),
+                                    )
+                                }
+                                persistState()
+                            }
                         }
                     }
                 }
             }.onFailure { error ->
-                val uiError = UiErrorMapper.runtimeFailure(error.message)
+                val uiError = if (error is TimeoutCancellationException) {
+                    UiErrorMapper.runtimeTimeout(RUNTIME_GENERATION_TIMEOUT_MS)
+                } else {
+                    UiErrorMapper.runtimeFailure(error.message)
+                }
                 finalizeStreamingMessage(
                     sessionId = activeSession.id,
                     messageId = assistantMessageId,
@@ -219,7 +255,20 @@ class ChatViewModel(
     }
 
     fun attachImage(imagePath: String) {
-        val activeSession = _uiState.value.activeSession ?: return
+        val snapshot = _uiState.value
+        val activeSession = snapshot.activeSession ?: return
+        if (!isRuntimeReady(snapshot.runtime)) {
+            val uiError = startupBlockError(snapshot.runtime)
+            appendSystemMessage(
+                sessionId = activeSession.id,
+                content = formatUserFacingError(uiError),
+            )
+            _uiState.update { state ->
+                state.copy(runtime = state.runtime.withUiError(uiError))
+            }
+            persistState()
+            return
+        }
         val imageMessage = createMessage(
             role = MessageRole.USER,
             content = "Analyze attached image",
@@ -280,6 +329,7 @@ class ChatViewModel(
                     state.copy(
                         composer = state.composer.copy(isSending = false),
                         runtime = state.runtime.copy(
+                                runtimeBackend = runtimeFacade.runtimeBackend(),
                             modelRuntimeStatus = ModelRuntimeStatus.READY,
                             modelStatusDetail = "Image analysis completed",
                         ).clearError(),
@@ -368,6 +418,7 @@ class ChatViewModel(
                         state.copy(
                             composer = state.composer.copy(isSending = false),
                             runtime = state.runtime.copy(
+                                runtimeBackend = runtimeFacade.runtimeBackend(),
                                 modelRuntimeStatus = ModelRuntimeStatus.READY,
                                 modelStatusDetail = "Local tool completed",
                             ).clearError(),
@@ -483,11 +534,30 @@ class ChatViewModel(
         completeOnboarding()
     }
 
+    fun refreshRuntimeReadiness(statusDetailOverride: String? = null) {
+        launchStartupProbe(statusDetailOverride)
+    }
+
+    fun updateModelManagerState(
+        downloads: List<DownloadTaskState>,
+        storageSummary: StorageSummary?,
+        installedVersionsByModelId: Map<String, List<ModelVersionDescriptor>>,
+        activeVersionByModelId: Map<String, String>,
+    ) {
+        _uiState.update { state ->
+            state.copy(
+                modelManager = state.modelManager.copy(
+                    downloads = downloads,
+                    storageSummary = storageSummary,
+                    installedVersionsByModelId = installedVersionsByModelId,
+                    activeVersionByModelId = activeVersionByModelId,
+                ),
+            )
+        }
+    }
+
     private fun bootstrapState() {
-        val startupChecks = runtimeFacade.runStartupChecks()
-        val startupError = UiErrorMapper.startupFailure(startupChecks)
-        val startupModelStatus = resolveModelStatusFromStartupChecks(startupChecks)
-        val startupDetail = startupChecks.firstOrNull()
+        val runtimeBackend = runtimeFacade.runtimeBackend()
         val persisted = sessionPersistence.loadState()
         val restoredRoutingMode = runCatching { RoutingMode.valueOf(persisted.routingMode) }
             .getOrDefault(runtimeFacade.getRoutingMode())
@@ -523,13 +593,15 @@ class ChatViewModel(
                 activeSessionId = newSessionId,
                 runtime = RuntimeUiState(
                     routingMode = restoredRoutingMode,
-                    modelRuntimeStatus = startupModelStatus,
-                    modelStatusDetail = startupDetail,
-                    startupChecks = startupChecks,
-                ).withUiError(startupError),
+                    runtimeBackend = runtimeBackend,
+                    startupProbeState = StartupProbeState.RUNNING,
+                    modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+                    modelStatusDetail = "Running runtime startup checks...",
+                ).clearError(),
                 showOnboarding = !persisted.onboardingCompleted,
             )
             persistState()
+            launchStartupProbe()
             return
         }
 
@@ -542,12 +614,53 @@ class ChatViewModel(
             activeSessionId = activeSessionId,
             runtime = RuntimeUiState(
                 routingMode = restoredRoutingMode,
-                modelRuntimeStatus = startupModelStatus,
-                modelStatusDetail = startupDetail,
-                startupChecks = startupChecks,
-            ).withUiError(startupError),
+                runtimeBackend = runtimeBackend,
+                startupProbeState = StartupProbeState.RUNNING,
+                modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+                modelStatusDetail = "Running runtime startup checks...",
+            ).clearError(),
             showOnboarding = !persisted.onboardingCompleted,
         )
+        launchStartupProbe()
+    }
+
+    private fun launchStartupProbe(statusDetailOverride: String? = null) {
+        startupProbeJob?.cancel()
+        startupProbeJob = viewModelScope.launch(ioDispatcher) {
+            _uiState.update { state ->
+                state.copy(
+                    runtime = state.runtime.copy(
+                        startupProbeState = StartupProbeState.RUNNING,
+                        modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+                        modelStatusDetail = "Running runtime startup checks...",
+                    ).clearError(),
+                )
+            }
+            val startupChecks = runtimeFacade.runStartupChecks()
+            val startupError = UiErrorMapper.startupFailure(startupChecks)
+            val startupModelStatus = resolveModelStatusFromStartupChecks(startupChecks)
+            val runtimeBackend = runtimeFacade.runtimeBackend()
+            val nextProbeState = if (startupChecks.isEmpty()) {
+                StartupProbeState.READY
+            } else {
+                StartupProbeState.BLOCKED
+            }
+            _uiState.update { state ->
+                state.copy(
+                    runtime = state.runtime.copy(
+                        runtimeBackend = runtimeBackend,
+                        startupProbeState = nextProbeState,
+                        modelRuntimeStatus = startupModelStatus,
+                        modelStatusDetail = if (startupChecks.isEmpty()) {
+                            statusDetailOverride ?: readyStatusDetail(runtimeBackend)
+                        } else {
+                            startupChecks.firstOrNull() ?: "Runtime startup checks failed."
+                        },
+                        startupChecks = startupChecks,
+                    ).withUiError(startupError),
+                )
+            }
+        }
     }
 
     private fun updateStreamingMessage(sessionId: String, messageId: String, text: String) {
@@ -675,6 +788,7 @@ class ChatViewModel(
                         state.copy(
                             composer = state.composer.copy(isSending = false),
                             runtime = state.runtime.copy(
+                                runtimeBackend = runtimeFacade.runtimeBackend(),
                                 modelRuntimeStatus = ModelRuntimeStatus.READY,
                                 modelStatusDetail = "Local tool completed",
                             ).clearError(),
@@ -762,6 +876,27 @@ class ChatViewModel(
         return if (prompt.length >= LONG_PROMPT_LENGTH) "long_text" else "short_text"
     }
 
+    private fun isRuntimeReady(runtime: RuntimeUiState): Boolean {
+        return runtime.startupProbeState == StartupProbeState.READY &&
+            runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
+    }
+
+    private fun startupBlockError(runtime: RuntimeUiState): UiError {
+        val checks = runtime.startupChecks.ifEmpty {
+            listOf(runtime.modelStatusDetail ?: "Runtime startup checks are still running.")
+        }
+        return UiErrorMapper.startupFailure(checks)
+            ?: UiErrorMapper.runtimeFailure(runtime.modelStatusDetail ?: "Runtime is not ready yet.")
+    }
+
+    private fun readyStatusDetail(runtimeBackend: String?): String {
+        return if (runtimeBackend.isNullOrBlank()) {
+            "Runtime model ready"
+        } else {
+            "Runtime model ready ($runtimeBackend)"
+        }
+    }
+
     private fun deriveSessionTitle(messages: List<MessageUiModel>): String {
         val firstUserMessage = messages.firstOrNull { it.role == MessageRole.USER } ?: return "New chat"
         val normalized = firstUserMessage.content
@@ -794,6 +929,7 @@ class ChatViewModel(
         private const val TITLE_MAX_CHARS = 42
         private const val LONG_PROMPT_LENGTH = 160
         private const val ONBOARDING_LAST_PAGE = 2
+        private const val RUNTIME_GENERATION_TIMEOUT_MS = 90_000L
         private val DEFAULT_DEVICE_STATE = DeviceState(
             batteryPercent = 85,
             thermalLevel = 3,

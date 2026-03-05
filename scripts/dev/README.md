@@ -148,6 +148,18 @@ Optional cache controls (env):
 ```bash
 python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
+python3 tools/devctl/main.py lane journey [--repeats N]
+```
+
+Device-lock behavior:
+
+1. These lanes now acquire an exclusive per-device lock under `scripts/benchmarks/device-env/locks/` to avoid concurrent uninstall/reinstall collisions.
+2. Override only for emergency/manual troubleshooting: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
+
+Wrapper:
+
+```bash
+bash scripts/dev/journey.sh [--repeats N]
 ```
 
 Maestro install:

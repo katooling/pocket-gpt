@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -30,14 +31,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.AppRuntimeDependencies
+import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
+import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
+import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
+import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
+import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import com.pocketagent.android.ui.state.ModelRuntimeStatus
+import com.pocketagent.android.ui.state.StartupProbeState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,12 +60,113 @@ fun PocketAgentApp(
     viewModel: ChatViewModel,
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val downloads by AppRuntimeDependencies.observeDownloads(context).collectAsState()
     val drawerState = rememberDrawerState(
         initialValue = if (state.isSessionDrawerOpen) DrawerValue.Open else DrawerValue.Closed,
     )
+    val runtimeReadyForModelActions = state.runtime.startupProbeState == StartupProbeState.READY &&
+        state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
     val scope = rememberCoroutineScope()
+    var modelSheetOpen by remember { mutableStateOf(false) }
+    var selectedModelIdForImport by remember { mutableStateOf<String?>(null) }
+    var modelImportInProgress by remember { mutableStateOf(false) }
+    var modelProvisioningStatus by remember { mutableStateOf<String?>(null) }
+    val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
+    var modelDistributionManifest by remember { mutableStateOf(ModelDistributionManifest(models = emptyList())) }
+    val modelDownloadsEnabled = AppRuntimeDependencies.areModelDownloadsEnabled()
+    var provisioningSnapshot by remember {
+        mutableStateOf(AppRuntimeDependencies.currentProvisioningSnapshot(context))
+    }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { viewModel.attachImage(it.toString()) }
+    }
+    val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        val modelId = selectedModelIdForImport ?: return@rememberLauncherForActivityResult
+        if (uri == null) {
+            modelProvisioningStatus = context.getString(R.string.ui_model_import_cancelled)
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            modelImportInProgress = true
+            modelProvisioningStatus = context.getString(R.string.ui_model_import_in_progress)
+            runCatching {
+                AppRuntimeDependencies.importModelFromUri(
+                    context = context,
+                    modelId = modelId,
+                    sourceUri = uri,
+                )
+            }.onSuccess { result ->
+                provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                val statusMessage = if (result.isActive) {
+                    context.getString(
+                        R.string.ui_model_import_success_active,
+                        result.modelId,
+                        result.version,
+                    )
+                } else {
+                    context.getString(
+                        R.string.ui_model_import_success_inactive,
+                        result.modelId,
+                        result.version,
+                    )
+                }
+                viewModel.refreshRuntimeReadiness(
+                    statusDetailOverride = statusMessage,
+                )
+                modelProvisioningStatus = statusMessage
+            }.onFailure { error ->
+                modelProvisioningStatus = context.getString(
+                    R.string.ui_model_import_failure,
+                    error.message ?: "Unknown import error",
+                )
+            }
+            modelImportInProgress = false
+        }
+    }
+
+    LaunchedEffect(downloads) {
+        provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+        val transitioned = downloads.firstOrNull { task ->
+            val previous = previousDownloadStatuses[task.taskId]
+            previous != null && previous != task.status
+        }
+        transitioned
+            ?.provisioningFeedback(context)
+            ?.let { feedback ->
+                modelProvisioningStatus = feedback
+            }
+        previousDownloadStatuses.clear()
+        downloads.forEach { task ->
+            previousDownloadStatuses[task.taskId] = task.status
+        }
+    }
+
+    LaunchedEffect(downloads, provisioningSnapshot.storageSummary) {
+        val installedVersionsByModelId = provisioningSnapshot.models.associate { model ->
+            model.modelId to model.installedVersions
+        }
+        val activeVersionByModelId = provisioningSnapshot.models
+            .mapNotNull { model ->
+                model.activeVersion?.let { active -> model.modelId to active }
+            }
+            .toMap()
+        viewModel.updateModelManagerState(
+            downloads = downloads,
+            storageSummary = provisioningSnapshot.storageSummary,
+            installedVersionsByModelId = installedVersionsByModelId,
+            activeVersionByModelId = activeVersionByModelId,
+        )
+    }
+
+    LaunchedEffect(modelSheetOpen) {
+        if (!modelSheetOpen) {
+            return@LaunchedEffect
+        }
+        provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+        if (modelDownloadsEnabled) {
+            modelDistributionManifest = AppRuntimeDependencies.loadModelDistributionManifest(context)
+        }
     }
 
     LaunchedEffect(state.isSessionDrawerOpen) {
@@ -133,6 +248,7 @@ fun PocketAgentApp(
                 ComposerBar(
                     text = state.composer.text,
                     isSending = state.composer.isSending,
+                    isRuntimeReady = runtimeReadyForModelActions,
                     onTextChanged = viewModel::onComposerChanged,
                     onSend = viewModel::sendMessage,
                     onAttachImage = { imagePicker.launch("image/*") },
@@ -142,6 +258,15 @@ fun PocketAgentApp(
             ChatScreenBody(
                 state = state,
                 onSuggestedPrompt = viewModel::prefillComposer,
+                onOpenModelSetup = {
+                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    modelSheetOpen = true
+                },
+                onRefreshRuntimeChecks = {
+                    viewModel.refreshRuntimeReadiness()
+                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    modelProvisioningStatus = context.getString(R.string.ui_model_refresh_runtime_feedback)
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -176,6 +301,97 @@ fun PocketAgentApp(
                 state = state,
                 onRoutingModeSelected = viewModel::setRoutingMode,
                 onExportDiagnostics = viewModel::exportDiagnostics,
+                onOpenModelSetup = {
+                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    modelSheetOpen = true
+                },
+            )
+        }
+    }
+
+    if (modelSheetOpen) {
+        val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { modelSheetOpen = false },
+            sheetState = modelSheetState,
+        ) {
+            ModelProvisioningSheet(
+                snapshot = provisioningSnapshot,
+                manifest = modelDistributionManifest,
+                downloads = downloads,
+                downloadsEnabled = modelDownloadsEnabled,
+                isImporting = modelImportInProgress,
+                statusMessage = modelProvisioningStatus,
+                onImportModel = { modelId ->
+                    selectedModelIdForImport = modelId
+                    modelPicker.launch(arrayOf("*/*"))
+                },
+                onDownloadVersion = { version ->
+                    startModelDownload(
+                        context = context,
+                        version = version,
+                        onStatus = { modelProvisioningStatus = it },
+                    )
+                },
+                onPauseDownload = { taskId ->
+                    AppRuntimeDependencies.pauseDownload(context, taskId)
+                    modelProvisioningStatus = context.getString(R.string.ui_model_download_paused)
+                },
+                onResumeDownload = { taskId ->
+                    AppRuntimeDependencies.resumeDownload(context, taskId)
+                    modelProvisioningStatus = context.getString(R.string.ui_model_download_resumed)
+                },
+                onRetryDownload = { taskId ->
+                    AppRuntimeDependencies.retryDownload(context, taskId)
+                    modelProvisioningStatus = context.getString(R.string.ui_model_download_retried)
+                },
+                onActivateVersion = { modelId, version ->
+                    val activated = AppRuntimeDependencies.setActiveVersion(context, modelId, version)
+                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    if (activated) {
+                        viewModel.refreshRuntimeReadiness(
+                            statusDetailOverride = context.getString(
+                                R.string.ui_model_version_activated,
+                                modelId,
+                                version,
+                            ),
+                        )
+                        modelProvisioningStatus = context.getString(
+                            R.string.ui_model_version_activated,
+                            modelId,
+                            version,
+                        )
+                    } else {
+                        modelProvisioningStatus = context.getString(
+                            R.string.ui_model_version_activation_failed,
+                        )
+                    }
+                },
+                onRemoveVersion = { modelId, version ->
+                    val removed = AppRuntimeDependencies.removeVersion(context, modelId, version)
+                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    modelProvisioningStatus = if (removed) {
+                        context.getString(R.string.ui_model_version_removed, modelId, version)
+                    } else {
+                        context.getString(R.string.ui_model_version_remove_blocked)
+                    }
+                },
+                onRefreshManifest = {
+                    scope.launch {
+                        modelDistributionManifest = AppRuntimeDependencies.loadModelDistributionManifest(context)
+                        modelProvisioningStatus = if (modelDistributionManifest.models.isEmpty()) {
+                            context.getString(R.string.ui_model_downloads_manifest_empty)
+                        } else {
+                            context.getString(R.string.ui_model_refresh_manifest_success)
+                        }
+                    }
+                },
+                onRefreshRuntime = {
+                    viewModel.refreshRuntimeReadiness()
+                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    modelProvisioningStatus = context.getString(R.string.ui_model_refresh_runtime_feedback)
+                },
+                onClose = { modelSheetOpen = false },
             )
         }
     }
@@ -187,6 +403,81 @@ fun PocketAgentApp(
             onSkip = viewModel::skipOnboarding,
             onFinish = viewModel::completeOnboarding,
         )
+    }
+}
+
+private fun startModelDownload(
+    context: android.content.Context,
+    version: ModelDistributionVersion,
+    onStatus: (String) -> Unit,
+) {
+    val taskId = AppRuntimeDependencies.enqueueDownload(context, version)
+    onStatus(
+        context.getString(
+            R.string.ui_model_download_enqueued,
+            version.modelId,
+            version.version,
+            taskId,
+        ),
+    )
+}
+
+private fun DownloadTaskState.provisioningFeedback(context: android.content.Context): String? {
+    return when (status) {
+        DownloadTaskStatus.INSTALLED_INACTIVE -> context.getString(
+            R.string.ui_model_download_verified_inactive,
+            modelId,
+            version,
+        )
+        DownloadTaskStatus.FAILED -> {
+            when (failureReason) {
+                DownloadFailureReason.CHECKSUM_MISMATCH -> context.getString(
+                    R.string.ui_model_download_failed_checksum,
+                    modelId,
+                    version,
+                )
+                DownloadFailureReason.PROVENANCE_MISMATCH -> context.getString(
+                    R.string.ui_model_download_failed_provenance,
+                    modelId,
+                    version,
+                )
+                DownloadFailureReason.RUNTIME_INCOMPATIBLE -> context.getString(
+                    R.string.ui_model_download_failed_runtime_compat,
+                    modelId,
+                    version,
+                )
+                DownloadFailureReason.INSUFFICIENT_STORAGE -> context.getString(
+                    R.string.ui_model_download_failed_storage,
+                    modelId,
+                    version,
+                )
+                DownloadFailureReason.NETWORK_UNAVAILABLE,
+                DownloadFailureReason.NETWORK_ERROR,
+                -> context.getString(
+                    R.string.ui_model_download_failed_network,
+                    modelId,
+                    version,
+                )
+                DownloadFailureReason.TIMEOUT -> context.getString(
+                    R.string.ui_model_download_failed_timeout,
+                    modelId,
+                    version,
+                )
+                DownloadFailureReason.CANCELLED -> context.getString(
+                    R.string.ui_model_download_failed_cancelled,
+                    modelId,
+                    version,
+                )
+                DownloadFailureReason.UNKNOWN,
+                null,
+                -> context.getString(
+                    R.string.ui_model_download_failed_unknown,
+                    modelId,
+                    version,
+                )
+            }
+        }
+        else -> null
     }
 }
 

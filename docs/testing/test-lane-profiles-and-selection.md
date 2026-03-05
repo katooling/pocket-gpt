@@ -81,3 +81,14 @@ Key mappings:
 5. Model provision cache: `scripts/benchmarks/cache/<device>/model-provision-state.env`
 6. Device env exports: `scripts/benchmarks/device-env/<device>.env`
 7. Stage-2 cache counters: `scripts/benchmarks/runs/YYYY-MM-DD/<device>/stage2-run-meta.env`
+8. Journey gate reports: `scripts/benchmarks/runs/YYYY-MM-DD/<device>/journey/<stamp>/journey-report.json`
+
+## Hosted CI Mapping
+
+1. Required GitHub CI checks:
+   - `unit-and-host-tests`
+   - `android-lint`
+   - `native-build-package-check`
+   - `android-instrumented-smoke` (required when Android/runtime paths change on PRs)
+2. `android-lint`, `native-build-package-check`, and `android-instrumented-smoke` are path-filtered on pull requests to avoid running heavy Android jobs for docs-only changes.
+3. Stage-2 closure and full Maestro flows remain outside required hosted PR gates and stay in nightly/manual hardware cadence.

@@ -20,6 +20,9 @@ This section is the project operating system for cross-functional execution.
 - `execution-board.md`
 - `wp-13-ux-quality-work-package.md`
 - `wp-13-usability-gate-packet-template.md`
+- `evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
+- `evidence/wp-13/2026-03-05-eng-chat-layout-hardening.md`
+- `evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`
 - `eng-13-unblock-checklist.md`
 - `role-playbooks/engineering-playbook.md`
 - `role-playbooks/product-playbook.md`

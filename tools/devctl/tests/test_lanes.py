@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -251,6 +253,49 @@ class LanesTest(unittest.TestCase):
         for call in maestro_calls:
             self.assertEqual("--device", call[1])
             self.assertEqual("SER123", call[2])
+
+    def test_device_lock_is_reentrant_for_same_process(self) -> None:
+        from tools.devctl import lanes
+
+        lock_path = lanes._device_lock_path("SER-LOCK-REENTRANT")
+        try:
+            with lanes._device_lock("SER-LOCK-REENTRANT", owner="test:outer", timeout_seconds=1):
+                with lanes._device_lock("SER-LOCK-REENTRANT", owner="test:inner", timeout_seconds=1):
+                    self.assertTrue(True)
+        finally:
+            lock_path.unlink(missing_ok=True)
+            if lock_path.parent.exists() and not any(lock_path.parent.iterdir()):
+                lock_path.parent.rmdir()
+
+    def test_device_lock_times_out_when_held_by_another_process(self) -> None:
+        from tools.devctl import lanes
+
+        if lanes.fcntl is None:
+            self.skipTest("fcntl is unavailable on this platform")
+
+        lock_path = lanes._device_lock_path("SER-LOCK-TIMEOUT")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        holder_script = (
+            "import fcntl, pathlib, time\n"
+            f"p = pathlib.Path({str(lock_path)!r})\n"
+            "p.parent.mkdir(parents=True, exist_ok=True)\n"
+            "f = p.open('a+')\n"
+            "fcntl.flock(f.fileno(), fcntl.LOCK_EX)\n"
+            "time.sleep(8)\n"
+        )
+        holder = subprocess.Popen(["python3", "-c", holder_script])
+        try:
+            time.sleep(0.25)
+            with self.assertRaises(DevctlError) as raised:
+                with lanes._device_lock("SER-LOCK-TIMEOUT", owner="test:timeout", timeout_seconds=1):
+                    self.fail("Expected timeout while waiting for held device lock")
+            self.assertEqual("DEVICE_ERROR", raised.exception.code)
+        finally:
+            holder.terminate()
+            holder.wait(timeout=5)
+            lock_path.unlink(missing_ok=True)
+            if lock_path.parent.exists() and not any(lock_path.parent.iterdir()):
+                lock_path.parent.rmdir()
 
 
 if __name__ == "__main__":

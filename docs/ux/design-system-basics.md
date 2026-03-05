@@ -39,6 +39,7 @@ Owner: Android + Product
 2. Message list auto-scrolls to latest content during streaming.
 3. Long content supports markdown-like rendering and copy action.
 4. Tool invocations should be discoverable via natural-language prompts.
+5. Runtime failure states must include a direct recovery path (`Open model setup`).
 
 ## Accessibility Baseline
 
@@ -46,3 +47,4 @@ Owner: Android + Product
 2. Routing mode controls use radio semantics.
 3. Session list items communicate selected state.
 4. Runtime error banner is consistently test-tagged and user-readable.
+5. Runtime/backend chips remain visible at top-of-chat for quick support triage.

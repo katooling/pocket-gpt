@@ -1,6 +1,9 @@
 package com.pocketagent.android.ui.state
 
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
+import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
+import com.pocketagent.android.runtime.modelmanager.StorageSummary
 
 enum class MessageRole {
     USER,
@@ -42,6 +45,8 @@ data class ComposerUiState(
 data class RuntimeUiState(
     val offlineOnly: Boolean = true,
     val routingMode: RoutingMode = RoutingMode.AUTO,
+    val runtimeBackend: String? = null,
+    val startupProbeState: StartupProbeState = StartupProbeState.IDLE,
     val modelRuntimeStatus: ModelRuntimeStatus = ModelRuntimeStatus.NOT_READY,
     val modelStatusDetail: String? = null,
     val activeModelId: String? = null,
@@ -61,11 +66,19 @@ enum class ModelRuntimeStatus {
     ERROR,
 }
 
+enum class StartupProbeState {
+    IDLE,
+    RUNNING,
+    READY,
+    BLOCKED,
+}
+
 data class ChatUiState(
     val sessions: List<ChatSessionUiModel> = emptyList(),
     val activeSessionId: String? = null,
     val composer: ComposerUiState = ComposerUiState(),
     val runtime: RuntimeUiState = RuntimeUiState(),
+    val modelManager: ModelManagerUiState = ModelManagerUiState(),
     val isSessionDrawerOpen: Boolean = false,
     val isAdvancedSheetOpen: Boolean = false,
     val isToolDialogOpen: Boolean = false,
@@ -76,3 +89,10 @@ data class ChatUiState(
     val activeSession: ChatSessionUiModel?
         get() = sessions.firstOrNull { it.id == activeSessionId }
 }
+
+data class ModelManagerUiState(
+    val downloads: List<DownloadTaskState> = emptyList(),
+    val storageSummary: StorageSummary? = null,
+    val installedVersionsByModelId: Map<String, List<ModelVersionDescriptor>> = emptyMap(),
+    val activeVersionByModelId: Map<String, String> = emptyMap(),
+)

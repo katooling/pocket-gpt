@@ -6,6 +6,7 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.memory.FileBackedMemoryModule
+import com.pocketagent.memory.MemoryModule
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 
@@ -39,6 +40,7 @@ interface MvpRuntimeFacade {
     fun runStartupChecks(): List<String>
     fun restoreSession(sessionId: SessionId, turns: List<Turn>)
     fun deleteSession(sessionId: SessionId): Boolean
+    fun runtimeBackend(): String? = null
 }
 
 interface RuntimeContainer {
@@ -60,6 +62,7 @@ interface RuntimeContainer {
     fun runStartupChecks(): List<String>
     fun restoreSession(sessionId: SessionId, turns: List<Turn>)
     fun deleteSession(sessionId: SessionId): Boolean
+    fun runtimeBackend(): String? = null
 }
 
 class DefaultMvpRuntimeFacade(
@@ -110,11 +113,16 @@ class DefaultMvpRuntimeFacade(
     }
 
     override fun deleteSession(sessionId: SessionId): Boolean = container.deleteSession(sessionId)
+
+    override fun runtimeBackend(): String? = container.runtimeBackend()
 }
 
 class DefaultRuntimeContainer(
+    runtimeConfig: RuntimeConfig = RuntimeConfig.fromEnvironment(),
+    memoryModule: MemoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
     private val orchestrator: RuntimeOrchestrator = RuntimeOrchestrator(
-        memoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
+        memoryModule = memoryModule,
+        runtimeConfig = runtimeConfig,
     ),
 ) : RuntimeContainer {
     override fun createSession(): SessionId = orchestrator.createSession()
@@ -160,4 +168,6 @@ class DefaultRuntimeContainer(
     }
 
     override fun deleteSession(sessionId: SessionId): Boolean = orchestrator.deleteSession(sessionId)
+
+    override fun runtimeBackend(): String? = orchestrator.runtimeBackend()
 }

@@ -18,6 +18,16 @@ class NetworkPolicyManifestConfigTest {
         assertTrue(networkConfig.contains("cleartextTrafficPermitted=\"false\""))
     }
 
+    @Test
+    fun `internal download flavor manifest scopes internet permission`() {
+        val repoRoot = findRepoRoot(File(System.getProperty("user.dir") ?: "."))
+        val mainManifest = File(repoRoot, "apps/mobile-android/src/main/AndroidManifest.xml").readText()
+        val internalManifest = File(repoRoot, "apps/mobile-android/src/internalDownload/AndroidManifest.xml").readText()
+
+        assertFalse(mainManifest.contains("uses-permission android:name=\"android.permission.INTERNET\""))
+        assertTrue(internalManifest.contains("uses-permission android:name=\"android.permission.INTERNET\""))
+    }
+
     private fun findRepoRoot(start: File): File {
         var cursor: File? = start.absoluteFile
         while (cursor != null) {

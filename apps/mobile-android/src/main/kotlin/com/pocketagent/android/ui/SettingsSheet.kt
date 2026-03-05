@@ -55,6 +55,7 @@ internal fun AdvancedSettingsSheet(
     state: ChatUiState,
     onRoutingModeSelected: (RoutingMode) -> Unit,
     onExportDiagnostics: () -> Unit,
+    onOpenModelSetup: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -98,6 +99,12 @@ internal fun AdvancedSettingsSheet(
         ) {
             Text(stringResource(id = R.string.ui_export_diagnostics))
         }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onOpenModelSetup,
+        ) {
+            Text(stringResource(id = R.string.ui_open_model_setup))
+        }
 
         Text(
             text = stringResource(
@@ -111,6 +118,12 @@ internal fun AdvancedSettingsSheet(
             ),
             style = MaterialTheme.typography.bodySmall,
         )
+        state.runtime.runtimeBackend?.let { backend ->
+            Text(
+                text = stringResource(id = R.string.ui_runtime_backend_label, backend),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         state.runtime.modelStatusDetail?.let { detail ->
             Text(
                 text = detail,

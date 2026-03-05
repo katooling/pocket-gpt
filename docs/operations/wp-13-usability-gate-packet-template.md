@@ -55,11 +55,22 @@ For each category, provide top findings and owner:
 ## Evidence Links
 
 1. QA weekly matrix run:
-2. Instrumentation run id:
-3. Maestro run id:
+2. Real-runtime instrumentation journey run id:
+3. Real-runtime Maestro journey run id:
 4. User session notes:
 5. Video/screenshot proof set:
 6. Raw artifact root:
+
+## Automation Attachments (Reusable)
+
+Attach latest PASS ids and artifact paths for:
+
+1. Real-runtime journey instrumentation (`RealRuntimeJourneyInstrumentationTest`)
+2. Real-runtime app-path smoke (`RealRuntimeAppPathInstrumentationTest`, RC only)
+3. Maestro Scenario A (`tests/maestro/scenario-a.yaml`)
+4. Maestro Scenario B (`tests/maestro/scenario-b.yaml`)
+5. Maestro Scenario C (`tests/maestro/scenario-c.yaml`)
+6. Journey aggregate report (`journey-report.json` + `journey-summary.md`)
 
 ## Decision
 

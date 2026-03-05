@@ -20,6 +20,8 @@ This section defines the MVP user experience layer that sits between PRD intent 
 - `docs/ux/design-system-basics.md`
 - `docs/ux/markdown-rendering-options.md`
 - `docs/ux/play-store-listing-spec.md`
+- `docs/ux/error-recovery-guide.md`
+- `docs/ux/implemented-behavior-reference.md`
 
 ## Gates
 

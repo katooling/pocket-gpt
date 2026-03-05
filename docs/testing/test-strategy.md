@@ -32,7 +32,7 @@ Last updated: 2026-03-05
 | L3 Android smoke lane | QA + Engineering | device/emulator UI wiring confidence | weekly + pre-promotion | `python3 tools/devctl/main.py lane android-instrumented`, `python3 tools/devctl/main.py lane maestro` | weekly QA packets under `docs/operations/evidence/wp-09/` |
 | L4 Stage-2 quick lane | Engineering | fast native runtime sanity/perf loop | runtime/native edits | `bash scripts/dev/bench.sh stage2 --profile quick --device <id>` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` |
 | L5 Stage-2 closure lane | Engineering + QA | strict closure evidence (native JNI + thresholds + validator) | closure/signoff windows | `bash scripts/dev/bench.sh stage2 --profile closure --device <id>` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` + evidence note |
-| L6 Real-runtime app-path lane | Engineering + QA | prove user-message app path on native runtime in RC builds | release-candidate windows | `adb shell am instrument ... -e stage2_model_0_8b_path ... -e stage2_model_2b_path ... com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner` | instrumentation output + linked evidence note |
+| L6 Real-runtime app-path lane | Engineering + QA | prove user-message app path on native runtime in RC builds | release-candidate windows | `adb shell am instrument ... -e stage2_enable_app_path_test true -e stage2_model_0_8b_path ... -e stage2_model_2b_path ... com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner` | instrumentation output + linked evidence note |
 | Product usability lane | Product + QA + Design | release decision from usability signals | beta cohort windows | WP-13 usability packet workflow | `docs/operations/evidence/wp-13/...` |
 
 ## Core Flow Coverage Matrix (Mandatory)
@@ -47,6 +47,7 @@ Last updated: 2026-03-05
 | Diagnostics export + redaction | diagnostics/redaction tests | diagnostics UI assertion | scenario-b diagnostics step | QA release promotion checklist | Eng + QA + Security |
 | Offline/network policy enforcement | policy/network tests | launch sanity in offline mode | n/a | WP-12/weekly policy references | Eng + QA + Security |
 | Runtime/model readiness transitions | ViewModel runtime state tests | status-chip and advanced-sheet checks | n/a | stage-2 and startup checks | Eng + QA |
+| Model manager phase-2 (download/version/storage) | `UiErrorMapperTest`, `ChatViewModelTest`, `NetworkPolicyManifestConfigTest` | model sheet journey instrumentation | Maestro NotReady recovery extension | RC journey evidence + WP-13 packet linkage | Eng + QA + Product |
 | Scenario C continuity/user journey | ViewModel session + image tests | smoke regression assertions | `tests/maestro/scenario-c.yaml` | weekly matrix + usability packet | QA + Product + Eng |
 
 Coverage rule:
@@ -69,6 +70,7 @@ Coverage rule:
 | UI-01..UI-10 acceptance suite pass | WP-11 close + external beta signoff |
 | Maestro Scenario C (`tests/maestro/scenario-c.yaml`) pass | WP-13 usability + promotion readiness |
 | Real-runtime app-path smoke pass on RC candidate (native claim path) | production-claim promotion windows |
+| Model manager recovery journey pass (import/download -> activate -> refresh unlock) | internal-download RC readiness windows |
 
 ## CI Baseline
 
@@ -76,17 +78,32 @@ Primary workflow: `.github/workflows/ci.yml`
 
 CI responsibilities:
 
-1. `python3 tools/devctl/main.py lane test ci`
-2. `python3 tools/devctl/main.py governance docs-drift`
-3. `python3 tools/devctl/main.py governance evidence-check-changed` for changed evidence notes
-4. `python3 tools/devctl/main.py governance self-test`
-5. PR governance checks (template completion)
-6. Test report artifact upload
+1. Required check `unit-and-host-tests`: `python3 tools/devctl/main.py lane test ci`
+2. Required check `android-lint`: `./gradlew --no-daemon :apps:mobile-android:lintDebug` (path-filtered on PRs)
+3. Required check `native-build-package-check`: `./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug` + APK assertion for `lib/arm64-v8a/libpocket_llama.so` (path-filtered on PRs)
+4. Required check `android-instrumented-smoke`: `:apps:mobile-android:connectedDebugAndroidTest` on hosted emulator (path-filtered on PRs)
+5. Governance checks:
+   - `python3 tools/devctl/main.py governance docs-drift`
+   - `python3 tools/devctl/main.py governance self-test`
+   - `python3 tools/devctl/main.py governance evidence-check-changed` for changed evidence notes
+   - PR template/stage-close checks on pull requests
+6. Artifacts upload for test reports, lint reports, and instrumentation reports
 
 CI note:
 
-1. Device-dependent lanes (`android-instrumented`, `maestro`, `stage2`) are intentionally not part of baseline CI.
-2. Promotion decisions must include latest QA device evidence links.
+1. Stage-2 native closure and full Maestro release lanes remain outside required hosted PR gates.
+2. Hosted instrumentation smoke is included in CI only as emulator validation and does not replace hardware closure evidence.
+3. Promotion decisions must include latest QA/device evidence links.
+
+## Nightly Automation
+
+1. `.github/workflows/nightly-validation.yml` runs:
+   - emulator instrumentation smoke matrix (`api-level: 30, 34`)
+   - non-blocking Maestro smoke on hosted emulator
+2. `.github/workflows/nightly-hardware-lane.yml` targets self-hosted hardware runner labels (`self-hosted`, `pocketgpt-android`) for:
+   - scheduled Stage-2 quick lane
+   - manual Stage-2 closure/quick dispatch
+3. Hardware lane requires attached authorized device and side-load model path env vars.
 
 ## UI Test Lanes
 
@@ -139,6 +156,8 @@ Human-required checkpoints:
 
 1. Espresso instrumentation lane: `python3 tools/devctl/main.py lane android-instrumented`
 2. Maestro E2E lane: `python3 tools/devctl/main.py lane maestro`
+3. Real-runtime user journey gate (aggregated): `python3 tools/devctl/main.py lane journey`
+4. Release promotion requires latest PASS ids for both real-runtime instrumentation journey and real-runtime Maestro journey.
 
 ## Lane Selection Policy
 

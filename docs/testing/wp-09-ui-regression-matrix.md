@@ -1,6 +1,6 @@
 # WP-09 Weekly UI Regression Matrix
 
-Last updated: 2026-03-04  
+Last updated: 2026-03-05
 Owner: QA Lead  
 Cadence: Weekly (beta operations)
 
@@ -41,6 +41,8 @@ Current week hardware state (2026-03-04):
 |---|---|---|---|---|
 | UX-ONBOARD-01 | First-run onboarding renders and can be completed/skipped | Instrumentation assertions | Instrumentation fallback | QA + Product |
 | UX-MODEL-01 | Runtime status is visible and consistent (`Not ready`/`Loading`/`Ready`/`Error`) | Instrumentation assertions + advanced-sheet check | Instrumentation fallback | QA + Eng |
+| UX-MODEL-02 | Model manager recovery flow works across back/close/reopen (import/download/pause/resume/activate/refresh) | Instrumentation journey + model sheet assertions | Instrumentation fallback with caveat | QA + Eng + Product |
+| UX-MODEL-03 | Checksum/provenance/runtime-compatibility failures show deterministic recovery guidance copy | Instrumentation + error-mapping assertions | JVM + instrumentation fallback | QA + Eng |
 | UX-PRIVACY-01 | Privacy sheet opens and copy is visible | Instrumentation + Maestro sanity | Maestro fallback | QA + Product |
 | UX-TOOL-01 | Natural-language tool prompt path executes deterministic result | Instrumentation + Maestro | Maestro fallback | QA + Eng |
 | UX-SCENARIO-C-01 | Context follow-up flow remains stable and image entry point is visible | Instrumentation + Maestro (`scenario-c`) | Maestro fallback | QA + Product + Eng |
@@ -51,10 +53,11 @@ Current week hardware state (2026-03-04):
 2. Run `./gradlew --no-daemon :apps:mobile-android:testDebugUnitTest`.
 3. Run `python3 tools/devctl/main.py lane android-instrumented`.
 4. Run `python3 tools/devctl/main.py lane maestro`.
-5. Record best-effort device execution or explicit fallback/caveat.
-6. Record explicit PASS/FAIL IDs for instrumentation and Maestro runs.
-7. Record fail/pass deltas and assign owners for any failures.
-8. Publish evidence note under `docs/operations/evidence/wp-09/`.
+5. In internal-download windows, run model-manager recovery journey lane (download/activate/unlock trace).
+6. Record best-effort device execution or explicit fallback/caveat.
+7. Record explicit PASS/FAIL IDs for instrumentation and Maestro runs.
+8. Record fail/pass deltas and assign owners for any failures.
+9. Publish evidence note under `docs/operations/evidence/wp-09/`.
 
 ## Weekly Output Template
 

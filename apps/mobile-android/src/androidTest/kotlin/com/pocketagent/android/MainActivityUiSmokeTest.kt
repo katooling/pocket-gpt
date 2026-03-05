@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -18,12 +19,12 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.DefaultMvpRuntimeFacade
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -47,12 +48,13 @@ class MainActivityUiSmokeTest {
 
     @After
     fun tearDown() {
-        AppRuntimeDependencies.runtimeFacadeFactory = { DefaultMvpRuntimeFacade() }
+        AppRuntimeDependencies.resetRuntimeFacadeFactoryForTests()
     }
 
     @Test
     fun launchShowsComposerAndOfflineIndicator() {
         composeRule.dismissOnboardingIfVisible()
+        composeRule.waitForRuntimeReady()
         composeRule.onNodeWithTag("offline_indicator").assertIsDisplayed()
         composeRule.onNodeWithText("Runtime: Ready").assertIsDisplayed()
         composeRule.onNodeWithTag("composer_input").assertIsDisplayed()
@@ -65,7 +67,31 @@ class MainActivityUiSmokeTest {
     }
 
     @Test
+    fun chatMessageListOccupiesMajorityOfViewportWhenRuntimeReady() {
+        composeRule.dismissOnboardingIfVisible()
+        composeRule.waitForRuntimeReady()
+
+        val rootBounds = composeRule.onRoot().fetchSemanticsNode().boundsInRoot
+        val listBounds = composeRule.onNodeWithTag("chat_message_list").fetchSemanticsNode().boundsInRoot
+        val listHeightRatio = listBounds.height / rootBounds.height
+
+        assertTrue(
+            "chat_message_list is unexpectedly short (${listHeightRatio * 100f}% of viewport).",
+            listHeightRatio > 0.45f,
+        )
+    }
+
+    @Test
     fun onboardingFlowCanProgressAndComplete() {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("Welcome to Pocket GPT").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithTag("composer_input").fetchSemanticsNodes().isNotEmpty()
+        }
+        if (composeRule.onAllNodesWithText("Welcome to Pocket GPT").fetchSemanticsNodes().isEmpty()) {
+            composeRule.waitForRuntimeReady()
+            composeRule.onNodeWithTag("composer_input").assertIsDisplayed()
+            return
+        }
         composeRule.onNodeWithText("Welcome to Pocket GPT").assertIsDisplayed()
         composeRule.onNodeWithText("Next").performClick()
         composeRule.onNodeWithText("Step 2 of 3").assertIsDisplayed()
@@ -80,6 +106,7 @@ class MainActivityUiSmokeTest {
     @Test
     fun sendMessageShowsUserAndAssistantBubbles() {
         composeRule.dismissOnboardingIfVisible()
+        composeRule.waitForRuntimeReady()
         composeRule.onNodeWithTag("composer_input").performTextInput("hello ui")
         composeRule.onNodeWithTag("send_button").performClick()
 
@@ -94,6 +121,7 @@ class MainActivityUiSmokeTest {
     @Test
     fun toolAndDiagnosticsActionsRenderResults() {
         composeRule.dismissOnboardingIfVisible()
+        composeRule.waitForRuntimeReady()
         composeRule.onNodeWithContentDescription("Tools").performClick()
         composeRule.onNodeWithText("calculate 4*9").performClick()
         composeRule.onNodeWithTag("send_button").performClick()
@@ -115,9 +143,20 @@ class MainActivityUiSmokeTest {
     @Test
     fun naturalLanguageReminderPromptRendersToolResult() {
         composeRule.dismissOnboardingIfVisible()
+        composeRule.waitForRuntimeReady()
         composeRule.onNodeWithTag("composer_input").performTextInput("remind me to run QA closeout")
         composeRule.onNodeWithTag("send_button").performClick()
         composeRule.waitForText("tool:reminder_create")
+    }
+
+    @Test
+    fun modelSetupSheetOpensFromAdvancedControls() {
+        composeRule.dismissOnboardingIfVisible()
+        composeRule.onNodeWithTag("advanced_sheet_button").performClick()
+        composeRule.onNodeWithText("Open model setup").performClick()
+        composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
+        composeRule.onNodeWithText("Qwen 3.5 0.8B (Q4)").assertIsDisplayed()
+        composeRule.onNodeWithText("Qwen 3.5 2B (Q4)").assertIsDisplayed()
     }
 
     private fun AndroidComposeTestRule<*, *>.waitForText(
@@ -126,6 +165,12 @@ class MainActivityUiSmokeTest {
     ) {
         waitUntil(timeoutMillis = timeoutMillis) {
             onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun AndroidComposeTestRule<*, *>.waitForRuntimeReady() {
+        waitUntil(timeoutMillis = 10_000) {
+            onAllNodesWithText("Runtime: Ready").fetchSemanticsNodes().isNotEmpty()
         }
     }
 

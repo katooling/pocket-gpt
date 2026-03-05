@@ -60,11 +60,11 @@ PocketAgent is local-first by default:
 
 | Control Area | Planned Guarantee | Current Coverage |
 |---|---|---|
-| Local inference default | No cloud-required inference path | Partial (closure-path startup checks now block `ADB_FALLBACK`; native JNI proof and full production path still in progress) |
-| Local data retention policy | explicit retention window + pruning | Partial (policy interface present; in-memory memory backend) |
-| Tool safety | strict schema validation + allowlist | Partial (allowlist + payload fragment blocking) |
-| Diagnostics privacy | no raw prompt/response by default | Partial (diagnostics are metric-only strings; needs explicit redaction tests) |
-| Network gating | explicit policy checks per action | Partial (policy module exists; enforcement not integrated with platform network stack yet) |
+| Local inference default | No cloud-required inference path | Implemented (native JNI runtime proof complete; app-path runtime wiring uses local model provisioning + startup checks) |
+| Local data retention policy | explicit retention window + pruning | Implemented for MVP baseline (file-backed local persistence active on Android runtime path) |
+| Tool safety | strict schema validation + allowlist | Implemented (schema validation + deterministic rejection contracts) |
+| Diagnostics privacy | no raw prompt/response by default | Implemented (runtime diagnostics redaction checks are landed and covered) |
+| Network gating | explicit policy checks per action | Implemented (policy wiring integrated with Android platform enforcement checks) |
 | Voice privacy (future STT/TTS) | equivalent controls to text/image paths | Planned (post-MVP) |
 
 Use `docs/roadmap/next-steps-execution-plan.md` as the source of truth for closure of these gaps.

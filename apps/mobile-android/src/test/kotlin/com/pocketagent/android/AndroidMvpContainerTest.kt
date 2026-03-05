@@ -456,7 +456,13 @@ private class BackendAwareTestBridge(
 
     override fun loadModel(modelId: String, modelPath: String?): Boolean = isReady()
 
-    override fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): Boolean {
+    override fun generate(
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicy: com.pocketagent.nativebridge.CachePolicy,
+        onToken: (String) -> Unit,
+    ): Boolean {
         if (!isReady()) {
             return false
         }

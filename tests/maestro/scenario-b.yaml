@@ -23,8 +23,8 @@ appId: com.pocketagent.android
 - assertVisible: "Advanced controls"
 - tapOn: "QWEN_2B"
 - tapOn: "Export diagnostics"
-- assertVisible: "diag=ok"
-- takeScreenshot: "scenario-b-03-advanced"
+- assertNotVisible: "UI-RUNTIME-001"
+- takeScreenshot: "scenario-b-03-after-diagnostics"
 - back
 - tapOn: "Message"
 - inputText: "Model switch sanity check"

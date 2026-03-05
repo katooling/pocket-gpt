@@ -10,10 +10,28 @@ val nativeBuildEnabled = providers.gradleProperty("pocketgpt.enableNativeBuild")
     .map { it.isTruthyFlag() }
     .orElse(false)
     .get()
+val modelManifestUrl = providers.gradleProperty("pocketgpt.modelManifestUrl")
+    .orElse("")
+    .get()
+    .replace("\"", "\\\"")
 
 android {
     namespace = "com.pocketagent.android"
     compileSdk = 35
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("standard") {
+            dimension = "distribution"
+            buildConfigField("boolean", "MODEL_DOWNLOADS_ENABLED", "false")
+            buildConfigField("String", "MODEL_MANIFEST_URL", "\"\"")
+        }
+        create("internalDownload") {
+            dimension = "distribution"
+            buildConfigField("boolean", "MODEL_DOWNLOADS_ENABLED", "true")
+            buildConfigField("String", "MODEL_MANIFEST_URL", "\"$modelManifestUrl\"")
+        }
+    }
 
     defaultConfig {
         applicationId = "com.pocketagent.android"
@@ -83,6 +101,7 @@ android {
         compose = true
         buildConfig = true
     }
+
 }
 
 dependencies {
@@ -102,6 +121,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation(platform("androidx.compose:compose-bom:2025.02.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -120,4 +140,21 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+afterEvaluate {
+    val aliasTargets = mapOf(
+        "installDebug" to "installStandardDebug",
+        "installDebugAndroidTest" to "installStandardDebugAndroidTest",
+        "connectedDebugAndroidTest" to "connectedStandardDebugAndroidTest",
+        "compileDebugAndroidTestKotlin" to "compileStandardDebugAndroidTestKotlin",
+        "testDebugUnitTest" to "testStandardDebugUnitTest",
+    )
+    aliasTargets.forEach { (aliasName, targetName) ->
+        if (tasks.findByName(aliasName) == null && tasks.findByName(targetName) != null) {
+            tasks.register(aliasName) {
+                dependsOn(targetName)
+            }
+        }
+    }
 }

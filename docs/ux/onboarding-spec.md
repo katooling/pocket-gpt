@@ -15,7 +15,7 @@ Explain privacy guarantees, capability surface, and runtime readiness in the fir
 2. **Page 2 - Capability preview**
    - Message: text chat, image analysis, and local tools run in one timeline.
 3. **Page 3 - Runtime readiness**
-   - Message: check runtime status before heavy prompts.
+   - Message: check runtime status before heavy prompts and open model setup if `Not ready`.
 
 ## Actions
 
@@ -33,3 +33,4 @@ Explain privacy guarantees, capability surface, and runtime readiness in the fir
 1. Onboarding should never block core app rendering.
 2. Onboarding text must avoid unsupported feature claims.
 3. Any privacy wording must align with `docs/security/privacy-model.md`.
+4. Runtime-readiness guidance must reference the in-app recovery path (`Advanced` -> `Open model setup`).

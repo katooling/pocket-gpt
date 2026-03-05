@@ -1,6 +1,6 @@
 # Android DX and Test Playbook
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Source of truth
 
@@ -48,7 +48,12 @@ bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models
 
 1. Espresso: `python3 tools/devctl/main.py lane android-instrumented`
 2. Maestro: `python3 tools/devctl/main.py lane maestro`
-3. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
+3. Combined real-runtime user journey gate: `python3 tools/devctl/main.py lane journey`
+4. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
+5. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
+6. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
+7. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
+8. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
 
 Maestro install (validated against `v1.39.13`):
 
@@ -71,6 +76,33 @@ Use this loop once Compose UI changes land:
    - `scripts/benchmarks/runs/YYYY-MM-DD/<device>/wp-11-ui-acceptance/...`
 5. Publish evidence note under:
    - `docs/operations/evidence/wp-11/YYYY-MM-DD-*.md`
+
+## Release-Candidate Real-Runtime App Path Lane
+
+Run this lane only for release-candidate windows (requires both model paths):
+
+```bash
+adb shell am instrument -w \
+  -e stage2_enable_app_path_test true \
+  -e stage2_model_0_8b_path /absolute/device/path/qwen3.5-0.8b-q4.gguf \
+  -e stage2_model_2b_path /absolute/device/path/qwen3.5-2b-q4.gguf \
+  -e class com.pocketagent.android.RealRuntimeAppPathInstrumentationTest \
+  com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+This test validates:
+
+1. app-path startup checks pass with provisioned models
+2. runtime backend is `NATIVE_JNI`
+3. user message stream returns a non-empty completion on real runtime
+
+## Real-Runtime Journey Gate Artifacts
+
+`devctl lane journey` writes deterministic artifacts under:
+
+- `scripts/benchmarks/runs/YYYY-MM-DD/<device>/journey/<stamp>/journey-report.json`
+- `scripts/benchmarks/runs/YYYY-MM-DD/<device>/journey/<stamp>/journey-summary.md`
+- per-run screenshots/debug bundles/logcat under sibling directories
 
 ## Regression Rules (Fail Stage)
 

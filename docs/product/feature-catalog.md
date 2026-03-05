@@ -9,6 +9,7 @@ This catalog lists current and possible features based on known technical constr
 | Feature | Why It Matters | Constraints | Engine Status | In-App UX Status |
 |---|---|---|---|---|
 | Offline text chat | core assistant utility | first-token latency, memory/OOM | Implemented | Implemented (WP-11 gate complete with device evidence) |
+| In-app model provisioning + readiness recovery | enables normal-user runtime setup without shell commands | file import UX, artifact verification strictness | Implemented (WP-12 policy reused in app path) | Implemented (`Advanced` -> `Open model setup`, import + refresh checks) |
 | Streaming responses | perceived speed and UX quality | runtime callback reliability | Implemented | Implemented (instrumented + Maestro flows validated) |
 | Model routing (`0.8B`/`2B`) | battery and thermal control | device-state signal quality | Implemented | Implemented (advanced controls + routing override validated) |
 | Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented (WP-05 closed) | Implemented (UI action + success/failure paths validated) |
@@ -16,6 +17,7 @@ This catalog lists current and possible features based on known technical constr
 | Single-image Q&A | multimodal differentiation | image path latency and correctness | Implemented (WP-06 closed) | Implemented (image attach success/failure UX validated) |
 | Offline policy-aware network enforcement | trust and privacy claim integrity | strict runtime boundary wiring | Implemented (ENG-17) | Implemented (runtime startup checks + UX messaging) |
 | Resilience and startup guards | reduce crash/startup failure support load | guard correctness across OEM behavior | Implemented (WP-07 resilience closeout) | Implemented (runtime error banners + startup status) |
+| Runtime backend transparency | support/debug can identify runtime path quickly | backend identity correctness | Implemented | Implemented (backend chip + advanced-sheet backend details) |
 | Structured UI error contracts | deterministic support and triage | stable error-code mapping | Implemented | Implemented (`UI-STARTUP-001`, `UI-IMG-VAL-001`, `UI-TOOL-SCHEMA-001`, `UI-RUNTIME-001`) |
 
 ## Band B: Near-Term Expansion (Post-MVP)

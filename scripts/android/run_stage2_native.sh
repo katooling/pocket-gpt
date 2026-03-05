@@ -591,6 +591,7 @@ run_model_sweep() {
   adb_retry logcat -c
   adb_retry shell am instrument -w -r \
     -e class "${TEST_CLASS_SWEEP}" \
+    -e stage2_enable_benchmark true \
     -e stage2_model_id "${model_id}" \
     -e stage2_scenarios "${scenarios_csv}" \
     -e stage2_model_0_8b_path "${MODEL_0_8B_PATH}" \

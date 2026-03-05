@@ -1,40 +1,86 @@
 # Model Management and Runtime Readiness Flow
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 Owner: Runtime + Android
-Status: MVP partial (status surface implemented, full download manager pending)
+Status: Phase-2 implemented (versioned install + gated downloads + activation control)
 
-## Current MVP Behavior
+## Product Defaults (P1)
 
-Runtime status is shown in-app as one of:
+1. Download channel: hybrid gated (`internalDownload` flavor only).
+2. Version activation: manual switch (new downloads stay inactive until user activates).
+3. Storage cleanup: guided safe (active version delete blocked, failed/temp artifacts handled by manager flows).
+4. Lifecycle on close/background/reopen: WorkManager-backed background continuation with persisted task state.
+
+## Runtime Status Model
+
+Runtime status is shown in-app as:
 
 1. `Not ready` - required model artifacts are missing or unverified.
 2. `Loading` - runtime/model load in progress.
 3. `Ready` - runtime available for inference/tool paths.
 4. `Error` - startup or runtime failure state.
 
-## Side-load Provisioning Path (Current)
+Runtime backend identity is surfaced as:
 
-1. Push GGUF files to device storage.
-2. Export:
-   - `POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH`
-   - `POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH`
-3. Run Stage-2 benchmark and runtime evidence validator.
+1. `NATIVE_JNI`
+2. `ADB_FALLBACK`
+3. `UNAVAILABLE`
 
-Helper script:
+Composer/image actions remain locked until startup checks pass and runtime state is `Ready`.
 
-- `scripts/android/provision_sideload_models.sh`
+## In-App Provisioning Paths
 
-## Gaps (Post-MVP)
+### A) Local import (all builds)
 
-1. In-app model download manager (queue/progress/pause).
-2. Storage usage and eviction controls.
-3. Versioned model switching UX.
-4. Recovery UX when model checksums/provenance fail.
+1. Open `Advanced` -> `Open model setup`.
+2. Import both required GGUF files:
+   - `Qwen 3.5 0.8B (Q4)`
+   - `Qwen 3.5 2B (Q4)`
+3. App copies files into private storage and records versioned metadata:
+   - absolute path
+   - SHA-256
+   - provenance issuer/signature metadata
+   - runtime compatibility
+4. Imported version becomes active by default for that model.
+5. Tap `Refresh runtime checks`; if both required active versions verify, runtime moves to `Ready`.
 
-## Acceptance for Future Model Manager Ticket
+### B) Download manager (internal-enabled builds only)
 
-1. User can see installed models and sizes.
-2. User can start/monitor model download progress.
-3. User can recover from failed download/verification.
-4. Runtime status transitions are reflected in UI within 1 second.
+1. Open model setup and refresh manifest.
+2. Start download for selected model/version.
+3. Task enters `Queued -> Downloading -> Verifying`.
+4. Verification pipeline enforces checksum/provenance/runtime compatibility checks.
+5. On pass: version is recorded as `InstalledInactive`.
+6. User activates selected version.
+7. User refreshes runtime checks to unlock runtime for chat/image actions.
+
+## Journey State Contract (Forward/Back/Close/Pause/Load/Unlock)
+
+1. `NotReady` -> open setup -> `SetupOpen`
+2. `SetupOpen` -> start download -> `Queued/Downloading`
+3. `Downloading` -> pause -> `Paused`
+4. `Downloading` -> back/close/home -> background download continues
+5. App kill/reopen -> task restored from persisted store + WorkManager
+6. `Verifying` pass -> `InstalledInactive`
+7. Activate version + refresh checks -> `ReadyUnlocked` or back to `NotReady` with specific reason
+
+## Verification and Failure Rules
+
+1. Runtime startup remains strict: missing/invalid artifacts block unlock.
+2. Checksum/provenance/runtime mismatch never marks a version as installed.
+3. Duplicate enqueue of active non-terminal task returns existing task id.
+4. One active download task per model/version; retries use persisted task state.
+5. Active version cannot be removed until another version is activated.
+
+## Build Flavor Network Policy
+
+1. `src/main/AndroidManifest.xml` remains INTERNET-free (offline-safe default).
+2. `src/internalDownload/AndroidManifest.xml` scopes INTERNET permission to internal download flavor only.
+
+## Stage-2 Side-Load Path (Bench/Closure)
+
+Side-load remains available for benchmark/closure:
+
+1. `scripts/android/provision_sideload_models.sh`
+2. `bash scripts/dev/bench.sh stage2 ...`
+3. `python3 scripts/benchmarks/validate_stage2_runtime_evidence.py ...`
