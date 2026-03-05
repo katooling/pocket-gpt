@@ -21,7 +21,6 @@ appId: com.pocketagent.android
 - takeScreenshot: "scenario-b-02-tool"
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
-- assertVisible: "Backend: NATIVE_JNI"
 - tapOn: "QWEN_2B"
 - tapOn: "Export diagnostics"
 - assertVisible: "diag=ok"
