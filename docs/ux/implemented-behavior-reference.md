@@ -42,6 +42,13 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - secondary: `Refresh runtime checks`
    - tertiary: `Show technical details`
 
+## Send Timeout and Cancel Semantics
+
+1. Send operations enforce runtime timeout guards; timeout maps to deterministic runtime error UX (`UI-RUNTIME-001`).
+2. On timeout, chat send state is released so user can retry without restarting the app.
+3. Runtime cancellation is attempted for active session generation on timeout/cancel pathways.
+4. JNI runtime path supports active cancel; fallback runtime path is non-interruptible and surfaces deterministic timeout guidance.
+
 ## Diagnostics UX
 
 1. `Advanced` sheet includes `Export diagnostics`.
@@ -56,7 +63,7 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - installed versions
    - storage summary
 2. Import path remains available in all builds and writes versioned model records.
-3. Download path is flavor-gated (`internalDownload` only) and supports queue/pause/resume/retry.
+3. Download path is available in the primary app build and supports queue/pause/resume/retry.
 4. Download completion result is `verified, activation pending` (no auto-activation).
 5. Installed versions can be manually activated; active version deletion is blocked.
 6. Runtime unlock is only confirmed after activation + refresh startup checks.
@@ -70,3 +77,20 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - explicit message after runtime checks refresh
 3. Download feedback:
    - terminal guidance for checksum/provenance/runtime compatibility/storage/network failure reasons
+
+## Manifest Outage Behavior
+
+1. If manifest fetch fails/returns no usable entries, setup UX keeps import path visible as primary recovery.
+2. Download state is treated as degraded; runtime remains usable if required active models are already verified.
+3. Recovery copy must include issue state plus next action (`import`, `retry manifest`, or `refresh runtime checks`).
+
+## Journey Send-Capture Evidence Semantics
+
+1. Journey lane includes deterministic send-capture fields:
+   - `phase`
+   - `elapsed_ms`
+   - `runtime_status`
+   - `backend`
+   - `active_model_id`
+   - `placeholder_visible`
+2. Passing send-capture requires `phase=completed` and `placeholder_visible=false` at SLA checkpoint.

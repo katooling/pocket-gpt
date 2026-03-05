@@ -19,20 +19,6 @@ android {
     namespace = "com.pocketagent.android"
     compileSdk = 35
 
-    flavorDimensions += "distribution"
-    productFlavors {
-        create("standard") {
-            dimension = "distribution"
-            buildConfigField("boolean", "MODEL_DOWNLOADS_ENABLED", "false")
-            buildConfigField("String", "MODEL_MANIFEST_URL", "\"\"")
-        }
-        create("internalDownload") {
-            dimension = "distribution"
-            buildConfigField("boolean", "MODEL_DOWNLOADS_ENABLED", "true")
-            buildConfigField("String", "MODEL_MANIFEST_URL", "\"$modelManifestUrl\"")
-        }
-    }
-
     defaultConfig {
         applicationId = "com.pocketagent.android"
         minSdk = 26
@@ -43,6 +29,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("boolean", "NATIVE_RUNTIME_LIBRARY_PACKAGED", nativeBuildEnabled.toString())
+        buildConfigField("String", "MODEL_MANIFEST_URL", "\"$modelManifestUrl\"")
     }
 
     if (nativeBuildEnabled) {
@@ -140,21 +127,4 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-}
-
-afterEvaluate {
-    val aliasTargets = mapOf(
-        "installDebug" to "installStandardDebug",
-        "installDebugAndroidTest" to "installStandardDebugAndroidTest",
-        "connectedDebugAndroidTest" to "connectedStandardDebugAndroidTest",
-        "compileDebugAndroidTestKotlin" to "compileStandardDebugAndroidTestKotlin",
-        "testDebugUnitTest" to "testStandardDebugUnitTest",
-    )
-    aliasTargets.forEach { (aliasName, targetName) ->
-        if (tasks.findByName(aliasName) == null && tasks.findByName(targetName) != null) {
-            tasks.register(aliasName) {
-                dependsOn(targetName)
-            }
-        }
-    }
 }

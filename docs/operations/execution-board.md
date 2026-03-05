@@ -41,7 +41,7 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ## Current Release Policy (Locked)
 
-1. Build policy: `internalDownload first`.
+1. Build policy: single build with download manager enabled by default.
 2. Gate policy: `soft gate` for controlled pilot expansion only.
 3. Promotion beyond pilot requires completed moderated WP-13 packet.
 4. Launch claims must map to lane pass ids + evidence links.
@@ -51,7 +51,9 @@ All teams should update status here first, then mirror updates in role playbooks
 ### In Progress
 
 - [ ] DOC-01 timeline/status reconciliation across roadmap + board + role playbooks
+- [ ] DOC-02 product/UX doc parity sync for timeout/cancel/send-capture + manifest outage UX
 - [ ] ENG-19 devctl preflight robustness for busy media paths (retry/fallback behavior landed; full rerun packet pending)
+- [ ] ENG-20 runtime cancel/timeout contract hardening (JNI + fallback semantics + journey telemetry parity)
 - [ ] WP-09 distribution plan and beta operations execution (kickoff note published)
 - [ ] QA WP-09 weekly rollout quality execution support (templates delivered; cadence in progress)
 - [ ] MKT-03 launch channel test plan draft finalization
@@ -63,10 +65,15 @@ All teams should update status here first, then mirror updates in role playbooks
 
 ### Ready
 
+- [ ] UX-13 stuck send + timeout recovery UX spec and acceptance coverage
 - [ ] QA-11 rerun `android-instrumented` + `maestro` + `journey` after ENG-19 and publish pass ids
+- [ ] QA-13 send-capture gate operationalization in weekly regression workflow
 - [ ] QA-WP13-RUN02 moderated 5-user usability run execution and packet completion
+- [ ] SEC-02 privacy claim parity audit (claim -> control -> evidence mapping)
+- [ ] PROD-11 pilot support + incident UX-ops playbook
 - [ ] MKT-08 proof asset capture + Play Store shotlist finalization (`docs/ux/play-store-listing-spec.md`)
 - [ ] MKT-09 first 7-day channel scorecard execution window
+- [ ] MKT-10 claim freeze v1 (publishable vs internal-only claims tied to PROD-10 rows)
 - [ ] PROD-10 launch gate matrix decision run (promote/hold memo)
 - [ ] APP-STORE-01 Play Store listing spec + screenshot shotlist finalization (`docs/ux/play-store-listing-spec.md`)
 
@@ -119,7 +126,8 @@ All teams should update status here first, then mirror updates in role playbooks
 - [x] UX-P1 recovery copy refinement implemented for checksum/provenance/runtime-compatibility failures (`docs/ux/error-recovery-guide.md`, `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
 - [x] UI-P1 NotReady/Error flow polish implemented (CTA hierarchy + transition feedback after import/download/refresh/activate) (`docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
 - [x] WP-13 wireless device lane rerun complete (`android-instrumented` + `maestro` + `journey` on attached wireless device) (`docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`)
-- [x] PROD-09 soft-gate pilot policy published (`internalDownload first`, 25 testers/7 days, hard-stop and fallback rules) (`docs/operations/prod-09-soft-gate-pilot-policy.md`)
+- [x] WP-13 rerun refresh after single-build download-manager de-gating (`android-instrumented` + `maestro` pass; Maestro Scenario A/B/C + activation smoke recovery assertions validated) (`docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`)
+- [x] PROD-09 soft-gate pilot policy published (single-build default downloads, 25 testers/7 days, hard-stop and fallback rules) (`docs/operations/prod-09-soft-gate-pilot-policy.md`)
 - [x] UX-12 recovery journey spec published (`NotReady -> setup -> Ready` with event schema + success targets) (`docs/ux/ux-12-recovery-journey-spec.md`)
 - [x] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
 - [x] TEST-QA-02 release-promotion checklist update with instrumentation/Maestro pass-id requirements (`docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`)
@@ -134,19 +142,24 @@ All teams should update status here first, then mirror updates in role playbooks
 
 1. Engineering (Lead/Core/Runtime):
    - Finalize `ENG-19` packet with deterministic preflight retry/fallback behavior validated on target hardware.
+   - Finalize `ENG-20` runtime cancel/timeout contract notes with JNI/fallback behavior and telemetry fields.
    - Support `QA-11` same-device rerun for `android-instrumented`, `maestro`, and `journey`.
    - Keep post-WP12 runtime performance follow-ups tracked (first-token latency).
 2. QA:
    - Execute `QA-11` lane rerun and publish explicit pass ids.
+   - Execute `QA-13` weekly send-capture gate checks (`phase`, `elapsed_ms`, `placeholder_visible`) and flag regressions.
    - Execute `QA-WP13-RUN02` moderated 5-user workflow packet and fill thresholds.
    - Continue weekly WP-09/WP-13 regression matrix cadence.
 3. Product:
    - Close `DOC-01` drift reconciliation across roadmap + ops + playbooks.
+   - Close `DOC-02` by syncing PRD/UX docs with timeout/cancel/send-capture behavior and manifest outage UX.
+   - Publish `PROD-11` pilot support and incident UX-ops playbook before cohort expansion.
    - Operate pilot under `PROD-09` policy and run `PROD-10` promote/hold decision matrix.
    - Keep `PROD-04` monetization hypothesis in parallel without impacting MVP gate scope.
 4. Marketing:
    - Execute `MKT-08` proof asset capture and listing shotlist QA.
    - Execute `MKT-09` first 7-day scorecard with evidence-safe claims only.
+   - Publish `MKT-10` claim freeze list (publish-safe vs internal-only) mapped to `PROD-10` rows.
    - Keep launch copy aligned to completed gate-matrix claim rows.
 
 ## Evidence Log
@@ -218,6 +231,12 @@ All teams should update status here first, then mirror updates in role playbooks
 - WP-13 (Recovery journey acceptance contract): `docs/ux/ux-12-recovery-journey-spec.md`
 - WP-13/WP-09 (Launch decision interface): `docs/operations/prod-10-launch-gate-matrix.md`
 - Rebased release orchestration plan (March 5 baseline): `docs/operations/rebased-release-plan-2026-03-05.md`
+- WP-09/WP-13 (Stuck send + timeout recovery UX ticket): `docs/operations/ux-13-stuck-send-timeout-recovery.md`
+- WP-09/WP-13 (Runtime cancel/timeout contract): `docs/operations/eng-20-runtime-cancel-timeout-contract.md`
+- WP-09/WP-13 (Send-capture gate operationalization): `docs/operations/qa-13-send-capture-gate-operationalization.md`
+- WP-09 (Privacy claim parity audit): `docs/operations/sec-02-privacy-claim-parity-audit.md`
+- WP-09 (Pilot support + incident UX-ops playbook): `docs/operations/prod-11-pilot-support-incident-playbook.md`
+- WP-09 (Claim freeze v1): `docs/operations/mkt-10-claim-freeze-v1.md`
 
 ## Dependency Flow
 
@@ -256,7 +275,7 @@ Wp07 --> Wp10
 - WP-10: STT/TTS spike report with latency/power budgets
 - WP-11: UI acceptance suite (Compose/instrumentation/Maestro), UX evidence notes, and in-app workflow validation packet
 - WP-12: native-runtime proof logs, model-delivery artifact provenance evidence, Android-native persistence validation, and network-policy enforcement checks
-- WP-13: usability gate packet (5 tester workflow completion), onboarding/runtime/privacy comprehension metrics, `run_owner` + `run_host` metadata, lane pass ids (`android-instrumented`/`maestro`/`journey`), and launch-asset readiness checklist
+- WP-13: usability gate packet (5 tester workflow completion), onboarding/runtime/privacy comprehension metrics, `run_owner` + `run_host` metadata, lane pass ids (`android-instrumented`/`maestro`/`journey`), launch-asset readiness checklist, journey send-capture evidence (`phase`, `elapsed_ms`, `runtime_status`, `backend`, `active_model_id`, `placeholder_visible`), and timeout/cancel recovery evidence (`UI-RUNTIME-001` mapping + CTA path)
 
 ## Cadence
 

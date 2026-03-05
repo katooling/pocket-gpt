@@ -74,7 +74,6 @@ fun PocketAgentApp(
     var modelProvisioningStatus by remember { mutableStateOf<String?>(null) }
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
     var modelDistributionManifest by remember { mutableStateOf(ModelDistributionManifest(models = emptyList())) }
-    val modelDownloadsEnabled = AppRuntimeDependencies.areModelDownloadsEnabled()
     var provisioningSnapshot by remember {
         mutableStateOf(AppRuntimeDependencies.currentProvisioningSnapshot(context))
     }
@@ -142,31 +141,12 @@ fun PocketAgentApp(
         }
     }
 
-    LaunchedEffect(downloads, provisioningSnapshot.storageSummary) {
-        val installedVersionsByModelId = provisioningSnapshot.models.associate { model ->
-            model.modelId to model.installedVersions
-        }
-        val activeVersionByModelId = provisioningSnapshot.models
-            .mapNotNull { model ->
-                model.activeVersion?.let { active -> model.modelId to active }
-            }
-            .toMap()
-        viewModel.updateModelManagerState(
-            downloads = downloads,
-            storageSummary = provisioningSnapshot.storageSummary,
-            installedVersionsByModelId = installedVersionsByModelId,
-            activeVersionByModelId = activeVersionByModelId,
-        )
-    }
-
     LaunchedEffect(modelSheetOpen) {
         if (!modelSheetOpen) {
             return@LaunchedEffect
         }
         provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
-        if (modelDownloadsEnabled) {
-            modelDistributionManifest = AppRuntimeDependencies.loadModelDistributionManifest(context)
-        }
+        modelDistributionManifest = AppRuntimeDependencies.loadModelDistributionManifest(context)
     }
 
     LaunchedEffect(state.isSessionDrawerOpen) {
@@ -319,7 +299,6 @@ fun PocketAgentApp(
                 snapshot = provisioningSnapshot,
                 manifest = modelDistributionManifest,
                 downloads = downloads,
-                downloadsEnabled = modelDownloadsEnabled,
                 isImporting = modelImportInProgress,
                 statusMessage = modelProvisioningStatus,
                 onImportModel = { modelId ->

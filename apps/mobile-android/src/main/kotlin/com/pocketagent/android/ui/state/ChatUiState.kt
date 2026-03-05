@@ -1,9 +1,6 @@
 package com.pocketagent.android.ui.state
 
 import com.pocketagent.core.RoutingMode
-import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
-import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
-import com.pocketagent.android.runtime.modelmanager.StorageSummary
 
 enum class MessageRole {
     USER,
@@ -27,6 +24,9 @@ data class MessageUiModel(
     val imagePath: String? = null,
     val toolName: String? = null,
     val isStreaming: Boolean = false,
+    val requestId: String? = null,
+    val finishReason: String? = null,
+    val terminalEventSeen: Boolean = false,
 )
 
 data class ChatSessionUiModel(
@@ -78,7 +78,6 @@ data class ChatUiState(
     val activeSessionId: String? = null,
     val composer: ComposerUiState = ComposerUiState(),
     val runtime: RuntimeUiState = RuntimeUiState(),
-    val modelManager: ModelManagerUiState = ModelManagerUiState(),
     val isSessionDrawerOpen: Boolean = false,
     val isAdvancedSheetOpen: Boolean = false,
     val isToolDialogOpen: Boolean = false,
@@ -89,10 +88,3 @@ data class ChatUiState(
     val activeSession: ChatSessionUiModel?
         get() = sessions.firstOrNull { it.id == activeSessionId }
 }
-
-data class ModelManagerUiState(
-    val downloads: List<DownloadTaskState> = emptyList(),
-    val storageSummary: StorageSummary? = null,
-    val installedVersionsByModelId: Map<String, List<ModelVersionDescriptor>> = emptyMap(),
-    val activeVersionByModelId: Map<String, String> = emptyMap(),
-)

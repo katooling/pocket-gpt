@@ -1,6 +1,6 @@
 # User Journey Map (Install to Value)
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Primary Persona
 
@@ -38,12 +38,20 @@ Privacy-sensitive Android user who wants useful AI help without cloud upload.
 - UX requirement: session persistence, restart continuity, clear privacy and diagnostics controls.
 - Success signal: user can resume prior context and export redacted diagnostics if needed.
 
+## 6. Recovery and Stuck-Send Resolution
+
+- Entry: user encounters prolonged loading/placeholder or timeout on send.
+- UX requirement: deterministic timeout state, clear retry path, and no session-loss.
+- Success signal: user reaches completed response or explicit recovery path within defined SLA.
+
 ## Failure States That Must Be Explicit
 
 1. Model not provisioned or runtime not ready.
 2. Invalid image/tool input.
 3. Runtime startup failure.
 4. Offline policy enforcement rejection.
+5. Send timeout or stuck `Loading`/placeholder state.
+6. Manifest outage or empty manifest response.
 
 ## MVP UX Completion Criteria
 
@@ -51,3 +59,5 @@ Privacy-sensitive Android user who wants useful AI help without cloud upload.
 2. First-session onboarding completion rate >= 80% in closed beta.
 3. Median time-to-first-useful-answer < 60 seconds after first launch.
 4. Reported confusion about runtime/model state < 10% of sessions.
+5. Send-capture gate reports `phase=completed` and `placeholder_visible=false` within SLA on required-tier device.
+6. Timeout/cancel recovery confusion < 10% in moderated sessions.

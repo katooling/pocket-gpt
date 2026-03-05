@@ -82,6 +82,19 @@ Required MVP UI capabilities:
 4. As a user, I can run safe local tools and see deterministic tool results.
 5. As a power user, I can override model selection from an advanced sheet.
 6. As a privacy-sensitive user, I can export diagnostics without exposing sensitive content.
+7. As a user, if send stalls or exceeds timeout, I receive deterministic recovery guidance and can retry without losing context.
+8. As a user, if manifest/download path is unavailable, I can still recover through import flow.
+9. As a user, I can understand runtime status transitions (`Loading` to `Ready` or deterministic error) without ambiguity.
+
+## Timeout/Cancel Recovery Contract (MVP)
+
+1. Runtime generation timeout maps to deterministic UX code `UI-RUNTIME-001`.
+2. Timeout recovery path keeps CTA hierarchy explicit:
+   - `Retry send`
+   - `Refresh runtime checks`
+   - `Fix model setup`
+3. Session content must remain preserved across timeout/cancel events.
+4. Fallback runtime paths that do not support interruption must still surface deterministic timeout messaging.
 
 ## Launch Workflow Lock (PROD-01)
 
@@ -129,10 +142,13 @@ Final lock gate for PROD-01:
 8. `UI-08` Diagnostics export succeeds and sensitive keys remain redacted.
 9. `UI-09` Offline policy remains enforced while UI actions are used.
 10. `UI-10` Long-run UI soak includes navigation + send/image/tool loops without ANR/OOM.
+11. `UI-11` Send-timeout path maps to deterministic timeout UX copy/code and exits sending state.
+12. `UI-12` Internal-download manifest outage path preserves import recovery workflow and clear status messaging.
 
 Release policy update:
 
 - External beta/go-live signoff requires both `WP-07 Done` and `WP-11 Done`.
+- Promotion beyond current pilot cohort also requires `WP-13` moderated usability closure and `PROD-10` matrix required rows `PASS`.
 
 Excluded (non-MVP):
 

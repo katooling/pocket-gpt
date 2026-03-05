@@ -146,8 +146,6 @@ object AppRuntimeDependencies {
         return getOrCreateDownloadManager(context).observeDownloads()
     }
 
-    fun areModelDownloadsEnabled(): Boolean = BuildConfig.MODEL_DOWNLOADS_ENABLED
-
     private fun getOrCreateProvisioningStore(context: Context): AndroidRuntimeProvisioningStore {
         return synchronized(lock) {
             runtimeProvisioningStore
@@ -183,6 +181,10 @@ private class HotSwappableRuntimeFacade(
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
         return delegate.streamUserMessage(request)
     }
+
+    override fun cancelGeneration(sessionId: SessionId): Boolean = delegate.cancelGeneration(sessionId)
+
+    override fun cancelGenerationByRequest(requestId: String): Boolean = delegate.cancelGenerationByRequest(requestId)
 
     override fun runTool(toolName: String, jsonArgs: String): String = delegate.runTool(toolName, jsonArgs)
 

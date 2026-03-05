@@ -22,14 +22,17 @@ Close the gap between technical correctness and real first-session usability so 
 
 1. Technical lanes are passing on target device (`android-instrumented`, `maestro`, `journey`).
 2. `run-01` packet decision is `hold` due missing moderated cohort metrics.
-3. Pilot policy is active under `internalDownload first` + `soft gate` (`docs/operations/prod-09-soft-gate-pilot-policy.md`).
+3. Pilot policy is active under single-build downloads + `soft gate` (`docs/operations/prod-09-soft-gate-pilot-policy.md`).
 
 ## Ticket Set (Current)
 
 1. `UX-12` recovery story contract (`NotReady -> setup -> Ready`) - Done.
-2. `QA-WP13-RUN02` moderated 5-user workflow execution - Ready.
-3. `MKT-08` proof asset capture + listing shotlist finalization - Ready.
-4. `PROD-10` launch gate matrix decision run - Ready.
+2. `UX-13` stuck send + timeout recovery UX contract - Ready.
+3. `ENG-20` runtime cancel/timeout contract hardening - In Progress.
+4. `QA-13` send-capture gate operationalization - Ready.
+5. `QA-WP13-RUN02` moderated 5-user workflow execution - Ready.
+6. `MKT-08` proof asset capture + listing shotlist finalization - Ready.
+7. `PROD-10` launch gate matrix decision run - Ready.
 
 ## Usability Gate (Required for Broader Promotion)
 
@@ -47,8 +50,10 @@ Pass only if all are true:
 1. Filled packet from `docs/operations/wp-13-usability-gate-packet-template.md`.
 2. Lane pass ids and report links for `android-instrumented`, `maestro`, `journey`.
 3. `run_owner` and `run_host` metadata in journey artifacts.
-4. Qualitative synthesis mapped to PROD-08 taxonomy.
-5. Listing-ready proof set mapped to `docs/operations/prod-10-launch-gate-matrix.md`.
+4. Journey send-capture step values (`phase`, `elapsed_ms`, `runtime_status`, `backend`, `active_model_id`, `placeholder_visible`).
+5. Timeout/cancel UX evidence (`UI-RUNTIME-001` mapping + recovery CTA path).
+6. Qualitative synthesis mapped to PROD-08 taxonomy.
+7. Listing-ready proof set mapped to `docs/operations/prod-10-launch-gate-matrix.md`.
 
 ## Active Blocker
 

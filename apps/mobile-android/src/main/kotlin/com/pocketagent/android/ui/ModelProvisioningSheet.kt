@@ -25,13 +25,14 @@ import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 internal fun ModelProvisioningSheet(
     snapshot: RuntimeProvisioningSnapshot,
     manifest: ModelDistributionManifest,
     downloads: List<DownloadTaskState>,
-    downloadsEnabled: Boolean,
     isImporting: Boolean,
     statusMessage: String?,
     onImportModel: (String) -> Unit,
@@ -134,96 +135,86 @@ internal fun ModelProvisioningSheet(
             )
         }
 
-        if (!downloadsEnabled) {
+        val versions = manifest.models.flatMap { it.versions }
+        if (versions.isEmpty()) {
             item {
                 Text(
-                    text = stringResource(id = R.string.ui_model_downloads_disabled),
+                    text = stringResource(id = R.string.ui_model_downloads_manifest_empty),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        } else {
-            val versions = manifest.models.flatMap { it.versions }
-            if (versions.isEmpty()) {
-                item {
+        }
+        items(versions, key = { "${it.modelId}:${it.version}" }) { version ->
+            val latest = downloads.firstOrNull {
+                it.modelId == version.modelId && it.version == version.version
+            }
+            val active = latest?.takeIf {
+                it.status == DownloadTaskStatus.QUEUED ||
+                    it.status == DownloadTaskStatus.DOWNLOADING ||
+                    it.status == DownloadTaskStatus.PAUSED ||
+                    it.status == DownloadTaskStatus.VERIFYING
+            }
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
-                        text = stringResource(id = R.string.ui_model_downloads_manifest_empty),
-                        style = MaterialTheme.typography.bodySmall,
+                        text = stringResource(id = R.string.ui_model_download_version_label, version.modelId, version.version),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = stringResource(id = R.string.ui_model_download_expected_size, version.fileSizeBytes),
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-            }
-            items(versions, key = { "${it.modelId}:${it.version}" }) { version ->
-                val latest = downloads.firstOrNull {
-                    it.modelId == version.modelId && it.version == version.version
-                }
-                val active = latest?.takeIf {
-                    it.status == DownloadTaskStatus.QUEUED ||
-                        it.status == DownloadTaskStatus.DOWNLOADING ||
-                        it.status == DownloadTaskStatus.PAUSED ||
-                        it.status == DownloadTaskStatus.VERIFYING
-                }
-                Card {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
+                    if (latest != null) {
                         Text(
-                            text = stringResource(id = R.string.ui_model_download_version_label, version.modelId, version.version),
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = stringResource(
+                                id = R.string.ui_model_download_state,
+                                latest.status.readableName(),
+                                latest.progressPercent,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
                         )
-                        Text(
-                            text = stringResource(id = R.string.ui_model_download_expected_size, version.fileSizeBytes),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        if (latest != null) {
+                        latest.message?.takeIf { it.isNotBlank() }?.let { message ->
                             Text(
-                                text = stringResource(
-                                    id = R.string.ui_model_download_state,
-                                    latest.status.readableName(),
-                                    latest.progressPercent,
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
+                                text = message,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            latest.message?.takeIf { it.isNotBlank() }?.let { message ->
-                                Text(
-                                    text = message,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = { onDownloadVersion(version) },
+                            enabled = !isImporting && active == null,
+                        ) {
+                            Text(stringResource(id = R.string.ui_model_download_start))
+                        }
+                        if (active != null && (
+                                active.status == DownloadTaskStatus.DOWNLOADING ||
+                                    active.status == DownloadTaskStatus.QUEUED
                                 )
+                        ) {
+                            OutlinedButton(onClick = { onPauseDownload(active.taskId) }) {
+                                Text(stringResource(id = R.string.ui_model_download_pause))
                             }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Button(
-                                onClick = { onDownloadVersion(version) },
-                                enabled = !isImporting && active == null,
-                            ) {
-                                Text(stringResource(id = R.string.ui_model_download_start))
+                        if (active != null && active.status == DownloadTaskStatus.PAUSED) {
+                            OutlinedButton(onClick = { onResumeDownload(active.taskId) }) {
+                                Text(stringResource(id = R.string.ui_model_download_resume))
                             }
-                            if (active != null && (
-                                    active.status == DownloadTaskStatus.DOWNLOADING ||
-                                        active.status == DownloadTaskStatus.QUEUED
-                                    )
-                            ) {
-                                OutlinedButton(onClick = { onPauseDownload(active.taskId) }) {
-                                    Text(stringResource(id = R.string.ui_model_download_pause))
-                                }
-                            }
-                            if (active != null && active.status == DownloadTaskStatus.PAUSED) {
-                                OutlinedButton(onClick = { onResumeDownload(active.taskId) }) {
-                                    Text(stringResource(id = R.string.ui_model_download_resume))
-                                }
-                            }
-                            if (latest != null && latest.status == DownloadTaskStatus.FAILED) {
-                                OutlinedButton(onClick = { onRetryDownload(latest.taskId) }) {
-                                    Text(stringResource(id = R.string.ui_model_download_retry))
-                                }
+                        }
+                        if (latest != null && latest.status == DownloadTaskStatus.FAILED) {
+                            OutlinedButton(onClick = { onRetryDownload(latest.taskId) }) {
+                                Text(stringResource(id = R.string.ui_model_download_retry))
                             }
                         }
                     }
@@ -238,6 +229,13 @@ internal fun ModelProvisioningSheet(
                 text = stringResource(id = R.string.ui_model_installed_versions_section),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
+            )
+        }
+        item {
+            Text(
+                text = stringResource(id = R.string.ui_model_installed_versions_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         snapshot.models.forEach { model ->
@@ -268,15 +266,47 @@ internal fun ModelProvisioningSheet(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
                         )
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_installed_added_at,
+                                version.importedAtEpochMs.formatAsTimestamp(),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_provisioned_sha,
+                                version.sha256.take(12),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_provisioned_path,
+                                version.absolutePath,
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            OutlinedButton(
-                                onClick = { onActivateVersion(model.modelId, version.version) },
-                                enabled = !version.isActive && !isImporting,
-                            ) {
-                                Text(stringResource(id = R.string.ui_model_activate_version))
+                            if (version.isActive) {
+                                Text(
+                                    text = stringResource(id = R.string.ui_model_current_active_badge),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            } else {
+                                OutlinedButton(
+                                    onClick = { onActivateVersion(model.modelId, version.version) },
+                                    enabled = !isImporting,
+                                ) {
+                                    Text(stringResource(id = R.string.ui_model_activate_version))
+                                }
                             }
                             OutlinedButton(
                                 onClick = { onRemoveVersion(model.modelId, version.version) },
@@ -322,13 +352,11 @@ internal fun ModelProvisioningSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                if (downloadsEnabled) {
-                    OutlinedButton(
-                        onClick = onRefreshManifest,
-                        enabled = !isImporting,
-                    ) {
-                        Text(stringResource(id = R.string.ui_model_refresh_manifest))
-                    }
+                OutlinedButton(
+                    onClick = onRefreshManifest,
+                    enabled = !isImporting,
+                ) {
+                    Text(stringResource(id = R.string.ui_model_refresh_manifest))
                 }
                 Button(
                     onClick = onRefreshRuntime,
@@ -355,4 +383,10 @@ private fun DownloadTaskStatus.readableName(): String {
         DownloadTaskStatus.COMPLETED -> "Completed"
         DownloadTaskStatus.CANCELLED -> "Cancelled"
     }
+}
+
+private fun Long.formatAsTimestamp(): String {
+    return runCatching {
+        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(this))
+    }.getOrElse { toString() }
 }

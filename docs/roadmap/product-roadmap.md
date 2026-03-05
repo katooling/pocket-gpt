@@ -30,13 +30,14 @@ Last updated: 2026-03-05
 
 1. Moderated 5-user usability metrics and qualitative packet completion.
 2. Stable lane behavior under device preflight edge cases.
-3. Weekly required-tier + best-effort physical-device coverage consistency.
-4. Executed channel scorecard data (beyond template readiness).
-5. Timeline/status alignment across roadmap and operations docs.
+3. Explicit timeout/cancel recovery UX parity across product docs and evidence packets.
+4. Weekly required-tier + best-effort physical-device coverage consistency.
+5. Executed channel scorecard data (beyond template readiness).
+6. Timeline/status alignment across roadmap and operations docs.
 
 ## H1 Decision Policies
 
-1. Build policy: `internalDownload` first.
+1. Build policy: single-build downloads by default.
 2. Gate policy: `soft gate` for pilot expansion only.
 3. Default pilot window: 25 testers for 7 days.
 4. Broad promotion requires completed moderated packet + launch gate matrix review.

@@ -2,11 +2,11 @@
 
 Last updated: 2026-03-05
 Owner: Runtime + Android
-Status: Phase-2 implemented (versioned install + gated downloads + activation control)
+Status: Phase-2 implemented (versioned install + downloads + activation control)
 
 ## Product Defaults (P1)
 
-1. Download channel: hybrid gated (`internalDownload` flavor only).
+1. Download channel: enabled by default in the primary app build.
 2. Version activation: manual switch (new downloads stay inactive until user activates).
 3. Storage cleanup: guided safe (active version delete blocked, failed/temp artifacts handled by manager flows).
 4. Lifecycle on close/background/reopen: WorkManager-backed background continuation with persisted task state.
@@ -44,7 +44,7 @@ Composer/image actions remain locked until startup checks pass and runtime state
 4. Imported version becomes active by default for that model.
 5. Tap `Refresh runtime checks`; if both required active versions verify, runtime moves to `Ready`.
 
-### B) Download manager (internal-enabled builds only)
+### B) Download manager
 
 1. Open model setup and refresh manifest.
 2. Start download for selected model/version.
@@ -62,7 +62,7 @@ Composer/image actions remain locked until startup checks pass and runtime state
 4. `Downloading` -> back/close/home -> background download continues
 5. App kill/reopen -> task restored from persisted store + WorkManager
 6. `Verifying` pass -> `InstalledInactive`
-7. Activate version + refresh checks -> `ReadyUnlocked` or back to `NotReady` with specific reason
+7. Set active version + refresh checks -> `ReadyUnlocked` or back to `NotReady` with specific reason
 
 ## Verification and Failure Rules
 
@@ -72,10 +72,20 @@ Composer/image actions remain locked until startup checks pass and runtime state
 4. One active download task per model/version; retries use persisted task state.
 5. Active version cannot be removed until another version is activated.
 
-## Build Flavor Network Policy
+## Network Policy
 
-1. `src/main/AndroidManifest.xml` remains INTERNET-free (offline-safe default).
-2. `src/internalDownload/AndroidManifest.xml` scopes INTERNET permission to internal download flavor only.
+1. `src/main/AndroidManifest.xml` includes INTERNET permission for model distribution.
+2. Cleartext remains disabled via `network_security_config.xml`.
+
+## Manifest Outage Fallback
+
+1. Manifest fetch failure or empty manifest response must not hide or disable import flow.
+2. Download channel is marked degraded until manifest is recoverable.
+3. If verified active models already exist, runtime remains usable after refresh checks.
+4. Recovery guidance must route user to one of:
+   - import local model files,
+   - retry manifest/download,
+   - refresh runtime checks.
 
 ## Stage-2 Side-Load Path (Bench/Closure)
 

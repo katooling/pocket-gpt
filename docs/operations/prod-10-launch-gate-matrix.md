@@ -23,6 +23,8 @@ Single promotion interface for release decisions. Every publishable claim must m
 | S-C | Context follow-up (incl. optional image) stays coherent | `docs/prd/phase-0-prd.md` Workflow C | Maestro scenario C, journey aggregate | `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`, `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md` | C-03 context continuity + image support | Required | PASS |
 | S-D | User can recover from `NotReady` to `Ready` | `docs/ux/ux-12-recovery-journey-spec.md`, `docs/ux/model-management-flow.md` | `RealRuntimeProvisioningInstrumentationTest`, journey lane, moderated WP-13 script | `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`, `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` | C-04 first-run setup clarity | Required | HOLD (moderated metrics missing) |
 | S-E | Privacy boundaries and controls are understandable | `docs/security/privacy-model.md`, `docs/ux/implemented-behavior-reference.md` | UI smoke privacy checks, moderated WP-13 privacy comprehension metrics | `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` | C-05 privacy-first trust | Required | HOLD (moderated metrics missing) |
+| S-F | Stuck send/timeout path recovers without losing context | `docs/prd/phase-0-prd.md`, `docs/operations/ux-13-stuck-send-timeout-recovery.md` | `ChatViewModelTest`, journey send-capture stage, Maestro scenario A timeout assertions | pending QA-WP13-RUN02 + weekly QA packet | C-08 reliable send recovery | Required | Pending |
+| S-G | Manifest outage still allows setup recovery | `docs/ux/model-management-flow.md`, `docs/operations/prod-09-soft-gate-pilot-policy.md` | provisioning + model setup regression checks, moderated recovery script | pending QA-WP13-RUN02 | C-09 resilient model setup recovery | Required | Pending |
 | A-01 | Time-to-first-useful-answer meets pilot target | `docs/ux/ux-12-recovery-journey-spec.md` success targets | journey report timing + moderated notes | pending `QA-WP13-RUN02` packet | C-06 speed perception | Advisory | Pending |
 | A-02 | Channel engagement signal supports expansion | `docs/operations/mkt-03-7-day-scorecard-template.md` | `MKT-09` scorecard execution | pending `MKT-09` run-01 | C-07 channel fit | Advisory | Pending |
 
@@ -33,7 +35,9 @@ Required for `promote`:
 1. All required rows = `PASS`.
 2. No open `UX-S0`/`UX-S1` blockers.
 3. Latest lane pass ids recorded for `android-instrumented`, `maestro`, and `journey`.
-4. WP-13 moderated packet contains measured values (no `not collected` fields).
+4. Latest journey send-capture stage reports `phase=completed` and `placeholder_visible=false`.
+5. WP-13 moderated packet contains measured values (no `not collected` fields).
+6. Privacy-related public claims map only to `Verified` entries in `docs/operations/sec-02-privacy-claim-parity-audit.md`.
 
 Advisory for scope sizing:
 

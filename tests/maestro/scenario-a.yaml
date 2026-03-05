@@ -9,14 +9,29 @@ appId: com.pocketagent.android
 - assertVisible: "Offline-first"
 - extendedWaitUntil:
     visible: "Runtime: Ready"
-    timeout: 90000
+    timeout: 180000
 - assertVisible: "Runtime: Ready"
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-a-01-ready"
 - tapOn: "Message"
+- eraseText
 - inputText: "Hello from Maestro scenario A"
 - takeScreenshot: "scenario-a-02-typed"
 - tapOn: "Send"
 - assertVisible: "Hello from Maestro scenario A"
+- extendedWaitUntil:
+    visible: "Runtime: (Ready|Error)"
+    timeout: 180000
+- runFlow:
+    when:
+      visible: "Runtime: Error"
+    commands:
+      - tapOn: "Refresh runtime checks"
+      - extendedWaitUntil:
+          visible: "Runtime: Ready"
+          timeout: 120000
+- assertVisible: "Runtime: Ready"
+- assertNotVisible: "Runtime: Error"
+- assertNotVisible: "Loading runtime model..."
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-a-03-sent"

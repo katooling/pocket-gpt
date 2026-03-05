@@ -9,7 +9,6 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
 import java.io.File
 import java.util.UUID
@@ -46,14 +45,6 @@ class ModelDownloadManager(
     fun observeDownloads(): StateFlow<List<DownloadTaskState>> = _downloads.asStateFlow()
 
     fun enqueueDownload(version: ModelDistributionVersion): String {
-        if (!BuildConfig.MODEL_DOWNLOADS_ENABLED) {
-            return upsertSyntheticFailure(
-                modelId = version.modelId,
-                version = version.version,
-                message = "Model downloads are disabled in this build.",
-            )
-        }
-
         val duplicate = _downloads.value.firstOrNull {
             it.modelId == version.modelId && it.version == version.version && !it.terminal
         }

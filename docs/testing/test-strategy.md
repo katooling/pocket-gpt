@@ -70,7 +70,8 @@ Coverage rule:
 | UI-01..UI-10 acceptance suite pass | WP-11 close + external beta signoff |
 | Maestro Scenario C (`tests/maestro/scenario-c.yaml`) pass | WP-13 usability + promotion readiness |
 | Real-runtime app-path smoke pass on RC candidate (native claim path) | production-claim promotion windows |
-| Model manager recovery journey pass (import/download -> activate -> refresh unlock) | internal-download RC readiness windows |
+| Model manager recovery journey pass (import/download -> activate -> refresh unlock) | RC readiness windows |
+| Timeout/cancel recovery assertions pass (`UI-RUNTIME-001` mapping + send-capture pass) | WP-13 promotion readiness |
 
 ## CI Baseline
 
@@ -113,6 +114,7 @@ CI note:
    - `tests/maestro/scenario-a.yaml`
    - `tests/maestro/scenario-b.yaml`
    - `tests/maestro/scenario-c.yaml`
+   - `tests/maestro/scenario-activation-send-smoke.yaml`
 4. Real-runtime app-path instrumentation (release candidates only):
    - `apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/RealRuntimeAppPathInstrumentationTest.kt`
 
@@ -156,8 +158,9 @@ Human-required checkpoints:
 
 1. Espresso instrumentation lane: `python3 tools/devctl/main.py lane android-instrumented`
 2. Maestro E2E lane: `python3 tools/devctl/main.py lane maestro`
-3. Real-runtime user journey gate (aggregated): `python3 tools/devctl/main.py lane journey`
+3. Real-runtime user journey gate (aggregated): `python3 tools/devctl/main.py lane journey --repeats 1 --reply-timeout-seconds 90`
 4. Release promotion requires latest PASS ids for both real-runtime instrumentation journey and real-runtime Maestro journey.
+5. Journey send-capture step must report `phase=completed`, `placeholder_visible=false`, and runtime status transitioned out of `Loading` within SLA.
 
 ## Lane Selection Policy
 

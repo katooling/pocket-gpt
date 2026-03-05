@@ -106,6 +106,7 @@ lanes:
       - tests/maestro/scenario-a.yaml
       - tests/maestro/scenario-b.yaml
       - tests/maestro/scenario-c.yaml
+      - tests/maestro/scenario-activation-send-smoke.yaml
 
   journey:
     requires_android_sdk: true
@@ -114,6 +115,14 @@ lanes:
       output_dir_template: scripts/benchmarks/runs/{date}/{device}/journey/{stamp}
     repeats_default: 1
     repeats_max: 5
+    reply_timeout_seconds_default: 90
+    capture_intervals_default:
+      - 5
+      - 15
+      - 30
+      - 60
+      - 90
+    prompt_default: "ola, how you doin"
 
   nightly-hardware:
     requires_android_sdk: false

@@ -13,7 +13,7 @@ This packet complements technical gates with moderated usability outcomes.
 
 1. Cohort id:
 2. Build id + commit:
-3. Build flavor (`standard`/`internalDownload`):
+3. Build variant/build id details:
 4. Device set used (required-tier + best-effort):
 5. Session window (UTC):
 6. Moderator(s):
@@ -27,6 +27,17 @@ This packet complements technical gates with moderated usability outcomes.
 3. `journey` pass id:
 4. Journey report path (`journey-report.json`):
 5. Journey summary path (`journey-summary.md`):
+6. Latest send-capture step phase (`completed` required):
+7. Latest send-capture elapsed (ms):
+8. Latest send-capture runtime status/backend/model:
+9. Placeholder visible at SLA checkpoint (`false` required):
+10. Response visible at SLA checkpoint (`true` required):
+11. Response role + non-empty (`assistant`/`system`, `true` required):
+12. First token seen before completion (`true` for happy path):
+13. Request id / finish reason / terminal event seen (`request_id`, `finish_reason`, `terminal_event_seen=true`):
+14. First token / completion timing fields (`first_token_ms`, `completion_ms`):
+15. Timeout/cancel UX code observed (expected `UI-RUNTIME-001` on timeout paths):
+16. Timeout recovery CTA path verified (`retry`, `refresh`, `fix model setup`):
 
 ## Task Script (Workflow A/B/C)
 

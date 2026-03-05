@@ -24,6 +24,7 @@ import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -157,6 +158,12 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
         composeRule.onNodeWithText("Qwen 3.5 0.8B (Q4)").assertIsDisplayed()
         composeRule.onNodeWithText("Qwen 3.5 2B (Q4)").assertIsDisplayed()
+        composeRule.onNodeWithText("Downloads").assertIsDisplayed()
+        assertFalse(
+            composeRule.onAllNodesWithText("Downloads are disabled in this build. Use local import for now.")
+                .fetchSemanticsNodes()
+                .isNotEmpty(),
+        )
     }
 
     private fun AndroidComposeTestRule<*, *>.waitForText(
@@ -194,10 +201,17 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
     }
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = flow {
-        emit(ChatStreamEvent.Token("runtime ", "runtime"))
-        emit(ChatStreamEvent.Token("response ", "runtime response"))
+        emit(
+            ChatStreamEvent.Started(
+                requestId = request.requestId,
+                startedAtEpochMs = System.currentTimeMillis(),
+            ),
+        )
+        emit(ChatStreamEvent.TokenDelta(request.requestId, "runtime ", "runtime"))
+        emit(ChatStreamEvent.TokenDelta(request.requestId, "response ", "runtime response"))
         emit(
             ChatStreamEvent.Completed(
+                requestId = request.requestId,
                 response = ChatResponse(
                     sessionId = request.sessionId,
                     modelId = when (mode) {
@@ -209,6 +223,9 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
                     firstTokenLatencyMs = 42,
                     totalLatencyMs = 85,
                 ),
+                finishReason = "completed",
+                firstTokenMs = 42,
+                completionMs = 85,
             ),
         )
     }
@@ -232,6 +249,10 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
     override fun getRoutingMode(): RoutingMode = mode
 
     override fun runStartupChecks(): List<String> = emptyList()
+
+    override fun cancelGeneration(sessionId: SessionId): Boolean = true
+
+    override fun cancelGenerationByRequest(requestId: String): Boolean = true
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         // no-op

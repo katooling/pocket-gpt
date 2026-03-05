@@ -46,3 +46,23 @@ Re-run previously blocked device lanes after wireless-debug attachment:
 2. Lane robustness updates validated during this rerun:
    - remote media path preflight no longer depends on fragile `sh -lc` quoting
    - `lane maestro` now ensures test APK install before provisioning instrumentation probe
+
+## Addendum (P1.5 De-gating Rerun Refresh)
+
+Date: 2026-03-05 (later rerun window)  
+Scope: Revalidation after single-build download-manager de-gating and Maestro recovery flow hardening.
+
+1. `ADB_SERIAL='adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp' python3 tools/devctl/main.py lane android-instrumented`
+   - Result: PASS
+   - Artifacts:
+     - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/android-instrumented/20260305-211837/real-runtime-preflight.json`
+     - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/android-instrumented/20260305-211837/logcat.txt`
+2. `ADB_SERIAL='adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp' python3 tools/devctl/main.py lane maestro`
+   - Result: PASS
+   - Artifacts:
+     - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/real-runtime-preflight.json`
+     - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/logcat.txt`
+     - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/maestro-debug/scenario-a/maestro-output.txt`
+     - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/maestro-debug/scenario-b/maestro-output.txt`
+     - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/maestro-debug/scenario-c/maestro-output.txt`
+     - `scripts/benchmarks/runs/2026-03-05/adb-RR8NB087YTF-P4Pfzs._adb-tls-connect._tcp/maestro/20260305-214636/maestro-debug/scenario-activation-send-smoke/maestro-output.txt`

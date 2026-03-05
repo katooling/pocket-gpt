@@ -11,7 +11,7 @@ Keep MVP scope focused, maintain release-governance coherence, and run promote/h
 1. `WP-00` to `WP-12` are closed.
 2. `WP-09` is in progress.
 3. `WP-13` is open (`run-01` hold; moderated metrics missing).
-4. Active policy: `internalDownload first` + `soft gate` pilot.
+4. Active policy: single-build downloads + `soft gate` pilot.
 
 ## Done
 
@@ -25,6 +25,7 @@ Keep MVP scope focused, maintain release-governance coherence, and run promote/h
 ## In Progress
 
 - [ ] `DOC-01` reconcile timeline/status drift across roadmap + operations docs
+- [ ] `DOC-02` sync PRD + UX docs with timeout/cancel/send-capture and manifest outage behavior
 - [ ] `PROD-04` monetization hypothesis (parallel, non-blocking for MVP gate)
 - [ ] `WP-13` usability gate closure prep and moderated run scheduling
 
@@ -32,6 +33,8 @@ Keep MVP scope focused, maintain release-governance coherence, and run promote/h
 
 - [ ] `QA-WP13-RUN02` moderated packet execution (with QA)
 - [ ] `PROD-10` launch gate matrix decision run
+- [ ] `SEC-02` privacy claim parity audit closure
+- [ ] `PROD-11` pilot support and incident UX-ops playbook publication
 - [ ] Promotion memo publish (`promote`/`iterate`/`hold`) after matrix review
 
 ## Task Queue
@@ -39,10 +42,13 @@ Keep MVP scope focused, maintain release-governance coherence, and run promote/h
 | Task ID | Task | Status | Owner | References |
 |---|---|---|---|---|
 | DOC-01 | Reconcile roadmap/board/playbook statuses and dates | In Progress | Product Ops | `docs/operations/execution-board.md`, `docs/roadmap/phase-1-mvp-plan.md`, `docs/roadmap/product-roadmap.md`, `docs/roadmap/team-workstreams.md` |
+| DOC-02 | Product + UX docs parity for timeout/cancel/send-capture + manifest outage behavior | In Progress | Product Lead | `docs/prd/phase-0-prd.md`, `docs/ux/implemented-behavior-reference.md`, `docs/ux/user-journey-map.md`, `docs/operations/doc-02-product-ux-doc-sync-timeout-cancel-send-capture.md` |
 | PROD-09 | Publish soft-gate pilot policy | Done | Product Ops | `docs/operations/prod-09-soft-gate-pilot-policy.md` |
 | UX-12 | Publish recovery journey acceptance spec | Done | Product + Design + Android | `docs/ux/ux-12-recovery-journey-spec.md` |
 | QA-WP13-RUN02 | Execute moderated 5-user packet and thresholds | Ready | Product + QA | `docs/operations/wp-13-usability-gate-packet-template.md`, `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` |
 | PROD-10 | Run promotion decision through unified launch gate matrix | Ready | Product Lead | `docs/operations/prod-10-launch-gate-matrix.md` |
+| SEC-02 | Privacy claim parity audit (claim -> control -> evidence) | Ready | Product + Security | `docs/security/privacy-model.md`, `docs/operations/sec-02-privacy-claim-parity-audit.md` |
+| PROD-11 | Pilot support and incident UX-ops playbook | Ready | Product Ops | `docs/operations/prod-11-pilot-support-incident-playbook.md` |
 | PROD-04 | Monetization scope and pricing hypothesis | In Progress | Product Lead | `docs/operations/prod-04-monetization-hypothesis-v0.md` |
 
 ## Product Decision Rule
@@ -56,5 +62,8 @@ Keep MVP scope focused, maintain release-governance coherence, and run promote/h
 - `docs/operations/execution-board.md`
 - `docs/operations/prod-09-soft-gate-pilot-policy.md`
 - `docs/operations/prod-10-launch-gate-matrix.md`
+- `docs/operations/doc-02-product-ux-doc-sync-timeout-cancel-send-capture.md`
+- `docs/operations/prod-11-pilot-support-incident-playbook.md`
+- `docs/operations/sec-02-privacy-claim-parity-audit.md`
 - `docs/roadmap/mvp-implementation-tracker.md`
 - `docs/prd/phase-0-prd.md`

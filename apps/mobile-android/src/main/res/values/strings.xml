@@ -15,6 +15,7 @@
     <string name="ui_runtime_error_title">Runtime status</string>
     <string name="ui_runtime_error_with_code">%1$s (%2$s)</string>
     <string name="ui_model_setup_hint">Models may be missing, inactive, or failed verification. Use model setup, then refresh runtime checks.</string>
+    <string name="ui_runtime_timeout_hint">Generation exceeded the response SLA and was cancelled. Retry, then switch to a lighter model if this repeats.</string>
     <string name="ui_open_model_setup">Open model setup</string>
     <string name="ui_fix_model_setup">Fix model setup</string>
     <string name="ui_show_technical_details">Show technical details</string>
@@ -42,10 +43,11 @@
     <string name="ui_export_diagnostics">Export diagnostics</string>
     <string name="ui_model_provisioning_title">Model provisioning</string>
     <string name="ui_model_provisioning_subtitle">Import verified GGUF files for both required runtime models.</string>
-    <string name="ui_model_provisioning_subtitle_v2">Choose one path: import local files now, or download queued versions when enabled. Runtime unlocks only after active versions pass startup checks.</string>
+    <string name="ui_model_provisioning_subtitle_v2">Choose one path: import local files now, or download verified versions. Runtime unlocks only after active versions pass startup checks.</string>
     <string name="ui_model_required_models_section">Required models</string>
     <string name="ui_model_downloads_section">Downloads</string>
     <string name="ui_model_installed_versions_section">Installed versions</string>
+    <string name="ui_model_installed_versions_hint">Each required model keeps one active version. To change it, set another installed version active.</string>
     <string name="ui_model_not_provisioned">Not provisioned</string>
     <string name="ui_model_provisioned_path">Path: %1$s</string>
     <string name="ui_model_provisioned_sha">SHA-256: %1$s...</string>
@@ -61,7 +63,6 @@
     <string name="ui_model_refresh_manifest">Refresh download list</string>
     <string name="ui_model_refresh_manifest_success">Download list refreshed.</string>
     <string name="ui_model_refresh_runtime_feedback">Runtime checks refreshed. If still blocked, review the latest error details.</string>
-    <string name="ui_model_downloads_disabled">Downloads are disabled in this build. Use local import for now.</string>
     <string name="ui_model_downloads_manifest_empty">No downloadable versions available from current manifest source.</string>
     <string name="ui_model_download_start">Start download</string>
     <string name="ui_model_download_pause">Pause</string>
@@ -86,12 +87,14 @@
     <string name="ui_model_installed_version_row">%1$s • version %2$s</string>
     <string name="ui_model_installed_active">Verified and active</string>
     <string name="ui_model_installed_inactive">Verified, activation pending</string>
-    <string name="ui_model_activate_version">Activate</string>
+    <string name="ui_model_installed_added_at">Added: %1$s</string>
+    <string name="ui_model_activate_version">Set active</string>
+    <string name="ui_model_current_active_badge">Current active version</string>
     <string name="ui_model_remove_version">Remove</string>
     <string name="ui_model_version_activated">%1$s (%2$s) verified and active.</string>
     <string name="ui_model_version_activation_failed">Version activation failed.</string>
     <string name="ui_model_version_removed">%1$s (%2$s) removed.</string>
-    <string name="ui_model_version_remove_blocked">Cannot remove active version. Activate another version first.</string>
+    <string name="ui_model_version_remove_blocked">Cannot remove active version. Set another version active first.</string>
     <string name="ui_model_storage_summary">Storage • total=%1$d free=%2$d models=%3$d temp=%4$d bytes</string>
     <string name="ui_model_download_notification_title">Downloading model</string>
     <string name="ui_model_download_notification_body">%1$s • %2$d%%</string>

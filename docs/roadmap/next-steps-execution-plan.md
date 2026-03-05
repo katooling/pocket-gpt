@@ -134,7 +134,7 @@ This overlay applies after WP-07/WP-11/WP-12 closure:
 1. `DOC-01`: reconcile roadmap/ops/playbook status and date drift.
 2. `ENG-19`: make device preflight robust to busy media paths with deterministic retry/fallback.
 3. `QA-11`: rerun `android-instrumented`, `maestro`, and `journey` lanes after `ENG-19`.
-4. `PROD-09`: run pilot under `internalDownload` + `soft gate` policy.
+4. `PROD-09`: run pilot under single-build downloads + `soft gate` policy.
 5. `QA-WP13-RUN02`: complete moderated 5-user usability metrics packet.
 6. `MKT-08`, `MKT-09`: execute proof-asset pass and first 7-day channel scorecard.
 7. `PROD-10`: run promote/hold decision through launch gate matrix.

@@ -53,7 +53,7 @@ Current week hardware state (2026-03-04):
 2. Run `./gradlew --no-daemon :apps:mobile-android:testDebugUnitTest`.
 3. Run `python3 tools/devctl/main.py lane android-instrumented`.
 4. Run `python3 tools/devctl/main.py lane maestro`.
-5. In internal-download windows, run model-manager recovery journey lane (download/activate/unlock trace).
+5. Run model-manager recovery journey lane weekly (download/activate/unlock trace).
 6. Record best-effort device execution or explicit fallback/caveat.
 7. Record explicit PASS/FAIL IDs for instrumentation and Maestro runs.
 8. Record fail/pass deltas and assign owners for any failures.

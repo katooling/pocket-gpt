@@ -1,4 +1,4 @@
-# PROD-09 Soft-Gate Pilot Policy (InternalDownload First)
+# PROD-09 Soft-Gate Pilot Policy (Single-Build Downloads)
 
 Last updated: 2026-03-05
 Owner: Product Ops
@@ -10,7 +10,7 @@ Define the pilot expansion policy while `WP-13` moderated usability data is stil
 
 ## Launch Defaults
 
-1. Build policy: `internalDownload` first cohort.
+1. Build policy: single build with download manager enabled by default.
 2. Gate policy: `soft gate` for pilot expansion only.
 3. Pilot cohort size: 25 testers.
 4. Pilot window: 7 days.
@@ -36,7 +36,8 @@ Not allowed under this policy:
 2. Latest `android-instrumented` PASS id attached.
 3. Latest `maestro` PASS id attached.
 4. Latest `journey` report attached with `run_owner`/`run_host`.
-5. Policy/safety regressions remain closed.
+5. Latest journey send-capture stage is `phase=completed` and `placeholder_visible=false`.
+6. Policy/safety regressions remain closed.
 
 ## Advisory Signals (Pilot Evaluation)
 
@@ -57,7 +58,7 @@ Immediate `hold` if any is true:
 
 ## Manifest Outage Fallback Policy
 
-If manifest fetch fails or returns no usable entries in `internalDownload` builds:
+If manifest fetch fails or returns no usable entries in current builds:
 
 1. Keep import flow available and visible as the primary recovery path.
 2. Mark download state as degraded in pilot notes.

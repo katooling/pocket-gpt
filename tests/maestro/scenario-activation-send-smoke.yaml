@@ -1,0 +1,68 @@
+appId: com.pocketagent.android
+---
+- launchApp
+- runFlow:
+    when:
+      visible: "Welcome to Pocket GPT"
+    commands:
+      - tapOn: "Skip"
+- assertVisible: "Offline-first"
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 180000
+- assertNotVisible: "UI-RUNTIME-001"
+- tapOn: "Advanced"
+- tapOn: "Open model setup"
+- assertVisible: "Model provisioning"
+- assertVisible: "Downloads"
+- assertNotVisible: "Downloads are disabled in this build. Use local import for now."
+- takeScreenshot: "activation-send-smoke-model-sheet"
+- scrollUntilVisible:
+    element:
+      text: "Set active"
+    direction: DOWN
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      notVisible: "Set active"
+    commands:
+      - takeScreenshot: "activation-send-smoke-no-candidate"
+- runFlow:
+    when:
+      visible: "Set active"
+    commands:
+      - tapOn: "Set active"
+      - takeScreenshot: "activation-send-smoke-activated"
+- back
+- tapOn: "Open model setup"
+- assertVisible: "Model provisioning"
+- assertVisible: "Downloads"
+- takeScreenshot: "activation-send-smoke-reopened"
+- back
+- runFlow:
+    when:
+      visible: "Advanced controls"
+    commands:
+      - back
+- tapOn: "Message"
+- eraseText
+- inputText: "ola how you doin"
+- tapOn: "Send"
+- assertVisible: "ola how you doin"
+- extendedWaitUntil:
+    visible: "Runtime: (Ready|Error)"
+    timeout: 180000
+- runFlow:
+    when:
+      visible: "Runtime: Error"
+    commands:
+      - tapOn: "Refresh runtime checks"
+      - extendedWaitUntil:
+          visible: "Runtime: Ready"
+          timeout: 120000
+- assertVisible: "Runtime: Ready"
+- assertNotVisible: "Runtime: Error"
+- assertNotVisible: "Loading runtime model..."
+- assertNotVisible: "UI-RUNTIME-001"
+- takeScreenshot: "activation-send-smoke"

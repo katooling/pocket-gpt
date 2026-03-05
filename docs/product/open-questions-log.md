@@ -7,19 +7,22 @@ Track these questions continuously so engineering, product, and go-to-market sta
 ## Development Questions
 
 1. For device preflight checks, which failure classes should be strict-fail versus warn-and-continue?
-2. What fallback behavior is required when `internalDownload` manifest fetch is empty/unreachable?
-3. What are hard limits for first-token latency and battery drain by tier?
-4. What is the minimum acceptable image quality rubric for MVP?
-5. What are pass/fail thresholds for UI responsiveness under sustained on-device load?
+2. What fallback behavior is required when manifest fetch is empty/unreachable?
+3. What timeout defaults should be locked for generation and startup probes on required-tier devices?
+4. How should fallback runtime (`ADB_FALLBACK`) timeout/cancel semantics be surfaced to users?
+5. What are hard limits for first-token latency and battery drain by tier?
+6. What is the minimum acceptable image quality rubric for MVP?
+7. What are pass/fail thresholds for UI responsiveness under sustained on-device load?
 
 ## Product Questions
 
 1. What pilot size and duration should trigger promote/iterate/hold decisions under soft gate?
 2. Which metrics are mandatory versus advisory for the first expansion step?
-3. What should be free vs paid in early pricing (if monetization starts at beta)?
-4. What UX language best explains local-first privacy without overclaiming?
-5. Which features are explicitly excluded from MVP despite high demand?
-6. Which device classes are mandatory for WP-11/WP-13 evidence beyond the current primary test phone?
+3. What is the minimum support SLA and escalation policy for pilot incidents?
+4. What should be free vs paid in early pricing (if monetization starts at beta)?
+5. What UX language best explains local-first privacy without overclaiming?
+6. Which features are explicitly excluded from MVP despite high demand?
+7. Which device classes are mandatory for WP-11/WP-13 evidence beyond the current primary test phone?
 
 ## Marketing Questions
 
@@ -115,9 +118,9 @@ Track these questions continuously so engineering, product, and go-to-market sta
    - References:
      - `docs/operations/evidence/wp-12/2026-03-04-prod-eng-12-model-distribution-decision.md`
      - `docs/operations/execution-board.md`
-18. Should pilot launch proceed with `internalDownload` or stay import-only?
+18. Should pilot launch proceed with default downloads enabled or stay import-only?
    - Resolved by rebased release policy.
-   - Decision: run `internalDownload first` for controlled pilot cohorts, with soft-gate hard-stop rules and manifest outage fallback defined.
+   - Decision: use a single build with downloads enabled by default for controlled pilot cohorts, with soft-gate hard-stop rules and manifest outage fallback defined.
    - References:
      - `docs/operations/prod-09-soft-gate-pilot-policy.md`
      - `docs/operations/execution-board.md`

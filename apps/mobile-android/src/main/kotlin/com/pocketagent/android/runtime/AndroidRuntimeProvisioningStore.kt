@@ -130,7 +130,6 @@ class AndroidRuntimeProvisioningStore(
                     fileSizeBytes = copiedBytes,
                     makeActive = true,
                 )
-                persistLegacyMirror(spec = spec, absolutePath = result.absolutePath, sha = result.sha256)
                 result
             }
         }
@@ -161,7 +160,6 @@ class AndroidRuntimeProvisioningStore(
                     fileSizeBytes = file.length().coerceAtLeast(0L),
                     makeActive = true,
                 )
-                persistLegacyMirror(spec = spec, absolutePath = result.absolutePath, sha = result.sha256)
                 result
             }
         }
@@ -194,9 +192,6 @@ class AndroidRuntimeProvisioningStore(
                 fileSizeBytes = fileSizeBytes.coerceAtLeast(0L),
                 makeActive = makeActive,
             )
-            if (makeActive) {
-                persistLegacyMirror(spec = spec, absolutePath = result.absolutePath, sha = result.sha256)
-            }
             result
         }
     }
@@ -211,11 +206,10 @@ class AndroidRuntimeProvisioningStore(
         return withModelLock(modelId) {
             ensureMigrated()
             val versions = readInstalledVersions(spec)
-            val selected = versions.firstOrNull { it.version == version } ?: return@withModelLock false
+            versions.firstOrNull { it.version == version } ?: return@withModelLock false
             prefs.edit()
                 .putString(activeVersionKey(spec), version)
                 .apply()
-            persistLegacyMirror(spec = spec, absolutePath = selected.absolutePath, sha = selected.sha256)
             true
         }
     }
@@ -232,7 +226,10 @@ class AndroidRuntimeProvisioningStore(
             val target = versions.firstOrNull { it.version == version } ?: return@withModelLock false
             versions.removeIf { it.version == version }
             writeStoredVersionEntries(spec, versions)
-            File(target.absolutePath).takeIf { it.exists() }?.delete()
+            deleteManagedFileIfOrphaned(
+                absolutePath = target.absolutePath,
+                remainingEntries = versions,
+            )
             true
         }
     }
@@ -294,6 +291,7 @@ class AndroidRuntimeProvisioningStore(
             prefixCacheStrict = false,
             responseCacheTtlSec = 0L,
             responseCacheMaxEntries = 0,
+            streamContractV2Enabled = true,
         )
     }
 
@@ -313,9 +311,10 @@ class AndroidRuntimeProvisioningStore(
         val entries = readStoredVersionEntries(spec).toMutableList()
         val now = System.currentTimeMillis()
         val sanitizedVersion = sanitizeVersion(version)
+        val normalizedPath = normalizeAbsolutePath(absolutePath)
         val entry = StoredVersionEntry(
             version = sanitizedVersion,
-            absolutePath = absolutePath,
+            absolutePath = normalizedPath,
             sha256 = sha,
             provenanceIssuer = provenanceIssuer,
             provenanceSignature = provenanceSignature,
@@ -323,7 +322,8 @@ class AndroidRuntimeProvisioningStore(
             fileSizeBytes = fileSizeBytes.coerceAtLeast(0L),
             importedAtEpochMs = now,
         )
-        entries.removeAll { it.version == sanitizedVersion }
+        // Keep one canonical entry per source path so repeated stage seeding does not create unbounded duplicates.
+        entries.removeAll { it.version == sanitizedVersion || it.absolutePath == normalizedPath }
         entries.add(entry)
         writeStoredVersionEntries(spec, entries)
         if (makeActive || prefs.readOptional(activeVersionKey(spec)).isNullOrBlank()) {
@@ -333,7 +333,7 @@ class AndroidRuntimeProvisioningStore(
         return RuntimeModelImportResult(
             modelId = spec.modelId,
             version = sanitizedVersion,
-            absolutePath = absolutePath,
+            absolutePath = normalizedPath,
             sha256 = sha,
             copiedBytes = fileSizeBytes.coerceAtLeast(0L),
             isActive = isActive,
@@ -397,7 +397,7 @@ class AndroidRuntimeProvisioningStore(
 
     private fun decodeStoredVersion(json: JSONObject): StoredVersionEntry? {
         val version = sanitizeVersion(json.optString("version", "").trim())
-        val absolutePath = json.optString("absolutePath", "").trim()
+        val absolutePath = normalizeAbsolutePath(json.optString("absolutePath", "").trim())
         val sha = json.optString("sha256", "").trim()
         if (version.isEmpty() || absolutePath.isEmpty() || sha.isEmpty()) {
             return null
@@ -416,18 +416,6 @@ class AndroidRuntimeProvisioningStore(
         )
     }
 
-    private fun persistLegacyMirror(spec: ModelSpec, absolutePath: String, sha: String) {
-        val issuer = DEFAULT_ISSUER
-        val signature = sha256Hex("$issuer|${spec.modelId}|$sha|v1".encodeToByteArray())
-        prefs.edit()
-            .putString(spec.pathKey, absolutePath)
-            .putString(spec.shaKey, sha)
-            .putString(spec.issuerKey, issuer)
-            .putString(spec.signatureKey, signature)
-            .putLong(spec.importedAtKey, System.currentTimeMillis())
-            .apply()
-    }
-
     private fun ensureMigrated() {
         synchronized(MIGRATION_LOCK) {
             REQUIRED_MODEL_SPECS.forEach { spec ->
@@ -437,7 +425,15 @@ class AndroidRuntimeProvisioningStore(
                 val legacyPath = prefs.readOptional(spec.pathKey)
                 val legacySha = prefs.readOptional(spec.shaKey)
                 if (legacyPath.isNullOrBlank() || legacySha.isNullOrBlank()) {
-                    prefs.edit().putString(versionsKey(spec), "[]").apply()
+                    prefs.edit()
+                        .putString(versionsKey(spec), "[]")
+                        .remove(activeVersionKey(spec))
+                        .remove(spec.pathKey)
+                        .remove(spec.shaKey)
+                        .remove(spec.issuerKey)
+                        .remove(spec.signatureKey)
+                        .remove(spec.importedAtKey)
+                        .apply()
                     return@forEach
                 }
                 val version = INITIAL_MIGRATION_VERSION
@@ -448,7 +444,7 @@ class AndroidRuntimeProvisioningStore(
                 val fileSizeBytes = File(legacyPath).takeIf { it.exists() && it.isFile }?.length()?.coerceAtLeast(0L) ?: 0L
                 val entry = StoredVersionEntry(
                     version = version,
-                    absolutePath = legacyPath,
+                    absolutePath = normalizeAbsolutePath(legacyPath),
                     sha256 = legacySha,
                     provenanceIssuer = issuer,
                     provenanceSignature = signature,
@@ -457,7 +453,14 @@ class AndroidRuntimeProvisioningStore(
                     importedAtEpochMs = importedAt,
                 )
                 writeStoredVersionEntries(spec, listOf(entry))
-                prefs.edit().putString(activeVersionKey(spec), version).apply()
+                prefs.edit()
+                    .putString(activeVersionKey(spec), version)
+                    .remove(spec.pathKey)
+                    .remove(spec.shaKey)
+                    .remove(spec.issuerKey)
+                    .remove(spec.signatureKey)
+                    .remove(spec.importedAtKey)
+                    .apply()
             }
         }
     }
@@ -485,6 +488,44 @@ class AndroidRuntimeProvisioningStore(
 
     private fun generatedVersion(prefix: String): String {
         return "$prefix-${System.currentTimeMillis()}"
+    }
+
+    private fun normalizeAbsolutePath(rawPath: String): String {
+        val trimmed = rawPath.trim()
+        if (trimmed.isEmpty()) {
+            return trimmed
+        }
+        return runCatching { File(trimmed).canonicalPath }
+            .getOrElse { File(trimmed).absolutePath }
+    }
+
+    private fun deleteManagedFileIfOrphaned(
+        absolutePath: String,
+        remainingEntries: List<StoredVersionEntry>,
+    ) {
+        if (absolutePath.isBlank()) {
+            return
+        }
+        if (remainingEntries.any { it.absolutePath == absolutePath }) {
+            return
+        }
+        val target = File(absolutePath)
+        if (!isManagedModelFile(target)) {
+            return
+        }
+        target.takeIf { it.exists() }?.delete()
+    }
+
+    private fun isManagedModelFile(file: File): Boolean {
+        val runtimeDir = File(context.filesDir, MODEL_DIR_NAME)
+        val downloadDir = File(context.filesDir, ModelDownloadWorker.DOWNLOAD_DIR)
+        return isPathWithin(file, runtimeDir) || isPathWithin(file, downloadDir)
+    }
+
+    private fun isPathWithin(candidate: File, root: File): Boolean {
+        val candidatePath = runCatching { candidate.canonicalPath }.getOrNull() ?: return false
+        val rootPath = runCatching { root.canonicalPath }.getOrNull() ?: return false
+        return candidatePath == rootPath || candidatePath.startsWith("$rootPath${File.separator}")
     }
 
     private fun sanitizeVersion(raw: String): String {
