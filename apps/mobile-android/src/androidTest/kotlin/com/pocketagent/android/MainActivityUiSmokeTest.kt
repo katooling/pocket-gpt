@@ -1,5 +1,6 @@
 package com.pocketagent.android
 
+import android.app.Instrumentation
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
@@ -27,6 +28,7 @@ import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.StreamUserMessageRequest
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -279,33 +281,80 @@ class MainActivityUiSmokeTest {
         runCatching { waitForIdle() }
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val internalDir = File(instrumentation.targetContext.filesDir, "screenshot-pack")
+        val appExternalDir = instrumentation.targetContext.getExternalFilesDir("screenshot-pack")
         val screenshotBitmap =
             instrumentation.uiAutomation.takeScreenshot() ?:
                 runCatching { onRoot().captureToImage().asAndroidBitmap() }.getOrNull() ?:
                 error("Unable to capture screenshot bitmap for $screenshotId.")
         val outputDirs = buildList {
             add(internalDir)
+            appExternalDir?.let(::add)
             listOf(primaryDir, fallbackDir).filter { it.isNotBlank() }.mapTo(this, ::File)
         }
+        val requestedOutputPaths = setOf(primaryDir, fallbackDir).filter { it.isNotBlank() }.toSet()
         val writeFailures = mutableListOf<String>()
         var wroteAny = false
+        var wroteRequestedDir = false
         outputDirs.forEach { outputDir ->
             runCatching {
                 outputDir.mkdirs()
                 val outputFile = File(outputDir, "$screenshotId.png")
+                if (outputFile.absolutePath.startsWith("/sdcard/")) {
+                    val shellCommand =
+                        "sh -c \"mkdir -p ${shellQuote(outputDir.absolutePath)} && " +
+                            "screencap -p ${shellQuote(outputFile.absolutePath)}\""
+                    if (runShellCommand(instrumentation, shellCommand)) {
+                        return@runCatching
+                    }
+                }
                 FileOutputStream(outputFile).use { stream ->
                     screenshotBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
                 }
             }.onSuccess {
                 wroteAny = true
+                if (outputDir.absolutePath in requestedOutputPaths) {
+                    wroteRequestedDir = true
+                }
             }.onFailure { failure ->
                 writeFailures += "${outputDir.absolutePath}: ${failure.message.orEmpty()}"
             }
         }
-        if (!wroteAny && (primaryDir.isNotBlank() || fallbackDir.isNotBlank())) {
+        if (requestedOutputPaths.isNotEmpty() && !wroteRequestedDir) {
+            error("Failed to write requested screenshot path for $screenshotId. ${writeFailures.joinToString("; ")}")
+        }
+        if (!wroteAny && requestedOutputPaths.isNotEmpty()) {
             error("Failed to write screenshot $screenshotId. ${writeFailures.joinToString("; ")}")
         }
     }
+
+    private fun runShellCommand(
+        instrumentation: Instrumentation,
+        command: String,
+    ): Boolean {
+        val expectedMarker = "__CAPTURE_OK__"
+        val shellCommand = "$command && echo $expectedMarker"
+        val output = runCatching {
+            val captured = StringBuilder()
+            instrumentation.uiAutomation.executeShellCommand(shellCommand).use { descriptor ->
+                FileInputStream(descriptor.fileDescriptor).use { stream ->
+                    val buffer = ByteArray(1024)
+                    while (true) {
+                        val read = stream.read(buffer)
+                        if (read == -1) {
+                            break
+                        }
+                        if (read > 0) {
+                            captured.append(String(buffer, 0, read))
+                        }
+                    }
+                }
+            }
+            captured.toString()
+        }.getOrDefault("")
+        return output.contains(expectedMarker)
+    }
+
+    private fun shellQuote(value: String): String = "'" + value.replace("'", "'\"'\"'") + "'"
 
     private fun AndroidComposeTestRule<*, *>.dismissOnboardingIfVisible() {
         waitForIdle()

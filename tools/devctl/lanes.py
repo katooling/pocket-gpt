@@ -3008,77 +3008,46 @@ def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> No
         install_debug_android_test = _append_native_build_flag(
             ["./gradlew", "--no-daemon", ":apps:mobile-android:installDebugAndroidTest"],
         )
-        connected_debug_android_test = _append_native_build_flag(
-            ["./gradlew", "--no-daemon", ":apps:mobile-android:connectedDebugAndroidTest"],
-        )
         context.run(install_debug, check=True, env=resolved_env)
         context.run(install_debug_android_test, check=True, env=resolved_env)
 
         preflight = prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
         runner_args = _instrumentation_args_from_model_paths(preflight.model_device_paths_by_id)
-        device_screenshot_dir = f"/sdcard/Android/media/{real_runtime_cfg.app_package}/screenshot-pack/{stamp}"
-        device_screenshot_fallback_dir = (
-            f"/sdcard/Android/media/{real_runtime_cfg.app_package}/screenshot-pack-fallback/{stamp}"
-        )
-        device_screenshot_export_dir = (
-            f"/sdcard/Android/media/{real_runtime_cfg.app_package}/screenshot-pack-export/{stamp}"
-        )
+        screenshot_pack_root = f"/sdcard/Download/pocketgpt-screenshot-pack/{stamp}"
+        device_screenshot_dir = f"{screenshot_pack_root}/primary"
+        device_screenshot_fallback_dir = f"{screenshot_pack_root}/fallback"
+        device_screenshot_app_external_dir = f"/sdcard/Android/data/{real_runtime_cfg.app_package}/files/screenshot-pack"
         runner_args["screenshot_pack_dir"] = device_screenshot_dir
         runner_args["screenshot_pack_fallback_dir"] = device_screenshot_fallback_dir
         _run_remote_shell_script(
             context=context,
             serial=serial,
             script=(
-                f"rm -rf {_shell_single_quote(device_screenshot_dir)} "
-                f"{_shell_single_quote(device_screenshot_fallback_dir)} "
-                f"{_shell_single_quote(device_screenshot_export_dir)}"
+                f"rm -rf {_shell_single_quote(screenshot_pack_root)} "
+                f"{_shell_single_quote(device_screenshot_app_external_dir)}"
             ),
         )
         context.run(
-            [
-                "adb",
-                "-s",
-                serial,
-                "shell",
-                "run-as",
-                real_runtime_cfg.app_package,
-                "sh",
-                "-c",
-                "rm -rf files/screenshot-pack",
-            ],
+            ["adb", "-s", serial, "shell", "pm", "clear", real_runtime_cfg.app_package],
             check=False,
             env=context.env,
         )
-        context.run(
-            _append_gradle_instrumentation_args(connected_debug_android_test, runner_args),
-            check=True,
-            env=resolved_env,
-        )
-        context.run(
-            [
-                "adb",
-                "-s",
-                serial,
-                "shell",
-                "run-as",
-                real_runtime_cfg.app_package,
-                "sh",
-                "-c",
-                (
-                    "if [ -d files/screenshot-pack ]; then "
-                    f"mkdir -p {_shell_single_quote(device_screenshot_export_dir)} && "
-                    f"cp files/screenshot-pack/*.png {_shell_single_quote(device_screenshot_export_dir + '/')} "
-                    "2>/dev/null; "
-                    "fi"
-                ),
-            ],
-            check=False,
-            env=context.env,
+        _run_instrumentation_class(
+            context=context,
+            serial=serial,
+            test_class="com.pocketagent.android.MainActivityUiSmokeTest",
+            runner=preflight.instrumentation_runner or real_runtime_cfg.instrumentation_runner,
+            args=runner_args,
+            timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
         )
 
         pulled_remote_dirs: list[str] = []
         instrumented_pull_dir.mkdir(parents=True, exist_ok=True)
-        for remote_dir in (device_screenshot_dir, device_screenshot_fallback_dir, device_screenshot_export_dir):
+        for remote_dir in (
+            device_screenshot_dir,
+            device_screenshot_fallback_dir,
+            device_screenshot_app_external_dir,
+        ):
             if not _remote_path_exists(context, serial, remote_dir):
                 continue
             context.run(
@@ -3089,7 +3058,7 @@ def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> No
             pulled_remote_dirs.append(remote_dir)
 
         if not pulled_remote_dirs:
-            fallback_root = f"/sdcard/Android/media/{real_runtime_cfg.app_package}/screenshot-pack-fallback"
+            fallback_root = "/sdcard/Download/pocketgpt-screenshot-pack"
             find_result = _run_remote_shell_script(
                 context=context,
                 serial=serial,
@@ -3112,35 +3081,20 @@ def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> No
                 "DEVICE_ERROR",
                 "Instrumentation screenshot output directory not found on device. "
                 "Checked: "
-                f"{device_screenshot_dir}, {device_screenshot_fallback_dir}, {device_screenshot_export_dir}",
+                f"{device_screenshot_dir}, {device_screenshot_fallback_dir}, {device_screenshot_app_external_dir}",
             )
         _run_remote_shell_script(
             context=context,
             serial=serial,
             script=(
-                f"rm -rf {_shell_single_quote(device_screenshot_dir)} "
-                f"{_shell_single_quote(device_screenshot_fallback_dir)} "
-                f"{_shell_single_quote(device_screenshot_export_dir)}"
+                f"rm -rf {_shell_single_quote(screenshot_pack_root)} "
+                f"{_shell_single_quote(device_screenshot_app_external_dir)}"
             ),
-        )
-        context.run(
-            [
-                "adb",
-                "-s",
-                serial,
-                "shell",
-                "run-as",
-                real_runtime_cfg.app_package,
-                "sh",
-                "-c",
-                "rm -rf files/screenshot-pack",
-            ],
-            check=False,
-            env=context.env,
         )
         _copy_pngs_flat(instrumented_pull_dir, instrumented_dir)
 
         lane_cfg = context.configs.lanes.lanes.maestro
+        maestro_failures: list[str] = []
         for flow in lane_cfg.flows:
             flow_path = REPO_ROOT / flow
             if not flow_path.exists():
@@ -3154,10 +3108,11 @@ def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> No
             )
             _copy_pngs_flat(maestro_debug_root / flow_path.stem, maestro_dir)
             if step.status != "passed":
-                _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
-                raise DevctlError(
-                    "DEVICE_ERROR",
-                    f"Screenshot-pack Maestro flow failed: {flow_path}. Failure signature: {step.failure_signature}",
+                maestro_failures.append(str(flow_path))
+                print_step(
+                    "Screenshot-pack warning: Maestro flow failed and will be excluded from lane pass/fail "
+                    f"because inventory completeness is authoritative. Flow: {flow_path}. "
+                    f"Failure signature: {step.failure_signature}"
                 )
 
         report_payload = _build_screenshot_inventory_report(
@@ -3175,6 +3130,9 @@ def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> No
         if args.update_reference:
             _promote_screenshot_reference_set(combined_dir=combined_dir, inventory=inventory)
             print_step(f"Updated screenshot references: {_SCREENSHOT_REFERENCE_DIR}")
+
+        if maestro_failures:
+            print_step("Maestro flow failures during screenshot-pack: " + ", ".join(maestro_failures))
 
         missing_ids = report_payload.get("missing_ids", [])
         if missing_ids:

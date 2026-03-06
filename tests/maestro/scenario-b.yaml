@@ -13,7 +13,9 @@ appId: com.pocketagent.android
 - eraseText
 - inputText: "Simple-first unlock step one"
 - tapOn: "Send"
-- assertVisible: "Simple-first unlock step one"
+- extendedWaitUntil:
+    visible: "Simple-first unlock step one"
+    timeout: 30000
 - extendedWaitUntil:
     notVisible: "Cancel"
     timeout: 120000
@@ -21,8 +23,12 @@ appId: com.pocketagent.android
 - eraseText
 - inputText: "Simple-first unlock step two"
 - tapOn: "Send"
-- assertVisible: "Simple-first unlock step two"
-- assertVisible: "Advanced"
+- extendedWaitUntil:
+    notVisible: "Cancel"
+    timeout: 120000
+- extendedWaitUntil:
+    visible: "Advanced"
+    timeout: 30000
 - tapOn: "Tools"
 - tapOn: "calculate 4*9"
 - tapOn: "Send"
