@@ -2,7 +2,7 @@
 
 Date: 2026-03-04
 Task: MKT-03
-Status: Draft complete (prework); external execution remains blocked until WP-11 re-closes
+Lifecycle: Draft complete (prework); external execution remains blocked until WP-11 re-closes
 Owner: Growth Lead / Product Marketing
 
 ## Scope

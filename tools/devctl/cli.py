@@ -7,6 +7,7 @@ from typing import Sequence
 
 from tools.devctl.doctor import print_doctor_report, run_doctor
 from tools.devctl.governance import (
+    docs_health_check,
     docs_drift_check,
     evidence_check,
     evidence_check_changed,
@@ -30,6 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
     gov_sub = gov_parser.add_subparsers(dest="name", required=True)
 
     gov_sub.add_parser("docs-drift", help="validate docs drift")
+    gov_sub.add_parser("docs-health", help="validate documentation health and policy rules")
 
     evidence = gov_sub.add_parser("evidence-check", help="validate evidence file paths")
     evidence.add_argument("file", help="evidence markdown path")
@@ -70,6 +72,9 @@ def _handle_governance(parsed: argparse.Namespace) -> None:
     command = parsed.name
     if command == "docs-drift":
         docs_drift_check()
+        return
+    if command == "docs-health":
+        docs_health_check()
         return
     if command == "evidence-check":
         evidence_check(parsed.file)

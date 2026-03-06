@@ -1,7 +1,0 @@
-No adb devices detected.
-Troubleshooting:
-  1) Confirm USB cable supports data.
-  2) Enable Developer options + USB debugging on the phone.
-  3) Set USB mode to File transfer (MTP).
-  4) Reconnect cable and accept RSA prompt on device.
-exit_code=1

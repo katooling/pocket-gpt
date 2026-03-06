@@ -35,7 +35,7 @@ Thresholds are finalized in `benchmark-protocol.md`.
 
 ## MVP Launch Device Policy (PROD-02)
 
-Status: Finalized lock pass on 2026-03-04 (WP-03 confirmed Done on execution board).
+Lifecycle: Finalized lock pass on 2026-03-04 (WP-03 confirmed Done on execution board).
 
 ### Decision Table - Required vs Best-Effort
 
@@ -51,6 +51,6 @@ Status: Finalized lock pass on 2026-03-04 (WP-03 confirmed Done on execution boa
 1. Required tiers define launch readiness gates and must be validated with physical-device evidence.
 2. Best-effort tiers may ship with documented caveats and do not block MVP go/no-go.
 3. Any policy change that reclassifies a tier requires updates to:
-   - `docs/roadmap/mvp-beta-go-no-go-packet.md`
+   - `docs/roadmap/current-release-plan.md`
    - `docs/product/open-questions-log.md`
    - `docs/operations/execution-board.md`

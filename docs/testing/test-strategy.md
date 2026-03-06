@@ -56,6 +56,7 @@ Engineering and quality excellence are always required.
 | Diagnostics export + redaction | diagnostics/redaction tests | diagnostics UI assertion | scenario-b diagnostics step | QA release promotion checklist | Eng + QA + Security |
 | Offline/network policy enforcement | policy/network tests | launch sanity in offline mode | n/a | WP-12/weekly policy references | Eng + QA + Security |
 | Runtime/model readiness transitions | ViewModel runtime state tests | status-chip and advanced-sheet checks | n/a | stage-2 and startup checks | Eng + QA |
+| Advanced runtime controls (profile + GPU toggle) | `ChatViewModelTest`, runtime config tests | advanced-sheet control assertions | scenario-b advanced controls checks | weekly QA matrix + support diagnostics review | Eng + QA |
 | Model manager phase-2 (download/version/storage) | `UiErrorMapperTest`, `ChatViewModelTest`, `NetworkPolicyManifestConfigTest` | model sheet journey instrumentation | Maestro NotReady recovery extension | RC journey evidence + WP-13 packet linkage | Eng + QA + Product |
 | Scenario C continuity/user journey | ViewModel session + image tests | smoke regression assertions | `tests/maestro/scenario-c.yaml` | weekly matrix + usability packet | QA + Product + Eng |
 
@@ -164,7 +165,7 @@ Human-required checkpoints:
 3. Stage closure requires evidence note linking raw artifact paths
 4. WP-11 closure requires both:
    - raw UI run outputs (instrumentation/Maestro/device lane)
-   - product-readable UX acceptance note (`docs/operations/evidence/wp-11/...`)
+   - product-readable UX acceptance summary in `docs/operations/evidence/index.md`
 
 ## Android Automation Lanes
 

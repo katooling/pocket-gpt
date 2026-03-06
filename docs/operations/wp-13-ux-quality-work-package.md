@@ -3,7 +3,7 @@
 Last updated: 2026-03-05
 Owner: Product
 Support: Engineering, QA, Design, Marketing
-Status: In Progress (`run-01` hold; moderated metrics pending)
+Lifecycle: In Progress (`run-01` hold; moderated metrics pending)
 
 ## Objective
 
@@ -22,7 +22,7 @@ Close the gap between technical correctness and real first-session usability so 
 
 1. Technical lanes are passing on target device (`android-instrumented`, `maestro`, `journey`).
 2. `run-01` packet decision is `hold` due missing moderated cohort metrics.
-3. Pilot policy is active under single-build downloads + `soft gate` (`docs/operations/prod-09-soft-gate-pilot-policy.md`).
+3. Pilot policy is active under single-build downloads + `soft gate` (`docs/operations/tickets/prod-09-soft-gate-pilot-policy.md`).
 
 ## Ticket Set (Current)
 
@@ -53,7 +53,7 @@ Pass only if all are true:
 4. Journey send-capture step values (`phase`, `elapsed_ms`, `runtime_status`, `backend`, `active_model_id`, `placeholder_visible`).
 5. Timeout/cancel UX evidence (`UI-RUNTIME-001` mapping + recovery CTA path).
 6. Qualitative synthesis mapped to PROD-08 taxonomy.
-7. Listing-ready proof set mapped to `docs/operations/prod-10-launch-gate-matrix.md`.
+7. Listing-ready proof set mapped to `docs/operations/tickets/prod-10-launch-gate-matrix.md`.
 
 ## Active Blocker
 

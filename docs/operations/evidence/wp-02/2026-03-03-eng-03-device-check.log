@@ -1,9 +1,0 @@
-[1/4] Checking adb availability...
-Android Debug Bridge version 1.0.41
-Version 36.0.2-14143358
-Installed as /opt/homebrew/bin/adb
-Running on Darwin 25.3.0 (arm64)
-[2/4] Listing connected devices...
-List of devices attached
-
-[3/4] Reading battery info...

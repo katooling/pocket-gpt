@@ -1,6 +1,6 @@
 # MVP Stage Execution Report (Historical Snapshot)
 
-Status: Archived historical snapshot.  
+Lifecycle: Archived historical snapshot.  
 Last updated: 2026-03-04
 
 ## Current-State Marker
@@ -10,8 +10,8 @@ This document is no longer the source of truth for current MVP state because mul
 Use these canonical sources instead:
 
 1. `docs/operations/execution-board.md` (live package status)
-2. `docs/roadmap/mvp-implementation-tracker.md` (stage criteria + gate checklist)
-3. `docs/roadmap/mvp-beta-go-no-go-packet.md` (release decision package)
+2. `docs/roadmap/current-release-plan.md` (current release phases + promotion contract)
+3. `docs/operations/evidence/index.md` (retained evidence inventory + historical summaries)
 4. `docs/prd/phase-0-prd.md` (product scope + user stories + UI acceptance contract)
 
 ## Why Archived

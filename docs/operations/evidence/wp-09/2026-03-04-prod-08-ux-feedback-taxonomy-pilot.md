@@ -3,7 +3,7 @@
 Date: 2026-03-04  
 Owner: Product Ops  
 Task: `PROD-08`  
-Status: Done
+Lifecycle: Done
 
 ## Objective
 

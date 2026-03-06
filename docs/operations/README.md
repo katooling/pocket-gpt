@@ -1,13 +1,13 @@
 # Operations Framework
 
-This section is the project operating system for cross-functional execution.
+This section is the cross-functional execution system.
 
 ## Start Here
 
-1. Open `execution-board.md`.
+1. Open `execution-board.md` for live status.
 2. Open your role playbook under `role-playbooks/`.
-3. Pick tasks in `Ready` (unless explicitly escalated).
-4. Mirror status changes in both board + role playbook.
+3. Open ticket specs under `tickets/`.
+4. Keep evidence under `evidence/` per retention policy in `evidence/index.md`.
 
 ## Source of truth
 
@@ -15,29 +15,18 @@ This section is the project operating system for cross-functional execution.
 - Test strategy + release gates: `docs/testing/test-strategy.md`
 - Android device execution details: `docs/testing/android-dx-and-test-playbook.md`
 
+## Status Contract
+
+1. Mutable status is tracked only in `execution-board.md`.
+2. `Status:` fields are allowed only in `execution-board.md` and `tickets/*.md`.
+3. Role playbooks and roadmap docs are context/responsibility docs, not live status boards.
+
 ## Documents
 
 - `execution-board.md`
-- `rebased-release-plan-2026-03-05.md`
-- `prod-09-soft-gate-pilot-policy.md`
-- `prod-10-launch-gate-matrix.md`
-- `ux-13-stuck-send-timeout-recovery.md`
-- `eng-20-runtime-cancel-timeout-contract.md`
-- `qa-13-send-capture-gate-operationalization.md`
-- `doc-02-product-ux-doc-sync-timeout-cancel-send-capture.md`
-- `sec-02-privacy-claim-parity-audit.md`
-- `prod-11-pilot-support-incident-playbook.md`
-- `mkt-10-claim-freeze-v1.md`
-- `mkt-08-proof-asset-capture-and-listing-finalization.md`
-- `mkt-09-channel-scorecard-run-01.md`
-- `wp-13-ux-quality-work-package.md`
-- `wp-13-usability-gate-packet-template.md`
-- `evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
-- `evidence/wp-13/2026-03-05-eng-chat-layout-hardening.md`
-- `evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`
-- `evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`
-- `eng-13-unblock-checklist.md`
+- `tickets/`
 - `role-playbooks/engineering-playbook.md`
 - `role-playbooks/product-playbook.md`
 - `role-playbooks/marketing-playbook.md`
 - `role-playbooks/qa-playbook.md`
+- `evidence/index.md`

@@ -3,7 +3,7 @@
 Date: 2026-03-04  
 Work package: WP-09  
 Owner: Product Lead  
-Status: Complete (ticket pack published and synced)
+Lifecycle: Complete (ticket pack published and synced)
 
 ## Objective
 
@@ -19,7 +19,7 @@ Publish zero-context-ready UI/UX follow-up tickets after `WP-11` closure, and sy
 6. `docs/operations/role-playbooks/marketing-playbook.md`
 7. `docs/testing/test-strategy.md`
 8. `docs/testing/android-dx-and-test-playbook.md`
-9. `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`
+9. `docs/operations/evidence/index.md`
 
 ## Commands Run and Outcomes
 
@@ -41,7 +41,7 @@ Publish zero-context-ready UI/UX follow-up tickets after `WP-11` closure, and sy
 ## Deliverables
 
 1. New ticket pack:
-   - `docs/operations/ui-ux-handoff-ticket-pack.md`
+   - migrated into `docs/operations/tickets/` as active ticket specs
 2. Board updates with `Ready` handoff items:
    - `PROD-08`, `ENG-18`, `QA-10`, `MKT-07`
 3. Role playbook queue sync:

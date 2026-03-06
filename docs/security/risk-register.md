@@ -23,12 +23,8 @@
 
 Evidence reviewed:
 
-1. `docs/operations/evidence/wp-07/2026-03-04-qa-06.md`
-2. `docs/operations/evidence/wp-06/2026-03-04-eng-07-closeout.md`
-3. `docs/operations/evidence/wp-06/2026-03-04-eng-08.md`
-4. `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`
-5. `docs/operations/evidence/wp-04/2026-03-04-qa-03-rerun.md`
-6. `docs/operations/evidence/wp-05/2026-03-04-eng-06-closeout.md`
+1. `docs/operations/evidence/index.md` (WP-04..WP-07 historical summaries)
+2. `docs/operations/execution-board.md`
 
 Risk posture notes:
 

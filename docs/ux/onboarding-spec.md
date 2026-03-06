@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-04
 Owner: Android + Product
-Status: Implemented (MVP v1)
+Lifecycle: Implemented (MVP v1)
 
 ## Objective
 

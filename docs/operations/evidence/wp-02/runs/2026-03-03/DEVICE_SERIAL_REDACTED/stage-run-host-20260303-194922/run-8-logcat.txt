@@ -1,5 +1,0 @@
---------- beginning of system
-03-03 19:54:46.558  5405  5636 W DeviceStorageMonitorService: updateBroadcasts(/data) oldLevel:0, newLevel:0, seq:1
-03-03 19:54:46.561  5405  5636 D DeviceStorageMonitorService: Available File Node Number is [12604720]
-03-03 19:54:46.562  5405  5636 W DeviceStorageMonitorService: updateBroadcasts_filenode(/data) fn_oldLevel:0, fn_newLevel:0, seq:1
-03-03 19:54:47.403  4564  4564 D io_stats: !@   8,0 r 250304 9538232 w 397631 188980592 d 0 0 f 0 0 iot 313248 0 th 0 0 0 pt 0 inp 0 0 1295.219

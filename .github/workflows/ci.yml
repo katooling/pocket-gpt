@@ -95,6 +95,9 @@ jobs:
       - name: Docs drift guard
         run: python3 tools/devctl/main.py governance docs-drift
 
+      - name: Docs health guard
+        run: python3 tools/devctl/main.py governance docs-health
+
       - name: Governance self-tests
         run: python3 tools/devctl/main.py governance self-test
 

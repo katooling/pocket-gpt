@@ -1,7 +1,0 @@
---------- beginning of system
-03-03 19:54:11.727  7525  8838 I SDHMS:D : SIOP:: AP:359 BAT:373 USB:0 CHG:382 WIFI:357 SKIN:359 SKINF:358 SKINB:359 LRP:359 LRF:358 LRB:359 
-03-03 19:54:13.377  4564  4564 D io_stats: !@   8,0 r 250304 9538232 w 397620 188980396 d 0 0 f 0 0 iot 313232 0 th 0 0 0 pt 0 inp 0 0 1261.193
-03-03 19:54:14.141  5405  6722 D FreecessController: com.sec.android.app.camera(10107) is important[!isUidIdle]
---------- beginning of main
-03-03 19:54:14.820  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 6097000 / mChargingTime : 6097000
-03-03 19:54:14.821  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!

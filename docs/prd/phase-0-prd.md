@@ -67,8 +67,10 @@ Required MVP UI capabilities:
 4. Tool UX with deterministic result rendering and clear safety-error feedback.
 5. Advanced controls sheet with:
    - routing mode: `Auto`, `QWEN_0_8B`, `QWEN_2B`
+   - runtime performance profile: `BATTERY`, `BALANCED`, `FAST`
+   - GPU acceleration toggle (enabled only when supported on device/runtime path)
    - diagnostics export action
-   - runtime detail readout (active model + latest latency snapshots).
+   - runtime detail readout (active model + first-token/total/prefill/decode/decode-rate snapshots).
 6. Product guardrails:
    - explicit offline-first status indicator
    - clear startup/runtime error banners
@@ -85,6 +87,7 @@ Required MVP UI capabilities:
 7. As a user, if send stalls or exceeds timeout, I receive deterministic recovery guidance and can retry without losing context.
 8. As a user, if manifest/download path is unavailable, I can still recover through import flow.
 9. As a user, I can understand runtime status transitions (`Loading` to `Ready` or deterministic error) without ambiguity.
+10. As a user, I can tune speed/battery behavior from advanced controls with deterministic profile labels.
 
 ## Timeout/Cancel Recovery Contract (MVP)
 
@@ -98,7 +101,7 @@ Required MVP UI capabilities:
 
 ## Launch Workflow Lock (PROD-01)
 
-Status: Finalized lock pass on 2026-03-04 (WP-03 confirmed Done on execution board).
+Lifecycle: Finalized lock pass on 2026-03-04 (WP-03 confirmed Done on execution board).
 
 Top launch workflows (must be excellent at MVP launch):
 
@@ -127,7 +130,7 @@ Top launch workflows (must be excellent at MVP launch):
 Final lock gate for PROD-01:
 
 1. `WP-03` status is `Done` on `docs/operations/execution-board.md`.
-2. Workflow A/B/C evidence links are attached in the MVP beta go/no-go packet.
+2. Workflow A/B/C evidence links are attached in `docs/operations/evidence/index.md` and mapped in `docs/operations/tickets/prod-10-launch-gate-matrix.md`.
 3. Product + QA both mark the launch workflow checklist as complete (PROD-03 handoff).
 
 ## UI Acceptance Suite (WP-11)
@@ -144,6 +147,9 @@ Final lock gate for PROD-01:
 10. `UI-10` Long-run UI soak includes navigation + send/image/tool loops without ANR/OOM.
 11. `UI-11` Send-timeout path maps to deterministic timeout UX copy/code and exits sending state.
 12. `UI-12` Internal-download manifest outage path preserves import recovery workflow and clear status messaging.
+13. `UI-13` Advanced controls profile switching (`BATTERY`/`BALANCED`/`FAST`) updates runtime contract and persists across restore.
+14. `UI-14` GPU acceleration toggle reflects capability state and persists selected behavior.
+15. `UI-15` Runtime detail telemetry surfaces first-token/total/prefill/decode/decode-rate labels after send completion.
 
 Release policy update:
 

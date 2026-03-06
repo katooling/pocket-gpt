@@ -5,3 +5,4 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 python3 tools/devctl/main.py governance docs-drift
+python3 tools/devctl/main.py governance docs-health

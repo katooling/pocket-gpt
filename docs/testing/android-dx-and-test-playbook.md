@@ -114,8 +114,8 @@ Use this loop once Compose UI changes land:
    - `python3 tools/devctl/main.py lane maestro`
 4. Capture logs and summary under deterministic run path:
    - `scripts/benchmarks/runs/YYYY-MM-DD/<device>/wp-11-ui-acceptance/...`
-5. Publish evidence note under:
-   - `docs/operations/evidence/wp-11/YYYY-MM-DD-*.md`
+5. Historical WP-11 closure is summarized in:
+   - `docs/operations/evidence/index.md`
 
 ## Release-Candidate Real-Runtime App Path Lane
 

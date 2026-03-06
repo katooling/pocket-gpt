@@ -1,6 +1,6 @@
 # Implemented UX Behavior Reference
 
-Last updated: 2026-03-05  
+Last updated: 2026-03-06  
 Owner: Product + Android
 
 ## Purpose
@@ -41,6 +41,35 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - primary: `Fix model setup`
    - secondary: `Refresh runtime checks`
    - tertiary: `Show technical details`
+
+## Runtime Performance Profiles and GPU Toggle
+
+1. Advanced controls expose exactly three runtime performance profiles:
+   - `BATTERY`: longest timeout window, reduced decode pressure, conservative thread/batch defaults
+   - `BALANCED`: default profile for normal usage
+   - `FAST`: higher throughput preference with larger decode budget
+2. Profile selection persists with session state restore and is reapplied on send actions.
+3. GPU acceleration toggle is visible in advanced controls:
+   - enabled only when runtime/backend reports support
+   - disabled state renders explicit unavailable copy
+4. Profile + GPU settings are applied through the app runtime contract and not by direct UI-only overrides.
+
+## Runtime Telemetry Labels in UI
+
+1. Advanced controls runtime details include:
+   - active model id
+   - last first-token latency
+   - last total latency
+   - last prefill latency
+   - last decode latency
+   - last decode rate (tokens/sec)
+2. These labels are support-facing transparency signals and should be captured in QA evidence when triaging performance regressions.
+
+## Model Residency Defaults
+
+1. Runtime keeps model loaded while app is foreground by default.
+2. Idle unload TTL defaults to 10 minutes.
+3. Warmup-on-startup defaults to enabled unless overridden by runtime/test lane controls.
 
 ## Send Timeout and Cancel Semantics
 

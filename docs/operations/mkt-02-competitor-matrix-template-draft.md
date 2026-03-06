@@ -1,7 +1,7 @@
 # MKT-02 Competitor Matrix (Evidence-Safe, Post-WP-03)
 
 Last updated: 2026-03-04
-Status: Finalized for Pocket GPT claim set; competitor snapshot sourced (ChatGPT/Gemini/Claude)
+Lifecycle: Finalized for Pocket GPT claim set; competitor snapshot sourced (ChatGPT/Gemini/Claude)
 Owner: Product Marketing
 Prerequisites: MKT-01 baseline complete, WP-03 marked Done
 
@@ -35,16 +35,16 @@ Primary external sources:
 | P-02 | Cloud-dependent default path is out of MVP scope. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/product/feature-catalog.md` |
 | P-03 | Privacy/policy controls are MVP exit criteria. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/roadmap/product-roadmap.md` |
 | P-04 | Policy/tool safety regressions are stage-gated. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/testing/test-strategy.md` |
-| R-01 | QA-02 Phase B executed on physical device. | Validated | Yes | `DEP-QA02-PHASEB` | `docs/operations/evidence/wp-03/2026-03-03-qa-02-phase-b.md` |
-| R-02 | Scenario A/B threshold evaluation passed. | Validated | Yes | `DEP-QA02-CLOSEOUT` | `docs/operations/evidence/wp-03/2026-03-04-qa-02-closeout.md` |
+| R-01 | QA-02 Phase B executed on physical device. | Validated | Yes | `DEP-QA02-PHASEB` | `docs/operations/evidence/index.md` |
+| R-02 | Scenario A/B threshold evaluation passed. | Validated | Yes | `DEP-QA02-CLOSEOUT` | `docs/operations/evidence/index.md` |
 | R-03 | WP-03 status is Done. | Validated | Yes | `DEP-WP03-BOARD-DONE` | `docs/operations/execution-board.md` |
 | R-04 | Artifact/evidence reproducibility policy is defined. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/testing/test-strategy.md` |
 | U-01 | H1 includes offline text chat + streaming output. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/roadmap/product-roadmap.md` |
 | U-02 | H1 includes 3-5 local deterministic tools + Memory v1. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/roadmap/product-roadmap.md` |
 | U-03 | Single-image understanding is in MVP scope direction. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/roadmap/product-roadmap.md`, `docs/product/feature-catalog.md` |
 | U-04 | Feature claims must respect reliability gate discipline. | Validated | Yes | `DEP-WP03-CLOSED` | `docs/product/feature-catalog.md`, `docs/testing/test-strategy.md` |
-| X-01 | Scenario C/memory quality pass complete. | Validated | Yes | `DEP-WP06-CLOSED` | `docs/operations/evidence/wp-06/2026-03-04-qa-05.md`, `docs/operations/execution-board.md` |
-| X-02 | Soak/go-no-go packet complete. | Validated | Yes | `DEP-WP07-CLOSED` | `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`, `docs/operations/execution-board.md` |
+| X-01 | Scenario C/memory quality pass complete. | Validated | Yes | `DEP-WP06-CLOSED` | `docs/operations/evidence/index.md`, `docs/operations/execution-board.md` |
+| X-02 | Soak/go-no-go packet complete. | Validated | Yes | `DEP-WP07-CLOSED` | `docs/operations/evidence/index.md`, `docs/operations/execution-board.md` |
 | X-03 | iOS parity available now. | Excluded | No | `DEP-H2-NOT-SHIPPED` | `docs/roadmap/product-roadmap.md` |
 | X-04 | Voice mode/STT/TTS available now. | Excluded | No | `DEP-H3-NOT-SHIPPED` | `docs/roadmap/product-roadmap.md` |
 | X-05 | Universal device performance guarantee. | Excluded | No | `DEP-NO-EVIDENCE` | WP-03 evidence limited to tested runs/devices |

@@ -1,59 +1,30 @@
 # Marketing Playbook
 
-Last updated: 2026-03-05
+Last updated: 2026-03-06
 
 ## Mission
 
-Publish evidence-safe messaging and channel experiments that reflect real validated product behavior.
+Publish evidence-safe messaging and channel experiments that reflect validated product behavior.
 
-## Current Operating Truth
+## Responsibilities
 
-1. Messaging architecture and competitor snapshot are complete.
-2. UI proof messaging pass is complete.
-3. Broad promotion is blocked until WP-13 moderated packet completion.
-4. Pilot operates under single-build downloads + `soft gate`.
+1. Maintain launch claims that map to validated gate rows.
+2. Run proof-asset and channel-scorecard workflows.
+3. Keep claim freeze aligned to privacy parity and launch decision contracts.
+4. Avoid publishing claims not backed by current evidence.
 
-## Done
+## Working Rules
 
-- [x] `MKT-01` messaging architecture baseline
-- [x] `MKT-02` competitor snapshot and claim-risk mapping
-- [x] `MKT-07` UI proof-based messaging + asset-selection pass
-- [x] `MKT-03` scorecard template publication
+1. Use `docs/operations/execution-board.md` for mutable status.
+2. Keep ticket details in `docs/operations/tickets/`.
+3. Treat privacy parity as a hard dependency for external claims.
+4. Keep asset/copy docs synchronized with implemented UX behavior docs.
 
-## In Progress
-
-- [ ] `MKT-03` launch channel test plan final draft
-- [ ] `MKT-04` landing page + launch copy v1 draft refinement
-
-## Ready Queue
-
-- [ ] `MKT-08` proof asset capture + Play Store listing shotlist finalization
-- [ ] `MKT-09` first 7-day channel scorecard execution
-- [ ] `MKT-10` claim freeze v1 (publish-safe vs internal-only claims)
-
-## Task Queue
-
-| Task ID | Task | Status | Owner | References |
-|---|---|---|---|---|
-| MKT-03 | Launch channel test plan | In Progress | Growth Lead | `docs/operations/mkt-03-launch-channel-test-plan-draft.md`, `docs/operations/mkt-03-7-day-scorecard-template.md` |
-| MKT-04 | Landing page and launch copy v1 | In Progress | Content Lead | `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md`, `docs/operations/mkt-04-demo-asset-capture-runbook.md` |
-| MKT-08 | Proof asset capture + listing finalization | Ready | Marketing Ops | `docs/operations/mkt-08-proof-asset-capture-and-listing-finalization.md`, `docs/ux/play-store-listing-spec.md`, `docs/operations/prod-10-launch-gate-matrix.md` |
-| MKT-09 | Execute first 7-day channel scorecard | Ready | Growth Lead | `docs/operations/mkt-09-channel-scorecard-run-01.md`, `docs/operations/mkt-03-7-day-scorecard-template.md`, `docs/operations/prod-10-launch-gate-matrix.md` |
-| MKT-10 | Claim freeze v1 and publish-safety map | Ready | Marketing Lead | `docs/operations/mkt-10-claim-freeze-v1.md`, `docs/operations/prod-10-launch-gate-matrix.md`, `docs/operations/sec-02-privacy-claim-parity-audit.md` |
-| MKT-05 | Voice horizon narrative (post-MVP) | Backlog | Product Marketing | `docs/roadmap/product-roadmap.md` |
-
-## Publishing Rule
-
-1. Claims can be public only if corresponding `PROD-10` required row is PASS.
-2. Claims tied to missing moderated metrics remain internal-only.
-3. Privacy/security claims must be approved against `SEC-02` parity audit before publishing.
-4. Promotion scope must follow Product promote/iterate/hold memo.
-
-## Marketing References
+## Primary References
 
 - `docs/operations/execution-board.md`
-- `docs/operations/prod-10-launch-gate-matrix.md`
-- `docs/operations/prod-09-soft-gate-pilot-policy.md`
-- `docs/operations/mkt-10-claim-freeze-v1.md`
-- `docs/operations/sec-02-privacy-claim-parity-audit.md`
-- `docs/operations/mkt-07-ui-proof-messaging-map.md`
+- `docs/operations/tickets/mkt-08-proof-asset-capture-and-listing-finalization.md`
+- `docs/operations/tickets/mkt-09-channel-scorecard-run-01.md`
+- `docs/operations/tickets/mkt-10-claim-freeze-v1.md`
+- `docs/operations/tickets/prod-10-launch-gate-matrix.md`
+- `docs/operations/tickets/sec-02-privacy-claim-parity-audit.md`

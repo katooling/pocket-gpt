@@ -1,80 +1,25 @@
-# Team Workstreams and Independent Execution
+# Team Workstreams
 
-Last updated: 2026-03-05
+Last updated: 2026-03-06
 
-This document defines parallel workstreams that map directly to the rebased release ticket set.
+This document defines stable workstream ownership boundaries.
 
-Role playbooks:
-
-- `docs/operations/role-playbooks/engineering-playbook.md`
-- `docs/operations/role-playbooks/product-playbook.md`
-- `docs/operations/role-playbooks/marketing-playbook.md`
-- `docs/operations/role-playbooks/qa-playbook.md`
+For live task status and ordering, use `docs/operations/execution-board.md`.
 
 ## Workstream Map
 
-| Workstream | Primary Scope | Current Focus Tickets | Depends On |
+| Workstream | Primary Scope | Key Interfaces | Depends On |
 |---|---|---|---|
-| Product Ops | release policy, docs coherence, decision governance | `DOC-01`, `DOC-02`, `PROD-09`, `PROD-10`, `PROD-11` | execution board + tracker + evidence contracts |
-| Runtime + DX | lane robustness, deterministic preflight/recovery behavior | `ENG-19`, `ENG-20` | devctl lane architecture + runtime bridge contracts |
-| QA Operations | lane reruns, packet closure, weekly regression signal | `QA-11`, `QA-13`, `QA-WP13-RUN02`, `QA-12` | ENG-19/ENG-20 + WP-13 packet template |
-| UX/Product Design | first-run recovery and timeout/cancel comprehension | `UX-12`, `UX-13` | model-management flow + runtime states |
-| Marketing Ops | evidence-safe proof assets and channel experiment execution | `MKT-08`, `MKT-09`, `MKT-10` | moderated packet + launch gate matrix + SEC-02 |
-| Security + Trust | privacy-claim parity and enforcement evidence mapping | `SEC-02` | privacy model + diagnostics evidence |
+| Product Ops | release policy, decision governance, docs coherence | `docs/operations/tickets/prod-09-soft-gate-pilot-policy.md`, `docs/operations/tickets/prod-10-launch-gate-matrix.md` | execution board + evidence index |
+| Runtime + DX | lane robustness, runtime contracts, deterministic preflight/recovery | `docs/testing/test-lane-profiles-and-selection.md`, `docs/operations/tickets/eng-20-runtime-cancel-timeout-contract.md` | devctl lanes + runtime bridge contracts |
+| QA Operations | lane execution, packet closure, weekly regression signal | `docs/testing/android-dx-and-test-playbook.md`, `docs/operations/tickets/qa-13-send-capture-gate-operationalization.md` | runtime lane stability + ticket acceptance contracts |
+| UX/Product Design | first-run recovery and timeout/cancel comprehension | `docs/ux/model-management-flow.md`, `docs/operations/tickets/ux-13-stuck-send-timeout-recovery.md` | runtime state model + moderated usability packet |
+| Marketing Ops | evidence-safe proof assets and channel execution | `docs/operations/tickets/mkt-08-proof-asset-capture-and-listing-finalization.md`, `docs/operations/tickets/mkt-09-channel-scorecard-run-01.md` | launch gate matrix + privacy parity audit |
+| Security + Trust | privacy claim parity and controls mapping | `docs/security/privacy-model.md`, `docs/operations/tickets/sec-02-privacy-claim-parity-audit.md` | QA evidence + product claim governance |
 
 ## Interface Contracts
 
-1. Product decision interface is `docs/operations/prod-10-launch-gate-matrix.md`.
-2. WP-13 packet interface requires `run_owner`, `run_host`, and lane pass IDs.
-3. Publishable marketing claims must map to evidence IDs and gate-matrix rows.
-4. Runtime/app integration remains through `MvpRuntimeFacade`; no direct coupling to runtime internals.
-
-## Active Ticket Ownership (March 6-15)
-
-| Ticket | Owner | Support | Status |
-|---|---|---|---|
-| DOC-01 | Product Ops | Eng, QA, Marketing | In Progress |
-| DOC-02 | Product Lead | Eng, QA, Design | In Progress |
-| ENG-19 | Engineering | QA | In Progress |
-| ENG-20 | Engineering | QA, Product | In Progress |
-| QA-11 | QA | Engineering | Ready |
-| QA-13 | QA | Engineering, Product | Ready |
-| PROD-09 | Product Ops | QA, Marketing | Done |
-| UX-12 | Product + Design + Android | QA | Done |
-| UX-13 | Product + Design + Android | QA | Ready |
-| QA-WP13-RUN02 | QA + Product | Design, Engineering | Ready |
-| MKT-08 | Marketing | Product | Ready |
-| MKT-09 | Marketing | Product, QA | Ready |
-| MKT-10 | Marketing | Product, Security | Ready |
-| SEC-02 | Product + Security | QA, Marketing | Ready |
-| PROD-11 | Product Ops | QA, Marketing | Ready |
-| PROD-10 | Product | QA, Eng, Marketing | Ready |
-
-## Weekly Decision Questions
-
-### UI/UX
-
-1. What first-run setup time is acceptable for launch (P50/P90)?
-2. Which recovery copy still causes confusion in moderated sessions?
-
-### Backend/Runtime
-
-1. Which preflight failures should hard-fail vs warn-and-continue?
-2. What is the fallback behavior if internal manifest fetch is empty/unreachable?
-
-### Marketing
-
-1. Which claim blocks are evidence-safe for week-1 publishing?
-2. Which proof asset set is mandatory before broader promotion?
-
-### Product/Ops
-
-1. What pilot size/duration triggers promote vs hold under soft gate?
-2. Which metrics are mandatory versus advisory for expansion?
-
-## Definition of Done (Per Ticket)
-
-1. Deliverable updated in source-of-truth docs or code.
-2. Acceptance criteria met and evidence linked.
-3. Status reflected in `docs/operations/execution-board.md`.
-4. Relevant role playbook updated.
+1. Launch decision interface is `docs/operations/tickets/prod-10-launch-gate-matrix.md`.
+2. Usability packet evidence requirements are defined in `docs/operations/wp-13-usability-gate-packet-template.md`.
+3. Publishable claims must map to evidence IDs and verified privacy parity rows.
+4. Runtime/app integration contract remains through `MvpRuntimeFacade`.

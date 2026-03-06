@@ -1,8 +1,0 @@
---------- beginning of main
-03-03 20:06:29.160  5763  5763 D SecPowerUI.Notification: showChargingNotice oldChargingType : 11 / currentChargingType : 11, oldChargingTime : 5539000 / mChargingTime : 5539000
-03-03 20:06:29.160  5763  5763 D SecPowerUI.Notification: There is no change about charging status, so return!
---------- beginning of system
-03-03 20:06:29.352  5405  6722 D FreecessController: com.sec.android.app.camera(10107) is important[!isUidIdle]
-03-03 20:06:31.775  7525  8838 I SDHMS:D : SIOP:: AP:371 BAT:384 USB:0 CHG:392 WIFI:367 SKIN:369 SKINF:368 SKINB:369 LRP:369 LRF:368 LRB:369 
-03-03 20:06:31.953  4564  4564 D io_stats: !@   8,0 r 253349 9631960 w 399811 189049528 d 0 0 f 0 0 iot 315364 0 th 0 0 0 pt 0 inp 0 0 1999.768
-03-03 20:06:34.150  5000  5000 E sehhealth-service: Could not open /sys/class/power_supply/battery/lrp

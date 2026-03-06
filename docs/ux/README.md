@@ -1,16 +1,17 @@
 # UX Documentation
 
-Last updated: 2026-03-04
+Last updated: 2026-03-06
 Owner: Product + Design + Android
 
-This section defines the MVP user experience layer that sits between PRD intent and implementation details.
+This section defines user-facing behavior contracts for MVP and release readiness.
 
 ## Scope
 
 1. Install-to-value journey and first-session UX.
 2. Onboarding and model readiness communication.
-3. Design system baseline and component behavior.
-4. App-store positioning inputs grounded in validated features.
+3. Runtime recovery and deterministic error handling.
+4. Design-system and interaction behavior references.
+5. Listing/claim inputs grounded in validated workflows.
 
 ## Documents
 
@@ -22,9 +23,8 @@ This section defines the MVP user experience layer that sits between PRD intent 
 - `docs/ux/play-store-listing-spec.md`
 - `docs/ux/error-recovery-guide.md`
 - `docs/ux/implemented-behavior-reference.md`
+- `docs/ux/ux-12-recovery-journey-spec.md`
 
-## Gates
+## Update rule
 
-1. UX docs must be updated when user-visible behavior changes.
-2. Claims in app-store assets must map to validated workflows and evidence links.
-3. New UX tickets must be mirrored in `docs/operations/execution-board.md` before implementation.
+Update these docs whenever a user-visible behavior changes.

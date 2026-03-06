@@ -80,8 +80,8 @@ Track these questions continuously so engineering, product, and go-to-market sta
    - Resolved by gate evidence review.
    - Decision: start screenshot/video capture now for launch assets; publish externally only after asset QA and copy QA pass.
    - References:
-     - `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`
-     - `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`
+     - `docs/operations/evidence/index.md`
+     - `docs/operations/execution-board.md`
 12. Should marketing wait for real inference or start with architecture/privacy story?
    - Resolved by messaging sequencing rule.
    - Decision: run both in sequence now: architecture/privacy + reliability proof first, paired with real inference screenshots/video in the same launch cycle.
@@ -105,7 +105,7 @@ Track these questions continuously so engineering, product, and go-to-market sta
    - Decision: matrix now has sourced baseline for ChatGPT/Gemini/Claude; reliability artifact parity remains explicitly `Unknown` where no public equivalent evidence packet exists.
    - References:
      - `docs/operations/mkt-02-competitor-matrix-template-draft.md`
-     - `docs/operations/evidence/wp-08/2026-03-04-mkt-02-external-competitor-research.md`
+     - `docs/operations/evidence/index.md`
 16. Which launch distribution path should be used first: Play Store, direct APK, or community beta?
    - Resolved by channel-governance decision.
    - Decision: primary path is Google Play internal/closed testing + community recruitment funnel; direct APK is contingency-only for tightly controlled technical testers.
@@ -122,11 +122,11 @@ Track these questions continuously so engineering, product, and go-to-market sta
    - Resolved by rebased release policy.
    - Decision: use a single build with downloads enabled by default for controlled pilot cohorts, with soft-gate hard-stop rules and manifest outage fallback defined.
    - References:
-     - `docs/operations/prod-09-soft-gate-pilot-policy.md`
+     - `docs/operations/tickets/prod-09-soft-gate-pilot-policy.md`
      - `docs/operations/execution-board.md`
 19. Is WP-13 closure a hard gate for any promotion, or can pilot continue with partial evidence?
    - Resolved by gate policy split.
    - Decision: soft gate allows controlled pilot continuation, but broader promotion remains blocked until moderated WP-13 packet is complete.
    - References:
-     - `docs/operations/prod-09-soft-gate-pilot-policy.md`
-     - `docs/operations/prod-10-launch-gate-matrix.md`
+     - `docs/operations/tickets/prod-09-soft-gate-pilot-policy.md`
+     - `docs/operations/tickets/prod-10-launch-gate-matrix.md`

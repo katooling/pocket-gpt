@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-04
 Owner: Product + Marketing
-Status: Draft ready for asset production
+Lifecycle: Draft ready for asset production
 
 ## Listing Positioning
 

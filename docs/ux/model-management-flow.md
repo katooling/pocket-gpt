@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-06
 Owner: Runtime + Android
-Status: Phase-2 implemented (versioned install + downloads + activation control)
+Lifecycle: Phase-2 implemented (versioned install + downloads + activation control)
 
 ## Product Defaults (P1)
 
@@ -11,6 +11,24 @@ Status: Phase-2 implemented (versioned install + downloads + activation control)
 3. Storage cleanup: guided safe (active version delete blocked, failed/temp artifacts handled by manager flows).
 4. Lifecycle on close/background/reopen: WorkManager-backed background continuation with persisted task state.
 5. Provisioning registry is `modelId`-keyed and supports baseline models plus dynamically discovered model IDs.
+
+## Runtime Controls Defaults
+
+1. Runtime performance profile defaults to `BALANCED` on first launch.
+2. Profile options exposed to users are fixed: `BATTERY`, `BALANCED`, `FAST`.
+3. GPU acceleration toggle is capability-gated:
+   - unsupported runtimes show explicit disabled state
+   - supported runtimes allow persisted on/off selection from advanced controls
+4. Model residency defaults:
+   - keep-loaded while app is foreground: enabled
+   - idle unload TTL: `10m`
+   - warmup on startup: enabled
+5. Runtime details surface support telemetry labels after generation:
+   - first-token latency
+   - total latency
+   - prefill latency
+   - decode latency
+   - decode rate
 
 ## Runtime Status Model
 
@@ -87,7 +105,7 @@ Startup checks still enforce valid interaction template availability and artifac
 
 ## Network Policy
 
-1. `src/main/AndroidManifest.xml` includes INTERNET permission for model distribution.
+1. `apps/mobile-android/src/main/AndroidManifest.xml` includes INTERNET permission for model distribution.
 2. Cleartext remains disabled via `network_security_config.xml`.
 
 ## Manifest Outage Fallback

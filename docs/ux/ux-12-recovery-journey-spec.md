@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-05
 Owner: Product + Design + Android
-Status: Ready
+Lifecycle: Ready
 
 ## Objective
 

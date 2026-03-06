@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-04  
 Owner: Marketing Lead  
-Status: Approved for WP-09 sequencing
+Lifecycle: Approved for WP-09 sequencing
 
 ## Objective
 

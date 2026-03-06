@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-04
 Owner: Marketing + QA support
-Status: Ready to execute
+Lifecycle: Ready to execute
 
 ## Purpose
 

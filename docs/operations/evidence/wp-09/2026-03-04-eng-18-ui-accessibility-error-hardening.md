@@ -3,7 +3,7 @@
 Date: 2026-03-04  
 Owner: Engineering (Android)  
 Task: `ENG-18`  
-Status: Done
+Lifecycle: Done
 
 ## Objective
 

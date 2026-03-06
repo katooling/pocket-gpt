@@ -1,14 +1,11 @@
 # PocketAgent Docs
 
-This directory contains product, architecture, operations, and testing documentation.
+This directory contains product, architecture, operations, testing, and evidence docs.
 
-## Documentation Principle
+## Start Here
 
-This project operates with engineering and quality excellence as a non-negotiable baseline.
-
-1. Requirements, implementation, tests, and evidence must stay aligned.
-2. Docs must be updated with every meaningful behavior or process change.
-3. If evidence and documentation disagree, release decisions default to `hold` until resolved.
+1. `docs/start-here/new-joiner.md`
+2. `docs/start-here/resource-map.md`
 
 ## Source of truth
 
@@ -18,11 +15,21 @@ Testing and execution process docs are canonical in:
 - `docs/testing/test-strategy.md`
 - `docs/testing/android-dx-and-test-playbook.md`
 
-All other docs should point to these for command/process details to avoid drift.
+All other docs should point to these for command/process details.
 
-## Document Map
+## Primary Map
 
+- `start-here/new-joiner.md`
+- `start-here/resource-map.md`
+- `roadmap/current-release-plan.md`
+- `operations/execution-board.md`
+- `operations/tickets/`
+- `operations/evidence/index.md`
 - `prd/phase-0-prd.md`
+- `product/feature-catalog.md`
+- `product/open-questions-log.md`
+- `ux/README.md`
+- `testing/README.md`
 - `architecture/system-context.md`
 - `architecture/modular-monolith.md`
 - `architecture/tech-stack-decision.md`
@@ -30,21 +37,5 @@ All other docs should point to these for command/process details to avoid drift.
 - `feasibility/device-matrix.md`
 - `feasibility/benchmark-protocol.md`
 - `feasibility/spike-results.md`
-- `feasibility/mvp-stage-execution-report.md`
 - `security/privacy-model.md`
 - `security/risk-register.md`
-- `testing/README.md`
-- `roadmap/phase-1-mvp-plan.md`
-- `roadmap/mvp-implementation-tracker.md`
-- `roadmap/mvp-beta-go-no-go-packet.md`
-- `roadmap/next-steps-execution-plan.md`
-- `roadmap/product-roadmap.md`
-- `roadmap/team-workstreams.md`
-- `operations/README.md`
-- `operations/execution-board.md`
-- `operations/wp-13-ux-quality-work-package.md`
-- `operations/wp-13-usability-gate-packet-template.md`
-- `operations/role-playbooks/`
-- `product/feature-catalog.md`
-- `product/open-questions-log.md`
-- `ux/README.md`

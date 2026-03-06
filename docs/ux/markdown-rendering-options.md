@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-04
 Owner: Android
-Status: Implemented with lightweight renderer, library path documented
+Lifecycle: Implemented with lightweight renderer, library path documented
 
 ## Goal
 

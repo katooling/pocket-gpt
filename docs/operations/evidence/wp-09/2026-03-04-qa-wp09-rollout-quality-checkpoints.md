@@ -2,7 +2,7 @@
 
 Date: 2026-03-04  
 Owner: QA Lead  
-Status: Completed (initial QA-09 deliverable set)
+Lifecycle: Completed (initial QA-09 deliverable set)
 
 ## Objective
 
@@ -13,7 +13,7 @@ Define QA-owned rollout quality checkpoints to support WP-09 distribution and be
 1. `docs/operations/execution-board.md`
 2. `docs/operations/role-playbooks/qa-playbook.md`
 3. `docs/operations/evidence/wp-09/2026-03-04-prod-06-kickoff.md`
-4. `docs/roadmap/mvp-beta-go-no-go-packet.md`
+4. `docs/roadmap/current-release-plan.md`
 5. `docs/testing/test-strategy.md`
 
 ## QA Checkpoint Set (WP-09 Support)

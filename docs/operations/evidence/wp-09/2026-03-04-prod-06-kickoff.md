@@ -18,10 +18,9 @@ Dual-track gate review status at kickoff:
 
 ## Dependencies Confirmed
 
-1. `docs/operations/evidence/wp-07/2026-03-04-prod-03-final-signoff.md`
-2. `docs/operations/evidence/wp-11/2026-03-04-prod-qa-eng-wp11-closeout.md`
-3. `docs/operations/evidence/wp-11/2026-03-04-qa-08-ui-gate-rerun.md`
-4. `docs/roadmap/mvp-beta-go-no-go-packet.md`
+1. `docs/operations/evidence/index.md` (WP-07/WP-11 historical closure summary)
+2. `docs/operations/execution-board.md`
+3. `docs/roadmap/current-release-plan.md`
 
 ## Next Deliverables
 

@@ -1,7 +1,7 @@
 # MKT-03 Launch Channel Test Plan (Draft, Evidence-Safe)
 
 Last updated: 2026-03-04
-Status: Draft complete; execution unblocked by WP-07/WP-11 closure
+Lifecycle: Draft complete; execution unblocked by WP-07/WP-11 closure
 Owner: Growth Lead / Product Marketing
 
 ## Objective

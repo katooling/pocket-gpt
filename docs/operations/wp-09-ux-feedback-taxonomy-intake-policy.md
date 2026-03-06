@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-04  
 Owner: Product Ops (`PROD-08`)  
-Status: Active
+Lifecycle: Active
 
 ## Objective
 

@@ -34,6 +34,10 @@ PR_REQUIRED_PATTERNS: list[tuple[str, str]] = [
         r"- \[x\] I updated docs affected by this change, or confirmed no docs changes are needed\.",
         "docs checkbox must be checked",
     ),
+    (
+        r"- \[x\] I ran `python3 tools/devctl/main\.py governance docs-health` and it passed\.",
+        "docs-health checkbox must be checked",
+    ),
 ]
 
 STAGE_EVIDENCE_PATTERN = (
@@ -42,6 +46,26 @@ STAGE_EVIDENCE_PATTERN = (
 )
 
 RUN_PATH_REGEX = r"scripts/benchmarks/runs/[^\s)`\"]+"
+MARKDOWN_LINK_REGEX = re.compile(r"\[[^]]+\]\(([^)]+)\)")
+STATUS_LINE_REGEX = re.compile(r"^Status:\s*", re.MULTILINE)
+
+DOCS_HEALTH_REQUIRED_INDEX_MARKERS: dict[str, tuple[str, ...]] = {
+    "docs/README.md": ("start-here/new-joiner.md", "start-here/resource-map.md"),
+    "docs/operations/README.md": ("execution-board.md", "evidence/index.md", "tickets/"),
+    "docs/ux/README.md": ("implemented-behavior-reference.md", "model-management-flow.md"),
+}
+
+DOCS_HEALTH_ALLOWED_EVIDENCE_WPS = {"wp-09", "wp-12", "wp-13"}
+DOCS_HEALTH_SUMMARY_REQUIRED_WPS = ("WP-01", "WP-02", "WP-03", "WP-04", "WP-05", "WP-06", "WP-07", "WP-08", "WP-11")
+DOCS_HEALTH_RETAINED_WP12_NOTES = {
+    "2026-03-04-eng-12-model-distribution-implementation.md",
+    "2026-03-04-eng-13-native-runtime-proof.md",
+    "2026-03-04-eng-17-network-policy-wiring.md",
+    "2026-03-04-prod-eng-12-model-distribution-decision.md",
+    "2026-03-04-qa-wp12-closeout.md",
+    "2026-03-05-eng-13-native-runtime-rerun.md",
+    "2026-03-05-qa-wp12-closeout-rerun.md",
+}
 
 
 def _read_file(path: Path) -> str:
@@ -76,6 +100,169 @@ def docs_drift_check(repo_root: Path = REPO_ROOT) -> None:
         raise DevctlError("CONFIG_ERROR", "\n".join(violations))
 
     print("Docs drift check passed.")
+
+
+def _iter_docs_health_files(repo_root: Path) -> list[Path]:
+    rel_paths = [
+        "README.md",
+        "docs",
+        "scripts/dev/README.md",
+        "scripts/android/README.md",
+        "tests/maestro/README.md",
+        "apps/mobile-android/README.md",
+        "apps/mobile-android-host/README.md",
+    ]
+    files: set[Path] = set()
+    for rel in rel_paths:
+        path = repo_root / rel
+        if not path.exists():
+            continue
+        if path.is_file() and path.suffix == ".md":
+            files.add(path)
+            continue
+        if path.is_dir():
+            for item in path.rglob("*.md"):
+                rel_item = item.relative_to(repo_root).as_posix()
+                if rel_item.startswith("docs/operations/evidence/"):
+                    continue
+                files.add(item)
+    return sorted(files)
+
+
+def _is_placeholder_target(target: str) -> bool:
+    placeholder_markers = ("YYYY", "<", ">", "{", "}", "...", "wp-xx", "DEVICE_SERIAL_REDACTED")
+    return any(marker in target for marker in placeholder_markers)
+
+
+def _normalize_link_target(raw_target: str) -> str:
+    target = raw_target.strip()
+    if target.startswith("<") and target.endswith(">"):
+        target = target[1:-1].strip()
+    if " " in target and not target.startswith(("http://", "https://")):
+        target = target.split(" ", 1)[0]
+    target = target.split("#", 1)[0]
+    target = target.split("?", 1)[0]
+    return target.strip()
+
+
+def _docs_health_broken_links(repo_root: Path) -> list[str]:
+    violations: list[str] = []
+    for file_path in _iter_docs_health_files(repo_root):
+        text = file_path.read_text(encoding="utf-8")
+        for match in MARKDOWN_LINK_REGEX.finditer(text):
+            raw_target = match.group(1)
+            target = _normalize_link_target(raw_target)
+            if not target:
+                continue
+            if target.startswith(("#", "mailto:", "http://", "https://")):
+                continue
+            if "://" in target:
+                continue
+            if _is_placeholder_target(target):
+                continue
+
+            if target.startswith("/"):
+                resolved = Path(target)
+            else:
+                resolved = (file_path.parent / target).resolve()
+
+            if not resolved.exists():
+                rel_file = file_path.relative_to(repo_root).as_posix()
+                violations.append(f"Broken local markdown link in {rel_file}: {raw_target}")
+    return violations
+
+
+def _docs_health_status_policy(repo_root: Path) -> list[str]:
+    docs_root = repo_root / "docs"
+    if not docs_root.exists():
+        return ["Missing docs directory for status policy check."]
+
+    allowed_board = repo_root / "docs/operations/execution-board.md"
+    allowed_ticket_root = repo_root / "docs/operations/tickets"
+    violations: list[str] = []
+
+    for path in docs_root.rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        if not STATUS_LINE_REGEX.search(text):
+            continue
+        if path == allowed_board:
+            continue
+        if allowed_ticket_root.exists() and path.is_relative_to(allowed_ticket_root):
+            continue
+        rel = path.relative_to(repo_root).as_posix()
+        violations.append(f"Status line is only allowed in execution board or ticket specs: {rel}")
+
+    return violations
+
+
+def _docs_health_required_indexes(repo_root: Path) -> list[str]:
+    violations: list[str] = []
+    for rel_path, markers in DOCS_HEALTH_REQUIRED_INDEX_MARKERS.items():
+        path = repo_root / rel_path
+        if not path.exists():
+            violations.append(f"Missing required index file: {rel_path}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in text:
+                violations.append(f"Missing required index pointer '{marker}' in {rel_path}")
+    return violations
+
+
+def _docs_health_evidence_retention(repo_root: Path) -> list[str]:
+    evidence_root = repo_root / "docs/operations/evidence"
+    violations: list[str] = []
+    if not evidence_root.exists():
+        return ["Missing docs/operations/evidence directory."]
+
+    index_path = evidence_root / "index.md"
+    if not index_path.exists():
+        violations.append("Missing evidence summary index: docs/operations/evidence/index.md")
+    else:
+        index_text = index_path.read_text(encoding="utf-8")
+        for wp_label in DOCS_HEALTH_SUMMARY_REQUIRED_WPS:
+            if wp_label not in index_text:
+                violations.append(f"Evidence index missing summary for {wp_label}")
+
+    wp_dirs = [item for item in evidence_root.iterdir() if item.is_dir() and item.name.startswith("wp-")]
+    for wp_dir in sorted(wp_dirs):
+        markdown_files = sorted(wp_dir.glob("*.md"))
+        if wp_dir.name not in DOCS_HEALTH_ALLOWED_EVIDENCE_WPS and markdown_files:
+            rel = wp_dir.relative_to(repo_root).as_posix()
+            violations.append(f"Historical evidence markdown should be pruned from {rel}")
+
+    for wp in DOCS_HEALTH_ALLOWED_EVIDENCE_WPS:
+        wp_dir = evidence_root / wp
+        if not wp_dir.exists():
+            violations.append(f"Missing active evidence directory: docs/operations/evidence/{wp}")
+            continue
+        if not list(wp_dir.glob("*.md")):
+            violations.append(f"Active evidence directory has no markdown notes: docs/operations/evidence/{wp}")
+
+    wp12_dir = evidence_root / "wp-12"
+    if wp12_dir.exists():
+        wp12_notes = {path.name for path in wp12_dir.glob("*.md")}
+        missing = sorted(DOCS_HEALTH_RETAINED_WP12_NOTES - wp12_notes)
+        extra = sorted(wp12_notes - DOCS_HEALTH_RETAINED_WP12_NOTES)
+        for name in missing:
+            violations.append(f"Missing required retained WP-12 evidence note: docs/operations/evidence/wp-12/{name}")
+        for name in extra:
+            violations.append(f"Unexpected WP-12 evidence note after prune: docs/operations/evidence/wp-12/{name}")
+
+    return violations
+
+
+def docs_health_check(repo_root: Path = REPO_ROOT) -> None:
+    violations: list[str] = []
+    violations.extend(_docs_health_broken_links(repo_root))
+    violations.extend(_docs_health_status_policy(repo_root))
+    violations.extend(_docs_health_required_indexes(repo_root))
+    violations.extend(_docs_health_evidence_retention(repo_root))
+
+    if violations:
+        raise DevctlError("CONFIG_ERROR", "\n".join(sorted(violations)))
+
+    print("Docs health check passed.")
 
 
 def evidence_check(evidence_file: str, repo_root: Path = REPO_ROOT) -> None:
@@ -239,6 +426,7 @@ def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
             "- [x] I ran `bash scripts/dev/test.sh` (or `bash scripts/dev/test.sh ci`) and it passed.\n"
             "- [x] I used canonical orchestrator lanes (`python3 tools/devctl/main.py lane ...`) directly or via the `scripts/dev/*` wrappers.\n"
             "- [x] I updated docs affected by this change, or confirmed no docs changes are needed.\n"
+            "- [x] I ran `python3 tools/devctl/main.py governance docs-health` and it passed.\n"
             "- [x] If this is stage/work-package work, I added/updated evidence under `docs/operations/evidence/` and linked it below.\n\n"
             "Stage close: no\n\n"
             f"Evidence note(s): {evidence_note_rel}\n",
@@ -264,6 +452,7 @@ def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
             "- [x] I ran `bash scripts/dev/test.sh` (or `bash scripts/dev/test.sh ci`) and it passed.\n"
             "- [x] I used canonical orchestrator lanes (`python3 tools/devctl/main.py lane ...`) directly or via the `scripts/dev/*` wrappers.\n"
             "- [x] I updated docs affected by this change, or confirmed no docs changes are needed.\n"
+            "- [x] I ran `python3 tools/devctl/main.py governance docs-health` and it passed.\n"
             "- [x] If this is stage/work-package work, I added/updated evidence under `docs/operations/evidence/` and linked it below.\n\n"
             "Stage close: yes\n\n"
             f"Evidence note(s): {evidence_note_rel}\n"

@@ -180,6 +180,7 @@ Wrappers remain callable, but all governance logic runs via `devctl governance`.
 
 ```bash
 python3 tools/devctl/main.py governance docs-drift
+python3 tools/devctl/main.py governance docs-health
 python3 tools/devctl/main.py governance evidence-check docs/operations/evidence/wp-xx/YYYY-MM-DD-note.md
 python3 tools/devctl/main.py governance evidence-check-changed
 python3 tools/devctl/main.py governance validate-pr-body /tmp/pr-body.md

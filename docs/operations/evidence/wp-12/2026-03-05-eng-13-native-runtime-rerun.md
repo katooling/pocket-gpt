@@ -3,7 +3,7 @@
 Date: 2026-03-05  
 Owner: Engineering (Runtime)  
 Support: QA  
-Status: Done (rerun executed)
+Lifecycle: Done (rerun executed)
 
 ## Objective
 

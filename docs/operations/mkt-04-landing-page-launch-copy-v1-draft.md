@@ -1,7 +1,7 @@
 # MKT-04 Landing Page + Launch Copy v1 (Execution Draft, Evidence-Safe)
 
 Last updated: 2026-03-04
-Status: Draft in progress (publish-ready lane)
+Lifecycle: Draft in progress (publish-ready lane)
 Publish gate: WP-07/WP-11 are closed; publication requires asset capture + copy QA signoff
 Owner: Content Lead / Product Marketing
 Claim sources: `docs/operations/mkt-01-messaging-architecture-draft.md`, `docs/operations/mkt-02-competitor-matrix-template-draft.md`
