@@ -3,6 +3,7 @@ package com.pocketagent.android.ui
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.android.ui.state.ChatSessionUiModel
+import com.pocketagent.android.ui.state.FirstSessionStage
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
@@ -102,12 +103,65 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.showOnboarding)
+        assertEquals(FirstSessionStage.ONBOARDING, viewModel.uiState.value.firstSessionStage)
 
         viewModel.completeOnboarding()
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.showOnboarding)
+        assertEquals(FirstSessionStage.READY_TO_CHAT, viewModel.uiState.value.firstSessionStage)
         assertTrue(persistence.savedStates.last().onboardingCompleted)
+    }
+
+    @Test
+    fun `simple-first progress unlocks advanced controls after answer plus follow-up`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.completeOnboarding()
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.advancedUnlocked)
+
+        viewModel.onComposerChanged("first question")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.firstAnswerCompleted)
+        assertFalse(viewModel.uiState.value.followUpCompleted)
+        assertFalse(viewModel.uiState.value.advancedUnlocked)
+        assertEquals(FirstSessionStage.FIRST_ANSWER_DONE, viewModel.uiState.value.firstSessionStage)
+
+        viewModel.onComposerChanged("follow up question")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.firstAnswerCompleted)
+        assertTrue(viewModel.uiState.value.followUpCompleted)
+        assertTrue(viewModel.uiState.value.advancedUnlocked)
+        assertEquals(FirstSessionStage.ADVANCED_UNLOCKED, viewModel.uiState.value.firstSessionStage)
+        assertTrue(viewModel.uiState.value.firstSessionTelemetryEvents.any { it.eventName == "advanced_unlocked" })
+    }
+
+    @Test
+    fun `get ready action moves stage to get ready and records telemetry`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.completeOnboarding()
+        advanceUntilIdle()
+        viewModel.onGetReadyTapped()
+        advanceUntilIdle()
+
+        assertEquals(FirstSessionStage.GET_READY, viewModel.uiState.value.firstSessionStage)
+        assertTrue(viewModel.uiState.value.firstSessionTelemetryEvents.any { it.eventName == "get_ready_started" })
     }
 
     @Test

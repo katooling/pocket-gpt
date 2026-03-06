@@ -19,6 +19,11 @@ data class PersistedChatState(
     val performanceProfile: String = "BALANCED",
     val gpuAccelerationEnabled: Boolean = false,
     val onboardingCompleted: Boolean = false,
+    val firstSessionStage: String = FirstSessionStage.ONBOARDING.name,
+    val advancedUnlocked: Boolean = false,
+    val firstAnswerCompleted: Boolean = false,
+    val followUpCompleted: Boolean = false,
+    val firstSessionTelemetryEvents: List<FirstSessionTelemetryEvent> = emptyList(),
 )
 
 interface SessionPersistence {
@@ -64,6 +69,11 @@ internal object PersistedChatStateCodec {
             performanceProfile = root.stringOrDefault("performanceProfile", "BALANCED"),
             gpuAccelerationEnabled = root.booleanOrDefault("gpuAccelerationEnabled", false),
             onboardingCompleted = root.booleanOrDefault("onboardingCompleted", false),
+            firstSessionStage = root.stringOrDefault("firstSessionStage", FirstSessionStage.ONBOARDING.name),
+            advancedUnlocked = root.booleanOrDefault("advancedUnlocked", false),
+            firstAnswerCompleted = root.booleanOrDefault("firstAnswerCompleted", false),
+            followUpCompleted = root.booleanOrDefault("followUpCompleted", false),
+            firstSessionTelemetryEvents = parseFirstSessionTelemetryEvents(root["firstSessionTelemetryEvents"]),
         )
     }
 
@@ -74,6 +84,23 @@ internal object PersistedChatStateCodec {
             put("performanceProfile", JsonPrimitive(state.performanceProfile))
             put("gpuAccelerationEnabled", JsonPrimitive(state.gpuAccelerationEnabled))
             put("onboardingCompleted", JsonPrimitive(state.onboardingCompleted))
+            put("firstSessionStage", JsonPrimitive(state.firstSessionStage))
+            put("advancedUnlocked", JsonPrimitive(state.advancedUnlocked))
+            put("firstAnswerCompleted", JsonPrimitive(state.firstAnswerCompleted))
+            put("followUpCompleted", JsonPrimitive(state.followUpCompleted))
+            put(
+                "firstSessionTelemetryEvents",
+                buildJsonArray {
+                    state.firstSessionTelemetryEvents.forEach { event ->
+                        add(
+                            buildJsonObject {
+                                put("eventName", JsonPrimitive(event.eventName))
+                                put("eventTimeUtc", JsonPrimitive(event.eventTimeUtc))
+                            },
+                        )
+                    }
+                },
+            )
             put(
                 "sessions",
                 buildJsonArray {
@@ -114,6 +141,19 @@ internal object PersistedChatStateCodec {
             )
         }
         return json.encodeToString(JsonObject.serializer(), root)
+    }
+
+    private fun parseFirstSessionTelemetryEvents(element: JsonElement?): List<FirstSessionTelemetryEvent> {
+        val array = element as? JsonArray ?: return emptyList()
+        return array.mapNotNull { item ->
+            val obj = item.asObjectOrNull() ?: return@mapNotNull null
+            val eventName = obj.stringOrNull("eventName") ?: return@mapNotNull null
+            val eventTimeUtc = obj.stringOrNull("eventTimeUtc") ?: return@mapNotNull null
+            FirstSessionTelemetryEvent(
+                eventName = eventName,
+                eventTimeUtc = eventTimeUtc,
+            )
+        }
     }
 
     private fun parseSessions(element: JsonElement): List<ChatSessionUiModel> {

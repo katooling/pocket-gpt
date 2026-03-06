@@ -18,6 +18,8 @@
     <string name="ui_runtime_timeout_hint">Generation exceeded the response SLA and was cancelled. Retry, then switch to a lighter model if this repeats.</string>
     <string name="ui_open_model_setup">Open model setup</string>
     <string name="ui_fix_model_setup">Fix model setup</string>
+    <string name="ui_get_ready">Get ready</string>
+    <string name="ui_get_ready_started_status">Getting chat ready with the default model. You can import a local GGUF file any time from model setup.</string>
     <string name="ui_show_technical_details">Show technical details</string>
     <string name="ui_hide_technical_details">Hide technical details</string>
     <string name="ui_no_session_selected">No session selected</string>
@@ -48,6 +50,9 @@
     <string name="ui_gpu_acceleration_hint">GPU is opt-in. If unsupported or unstable, runtime automatically falls back to CPU.</string>
     <string name="ui_model_selection_title">Model selection</string>
     <string name="ui_export_diagnostics">Export diagnostics</string>
+    <string name="ui_open_advanced_controls">Open advanced controls</string>
+    <string name="ui_advanced_unlocked_title">Advanced controls unlocked</string>
+    <string name="ui_advanced_unlocked_body">You completed the first value flow. Advanced controls and tools are now available.</string>
     <string name="ui_model_provisioning_title">Model provisioning</string>
     <string name="ui_model_provisioning_subtitle">Import verified GGUF files for both required runtime models.</string>
     <string name="ui_model_provisioning_subtitle_v2">Choose one path: import local files now, or download verified versions. Chat unlocks when at least one verified active model passes startup checks.</string>

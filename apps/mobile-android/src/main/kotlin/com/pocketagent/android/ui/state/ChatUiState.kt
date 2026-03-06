@@ -104,6 +104,20 @@ enum class StartupProbeState {
     BLOCKED,
 }
 
+enum class FirstSessionStage {
+    ONBOARDING,
+    GET_READY,
+    READY_TO_CHAT,
+    FIRST_ANSWER_DONE,
+    FOLLOW_UP_DONE,
+    ADVANCED_UNLOCKED,
+}
+
+data class FirstSessionTelemetryEvent(
+    val eventName: String,
+    val eventTimeUtc: String,
+)
+
 data class ChatUiState(
     val sessions: List<ChatSessionUiModel> = emptyList(),
     val activeSessionId: String? = null,
@@ -115,6 +129,12 @@ data class ChatUiState(
     val isPrivacySheetOpen: Boolean = false,
     val showOnboarding: Boolean = false,
     val onboardingPage: Int = 0,
+    val firstSessionStage: FirstSessionStage = FirstSessionStage.ONBOARDING,
+    val advancedUnlocked: Boolean = false,
+    val firstAnswerCompleted: Boolean = false,
+    val followUpCompleted: Boolean = false,
+    val showAdvancedUnlockCue: Boolean = false,
+    val firstSessionTelemetryEvents: List<FirstSessionTelemetryEvent> = emptyList(),
 ) {
     val activeSession: ChatSessionUiModel?
         get() = sessions.firstOrNull { it.id == activeSessionId }

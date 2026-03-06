@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ComposerUiState
+import com.pocketagent.android.ui.state.FirstSessionStage
+import com.pocketagent.android.ui.state.FirstSessionTelemetryEvent
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
@@ -34,6 +36,7 @@ import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamUserMessageRequest
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -320,6 +323,7 @@ class ChatViewModel(
                     )
                 }
                 persistState()
+                maybeAdvanceAfterAssistantResponse()
             }
 
             val elapsedTicker = launch {
@@ -783,10 +787,23 @@ class ChatViewModel(
     }
 
     fun setAdvancedSheetOpen(isOpen: Boolean) {
-        _uiState.update { it.copy(isAdvancedSheetOpen = isOpen) }
+        val state = _uiState.value
+        if (isOpen && !state.advancedUnlocked) {
+            return
+        }
+        _uiState.update {
+            it.copy(
+                isAdvancedSheetOpen = isOpen,
+                showAdvancedUnlockCue = if (isOpen) false else it.showAdvancedUnlockCue,
+            )
+        }
+        persistState()
     }
 
     fun setToolDialogOpen(isOpen: Boolean) {
+        if (isOpen && !_uiState.value.advancedUnlocked) {
+            return
+        }
         _uiState.update { it.copy(isToolDialogOpen = isOpen) }
     }
 
@@ -814,8 +831,14 @@ class ChatViewModel(
             state.copy(
                 showOnboarding = false,
                 onboardingPage = ONBOARDING_LAST_PAGE,
+                firstSessionStage = if (isRuntimeReadyForSend(state.runtime)) {
+                    FirstSessionStage.READY_TO_CHAT
+                } else {
+                    FirstSessionStage.GET_READY
+                },
             )
         }
+        recordFirstSessionEventOnce(TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED)
         persistState()
     }
 
@@ -833,6 +856,50 @@ class ChatViewModel(
         launchStartupProbe(statusDetailOverride)
     }
 
+    fun onGetReadyTapped() {
+        _uiState.update { state ->
+            state.copy(
+                firstSessionStage = FirstSessionStage.GET_READY,
+            )
+        }
+        recordFirstSessionEventOnce(TELEMETRY_EVENT_GET_READY_STARTED)
+        persistState()
+    }
+
+    fun onFirstAnswerCompleted() {
+        _uiState.update { state ->
+            state.copy(
+                firstAnswerCompleted = true,
+                firstSessionStage = FirstSessionStage.FIRST_ANSWER_DONE,
+            )
+        }
+        recordFirstSessionEventOnce(TELEMETRY_EVENT_FIRST_ANSWER_COMPLETED)
+        persistState()
+    }
+
+    fun onFollowUpCompleted() {
+        _uiState.update { state ->
+            state.copy(
+                followUpCompleted = true,
+                firstSessionStage = FirstSessionStage.FOLLOW_UP_DONE,
+            )
+        }
+        recordFirstSessionEventOnce(TELEMETRY_EVENT_FOLLOW_UP_COMPLETED)
+        persistState()
+    }
+
+    fun onAdvancedUnlocked() {
+        _uiState.update { state ->
+            state.copy(
+                advancedUnlocked = true,
+                showAdvancedUnlockCue = true,
+                firstSessionStage = FirstSessionStage.ADVANCED_UNLOCKED,
+            )
+        }
+        recordFirstSessionEventOnce(TELEMETRY_EVENT_ADVANCED_UNLOCKED)
+        persistState()
+    }
+
     private fun bootstrapState() {
         val runtimeBackend = runtimeFacade.runtimeBackend()
         val persisted = sessionPersistence.loadState()
@@ -840,6 +907,15 @@ class ChatViewModel(
             .getOrDefault(runtimeFacade.getRoutingMode())
         val restoredPerformanceProfile = runCatching { RuntimePerformanceProfile.valueOf(persisted.performanceProfile) }
             .getOrDefault(RuntimePerformanceProfile.BALANCED)
+        val restoredFirstSessionStage = runCatching { FirstSessionStage.valueOf(persisted.firstSessionStage) }
+            .getOrDefault(FirstSessionStage.ONBOARDING)
+        val restoredAdvancedUnlocked = persisted.advancedUnlocked || restoredFirstSessionStage == FirstSessionStage.ADVANCED_UNLOCKED
+        val initialFirstSessionStage = when {
+            restoredAdvancedUnlocked -> FirstSessionStage.ADVANCED_UNLOCKED
+            !persisted.onboardingCompleted -> FirstSessionStage.ONBOARDING
+            restoredFirstSessionStage == FirstSessionStage.ONBOARDING -> FirstSessionStage.GET_READY
+            else -> restoredFirstSessionStage
+        }
         val gpuSupported = runtimeFacade.supportsGpuOffload()
         val restoredGpuEnabled = persisted.gpuAccelerationEnabled && gpuSupported
         runtimeFacade.setRoutingMode(restoredRoutingMode)
@@ -883,7 +959,13 @@ class ChatViewModel(
                     modelStatusDetail = "Warming model and running startup checks...",
                 ).clearError(),
                 showOnboarding = !persisted.onboardingCompleted,
+                firstSessionStage = initialFirstSessionStage,
+                advancedUnlocked = restoredAdvancedUnlocked,
+                firstAnswerCompleted = persisted.firstAnswerCompleted,
+                followUpCompleted = persisted.followUpCompleted,
+                firstSessionTelemetryEvents = persisted.firstSessionTelemetryEvents,
             )
+            ensureSimpleFirstEnteredTelemetryIfNeeded()
             persistState()
             launchStartupProbe()
             return
@@ -907,7 +989,13 @@ class ChatViewModel(
                 modelStatusDetail = "Warming model and running startup checks...",
             ).clearError(),
             showOnboarding = !persisted.onboardingCompleted,
+            firstSessionStage = initialFirstSessionStage,
+            advancedUnlocked = restoredAdvancedUnlocked,
+            firstAnswerCompleted = persisted.firstAnswerCompleted,
+            followUpCompleted = persisted.followUpCompleted,
+            firstSessionTelemetryEvents = persisted.firstSessionTelemetryEvents,
         )
+        ensureSimpleFirstEnteredTelemetryIfNeeded()
         launchStartupProbe()
     }
 
@@ -957,27 +1045,51 @@ class ChatViewModel(
                 emptyList()
             }
             _uiState.update { state ->
+                val nextRuntime = state.runtime.copy(
+                    runtimeBackend = runtimeBackend,
+                    gpuAccelerationSupported = gpuSupported,
+                    gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled && gpuSupported,
+                    startupProbeState = nextProbeState,
+                    modelRuntimeStatus = startupModelStatus,
+                    modelStatusDetail = if (startupChecks.isEmpty()) {
+                        statusDetailOverride ?: readyStatusDetail(runtimeBackend)
+                    } else if (timeoutOnlyFailure) {
+                        "Startup checks exceeded the probe window. Chat is still available; first output may take longer on older devices."
+                    } else if (optionalModelOnlyFailure) {
+                        optionalModelStatusDetail(startupChecks)
+                    } else {
+                        startupChecks.firstOrNull() ?: "Runtime startup checks failed."
+                    },
+                    startupChecks = startupChecks,
+                    startupWarnings = startupWarnings,
+                ).withUiError(startupError)
+                val sendAllowed = nextProbeState == StartupProbeState.READY || nextProbeState == StartupProbeState.DEGRADED
+                val blocked = nextProbeState == StartupProbeState.BLOCKED
+                val nextStage = when {
+                    state.advancedUnlocked -> FirstSessionStage.ADVANCED_UNLOCKED
+                    state.showOnboarding -> FirstSessionStage.ONBOARDING
+                    state.firstAnswerCompleted -> state.firstSessionStage
+                    sendAllowed -> FirstSessionStage.READY_TO_CHAT
+                    blocked -> FirstSessionStage.GET_READY
+                    else -> state.firstSessionStage
+                }
+                val completedGetReadyNow = state.firstSessionStage == FirstSessionStage.GET_READY &&
+                    nextStage == FirstSessionStage.READY_TO_CHAT
+                val telemetry = if (completedGetReadyNow) {
+                    addTelemetryEventIfMissing(
+                        events = state.firstSessionTelemetryEvents,
+                        eventName = TELEMETRY_EVENT_GET_READY_COMPLETED,
+                    )
+                } else {
+                    state.firstSessionTelemetryEvents
+                }
                 state.copy(
-                    runtime = state.runtime.copy(
-                        runtimeBackend = runtimeBackend,
-                        gpuAccelerationSupported = gpuSupported,
-                        gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled && gpuSupported,
-                        startupProbeState = nextProbeState,
-                        modelRuntimeStatus = startupModelStatus,
-                        modelStatusDetail = if (startupChecks.isEmpty()) {
-                            statusDetailOverride ?: readyStatusDetail(runtimeBackend)
-                        } else if (timeoutOnlyFailure) {
-                            "Startup checks exceeded the probe window. Chat is still available; first output may take longer on older devices."
-                        } else if (optionalModelOnlyFailure) {
-                            optionalModelStatusDetail(startupChecks)
-                        } else {
-                            startupChecks.firstOrNull() ?: "Runtime startup checks failed."
-                        },
-                        startupChecks = startupChecks,
-                        startupWarnings = startupWarnings,
-                    ).withUiError(startupError),
+                    runtime = nextRuntime,
+                    firstSessionStage = nextStage,
+                    firstSessionTelemetryEvents = telemetry,
                 )
             }
+            persistState()
         }
     }
 
@@ -1107,6 +1219,11 @@ class ChatViewModel(
                 performanceProfile = state.runtime.performanceProfile.name,
                 gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled,
                 onboardingCompleted = !state.showOnboarding,
+                firstSessionStage = state.firstSessionStage.name,
+                advancedUnlocked = state.advancedUnlocked,
+                firstAnswerCompleted = state.firstAnswerCompleted,
+                followUpCompleted = state.followUpCompleted,
+                firstSessionTelemetryEvents = state.firstSessionTelemetryEvents,
             ),
         )
     }
@@ -1406,6 +1523,48 @@ class ChatViewModel(
         )
     }
 
+    private fun maybeAdvanceAfterAssistantResponse() {
+        val snapshot = _uiState.value
+        if (snapshot.advancedUnlocked || snapshot.showOnboarding) {
+            return
+        }
+        if (!snapshot.firstAnswerCompleted) {
+            onFirstAnswerCompleted()
+            return
+        }
+        if (!snapshot.followUpCompleted) {
+            onFollowUpCompleted()
+            onAdvancedUnlocked()
+        }
+    }
+
+    private fun ensureSimpleFirstEnteredTelemetryIfNeeded() {
+        val state = _uiState.value
+        if (state.showOnboarding && state.firstSessionTelemetryEvents.any { it.eventName == TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED }) {
+            return
+        }
+        if (!state.showOnboarding) {
+            recordFirstSessionEventOnce(TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED)
+        }
+    }
+
+    private fun recordFirstSessionEventOnce(eventName: String) {
+        var changed = false
+        _uiState.update { state ->
+            val updatedEvents = addTelemetryEventIfMissing(
+                events = state.firstSessionTelemetryEvents,
+                eventName = eventName,
+            )
+            changed = updatedEvents.size != state.firstSessionTelemetryEvents.size
+            state.copy(
+                firstSessionTelemetryEvents = updatedEvents,
+            )
+        }
+        if (changed) {
+            persistState()
+        }
+    }
+
     private fun newRequestId(): String = "req-${UUID.randomUUID()}"
 
     private fun newMessageId(prefix: String): String = "$prefix-${UUID.randomUUID()}"
@@ -1423,6 +1582,12 @@ class ChatViewModel(
         private const val SEND_ELAPSED_UPDATE_INTERVAL_MS = 1_000L
         private const val NO_FIRST_TOKEN_WARN_MS = 90_000L
         private const val NO_FIRST_TOKEN_STALL_MS = 300_000L
+        private const val TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED = "simple_first_entered"
+        private const val TELEMETRY_EVENT_GET_READY_STARTED = "get_ready_started"
+        private const val TELEMETRY_EVENT_GET_READY_COMPLETED = "get_ready_completed"
+        private const val TELEMETRY_EVENT_FIRST_ANSWER_COMPLETED = "first_answer_completed"
+        private const val TELEMETRY_EVENT_FOLLOW_UP_COMPLETED = "follow_up_completed"
+        private const val TELEMETRY_EVENT_ADVANCED_UNLOCKED = "advanced_unlocked"
         private val BASELINE_RUNTIME_MODELS = setOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4,
             ModelCatalog.QWEN_3_5_2B_Q4,
@@ -1433,6 +1598,17 @@ class ChatViewModel(
             ramClassGb = 8,
         )
     }
+}
+
+private fun addTelemetryEventIfMissing(
+    events: List<FirstSessionTelemetryEvent>,
+    eventName: String,
+): List<FirstSessionTelemetryEvent> {
+    if (events.any { it.eventName == eventName }) {
+        return events
+    }
+    return (events + FirstSessionTelemetryEvent(eventName = eventName, eventTimeUtc = Instant.now().toString()))
+        .takeLast(64)
 }
 
 private data class ToolIntent(

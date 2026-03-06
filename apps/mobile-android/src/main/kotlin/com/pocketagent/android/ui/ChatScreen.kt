@@ -69,7 +69,9 @@ import com.pocketagent.android.ui.state.RuntimeUiState
 internal fun ChatScreenBody(
     state: ChatUiState,
     onSuggestedPrompt: (String) -> Unit,
+    onGetReadyTapped: () -> Unit,
     onOpenModelSetup: () -> Unit,
+    onOpenAdvanced: () -> Unit,
     onRefreshRuntimeChecks: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -80,7 +82,9 @@ internal fun ChatScreenBody(
     ) {
         OfflineAndStatusHeader(
             state = state,
+            onGetReadyTapped = onGetReadyTapped,
             onOpenModelSetup = onOpenModelSetup,
+            onOpenAdvanced = onOpenAdvanced,
             onRefreshRuntimeChecks = onRefreshRuntimeChecks,
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -98,7 +102,9 @@ internal fun ChatScreenBody(
 @Composable
 private fun OfflineAndStatusHeader(
     state: ChatUiState,
+    onGetReadyTapped: () -> Unit,
     onOpenModelSetup: () -> Unit,
+    onOpenAdvanced: () -> Unit,
     onRefreshRuntimeChecks: () -> Unit,
 ) {
     var showTechnicalDetails by remember(state.runtime.lastErrorTechnicalDetail) {
@@ -193,6 +199,7 @@ private fun OfflineAndStatusHeader(
 
     if (state.runtime.lastErrorUserMessage != null && state.runtime.lastErrorCode != null) {
         val recoveryHint = stringResource(id = state.runtime.recoveryHintTextResId())
+        val simpleFirstLocked = !state.advancedUnlocked
         Spacer(modifier = Modifier.height(8.dp))
         Card(modifier = Modifier.testTag("runtime_error_banner")) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -233,11 +240,22 @@ private fun OfflineAndStatusHeader(
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Button(onClick = onOpenModelSetup) {
-                            Text(stringResource(id = R.string.ui_fix_model_setup))
+                        Button(onClick = if (simpleFirstLocked) onGetReadyTapped else onOpenModelSetup) {
+                            Text(
+                                stringResource(
+                                    id = if (simpleFirstLocked) {
+                                        R.string.ui_get_ready
+                                    } else {
+                                        R.string.ui_fix_model_setup
+                                    },
+                                ),
+                            )
                         }
                         OutlinedButton(onClick = onRefreshRuntimeChecks) {
                             Text(stringResource(id = R.string.ui_refresh_runtime_checks))
+                        }
+                        OutlinedButton(onClick = onOpenModelSetup) {
+                            Text(stringResource(id = R.string.ui_open_model_setup))
                         }
                     }
                     TextButton(
@@ -253,6 +271,29 @@ private fun OfflineAndStatusHeader(
                             ),
                         )
                     }
+                }
+            }
+        }
+    }
+
+    if (state.advancedUnlocked && state.showAdvancedUnlockCue) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Card(modifier = Modifier.testTag("advanced_unlock_cue")) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.ui_advanced_unlocked_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(id = R.string.ui_advanced_unlocked_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(onClick = onOpenAdvanced) {
+                    Text(stringResource(id = R.string.ui_open_advanced_controls))
                 }
             }
         }

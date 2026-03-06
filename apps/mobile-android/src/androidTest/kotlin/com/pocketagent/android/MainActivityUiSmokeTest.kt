@@ -3,6 +3,7 @@ package com.pocketagent.android
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -61,8 +62,6 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithTag("composer_input").assertIsDisplayed()
         composeRule.onNodeWithTag("send_button").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Sessions").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Tools").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Advanced").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Privacy").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Attach image").assertIsDisplayed()
     }
@@ -121,8 +120,7 @@ class MainActivityUiSmokeTest {
 
     @Test
     fun toolAndDiagnosticsActionsRenderResults() {
-        composeRule.dismissOnboardingIfVisible()
-        composeRule.waitForRuntimeReady()
+        composeRule.unlockAdvancedControls()
         composeRule.onNodeWithContentDescription("Tools").performClick()
         composeRule.onNodeWithText("calculate 4*9").performClick()
         composeRule.onNodeWithTag("send_button").performClick()
@@ -152,7 +150,7 @@ class MainActivityUiSmokeTest {
 
     @Test
     fun modelSetupSheetOpensFromAdvancedControls() {
-        composeRule.dismissOnboardingIfVisible()
+        composeRule.unlockAdvancedControls()
         composeRule.onNodeWithTag("advanced_sheet_button").performClick()
         composeRule.onNodeWithText("Open model setup").performClick()
         composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
@@ -179,6 +177,23 @@ class MainActivityUiSmokeTest {
         waitUntil(timeoutMillis = 10_000) {
             onAllNodesWithText("Runtime: Ready").fetchSemanticsNodes().isNotEmpty()
         }
+    }
+
+    private fun AndroidComposeTestRule<*, *>.unlockAdvancedControls() {
+        dismissOnboardingIfVisible()
+        waitForRuntimeReady()
+        sendPrompt("unlock step one")
+        sendPrompt("unlock step two")
+        waitUntil(timeoutMillis = 10_000) {
+            onAllNodesWithTag("advanced_sheet_button").fetchSemanticsNodes().isNotEmpty() &&
+                onAllNodesWithTag("tool_dialog_button").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun AndroidComposeTestRule<*, *>.sendPrompt(prompt: String) {
+        onNodeWithTag("composer_input").performTextInput(prompt)
+        onNodeWithTag("send_button").performClick()
+        waitForText(prompt)
     }
 
     private fun AndroidComposeTestRule<*, *>.dismissOnboardingIfVisible() {

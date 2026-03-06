@@ -38,6 +38,16 @@ class SessionPersistenceCodecTest {
             activeSessionId = "session-1",
             routingMode = "QWEN_0_8B",
             onboardingCompleted = true,
+            firstSessionStage = FirstSessionStage.ADVANCED_UNLOCKED.name,
+            advancedUnlocked = true,
+            firstAnswerCompleted = true,
+            followUpCompleted = true,
+            firstSessionTelemetryEvents = listOf(
+                FirstSessionTelemetryEvent(
+                    eventName = "simple_first_entered",
+                    eventTimeUtc = "2026-03-06T00:00:00Z",
+                ),
+            ),
         )
 
         val encoded = PersistedChatStateCodec.encode(state)
@@ -46,6 +56,11 @@ class SessionPersistenceCodecTest {
         assertEquals("session-1", decoded.activeSessionId)
         assertEquals("QWEN_0_8B", decoded.routingMode)
         assertTrue(decoded.onboardingCompleted)
+        assertEquals(FirstSessionStage.ADVANCED_UNLOCKED.name, decoded.firstSessionStage)
+        assertTrue(decoded.advancedUnlocked)
+        assertTrue(decoded.firstAnswerCompleted)
+        assertTrue(decoded.followUpCompleted)
+        assertEquals(1, decoded.firstSessionTelemetryEvents.size)
         assertEquals(1, decoded.sessions.size)
         assertEquals(2, decoded.sessions.first().messages.size)
         assertEquals("calculator", decoded.sessions.first().messages.last().toolName)
@@ -61,6 +76,8 @@ class SessionPersistenceCodecTest {
         assertNull(decoded.activeSessionId)
         assertEquals("AUTO", decoded.routingMode)
         assertFalse(decoded.onboardingCompleted)
+        assertEquals(FirstSessionStage.ONBOARDING.name, decoded.firstSessionStage)
+        assertFalse(decoded.advancedUnlocked)
     }
 
     @Test
