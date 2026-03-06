@@ -59,6 +59,13 @@ Included:
 
 UI direction: chat-first, WhatsApp-like conversation timeline with advanced controls hidden behind an expandable sheet.
 
+Simple-first first-session lane (direct replace):
+
+1. First session focuses on `prompt -> response -> one follow-up response`.
+2. One-tap `Get ready` is the primary setup action and defaults to `0.8B` download path.
+3. Advanced controls remain hidden until first response + follow-up response are both completed.
+4. Import fallback remains visible in model setup when download/manifest path is unavailable.
+
 Required MVP UI capabilities:
 
 1. Chat timeline with user/assistant/system bubbles and streaming assistant updates.
@@ -75,6 +82,8 @@ Required MVP UI capabilities:
    - explicit offline-first status indicator
    - clear startup/runtime error banners
    - no hidden cloud behavior in MVP flows.
+7. First-session unlock cue:
+   - after follow-up completion, app shows a deterministic cue that advanced controls are unlocked.
 
 ## Canonical MVP UI User Stories
 

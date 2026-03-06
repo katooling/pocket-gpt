@@ -51,6 +51,14 @@ Startup checks still enforce valid interaction template availability and artifac
 
 ## In-App Provisioning Paths
 
+### Simple-first `Get ready` action (first session)
+
+1. App refreshes model manifest.
+2. App selects default `Qwen 3.5 0.8B (Q4)` version.
+3. App enqueues download and records pending activation intent.
+4. On completion, app activates selected version and refreshes runtime checks.
+5. If manifest/download is unavailable, model setup sheet remains available for immediate import fallback.
+
 ### A) Local import (all builds)
 
 1. Open `Advanced` -> `Open model setup`.

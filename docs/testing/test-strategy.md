@@ -49,6 +49,7 @@ Engineering and quality excellence are always required.
 | Core Flow | Unit/Module Coverage | Instrumented Coverage | Maestro Coverage | Device/Operational Coverage | Owner |
 |---|---|---|---|---|---|
 | Startup and launch status | `ChatViewModelTest`, startup-check mapping tests | launch smoke with runtime-status assertions | scenario launch step | stage checks baseline signal | Eng + QA |
+| Simple-first onboarding + advanced unlock | first-session state-machine + persistence tests | launch smoke unlock assertions | scenario-b unlock prelude | journey send-capture first-session fields | Eng + QA + Product |
 | Send and streaming response | ViewModel stream tests | send-message UI smoke | `tests/maestro/scenario-a.yaml` | weekly matrix run | Eng + QA |
 | Session create/switch/restore | ViewModel + persistence codec tests | drawer/session sanity checks | scenario continuity check (weekly extension) | weekly matrix run | Eng + QA |
 | Image attach success/failure | ViewModel/image module tests | image attach instrumentation checks | optional workflow in QA runs | required-tier weekly checks | Eng + QA |

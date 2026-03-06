@@ -8,6 +8,8 @@ Lifecycle: Implemented (MVP v1)
 
 Explain privacy guarantees, capability surface, and runtime readiness in the first 30 seconds.
 
+Simple-first contract: onboarding hands users into a reduced first-session lane where advanced/tool controls remain hidden until the user completes first response + follow-up response.
+
 ## Flow
 
 1. **Page 1 - Privacy promise**

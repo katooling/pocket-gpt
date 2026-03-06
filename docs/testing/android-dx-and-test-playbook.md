@@ -166,6 +166,10 @@ For each run, the send-capture stage includes:
    - `terminal_event_seen`
    - `first_token_ms`
    - `completion_ms`
+   - `first_session_stage`
+   - `advanced_unlocked`
+   - `first_answer_completed`
+   - `follow_up_completed`
 
 Interpretation rubric for send-capture:
 

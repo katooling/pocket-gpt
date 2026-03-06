@@ -54,6 +54,20 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - disabled state renders explicit unavailable copy
 4. Profile + GPU settings are applied through the app runtime contract and not by direct UI-only overrides.
 
+## Simple-First First Session Contract
+
+1. First-session state machine is explicit:
+   - `Onboarding`
+   - `GetReady`
+   - `ReadyToChat`
+   - `FirstAnswerDone`
+   - `FollowUpDone`
+   - `AdvancedUnlocked`
+2. `Get ready` is the primary blocked-state CTA and defaults to `0.8B` download path.
+3. `Tools` and `Advanced` entry points remain hidden until the follow-up response is complete.
+4. After unlock, app shows an explicit transition cue and reveals advanced/tool entry points.
+5. Stage + unlock flags are persisted so app restart does not regress first-session progress.
+
 ## Runtime Telemetry Labels in UI
 
 1. Advanced controls runtime details include:

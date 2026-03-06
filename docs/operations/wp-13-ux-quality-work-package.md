@@ -17,6 +17,7 @@ Close the gap between technical correctness and real first-session usability so 
 4. Privacy comprehension and trust signaling.
 5. Tool discoverability through natural language prompts.
 6. Listing-ready proof assets tied to evidence-safe claims.
+7. Simple-first lane clarity (`Get ready` default path + advanced unlock after follow-up).
 
 ## Current Gate State
 
@@ -44,6 +45,7 @@ Pass only if all are true:
 4. Runtime/model confusion <= 10%.
 5. Privacy confusion <= 10%.
 6. No open `UX-S0`/`UX-S1` blockers.
+7. First-session simple-first completion and advanced unlock metrics are present in journey/usability packet fields.
 
 ## Evidence Required
 
