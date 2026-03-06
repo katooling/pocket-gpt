@@ -43,6 +43,7 @@ class StartupAssessor {
             "model_artifact_verification_error",
             "missing runtime model",
             "failed to load baseline runtime model",
+            "failed to load startup runtime model",
             "runtime backend is adb_fallback",
             "runtime backend is unavailable",
             "network policy wiring invalid",

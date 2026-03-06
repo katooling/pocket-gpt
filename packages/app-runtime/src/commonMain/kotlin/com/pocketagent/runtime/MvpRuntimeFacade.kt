@@ -23,6 +23,8 @@ data class StreamUserMessageRequest(
     val maxTokens: Int = 128,
     val requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
     val requestId: String = defaultRequestId(),
+    val performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
+    val residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
 )
 
 sealed interface ChatStreamEvent {
@@ -80,6 +82,7 @@ interface MvpRuntimeFacade {
     fun restoreSession(sessionId: SessionId, turns: List<Turn>)
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String? = null
+    fun supportsGpuOffload(): Boolean = false
 }
 
 interface RuntimeContainer {
@@ -94,6 +97,8 @@ interface RuntimeContainer {
         onToken: (String) -> Unit,
         requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
         requestId: String = "legacy",
+        performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
+        residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
     ): ChatResponse
     fun cancelGeneration(sessionId: SessionId): Boolean = false
     fun cancelGenerationByRequest(requestId: String): Boolean = false
@@ -106,6 +111,7 @@ interface RuntimeContainer {
     fun restoreSession(sessionId: SessionId, turns: List<Turn>)
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String? = null
+    fun supportsGpuOffload(): Boolean = false
 }
 
 class DefaultMvpRuntimeFacade(
@@ -148,6 +154,8 @@ class DefaultMvpRuntimeFacade(
                     },
                     requestTimeoutMs = request.requestTimeoutMs,
                     requestId = request.requestId,
+                    performanceConfig = request.performanceConfig,
+                    residencyPolicy = request.residencyPolicy,
                 )
                 finished.set(true)
                 terminalSent.set(true)
@@ -240,6 +248,8 @@ class DefaultMvpRuntimeFacade(
     override fun deleteSession(sessionId: SessionId): Boolean = container.deleteSession(sessionId)
 
     override fun runtimeBackend(): String? = container.runtimeBackend()
+
+    override fun supportsGpuOffload(): Boolean = container.supportsGpuOffload()
 }
 
 class DefaultRuntimeContainer(
@@ -262,6 +272,8 @@ class DefaultRuntimeContainer(
         onToken: (String) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
+        performanceConfig: PerformanceRuntimeConfig,
+        residencyPolicy: ModelResidencyPolicy,
     ): ChatResponse {
         return orchestrator.sendUserMessage(
             sessionId = sessionId,
@@ -273,6 +285,8 @@ class DefaultRuntimeContainer(
             keepModelLoaded = keepModelLoaded,
             requestTimeoutMs = requestTimeoutMs,
             requestId = requestId,
+            performanceConfig = performanceConfig,
+            residencyPolicy = residencyPolicy,
         )
     }
 
@@ -303,6 +317,8 @@ class DefaultRuntimeContainer(
     override fun deleteSession(sessionId: SessionId): Boolean = orchestrator.deleteSession(sessionId)
 
     override fun runtimeBackend(): String? = orchestrator.runtimeBackend()
+
+    override fun supportsGpuOffload(): Boolean = orchestrator.supportsGpuOffload()
 }
 
 private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 90_000L

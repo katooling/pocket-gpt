@@ -59,6 +59,24 @@ class ResilienceGuardsTest {
     }
 
     @Test
+    fun `optional model warning is recoverable but startup load failure is blocking`() {
+        val assessor = StartupAssessor()
+
+        val assessment = assessor.assessStartupChecks(
+            listOf(
+                "Optional runtime model unavailable: qwen3.5-2b-q4.",
+                "Failed to load startup runtime model: qwen3.5-0.8b-q4.",
+            ),
+        )
+
+        assertFalse(assessment.canProceed)
+        assertEquals(1, assessment.blockingChecks.size)
+        assertEquals(1, assessment.recoverableChecks.size)
+        assertTrue(assessment.blockingChecks.first().contains("Failed to load startup runtime model"))
+        assertTrue(assessment.recoverableChecks.first().contains("Optional runtime model unavailable"))
+    }
+
+    @Test
     fun `session reset is triggered by repeated failures or fatal signatures`() {
         val policy = SessionRecoveryPolicy(maxConsecutiveRuntimeFailures = 2)
 

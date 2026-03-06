@@ -5,6 +5,8 @@ import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.runtime.ModelResidencyPolicy
+import com.pocketagent.runtime.PerformanceRuntimeConfig
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -157,6 +159,8 @@ private class FakeRuntimeContainer : RuntimeContainer {
         onToken: (String) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
+        performanceConfig: PerformanceRuntimeConfig,
+        residencyPolicy: ModelResidencyPolicy,
     ): ChatResponse {
         sendError?.let { throw it }
         lastUserText = userText

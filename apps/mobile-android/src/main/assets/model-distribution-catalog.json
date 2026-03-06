@@ -1,0 +1,34 @@
+{
+  "models": [
+    {
+      "modelId": "qwen3.5-0.8b-q4",
+      "displayName": "Qwen 3.5 0.8B (Q4)",
+      "versions": [
+        {
+          "version": "q4_0",
+          "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf",
+          "expectedSha256": "444406ddd926550c724ec18d5120a9d40ded44908a063b0e66e9a7e5464c652c",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "444406ddd926550c724ec18d5120a9d40ded44908a063b0e66e9a7e5464c652c",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 507154688
+        }
+      ]
+    },
+    {
+      "modelId": "qwen3.5-2b-q4",
+      "displayName": "Qwen 3.5 2B (Q4)",
+      "versions": [
+        {
+          "version": "q4_0",
+          "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_0.gguf",
+          "expectedSha256": "cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 1214873856
+        }
+      ]
+    }
+  ]
+}

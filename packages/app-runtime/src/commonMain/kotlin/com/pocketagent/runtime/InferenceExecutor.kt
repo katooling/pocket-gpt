@@ -30,6 +30,13 @@ class InferenceExecutor(
         var stoppedBySequence = false
         var finishReason = "completed"
         var bridgeErrorCode: String? = null
+        var tokenCount = 0
+        var firstTokenMs = -1L
+        var totalMs = 0L
+        var prefillMs: Long? = null
+        var decodeMs: Long? = null
+        var tokensPerSec: Double? = null
+        val startedAtMs = System.currentTimeMillis()
         try {
             if (nativeInference != null) {
                 val result = nativeInference.generateStreamWithCache(
@@ -48,6 +55,12 @@ class InferenceExecutor(
                         onToken(token)
                     },
                 )
+                tokenCount = result.tokenCount
+                firstTokenMs = result.firstTokenMs
+                totalMs = result.totalMs
+                prefillMs = result.prefillMs
+                decodeMs = result.decodeMs
+                tokensPerSec = result.tokensPerSec
                 finishReason = result.finishReason.name.lowercase()
                 bridgeErrorCode = result.errorCode
                 if (!result.success) {
@@ -68,6 +81,10 @@ class InferenceExecutor(
                     if (ignoreFurtherTokens) {
                         return@generateStream
                     }
+                    if (firstTokenMs < 0L) {
+                        firstTokenMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
+                    }
+                    tokenCount += 1
                     streamedText.append(token)
                     val projected = streamedText.toString()
                     if (stopSequences.any { projected.endsWith(it) }) {
@@ -78,11 +95,39 @@ class InferenceExecutor(
                     }
                     onToken(token)
                 }
+                totalMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
+                prefillMs = if (firstTokenMs >= 0L) firstTokenMs else null
+                decodeMs = if (firstTokenMs >= 0L) (totalMs - firstTokenMs).coerceAtLeast(0L) else null
+                val decodeSnapshot = decodeMs
+                tokensPerSec = if (tokenCount > 0 && decodeSnapshot != null && decodeSnapshot > 0L) {
+                    tokenCount.toDouble() / (decodeSnapshot.toDouble() / 1000.0)
+                } else {
+                    null
+                }
+            }
+            if (totalMs <= 0L) {
+                totalMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
+            }
+            if (prefillMs == null && firstTokenMs >= 0L) {
+                prefillMs = firstTokenMs
+            }
+            if (decodeMs == null && firstTokenMs >= 0L) {
+                decodeMs = (totalMs - firstTokenMs).coerceAtLeast(0L)
+            }
+            val decodeSnapshot = decodeMs
+            if (tokensPerSec == null && tokenCount > 0 && decodeSnapshot != null && decodeSnapshot > 0L) {
+                tokensPerSec = tokenCount.toDouble() / (decodeSnapshot.toDouble() / 1000.0)
             }
             return InferenceExecutionResult(
                 text = streamedText.toString().trimStopSequences(stopSequences),
                 finishReason = if (bridgeErrorCode.isNullOrBlank()) finishReason else "$finishReason:${bridgeErrorCode.lowercase()}",
                 bridgeErrorCode = bridgeErrorCode,
+                tokenCount = tokenCount,
+                firstTokenMs = firstTokenMs,
+                totalMs = totalMs,
+                prefillMs = prefillMs,
+                decodeMs = decodeMs,
+                tokensPerSec = tokensPerSec,
             )
         } finally {
             activeByRequestId.remove(requestId)
@@ -108,6 +153,12 @@ data class InferenceExecutionResult(
     val text: String,
     val finishReason: String,
     val bridgeErrorCode: String?,
+    val tokenCount: Int,
+    val firstTokenMs: Long,
+    val totalMs: Long,
+    val prefillMs: Long?,
+    val decodeMs: Long?,
+    val tokensPerSec: Double?,
 )
 
 private data class ActiveGenerationState(

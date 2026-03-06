@@ -127,7 +127,15 @@ private class FakeNativeApi(
 
     override fun initialize(): Boolean = initializeOk
 
-    override fun loadModel(modelId: String, modelPath: String): Boolean {
+    override fun loadModel(
+        modelId: String,
+        modelPath: String,
+        nThreads: Int,
+        nThreadsBatch: Int,
+        nBatch: Int,
+        nUbatch: Int,
+        nGpuLayers: Int,
+    ): Boolean {
         loadCalled = true
         return loadOk
     }
@@ -165,6 +173,8 @@ private class FakeNativeApi(
         cancelCalled = true
         return true
     }
+
+    override fun supportsGpuOffload(): Boolean = false
 }
 
 private class FakeFallbackBridge(

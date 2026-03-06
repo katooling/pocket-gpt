@@ -128,6 +128,8 @@ private class RuntimeContainerBenchmarkRuntime(
             onToken = {},
             requestTimeoutMs = 90_000L,
             requestId = "benchmark-${System.currentTimeMillis()}",
+            performanceConfig = PerformanceRuntimeConfig.default(),
+            residencyPolicy = ModelResidencyPolicy(),
         )
     }
 

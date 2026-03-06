@@ -17,6 +17,8 @@ class NativeJniLlamaCppBridge(
     private var runtimeReady = false
     private var usingFallback = false
     @Volatile
+    private var runtimeGenerationConfig: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
+    @Volatile
     private var activeRequestId: String? = null
 
     override fun isReady(): Boolean {
@@ -26,19 +28,50 @@ class NativeJniLlamaCppBridge(
 
     override fun listAvailableModels(): List<String> = supportedModels.sorted()
 
+    override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
+        runtimeGenerationConfig = config
+        if (usingFallback) {
+            fallbackBridge.setRuntimeGenerationConfig(config)
+        }
+    }
+
+    override fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = runtimeGenerationConfig
+
+    override fun supportsGpuOffload(): Boolean {
+        ensureRuntimeInitialized()
+        return if (usingFallback) {
+            fallbackBridge.supportsGpuOffload()
+        } else {
+            runCatching { nativeApi.supportsGpuOffload() }.getOrDefault(false)
+        }
+    }
+
     override fun loadModel(modelId: String, modelPath: String?): Boolean {
         ensureRuntimeInitialized()
         if (!runtimeReady || !supportedModels.contains(modelId)) {
             return false
         }
         if (usingFallback) {
+            fallbackBridge.setRuntimeGenerationConfig(runtimeGenerationConfig)
             return fallbackBridge.loadModel(modelId, modelPath)
         }
         val normalizedModelPath = modelPath?.trim().orEmpty()
         if (normalizedModelPath.isBlank()) {
             return false
         }
-        return runCatching { nativeApi.loadModel(modelId, normalizedModelPath) }.getOrDefault(false)
+        val config = runtimeGenerationConfig
+        val gpuEnabledAndSupported = config.gpuEnabled && supportsGpuOffload()
+        return runCatching {
+            nativeApi.loadModel(
+                modelId = modelId,
+                modelPath = normalizedModelPath,
+                nThreads = config.nThreads,
+                nThreadsBatch = config.nThreadsBatch,
+                nBatch = config.nBatch,
+                nUbatch = config.nUbatch,
+                nGpuLayers = if (gpuEnabledAndSupported) config.gpuLayers else 0,
+            )
+        }.getOrDefault(false)
     }
 
     override fun generate(
@@ -107,6 +140,18 @@ class NativeJniLlamaCppBridge(
                 firstTokenMs = firstTokenMs,
                 totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
                 cancelled = finishReason == GenerationFinishReason.CANCELLED,
+                prefillMs = if (firstTokenMs >= 0) firstTokenMs else null,
+                decodeMs = if (firstTokenMs >= 0) {
+                    ((System.currentTimeMillis() - startedMs).coerceAtLeast(0L) - firstTokenMs).coerceAtLeast(0L)
+                } else {
+                    null
+                },
+                tokensPerSec = if (tokenCount > 0 && firstTokenMs >= 0) {
+                    val decodeMs = ((System.currentTimeMillis() - startedMs).coerceAtLeast(0L) - firstTokenMs).coerceAtLeast(1L)
+                    tokenCount.toDouble() / (decodeMs.toDouble() / 1000.0)
+                } else {
+                    null
+                },
                 errorCode = status.errorCode,
             )
         } finally {
@@ -190,7 +235,15 @@ class NativeJniLlamaCppBridge(
         )
 
         fun initialize(): Boolean
-        fun loadModel(modelId: String, modelPath: String): Boolean
+        fun loadModel(
+            modelId: String,
+            modelPath: String,
+            nThreads: Int,
+            nThreadsBatch: Int,
+            nBatch: Int,
+            nUbatch: Int,
+            nGpuLayers: Int,
+        ): Boolean
         fun generateStream(
             requestId: String,
             prompt: String,
@@ -202,11 +255,20 @@ class NativeJniLlamaCppBridge(
         fun generate(prompt: String, maxTokens: Int, cacheKey: String?, cachePolicyCode: Int): String
         fun cancelGeneration(): Boolean
         fun unloadModel()
+        fun supportsGpuOffload(): Boolean
     }
 
     private class JniNativeApi : NativeApi {
         external fun nativeInitialize(): Boolean
-        external fun nativeLoadModel(modelId: String, modelPath: String): Boolean
+        external fun nativeLoadModel(
+            modelId: String,
+            modelPath: String,
+            nThreads: Int,
+            nThreadsBatch: Int,
+            nBatch: Int,
+            nUbatch: Int,
+            nGpuLayers: Int,
+        ): Boolean
         external fun nativeGenerateStream(
             requestId: String,
             prompt: String,
@@ -218,10 +280,21 @@ class NativeJniLlamaCppBridge(
         external fun nativeGenerate(prompt: String, maxTokens: Int, cacheKey: String?, cachePolicy: Int): String
         external fun nativeCancelGeneration(): Boolean
         external fun nativeUnloadModel()
+        external fun nativeSupportsGpuOffload(): Boolean
 
         override fun initialize(): Boolean = nativeInitialize()
 
-        override fun loadModel(modelId: String, modelPath: String): Boolean = nativeLoadModel(modelId, modelPath)
+        override fun loadModel(
+            modelId: String,
+            modelPath: String,
+            nThreads: Int,
+            nThreadsBatch: Int,
+            nBatch: Int,
+            nUbatch: Int,
+            nGpuLayers: Int,
+        ): Boolean {
+            return nativeLoadModel(modelId, modelPath, nThreads, nThreadsBatch, nBatch, nUbatch, nGpuLayers)
+        }
 
         override fun generateStream(
             requestId: String,
@@ -249,6 +322,8 @@ class NativeJniLlamaCppBridge(
         override fun cancelGeneration(): Boolean = nativeCancelGeneration()
 
         override fun unloadModel() = nativeUnloadModel()
+
+        override fun supportsGpuOffload(): Boolean = nativeSupportsGpuOffload()
     }
 
     companion object {

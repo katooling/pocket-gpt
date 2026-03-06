@@ -12,6 +12,7 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -463,7 +464,47 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `routing mode qwen 2b uses extended adaptive timeout`() = runTest(dispatcher) {
+    fun `optional model warning maps to degraded ready state without startup error`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupChecks = listOf("Optional runtime model unavailable: qwen3.5-2b-q4."),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        val runtimeState = viewModel.uiState.value.runtime
+        assertEquals(com.pocketagent.android.ui.state.StartupProbeState.DEGRADED, runtimeState.startupProbeState)
+        assertEquals(com.pocketagent.android.ui.state.ModelRuntimeStatus.READY, runtimeState.modelRuntimeStatus)
+        assertEquals(null, runtimeState.lastErrorCode)
+        assertTrue(runtimeState.modelStatusDetail?.contains("model ready") == true)
+    }
+
+    @Test
+    fun `send path stays enabled when startup checks only report optional model warning`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupChecks = listOf("Optional runtime model unavailable: qwen3.5-2b-q4."),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("hello optional warning")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        assertTrue(active.messages.any { it.role == MessageRole.USER && it.content == "hello optional warning" })
+        assertEquals(null, viewModel.uiState.value.runtime.lastErrorCode)
+    }
+
+    @Test
+    fun `battery profile uses extended adaptive timeout`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade()
         val viewModel = ChatViewModel(
             runtimeFacade = runtime,
@@ -472,7 +513,7 @@ class ChatViewModelTest {
         )
         advanceUntilIdle()
 
-        viewModel.setRoutingMode(RoutingMode.QWEN_2B)
+        viewModel.setPerformanceProfile(RuntimePerformanceProfile.BATTERY)
         viewModel.onComposerChanged("hello with 2b")
         viewModel.sendMessage()
         advanceUntilIdle()

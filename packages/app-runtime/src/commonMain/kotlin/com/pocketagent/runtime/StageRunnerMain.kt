@@ -45,6 +45,8 @@ fun main() {
         onToken = {},
         requestTimeoutMs = 90_000L,
         requestId = "stage-runner-${System.currentTimeMillis()}",
+        performanceConfig = PerformanceRuntimeConfig.default(),
+        residencyPolicy = ModelResidencyPolicy(),
     )
     println("Model: ${response.modelId}")
     println("Response: ${response.text}")

@@ -12,10 +12,19 @@ class AdbDeviceLlamaCppBridge(
 ) : LlamaCppRuntimeBridge {
     private var activeSerial: String? = null
     private var activeModelId: String? = null
+    private var runtimeGenerationConfig: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
 
     override fun isReady(): Boolean = resolveSerial() != null
 
     override fun listAvailableModels(): List<String> = supportedModels.sorted()
+
+    override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
+        runtimeGenerationConfig = config
+    }
+
+    override fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = runtimeGenerationConfig
+
+    override fun supportsGpuOffload(): Boolean = false
 
     override fun loadModel(modelId: String, modelPath: String?): Boolean {
         if (!supportedModels.contains(modelId)) {

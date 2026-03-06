@@ -28,6 +28,7 @@ import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.runtime.RuntimePerformanceProfile
 
 @Composable
 internal fun PrivacyInfoSheet(onClose: () -> Unit) {
@@ -55,6 +56,8 @@ internal fun PrivacyInfoSheet(onClose: () -> Unit) {
 internal fun AdvancedSettingsSheet(
     state: ChatUiState,
     onRoutingModeSelected: (RoutingMode) -> Unit,
+    onPerformanceProfileSelected: (RuntimePerformanceProfile) -> Unit,
+    onGpuAccelerationEnabledChanged: (Boolean) -> Unit,
     onExportDiagnostics: () -> Unit,
     onOpenModelSetup: () -> Unit,
 ) {
@@ -69,6 +72,69 @@ internal fun AdvancedSettingsSheet(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
+        Text(stringResource(id = R.string.ui_speed_battery_title), style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = stringResource(id = R.string.ui_speed_battery_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        RuntimePerformanceProfile.entries.forEach { profile ->
+            val profileDescription = stringResource(id = R.string.a11y_performance_profile, profile.name)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPerformanceProfileSelected(profile) }
+                    .semantics {
+                        role = Role.RadioButton
+                        selected = state.runtime.performanceProfile == profile
+                        contentDescription = profileDescription
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = state.runtime.performanceProfile == profile,
+                    onClick = { onPerformanceProfileSelected(profile) },
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(profile.name)
+            }
+        }
+
+        HorizontalDivider()
+        Text(stringResource(id = R.string.ui_advanced_experimental_title), style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = state.runtime.gpuAccelerationSupported) {
+                    onGpuAccelerationEnabledChanged(!state.runtime.gpuAccelerationEnabled)
+                }
+                .semantics {
+                    role = Role.Switch
+                    selected = state.runtime.gpuAccelerationEnabled
+                },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.Switch(
+                checked = state.runtime.gpuAccelerationEnabled,
+                enabled = state.runtime.gpuAccelerationSupported,
+                onCheckedChange = { checked -> onGpuAccelerationEnabledChanged(checked) },
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (state.runtime.gpuAccelerationSupported) {
+                    stringResource(id = R.string.ui_gpu_acceleration_toggle)
+                } else {
+                    stringResource(id = R.string.ui_gpu_acceleration_unavailable)
+                },
+            )
+        }
+        Text(
+            text = stringResource(id = R.string.ui_gpu_acceleration_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        HorizontalDivider()
         Text(stringResource(id = R.string.ui_model_selection_title), style = MaterialTheme.typography.labelLarge)
 
         RoutingMode.entries.forEach { mode ->
@@ -148,6 +214,24 @@ internal fun AdvancedSettingsSheet(
         state.runtime.lastTotalLatencyMs?.let { latency ->
             Text(
                 text = stringResource(id = R.string.ui_total_latency_label, latency),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        state.runtime.lastPrefillMs?.let { latency ->
+            Text(
+                text = "Last prefill latency: ${latency}ms",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        state.runtime.lastDecodeMs?.let { latency ->
+            Text(
+                text = "Last decode latency: ${latency}ms",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        state.runtime.lastTokensPerSec?.let { value ->
+            Text(
+                text = "Last decode rate: ${"%.2f".format(value)} tok/s",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

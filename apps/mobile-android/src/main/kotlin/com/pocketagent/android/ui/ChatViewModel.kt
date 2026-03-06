@@ -26,9 +26,13 @@ import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.ModelResidencyPolicy
+import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
+import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamUserMessageRequest
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
@@ -47,7 +51,7 @@ class ChatViewModel(
     private val runtimeFacade: MvpRuntimeFacade,
     private val sessionPersistence: SessionPersistence,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val runtimeGenerationTimeoutMs: Long = DEFAULT_RUNTIME_GENERATION_TIMEOUT_MS,
+    private val runtimeGenerationTimeoutMs: Long = 0L,
     private val runtimeStartupProbeTimeoutMs: Long = DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -95,7 +99,11 @@ class ChatViewModel(
             persistState()
             return
         }
-        val requestTimeoutMs = resolveRequestTimeoutMs(snapshot.runtime.routingMode)
+        val performanceConfig = resolvePerformanceConfig(
+            profile = snapshot.runtime.performanceProfile,
+            gpuEnabled = snapshot.runtime.gpuAccelerationEnabled,
+        )
+        val requestTimeoutMs = resolveRequestTimeoutMs(performanceConfig)
         val userMessage = createMessage(
             role = MessageRole.USER,
             content = prompt,
@@ -118,7 +126,7 @@ class ChatViewModel(
                 runtime = state.runtime
                     .copy(
                         modelRuntimeStatus = if (toolIntent == null) ModelRuntimeStatus.LOADING else state.runtime.modelRuntimeStatus,
-                        modelStatusDetail = if (toolIntent == null) "Generating response..." else state.runtime.modelStatusDetail,
+                        modelStatusDetail = if (toolIntent == null) "Loading model..." else state.runtime.modelStatusDetail,
                         sendElapsedMs = if (toolIntent == null) 0L else state.runtime.sendElapsedMs,
                         sendSlowState = if (toolIntent == null) null else state.runtime.sendSlowState,
                     )
@@ -276,6 +284,22 @@ class ChatViewModel(
                 )
                 val effectiveFirstToken = terminal.firstTokenMs
                 val effectiveCompletion = terminal.completionMs ?: (System.currentTimeMillis() - sendStartedAtMs)
+                val effectivePrefill = effectiveFirstToken
+                val effectiveDecode = if (effectiveFirstToken != null) {
+                    (effectiveCompletion - effectiveFirstToken).coerceAtLeast(0L)
+                } else {
+                    null
+                }
+                val tokensPerSecEstimate = if (!finalText.isBlank() && effectiveDecode != null && effectiveDecode > 0L) {
+                    val approxTokens = finalText.split(Regex("\\s+")).count { it.isNotBlank() }
+                    if (approxTokens > 0) {
+                        approxTokens.toDouble() / (effectiveDecode.toDouble() / 1000.0)
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
@@ -287,6 +311,9 @@ class ChatViewModel(
                             activeModelId = terminal.responseModelId,
                             lastFirstTokenLatencyMs = effectiveFirstToken,
                             lastTotalLatencyMs = effectiveCompletion,
+                            lastPrefillMs = effectivePrefill,
+                            lastDecodeMs = effectiveDecode,
+                            lastTokensPerSec = tokensPerSecEstimate,
                             sendElapsedMs = null,
                             sendSlowState = null,
                         ).clearError(),
@@ -300,8 +327,8 @@ class ChatViewModel(
                     val elapsed = (System.currentTimeMillis() - sendStartedAtMs).coerceAtLeast(0L)
                     val slowState = when {
                         streamFirstTokenMs() != null -> null
-                        elapsed >= NO_FIRST_TOKEN_STALL_MS -> "No output yet. This may be stalled on current device conditions."
-                        elapsed >= NO_FIRST_TOKEN_WARN_MS -> "Still loading the local model. Older phones may need extra time."
+                        elapsed >= NO_FIRST_TOKEN_STALL_MS -> "Still working on this device. You can keep waiting, or tap Cancel to stop."
+                        elapsed >= NO_FIRST_TOKEN_WARN_MS -> "Loading model and prefill can take longer on older phones. You can keep waiting or cancel."
                         else -> null
                     }
                     _uiState.update { state ->
@@ -336,9 +363,15 @@ class ChatViewModel(
                             requestId = requestId,
                             userText = prompt,
                             taskType = resolveTaskType(prompt),
-                            maxTokens = resolveMaxTokens(prompt),
+                            maxTokens = resolveMaxTokens(prompt, performanceConfig),
                             deviceState = DEFAULT_DEVICE_STATE,
                             requestTimeoutMs = requestTimeoutMs,
+                            performanceConfig = performanceConfig,
+                            residencyPolicy = ModelResidencyPolicy(
+                                keepLoadedWhileAppForeground = true,
+                                idleUnloadTtlMs = IDLE_MODEL_UNLOAD_TTL_MS,
+                                warmupOnStartup = true,
+                            ),
                         ),
                     ).collect { event ->
                         if (event.requestId != requestId || hasTerminal()) {
@@ -351,12 +384,25 @@ class ChatViewModel(
                         if (previousTerminal != null) return@collect
                         when (event) {
                             is ChatStreamEvent.Started -> {
-                                // request lifecycle started; keep UI in loading until first delta/terminal event.
+                                _uiState.update { state ->
+                                    state.copy(
+                                        runtime = state.runtime.copy(
+                                            modelStatusDetail = "Prefill...",
+                                        ),
+                                    )
+                                }
                             }
 
                             is ChatStreamEvent.TokenDelta -> {
                                 pendingStreamingText = nextState.accumulatedText
                                 flushPendingStreamingText(triggerToken = event.token)
+                                _uiState.update { state ->
+                                    state.copy(
+                                        runtime = state.runtime.copy(
+                                            modelStatusDetail = "Generating...",
+                                        ),
+                                    )
+                                }
                             }
 
                             is ChatStreamEvent.Completed -> {
@@ -693,6 +739,45 @@ class ChatViewModel(
         persistState()
     }
 
+    fun setPerformanceProfile(profile: RuntimePerformanceProfile) {
+        _uiState.update { state ->
+            state.copy(
+                runtime = state.runtime.copy(
+                    performanceProfile = profile,
+                    modelStatusDetail = performanceProfileStatusDetail(
+                        profile = profile,
+                        gpuEnabled = state.runtime.gpuAccelerationEnabled,
+                        gpuSupported = state.runtime.gpuAccelerationSupported,
+                    ),
+                ),
+            )
+        }
+        persistState()
+    }
+
+    fun setGpuAccelerationEnabled(enabled: Boolean) {
+        _uiState.update { state ->
+            val supported = state.runtime.gpuAccelerationSupported
+            val effective = enabled && supported
+            val detail = if (enabled && !supported) {
+                "GPU acceleration is unavailable on this build/device. Using CPU."
+            } else {
+                performanceProfileStatusDetail(
+                    profile = state.runtime.performanceProfile,
+                    gpuEnabled = effective,
+                    gpuSupported = supported,
+                )
+            }
+            state.copy(
+                runtime = state.runtime.copy(
+                    gpuAccelerationEnabled = effective,
+                    modelStatusDetail = detail,
+                ),
+            )
+        }
+        persistState()
+    }
+
     fun setSessionDrawerOpen(isOpen: Boolean) {
         _uiState.update { it.copy(isSessionDrawerOpen = isOpen) }
     }
@@ -753,6 +838,10 @@ class ChatViewModel(
         val persisted = sessionPersistence.loadState()
         val restoredRoutingMode = runCatching { RoutingMode.valueOf(persisted.routingMode) }
             .getOrDefault(runtimeFacade.getRoutingMode())
+        val restoredPerformanceProfile = runCatching { RuntimePerformanceProfile.valueOf(persisted.performanceProfile) }
+            .getOrDefault(RuntimePerformanceProfile.BALANCED)
+        val gpuSupported = runtimeFacade.supportsGpuOffload()
+        val restoredGpuEnabled = persisted.gpuAccelerationEnabled && gpuSupported
         runtimeFacade.setRoutingMode(restoredRoutingMode)
 
         val restoredSessions = persisted.sessions.map { session ->
@@ -785,10 +874,13 @@ class ChatViewModel(
                 activeSessionId = newSessionId,
                 runtime = RuntimeUiState(
                     routingMode = restoredRoutingMode,
+                    performanceProfile = restoredPerformanceProfile,
+                    gpuAccelerationEnabled = restoredGpuEnabled,
+                    gpuAccelerationSupported = gpuSupported,
                     runtimeBackend = runtimeBackend,
                     startupProbeState = StartupProbeState.RUNNING,
                     modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                    modelStatusDetail = "Running runtime startup checks...",
+                    modelStatusDetail = "Warming model and running startup checks...",
                 ).clearError(),
                 showOnboarding = !persisted.onboardingCompleted,
             )
@@ -806,10 +898,13 @@ class ChatViewModel(
             activeSessionId = activeSessionId,
             runtime = RuntimeUiState(
                 routingMode = restoredRoutingMode,
+                performanceProfile = restoredPerformanceProfile,
+                gpuAccelerationEnabled = restoredGpuEnabled,
+                gpuAccelerationSupported = gpuSupported,
                 runtimeBackend = runtimeBackend,
                 startupProbeState = StartupProbeState.RUNNING,
                 modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                modelStatusDetail = "Running runtime startup checks...",
+                modelStatusDetail = "Warming model and running startup checks...",
             ).clearError(),
             showOnboarding = !persisted.onboardingCompleted,
         )
@@ -824,7 +919,7 @@ class ChatViewModel(
                     runtime = state.runtime.copy(
                         startupProbeState = StartupProbeState.RUNNING,
                         modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                        modelStatusDetail = "Running runtime startup checks...",
+                        modelStatusDetail = "Warming model and running startup checks...",
                     ).clearError(),
                 )
             }
@@ -837,29 +932,44 @@ class ChatViewModel(
                 listOf("Startup checks timed out after ${timeoutSeconds}s.")
             }
             val timeoutOnlyFailure = isStartupTimeoutOnlyFailure(startupChecks)
-            val startupError = if (timeoutOnlyFailure) null else UiErrorMapper.startupFailure(startupChecks)
+            val optionalModelOnlyFailure = isOptionalModelOnlyStartupFailure(startupChecks)
+            val gpuSupported = runtimeFacade.supportsGpuOffload()
+            val startupError = if (timeoutOnlyFailure || optionalModelOnlyFailure) {
+                null
+            } else {
+                UiErrorMapper.startupFailure(startupChecks)
+            }
             val startupModelStatus = when {
                 startupChecks.isEmpty() -> ModelRuntimeStatus.READY
                 timeoutOnlyFailure -> ModelRuntimeStatus.LOADING
+                optionalModelOnlyFailure -> ModelRuntimeStatus.READY
                 else -> resolveModelStatusFromStartupChecks(startupChecks)
             }
             val runtimeBackend = runtimeFacade.runtimeBackend()
             val nextProbeState = when {
                 startupChecks.isEmpty() -> StartupProbeState.READY
-                timeoutOnlyFailure -> StartupProbeState.DEGRADED
+                timeoutOnlyFailure || optionalModelOnlyFailure -> StartupProbeState.DEGRADED
                 else -> StartupProbeState.BLOCKED
             }
-            val startupWarnings = if (timeoutOnlyFailure) startupChecks else emptyList()
+            val startupWarnings = if (timeoutOnlyFailure || optionalModelOnlyFailure) {
+                startupChecks
+            } else {
+                emptyList()
+            }
             _uiState.update { state ->
                 state.copy(
                     runtime = state.runtime.copy(
                         runtimeBackend = runtimeBackend,
+                        gpuAccelerationSupported = gpuSupported,
+                        gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled && gpuSupported,
                         startupProbeState = nextProbeState,
                         modelRuntimeStatus = startupModelStatus,
                         modelStatusDetail = if (startupChecks.isEmpty()) {
                             statusDetailOverride ?: readyStatusDetail(runtimeBackend)
                         } else if (timeoutOnlyFailure) {
                             "Startup checks exceeded the probe window. Chat is still available; first output may take longer on older devices."
+                        } else if (optionalModelOnlyFailure) {
+                            optionalModelStatusDetail(startupChecks)
                         } else {
                             startupChecks.firstOrNull() ?: "Runtime startup checks failed."
                         },
@@ -994,6 +1104,8 @@ class ChatViewModel(
                 },
                 activeSessionId = state.activeSessionId,
                 routingMode = state.runtime.routingMode.name,
+                performanceProfile = state.runtime.performanceProfile.name,
+                gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled,
                 onboardingCompleted = !state.showOnboarding,
             ),
         )
@@ -1111,6 +1223,9 @@ class ChatViewModel(
             return ModelRuntimeStatus.READY
         }
         val startupSummary = startupChecks.joinToString(" ").lowercase()
+        if (startupSummary.contains("optional runtime model unavailable")) {
+            return ModelRuntimeStatus.READY
+        }
         return if (
             startupSummary.contains("missing runtime model") ||
             startupSummary.contains("artifact verification failed")
@@ -1125,12 +1240,13 @@ class ChatViewModel(
         return if (prompt.length >= LONG_PROMPT_LENGTH) "long_text" else "short_text"
     }
 
-    private fun resolveMaxTokens(prompt: String): Int {
-        return if (prompt.length >= LONG_PROMPT_LENGTH) {
+    private fun resolveMaxTokens(prompt: String, performanceConfig: PerformanceRuntimeConfig): Int {
+        val promptBudget = if (prompt.length >= LONG_PROMPT_LENGTH) {
             LONG_PROMPT_MAX_TOKENS
         } else {
             SHORT_PROMPT_MAX_TOKENS
         }
+        return minOf(promptBudget, performanceConfig.maxTokensDefault.coerceAtLeast(16))
     }
 
     private fun isRuntimeReady(runtime: RuntimeUiState): Boolean {
@@ -1152,16 +1268,64 @@ class ChatViewModel(
         }
     }
 
-    private fun resolveRequestTimeoutMs(routingMode: RoutingMode): Long {
-        if (runtimeGenerationTimeoutMs != DEFAULT_RUNTIME_GENERATION_TIMEOUT_MS) {
+    private fun isOptionalModelOnlyStartupFailure(startupChecks: List<String>): Boolean {
+        if (startupChecks.isEmpty()) {
+            return false
+        }
+        return startupChecks.all { check ->
+            check.lowercase().contains("optional runtime model unavailable")
+        }
+    }
+
+    private fun optionalModelStatusDetail(startupChecks: List<String>): String {
+        val missing = startupChecks
+            .filter { it.lowercase().contains("optional runtime model unavailable") }
+            .flatMap { check ->
+                check.substringAfter(":", missingDelimiterValue = "")
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            }
+            .toSet()
+        val readyCount = (BASELINE_RUNTIME_MODELS.size - missing.size).coerceAtLeast(1)
+        return if (missing.isEmpty()) {
+            "Runtime ready. Optional models are still being provisioned."
+        } else {
+            "$readyCount model ready, ${missing.size} optional model unavailable (${missing.joinToString(", ")})."
+        }
+    }
+
+    private fun resolveRequestTimeoutMs(performanceConfig: PerformanceRuntimeConfig): Long {
+        if (runtimeGenerationTimeoutMs > 0L) {
             return runtimeGenerationTimeoutMs
         }
-        return when (routingMode) {
-            RoutingMode.QWEN_2B -> DEFAULT_RUNTIME_GENERATION_TIMEOUT_MS_2B
-            RoutingMode.QWEN_0_8B,
-            RoutingMode.AUTO,
-            -> DEFAULT_RUNTIME_GENERATION_TIMEOUT_MS
+        return performanceConfig.requestTimeoutMs
+    }
+
+    private fun resolvePerformanceConfig(
+        profile: RuntimePerformanceProfile,
+        gpuEnabled: Boolean,
+    ): PerformanceRuntimeConfig {
+        val cpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        return PerformanceRuntimeConfig.forProfile(
+            profile = profile,
+            availableCpuThreads = cpuThreads,
+            gpuEnabled = gpuEnabled,
+        )
+    }
+
+    private fun performanceProfileStatusDetail(
+        profile: RuntimePerformanceProfile,
+        gpuEnabled: Boolean,
+        gpuSupported: Boolean,
+    ): String {
+        val profileLabel = profile.name.lowercase().replaceFirstChar { it.uppercase() }
+        val gpuLabel = when {
+            gpuEnabled && gpuSupported -> "GPU enabled"
+            gpuEnabled && !gpuSupported -> "GPU unavailable, using CPU"
+            else -> "GPU off"
         }
+        return "Speed & Battery: $profileLabel ($gpuLabel)"
     }
 
     private fun startupBlockError(runtime: RuntimeUiState): UiError {
@@ -1252,14 +1416,17 @@ class ChatViewModel(
         private const val SHORT_PROMPT_MAX_TOKENS = 32
         private const val LONG_PROMPT_MAX_TOKENS = 96
         private const val ONBOARDING_LAST_PAGE = 2
-        private const val DEFAULT_RUNTIME_GENERATION_TIMEOUT_MS = 300_000L
-        private const val DEFAULT_RUNTIME_GENERATION_TIMEOUT_MS_2B = 480_000L
         private const val DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS = 30_000L
+        private const val IDLE_MODEL_UNLOAD_TTL_MS = 10 * 60 * 1000L
         private const val STREAM_UI_UPDATE_MIN_INTERVAL_MS = 80L
         private const val SEND_TERMINAL_WATCHDOG_GRACE_MS = 1_500L
         private const val SEND_ELAPSED_UPDATE_INTERVAL_MS = 1_000L
         private const val NO_FIRST_TOKEN_WARN_MS = 90_000L
         private const val NO_FIRST_TOKEN_STALL_MS = 300_000L
+        private val BASELINE_RUNTIME_MODELS = setOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4,
+            ModelCatalog.QWEN_3_5_2B_Q4,
+        )
         private val DEFAULT_DEVICE_STATE = DeviceState(
             batteryPercent = 85,
             thermalLevel = 3,

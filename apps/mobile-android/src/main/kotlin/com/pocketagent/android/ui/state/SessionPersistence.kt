@@ -16,6 +16,8 @@ data class PersistedChatState(
     val sessions: List<ChatSessionUiModel> = emptyList(),
     val activeSessionId: String? = null,
     val routingMode: String = "AUTO",
+    val performanceProfile: String = "BALANCED",
+    val gpuAccelerationEnabled: Boolean = false,
     val onboardingCompleted: Boolean = false,
 )
 
@@ -59,6 +61,8 @@ internal object PersistedChatStateCodec {
             sessions = sessions,
             activeSessionId = root.stringOrNull("activeSessionId"),
             routingMode = root.stringOrDefault("routingMode", "AUTO"),
+            performanceProfile = root.stringOrDefault("performanceProfile", "BALANCED"),
+            gpuAccelerationEnabled = root.booleanOrDefault("gpuAccelerationEnabled", false),
             onboardingCompleted = root.booleanOrDefault("onboardingCompleted", false),
         )
     }
@@ -67,6 +71,8 @@ internal object PersistedChatStateCodec {
         val root = buildJsonObject {
             state.activeSessionId?.let { put("activeSessionId", JsonPrimitive(it)) }
             put("routingMode", JsonPrimitive(state.routingMode))
+            put("performanceProfile", JsonPrimitive(state.performanceProfile))
+            put("gpuAccelerationEnabled", JsonPrimitive(state.gpuAccelerationEnabled))
             put("onboardingCompleted", JsonPrimitive(state.onboardingCompleted))
             put(
                 "sessions",

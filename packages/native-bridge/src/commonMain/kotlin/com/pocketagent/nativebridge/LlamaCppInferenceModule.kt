@@ -9,7 +9,13 @@ class LlamaCppInferenceModule(
     private var activeModelId: String? = null
     private val modelPathById: MutableMap<String, String> = mutableMapOf()
 
-    override fun listAvailableModels(): List<String> = runtimeBridge.listAvailableModels()
+    override fun listAvailableModels(): List<String> {
+        val bridgeModels = runtimeBridge.listAvailableModels()
+        if (modelPathById.isEmpty()) {
+            return bridgeModels
+        }
+        return bridgeModels.filter { modelPathById[it]?.isNotBlank() == true }
+    }
 
     override fun loadModel(modelId: String): Boolean {
         if (!runtimeBridge.listAvailableModels().contains(modelId)) {
@@ -62,6 +68,14 @@ class LlamaCppInferenceModule(
         runtimeBridge.unloadModel()
         activeModelId = null
     }
+
+    fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
+        runtimeBridge.setRuntimeGenerationConfig(config)
+    }
+
+    fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = runtimeBridge.getRuntimeGenerationConfig()
+
+    fun supportsGpuOffload(): Boolean = runtimeBridge.supportsGpuOffload()
 
     fun cancelGeneration(): Boolean {
         return runtimeBridge.cancelGeneration()

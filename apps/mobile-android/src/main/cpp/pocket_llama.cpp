@@ -37,6 +37,35 @@ std::atomic<bool> g_cancel_requested{false};
 std::vector<llama_token> g_cached_prompt_tokens;
 std::string g_cached_cache_key;
 
+int32_t clamp_i32(int32_t value, int32_t min_value, int32_t max_value) {
+    return std::max(min_value, std::min(value, max_value));
+}
+
+int32_t resolve_threads(jint requested_threads) {
+    const auto hardware_threads = std::thread::hardware_concurrency();
+    const int32_t fallback = static_cast<int32_t>(
+        std::max(2u, std::min(hardware_threads == 0 ? 4u : hardware_threads, 8u)));
+    if (requested_threads <= 0) {
+        return fallback;
+    }
+    return clamp_i32(static_cast<int32_t>(requested_threads), 1, 16);
+}
+
+int32_t resolve_batch(jint requested_batch) {
+    if (requested_batch <= 0) {
+        return DEFAULT_BATCH_SIZE;
+    }
+    return clamp_i32(static_cast<int32_t>(requested_batch), 32, 2048);
+}
+
+bool gpu_offload_supported() {
+#if defined(GGML_USE_VULKAN) || defined(GGML_USE_OPENCL) || defined(GGML_USE_CUDA) || defined(GGML_USE_METAL)
+    return true;
+#else
+    return false;
+#endif
+}
+
 void log_error(const std::string & message) {
     __android_log_print(ANDROID_LOG_ERROR, TAG, "%s", message.c_str());
 }
@@ -431,7 +460,12 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     JNIEnv * env,
     jobject /*thiz*/,
     jstring /*modelId*/,
-    jstring modelPath) {
+    jstring modelPath,
+    jint nThreads,
+    jint nThreadsBatch,
+    jint nBatch,
+    jint nUbatch,
+    jint nGpuLayers) {
     const std::string model_path = to_std_string(env, modelPath);
     if (model_path.empty()) {
         log_error("nativeLoadModel failed: empty model path");
@@ -446,7 +480,9 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     }
 
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = 0;
+    model_params.n_gpu_layers = gpu_offload_supported()
+        ? clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128)
+        : 0;
     g_model = llama_model_load_from_file(model_path.c_str(), model_params);
     if (g_model == nullptr) {
         log_error("nativeLoadModel failed: llama_model_load_from_file returned null");
@@ -455,13 +491,10 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
 
     llama_context_params context_params = llama_context_default_params();
     context_params.n_ctx = DEFAULT_CONTEXT_SIZE;
-    context_params.n_batch = DEFAULT_BATCH_SIZE;
-    context_params.n_ubatch = DEFAULT_BATCH_SIZE;
-    const auto hardware_threads = std::thread::hardware_concurrency();
-    const int32_t runtime_threads = static_cast<int32_t>(
-        std::max(2u, std::min(hardware_threads == 0 ? 4u : hardware_threads, 8u)));
-    context_params.n_threads = runtime_threads;
-    context_params.n_threads_batch = runtime_threads;
+    context_params.n_batch = resolve_batch(nBatch);
+    context_params.n_ubatch = resolve_batch(nUbatch);
+    context_params.n_threads = resolve_threads(nThreads);
+    context_params.n_threads_batch = resolve_threads(nThreadsBatch);
     g_context = llama_init_from_model(g_model, context_params);
     if (g_context == nullptr) {
         log_error("nativeLoadModel failed: llama_init_from_model returned null");
@@ -599,12 +632,22 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     JNIEnv * env,
     jobject thiz,
     jstring modelId,
-    jstring modelPath) {
+    jstring modelPath,
+    jint nThreads,
+    jint nThreadsBatch,
+    jint nBatch,
+    jint nUbatch,
+    jint nGpuLayers) {
     return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeLoadModel(
         env,
         thiz,
         modelId,
-        modelPath);
+        modelPath,
+        nThreads,
+        nThreadsBatch,
+        nBatch,
+        nUbatch,
+        nGpuLayers);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -657,6 +700,22 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     JNIEnv * env,
     jobject thiz) {
     return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeCancelGeneration(
+        env,
+        thiz);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeSupportsGpuOffload(
+    JNIEnv * /*env*/,
+    jobject /*thiz*/) {
+    return gpu_offload_supported() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeSupportsGpuOffload(
+    JNIEnv * env,
+    jobject thiz) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeSupportsGpuOffload(
         env,
         thiz);
 }

@@ -187,6 +187,53 @@ class AndroidMvpContainerTest {
     }
 
     @Test
+    fun `startup checks degrade to optional warning when one baseline model is unavailable`() {
+        val payloads = testPayloads()
+        val inference = RecordingInferenceModule(
+            availableModels = listOf(ModelCatalog.QWEN_3_5_0_8B_Q4),
+        )
+        val container = AndroidMvpContainer(
+            inferenceModule = inference,
+            artifactPayloadByModelId = payloads,
+            artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
+            artifactProvenanceIssuerByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
+                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+            ),
+            artifactProvenanceSignatureByModelId = mapOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
+                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
+            ),
+        )
+
+        val checks = container.runStartupChecks()
+
+        assertTrue(checks.any { it.contains("Optional runtime model unavailable") })
+        assertTrue(checks.none { it.contains("Missing runtime model(s):") })
+        assertTrue(inference.loadCalls.contains(ModelCatalog.QWEN_3_5_0_8B_Q4))
+    }
+
+    @Test
+    fun `manual 2b routing falls back to available model when preferred model is unavailable`() {
+        val inference = RecordingInferenceModule(
+            availableModels = listOf(ModelCatalog.QWEN_3_5_0_8B_Q4),
+        )
+        val container = AndroidMvpContainer(inferenceModule = inference)
+        val session = container.createSession()
+
+        container.setRoutingMode(RoutingMode.QWEN_2B)
+        val response = container.sendUserMessage(
+            sessionId = session,
+            userText = "force 2b but fallback to available",
+            taskType = "short_text",
+            deviceState = DeviceState(batteryPercent = 70, thermalLevel = 3, ramClassGb = 8),
+        )
+
+        assertEquals(ModelCatalog.QWEN_3_5_0_8B_Q4, response.modelId)
+        assertEquals(ModelCatalog.QWEN_3_5_0_8B_Q4, inference.loadCalls.first())
+    }
+
+    @Test
     fun `startup checks fail when runtime backend is adb fallback and native is required`() {
         val bridge = BackendAwareTestBridge(backend = com.pocketagent.nativebridge.RuntimeBackend.ADB_FALLBACK)
         val payloads = testPayloads()
@@ -418,20 +465,21 @@ class AndroidMvpContainerTest {
 private class RecordingInferenceModule(
     private val allowLoad: Boolean = true,
     private val tokensToEmit: List<String> = listOf("real ", "runtime ", "response "),
+    private val availableModels: List<String> = listOf(
+        ModelCatalog.QWEN_3_5_0_8B_Q4,
+        ModelCatalog.QWEN_3_5_2B_Q4,
+    ),
 ) : InferenceModule {
     val loadCalls = mutableListOf<String>()
     val capturedPrompts = mutableListOf<String>()
     var unloadCalls: Int = 0
     var generateCalls: Int = 0
 
-    override fun listAvailableModels(): List<String> = listOf(
-        ModelCatalog.QWEN_3_5_0_8B_Q4,
-        ModelCatalog.QWEN_3_5_2B_Q4,
-    )
+    override fun listAvailableModels(): List<String> = availableModels
 
     override fun loadModel(modelId: String): Boolean {
         loadCalls.add(modelId)
-        return allowLoad
+        return allowLoad && availableModels.contains(modelId)
     }
 
     override fun generateStream(request: InferenceRequest, onToken: (String) -> Unit) {

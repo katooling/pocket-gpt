@@ -24,6 +24,7 @@ import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
+import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolModule
 import java.security.MessageDigest
@@ -57,6 +58,7 @@ class RuntimeOrchestrator(
         maxEntries = runtimeConfig.responseCacheMaxEntries,
         ttlMs = runtimeConfig.responseCacheTtlSec.coerceAtLeast(0L) * 1000L,
     )
+    private val idleUnloadGuard = IdleModelUnloadGuard(inferenceModule)
     private var routingMode: RoutingMode = RoutingMode.AUTO
 
     init {
@@ -78,12 +80,15 @@ class RuntimeOrchestrator(
         onToken: (String) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
+        performanceConfig: PerformanceRuntimeConfig,
+        residencyPolicy: ModelResidencyPolicy,
     ): ChatResponse {
+        idleUnloadGuard.cancel()
         requirePolicyEvent(
             eventType = "routing.model_select",
             failureMessage = "Policy module rejected routing event type.",
         )
-        val modelId = selectModelId(taskType = taskType, deviceState = deviceState)
+        val modelId = selectRunnableModelId(taskType = taskType, deviceState = deviceState)
         check(artifactVerifier.manager().setActiveModel(modelId)) {
             "Model artifact not registered for runtime model: $modelId"
         }
@@ -149,6 +154,11 @@ class RuntimeOrchestrator(
                 )
                 observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
                 observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
+                observabilityModule.recordLatencyMetric("inference.profile", performanceConfig.profile.ordinal.toDouble())
+                observabilityModule.recordLatencyMetric(
+                    "inference.gpu_mode",
+                    if (performanceConfig.gpuEnabled && performanceConfig.gpuLayers > 0) 1.0 else 0.0,
+                )
                 observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
                 conversationModule.appendAssistantTurn(sessionId, cachedText)
                 return ChatResponse(
@@ -163,6 +173,18 @@ class RuntimeOrchestrator(
             }
         }
 
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule
+        nativeInference?.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig(
+                nThreads = performanceConfig.nThreads,
+                nThreadsBatch = performanceConfig.nThreadsBatch,
+                nBatch = performanceConfig.nBatch,
+                nUbatch = performanceConfig.nUbatch,
+                gpuEnabled = performanceConfig.gpuEnabled,
+                gpuLayers = performanceConfig.gpuLayers,
+            ),
+        )
+
         check(inferenceModule.loadModel(modelId)) {
             "Failed to load runtime model: $modelId"
         }
@@ -171,6 +193,7 @@ class RuntimeOrchestrator(
         var firstTokenLatencyMs = -1L
         var finishReason = "completed"
         var responseText = ""
+        var executionResult: InferenceExecutionResult? = null
         val timeoutGuard = GenerationTimeoutGuard(
             timeoutMs = requestTimeoutMs,
             onTimeout = {
@@ -182,7 +205,7 @@ class RuntimeOrchestrator(
             },
         )
         try {
-            val executionResult = inferenceExecutor.execute(
+            executionResult = inferenceExecutor.execute(
                 sessionId = sessionId.value,
                 requestId = requestId,
                 request = InferenceRequest(prompt = prompt, maxTokens = maxTokens),
@@ -211,8 +234,10 @@ class RuntimeOrchestrator(
             throw error
         } finally {
             timeoutGuard.finish()
-            if (!keepModelLoaded) {
-                inferenceModule.unloadModel()
+            if (!keepModelLoaded || !residencyPolicy.keepLoadedWhileAppForeground) {
+                idleUnloadGuard.unloadNow()
+            } else {
+                idleUnloadGuard.schedule(residencyPolicy.idleUnloadTtlMs)
             }
         }
         if (timeoutGuard.timedOut()) {
@@ -223,6 +248,15 @@ class RuntimeOrchestrator(
             firstTokenLatencyMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(1L)
         }
         val totalLatency = System.currentTimeMillis() - startedMs
+        val prefillMs = executionResult?.prefillMs ?: firstTokenLatencyMs
+        val decodeMs = executionResult?.decodeMs ?: (totalLatency - prefillMs).coerceAtLeast(0L)
+        val tokenCount = executionResult?.tokenCount ?: 0
+        val tokensPerSec = executionResult?.tokensPerSec
+            ?: if (tokenCount > 0 && decodeMs > 0) {
+                tokenCount.toDouble() / (decodeMs.toDouble() / 1000.0)
+            } else {
+                0.0
+            }
         responseCache.put(responseCacheKey, responseText)
         requirePolicyEvent(
             eventType = "observability.record_runtime_metrics",
@@ -230,6 +264,14 @@ class RuntimeOrchestrator(
         )
         observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
         observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
+        observabilityModule.recordLatencyMetric("inference.prefill_ms", prefillMs.toDouble())
+        observabilityModule.recordLatencyMetric("inference.decode_ms", decodeMs.toDouble())
+        observabilityModule.recordLatencyMetric("inference.tokens_per_sec", tokensPerSec)
+        observabilityModule.recordLatencyMetric("inference.profile", performanceConfig.profile.ordinal.toDouble())
+        observabilityModule.recordLatencyMetric(
+            "inference.gpu_mode",
+            if (performanceConfig.gpuEnabled && performanceConfig.gpuLayers > 0) 1.0 else 0.0,
+        )
         observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
         conversationModule.appendAssistantTurn(sessionId, responseText)
 
@@ -278,7 +320,7 @@ class RuntimeOrchestrator(
             eventType = "routing.image_model_select",
             failureMessage = "Policy module rejected image routing event type.",
         )
-        val modelId = selectModelId(taskType = "image", deviceState = deviceState)
+        val modelId = selectRunnableModelId(taskType = "image", deviceState = deviceState)
         check(artifactVerifier.manager().setActiveModel(modelId)) {
             "Model artifact not registered for image runtime model: $modelId"
         }
@@ -339,7 +381,7 @@ class RuntimeOrchestrator(
             return checks
         }
 
-        val requiredModels = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
+        val requiredModels = listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
         requiredModels.forEach { modelId ->
             if (!artifactVerifier.manager().setActiveModel(modelId)) {
                 checks.add("Artifact manifest missing required model registration: $modelId.")
@@ -372,12 +414,16 @@ class RuntimeOrchestrator(
         }
 
         val available = inferenceModule.listAvailableModels().toSet()
-        val missing = requiredModels.minus(available)
-        if (missing.isNotEmpty()) {
+        val missing = requiredModels.filterNot { available.contains(it) }
+        if (missing.size == requiredModels.size) {
             checks.add("Missing runtime model(s): ${missing.joinToString(", ")}.")
         } else {
-            if (!inferenceModule.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4)) {
-                checks.add("Failed to load baseline runtime model: ${ModelCatalog.QWEN_3_5_0_8B_Q4}.")
+            val startupProbeModel = preferredModelOrder(available).firstOrNull()
+            if (startupProbeModel == null || !inferenceModule.loadModel(startupProbeModel)) {
+                checks.add("Failed to load startup runtime model: ${startupProbeModel ?: "none"}.")
+            }
+            if (missing.isNotEmpty()) {
+                checks.add("Optional runtime model unavailable: ${missing.joinToString(", ")}.")
             }
         }
         if (!policyModule.enforceDataBoundary("inference.startup_check")) {
@@ -410,6 +456,10 @@ class RuntimeOrchestrator(
     fun listTurns(sessionId: SessionId): List<Turn> = sessionManager.listTurns(sessionId)
 
     override fun runtimeBackend(): String? = runtimeBackendEnum()?.name
+
+    override fun supportsGpuOffload(): Boolean {
+        return (inferenceModule as? LlamaCppInferenceModule)?.supportsGpuOffload() ?: false
+    }
 
     fun runtimeBackendEnum(): RuntimeBackend? {
         return (inferenceModule as? LlamaCppInferenceModule)?.runtimeBackend()
@@ -493,6 +543,23 @@ class RuntimeOrchestrator(
         }
     }
 
+    private fun selectRunnableModelId(taskType: String, deviceState: DeviceState): String {
+        val preferredModelId = selectModelId(taskType = taskType, deviceState = deviceState)
+        val availableModels = inferenceModule.listAvailableModels().toSet()
+        if (availableModels.isEmpty() || availableModels.contains(preferredModelId)) {
+            return preferredModelId
+        }
+        return preferredModelOrder(availableModels).firstOrNull() ?: preferredModelId
+    }
+
+    private fun preferredModelOrder(availableModels: Set<String>): List<String> {
+        return buildList {
+            add(ModelCatalog.QWEN_3_5_0_8B_Q4)
+            add(ModelCatalog.QWEN_3_5_2B_Q4)
+            addAll(availableModels.sorted())
+        }.distinct().filter { availableModels.contains(it) }
+    }
+
     companion object {
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
         private const val CACHE_KEY_VERSION = "v1"
@@ -515,6 +582,42 @@ class RuntimeGenerationFailureException(
     message: String,
     val errorCode: String? = null,
 ) : RuntimeException(message)
+
+private class IdleModelUnloadGuard(
+    private val inferenceModule: InferenceModule,
+) {
+    private val lock = Any()
+    private var timer: Timer? = null
+
+    fun schedule(delayMs: Long) {
+        val safeDelay = delayMs.coerceAtLeast(1L)
+        synchronized(lock) {
+            timer?.cancel()
+            timer = Timer("runtime-idle-unload", true).also { idleTimer ->
+                idleTimer.schedule(
+                    object : TimerTask() {
+                        override fun run() {
+                            inferenceModule.unloadModel()
+                        }
+                    },
+                    safeDelay,
+                )
+            }
+        }
+    }
+
+    fun cancel() {
+        synchronized(lock) {
+            timer?.cancel()
+            timer = null
+        }
+    }
+
+    fun unloadNow() {
+        cancel()
+        inferenceModule.unloadModel()
+    }
+}
 
 private class GenerationTimeoutGuard(
     timeoutMs: Long,

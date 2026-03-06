@@ -34,9 +34,31 @@ data class ProvisionedModelState(
 data class RuntimeProvisioningSnapshot(
     val models: List<ProvisionedModelState>,
     val storageSummary: StorageSummary,
+    val requiredModelIds: Set<String>,
 ) {
+    val verifiedActiveModelCount: Int
+        get() = models.count { it.modelId in requiredModelIds && it.isProvisioned && !it.activeVersion.isNullOrBlank() }
+
+    val missingRequiredModelIds: Set<String>
+        get() = requiredModelIds.filterNot { modelId ->
+            models.any { it.modelId == modelId && it.isProvisioned && !it.activeVersion.isNullOrBlank() }
+        }.toSet()
+
+    val readiness: ProvisioningReadiness
+        get() = when {
+            verifiedActiveModelCount <= 0 -> ProvisioningReadiness.BLOCKED
+            missingRequiredModelIds.isEmpty() -> ProvisioningReadiness.READY
+            else -> ProvisioningReadiness.DEGRADED
+        }
+
     val allRequiredModelsProvisioned: Boolean
-        get() = models.all { it.isProvisioned }
+        get() = models.filter { it.modelId in requiredModelIds }.all { it.isProvisioned }
+}
+
+enum class ProvisioningReadiness {
+    READY,
+    DEGRADED,
+    BLOCKED,
 }
 
 data class RuntimeModelImportResult(
@@ -53,10 +75,11 @@ class AndroidRuntimeProvisioningStore(
 ) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val modelLocks: MutableMap<String, Any> = mutableMapOf()
+    private val baselineModelIdSet = BASELINE_MODEL_SPECS.mapTo(linkedSetOf()) { it.modelId }
 
     fun snapshot(): RuntimeProvisioningSnapshot {
         ensureMigrated()
-        val models = REQUIRED_MODEL_SPECS.map { spec ->
+        val models = allModelSpecs().map { spec ->
             val versions = readInstalledVersions(spec)
             val activeVersion = prefs.readOptional(activeVersionKey(spec))
             val active = versions.firstOrNull { it.version == activeVersion }
@@ -74,6 +97,7 @@ class AndroidRuntimeProvisioningStore(
         return RuntimeProvisioningSnapshot(
             models = models,
             storageSummary = storageSummary(),
+            requiredModelIds = baselineModelIdSet,
         )
     }
 
@@ -82,7 +106,7 @@ class AndroidRuntimeProvisioningStore(
         sourceUri: Uri,
         version: String = generatedVersion(prefix = "manual"),
     ): RuntimeModelImportResult {
-        val spec = requiredSpec(modelId)
+        val spec = modelSpecFor(modelId)
         return withContext(Dispatchers.IO) {
             withModelLock(modelId) {
                 ensureMigrated()
@@ -128,7 +152,7 @@ class AndroidRuntimeProvisioningStore(
                     provenanceSignature = sha256Hex("$DEFAULT_ISSUER|${spec.modelId}|$sha|v1".encodeToByteArray()),
                     runtimeCompatibility = RUNTIME_COMPATIBILITY_TAG,
                     fileSizeBytes = copiedBytes,
-                    makeActive = true,
+                    makeActive = false,
                 )
                 result
             }
@@ -140,7 +164,7 @@ class AndroidRuntimeProvisioningStore(
         absolutePath: String,
         version: String = generatedVersion(prefix = "seed"),
     ): RuntimeModelImportResult {
-        val spec = requiredSpec(modelId)
+        val spec = modelSpecFor(modelId)
         return withContext(Dispatchers.IO) {
             withModelLock(modelId) {
                 ensureMigrated()
@@ -158,7 +182,7 @@ class AndroidRuntimeProvisioningStore(
                     provenanceSignature = sha256Hex("$DEFAULT_ISSUER|${spec.modelId}|$sha|v1".encodeToByteArray()),
                     runtimeCompatibility = RUNTIME_COMPATIBILITY_TAG,
                     fileSizeBytes = file.length().coerceAtLeast(0L),
-                    makeActive = true,
+                    makeActive = false,
                 )
                 result
             }
@@ -176,7 +200,7 @@ class AndroidRuntimeProvisioningStore(
         fileSizeBytes: Long,
         makeActive: Boolean = false,
     ): RuntimeModelImportResult {
-        val spec = requiredSpec(modelId)
+        val spec = modelSpecFor(modelId)
         return withModelLock(modelId) {
             ensureMigrated()
             val result = upsertInstalledVersion(
@@ -198,11 +222,11 @@ class AndroidRuntimeProvisioningStore(
 
     fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor> {
         ensureMigrated()
-        return readInstalledVersions(requiredSpec(modelId))
+        return readInstalledVersions(modelSpecFor(modelId))
     }
 
     fun setActiveVersion(modelId: String, version: String): Boolean {
-        val spec = requiredSpec(modelId)
+        val spec = modelSpecFor(modelId)
         return withModelLock(modelId) {
             ensureMigrated()
             val versions = readInstalledVersions(spec)
@@ -215,7 +239,7 @@ class AndroidRuntimeProvisioningStore(
     }
 
     fun removeVersion(modelId: String, version: String): Boolean {
-        val spec = requiredSpec(modelId)
+        val spec = modelSpecFor(modelId)
         return withModelLock(modelId) {
             ensureMigrated()
             val versions = readStoredVersionEntries(spec).toMutableList()
@@ -230,6 +254,9 @@ class AndroidRuntimeProvisioningStore(
                 absolutePath = target.absolutePath,
                 remainingEntries = versions,
             )
+            if (versions.isEmpty() && !isBaselineModel(modelId)) {
+                unregisterDynamicModelId(modelId)
+            }
             true
         }
     }
@@ -237,7 +264,7 @@ class AndroidRuntimeProvisioningStore(
     fun storageSummary(): StorageSummary {
         ensureMigrated()
         val filesDir = context.filesDir
-        val usedByModels = REQUIRED_MODEL_SPECS
+        val usedByModels = allModelSpecs()
             .flatMap { spec -> readStoredVersionEntries(spec) }
             .sumOf { it.fileSizeBytes.coerceAtLeast(0L) }
         val tempDownloadDir = File(context.filesDir, ModelDownloadWorker.DOWNLOAD_DIR)
@@ -262,17 +289,19 @@ class AndroidRuntimeProvisioningStore(
         val issuerByModelId = mutableMapOf<String, String>()
         val signatureByModelId = mutableMapOf<String, String>()
 
-        REQUIRED_MODEL_SPECS.forEach { spec ->
+        allModelSpecs().forEach { spec ->
             val versions = readInstalledVersions(spec)
             val activeVersion = prefs.readOptional(activeVersionKey(spec))
             val active = versions.firstOrNull { it.version == activeVersion }
 
             val path = active?.absolutePath.orEmpty()
-            val sha = active?.sha256.orEmpty()
+            val payload = "provisioned:${spec.modelId}:$path".encodeToByteArray()
+            val sha = active?.sha256?.takeIf { it.isNotBlank() } ?: sha256Hex(payload)
             val issuer = active?.provenanceIssuer ?: DEFAULT_ISSUER
-            val signature = active?.provenanceSignature.orEmpty()
+            val signature = active?.provenanceSignature?.takeIf { it.isNotBlank() }
+                ?: sha256Hex("$issuer|${spec.modelId}|$sha|v1".encodeToByteArray())
 
-            payloadByModelId[spec.modelId] = "provisioned:${spec.modelId}:$path".encodeToByteArray()
+            payloadByModelId[spec.modelId] = payload
             filePathByModelId[spec.modelId] = path
             shaByModelId[spec.modelId] = sha
             issuerByModelId[spec.modelId] = issuer
@@ -418,7 +447,7 @@ class AndroidRuntimeProvisioningStore(
 
     private fun ensureMigrated() {
         synchronized(MIGRATION_LOCK) {
-            REQUIRED_MODEL_SPECS.forEach { spec ->
+            BASELINE_MODEL_SPECS.forEach { spec ->
                 if (prefs.contains(versionsKey(spec))) {
                     return@forEach
                 }
@@ -465,9 +494,83 @@ class AndroidRuntimeProvisioningStore(
         }
     }
 
-    private fun requiredSpec(modelId: String): ModelSpec {
-        return REQUIRED_MODEL_SPECS.firstOrNull { it.modelId == modelId }
-            ?: error("Unsupported model id for provisioning: $modelId")
+    private fun allModelSpecs(): List<ModelSpec> {
+        val dynamicSpecs = readDynamicModelIds()
+            .filterNot { modelId -> baselineModelIdSet.contains(modelId) }
+            .sorted()
+            .map { modelId -> dynamicModelSpec(modelId) }
+        return BASELINE_MODEL_SPECS + dynamicSpecs
+    }
+
+    private fun modelSpecFor(modelId: String): ModelSpec {
+        BASELINE_MODEL_SPECS.firstOrNull { it.modelId == modelId }?.let { return it }
+        registerDynamicModelId(modelId)
+        return dynamicModelSpec(modelId)
+    }
+
+    private fun isBaselineModel(modelId: String): Boolean = baselineModelIdSet.contains(modelId)
+
+    private fun readDynamicModelIds(): Set<String> {
+        val raw = prefs.getString(DYNAMIC_MODEL_IDS_KEY, null).orEmpty().trim()
+        if (raw.isEmpty()) {
+            return emptySet()
+        }
+        return runCatching {
+            val array = JSONArray(raw)
+            buildSet {
+                for (index in 0 until array.length()) {
+                    val modelId = array.optString(index, "").trim()
+                    if (modelId.isNotEmpty()) {
+                        add(modelId)
+                    }
+                }
+            }
+        }.getOrDefault(emptySet())
+    }
+
+    private fun registerDynamicModelId(modelId: String) {
+        val normalized = modelId.trim()
+        if (normalized.isEmpty() || isBaselineModel(normalized)) {
+            return
+        }
+        val updated = (readDynamicModelIds() + normalized).toList().sorted()
+        val encoded = JSONArray().apply {
+            updated.forEach { value -> put(value) }
+        }
+        prefs.edit().putString(DYNAMIC_MODEL_IDS_KEY, encoded.toString()).apply()
+    }
+
+    private fun unregisterDynamicModelId(modelId: String) {
+        if (isBaselineModel(modelId)) {
+            return
+        }
+        val updated = readDynamicModelIds()
+            .filterNot { candidate -> candidate == modelId }
+            .sorted()
+        val encoded = JSONArray().apply {
+            updated.forEach { value -> put(value) }
+        }
+        prefs.edit().putString(DYNAMIC_MODEL_IDS_KEY, encoded.toString()).apply()
+    }
+
+    private fun dynamicModelSpec(modelId: String): ModelSpec {
+        val prefTag = "dyn_${sha256Hex(modelId.encodeToByteArray()).take(12)}"
+        val safeFileName = modelId
+            .trim()
+            .ifEmpty { "model" }
+            .replace(Regex("[^a-zA-Z0-9._-]"), "-")
+            .lowercase(Locale.US)
+        return ModelSpec(
+            modelId = modelId,
+            displayName = modelId,
+            fileName = "$safeFileName.gguf",
+            prefTag = prefTag,
+            pathKey = "legacy_path_$prefTag",
+            shaKey = "legacy_sha_$prefTag",
+            issuerKey = "legacy_issuer_$prefTag",
+            signatureKey = "legacy_signature_$prefTag",
+            importedAtKey = "legacy_imported_at_$prefTag",
+        )
     }
 
     private fun versionsKey(spec: ModelSpec): String = "model_versions_json_${spec.prefTag}"
@@ -598,9 +701,10 @@ class AndroidRuntimeProvisioningStore(
         private const val RUNTIME_COMPATIBILITY_TAG = "android-arm64-v8a"
         private const val COPY_BUFFER_SIZE_BYTES = 1024 * 1024
         private const val INITIAL_MIGRATION_VERSION = "1.0.0-initial"
+        private const val DYNAMIC_MODEL_IDS_KEY = "dynamic_model_ids_json"
         private val MIGRATION_LOCK = Any()
 
-        private val REQUIRED_MODEL_SPECS = listOf(
+        private val BASELINE_MODEL_SPECS = listOf(
             ModelSpec(
                 modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
                 displayName = "Qwen 3.5 0.8B (Q4)",

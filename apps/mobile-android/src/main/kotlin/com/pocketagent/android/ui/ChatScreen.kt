@@ -144,6 +144,14 @@ private fun OfflineAndStatusHeader(
                 onClick = { },
                 label = {
                     StatusChipLabel(
+                        text = "${stringResource(id = R.string.ui_speed_battery_title)}: ${state.runtime.performanceProfile.name}",
+                    )
+                },
+            )
+            AssistChip(
+                onClick = { },
+                label = {
+                    StatusChipLabel(
                         text = stringResource(
                             id = R.string.ui_model_status_label,
                             modelStatusText,
@@ -168,6 +176,20 @@ private fun OfflineAndStatusHeader(
     }
 
     StatusChips()
+
+    state.runtime.modelStatusDetail
+        ?.takeIf { it.isNotBlank() }
+        ?.let { detail ->
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = detail,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("runtime_status_detail"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
     if (state.runtime.lastErrorUserMessage != null && state.runtime.lastErrorCode != null) {
         val recoveryHint = stringResource(id = state.runtime.recoveryHintTextResId())

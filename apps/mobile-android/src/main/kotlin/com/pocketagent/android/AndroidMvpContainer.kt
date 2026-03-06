@@ -21,6 +21,8 @@ import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
 import com.pocketagent.runtime.PolicyAwareNetworkClient
+import com.pocketagent.runtime.ModelResidencyPolicy
+import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimeConfig
 import com.pocketagent.runtime.RuntimeOrchestrator
 import com.pocketagent.tools.SafeLocalToolRuntime
@@ -121,6 +123,8 @@ class AndroidMvpContainer(
             keepModelLoaded = keepModelLoaded,
             requestTimeoutMs = requestTimeoutMs,
             requestId = requestId,
+            performanceConfig = PerformanceRuntimeConfig.default(),
+            residencyPolicy = ModelResidencyPolicy(),
         )
     }
 

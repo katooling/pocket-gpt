@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui.state
 
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.runtime.RuntimePerformanceProfile
 
 enum class MessageRole {
     USER,
@@ -65,6 +66,9 @@ data class ComposerUiState(
 data class RuntimeUiState(
     val offlineOnly: Boolean = true,
     val routingMode: RoutingMode = RoutingMode.AUTO,
+    val performanceProfile: RuntimePerformanceProfile = RuntimePerformanceProfile.BALANCED,
+    val gpuAccelerationEnabled: Boolean = false,
+    val gpuAccelerationSupported: Boolean = false,
     val runtimeBackend: String? = null,
     val startupProbeState: StartupProbeState = StartupProbeState.IDLE,
     val modelRuntimeStatus: ModelRuntimeStatus = ModelRuntimeStatus.NOT_READY,
@@ -72,6 +76,9 @@ data class RuntimeUiState(
     val activeModelId: String? = null,
     val lastFirstTokenLatencyMs: Long? = null,
     val lastTotalLatencyMs: Long? = null,
+    val lastPrefillMs: Long? = null,
+    val lastDecodeMs: Long? = null,
+    val lastTokensPerSec: Double? = null,
     val startupChecks: List<String> = emptyList(),
     val startupWarnings: List<String> = emptyList(),
     val lastErrorCode: String? = null,

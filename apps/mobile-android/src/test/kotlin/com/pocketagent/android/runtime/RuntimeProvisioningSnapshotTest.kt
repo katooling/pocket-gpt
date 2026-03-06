@@ -1,0 +1,82 @@
+package com.pocketagent.android.runtime
+
+import com.pocketagent.android.runtime.modelmanager.StorageSummary
+import com.pocketagent.inference.ModelCatalog
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class RuntimeProvisioningSnapshotTest {
+    @Test
+    fun `readiness is blocked when no required active model is provisioned`() {
+        val snapshot = RuntimeProvisioningSnapshot(
+            models = listOf(
+                state(modelId = ModelCatalog.QWEN_3_5_0_8B_Q4, activeVersion = null, absolutePath = null, sha = null),
+                state(modelId = ModelCatalog.QWEN_3_5_2B_Q4, activeVersion = null, absolutePath = null, sha = null),
+            ),
+            storageSummary = emptyStorage(),
+            requiredModelIds = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4),
+        )
+
+        assertEquals(ProvisioningReadiness.BLOCKED, snapshot.readiness)
+        assertEquals(0, snapshot.verifiedActiveModelCount)
+    }
+
+    @Test
+    fun `readiness is degraded when at least one required active model is provisioned`() {
+        val snapshot = RuntimeProvisioningSnapshot(
+            models = listOf(
+                state(modelId = ModelCatalog.QWEN_3_5_0_8B_Q4, activeVersion = "q4_0"),
+                state(modelId = ModelCatalog.QWEN_3_5_2B_Q4, activeVersion = null, absolutePath = null, sha = null),
+            ),
+            storageSummary = emptyStorage(),
+            requiredModelIds = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4),
+        )
+
+        assertEquals(ProvisioningReadiness.DEGRADED, snapshot.readiness)
+        assertEquals(1, snapshot.verifiedActiveModelCount)
+        assertEquals(setOf(ModelCatalog.QWEN_3_5_2B_Q4), snapshot.missingRequiredModelIds)
+    }
+
+    @Test
+    fun `readiness is ready when all required active models are provisioned`() {
+        val snapshot = RuntimeProvisioningSnapshot(
+            models = listOf(
+                state(modelId = ModelCatalog.QWEN_3_5_0_8B_Q4, activeVersion = "q4_0"),
+                state(modelId = ModelCatalog.QWEN_3_5_2B_Q4, activeVersion = "q4_0"),
+            ),
+            storageSummary = emptyStorage(),
+            requiredModelIds = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4),
+        )
+
+        assertEquals(ProvisioningReadiness.READY, snapshot.readiness)
+        assertEquals(2, snapshot.verifiedActiveModelCount)
+        assertEquals(emptySet(), snapshot.missingRequiredModelIds)
+    }
+
+    private fun state(
+        modelId: String,
+        activeVersion: String?,
+        absolutePath: String? = "/tmp/$modelId.gguf",
+        sha: String? = "sha-$modelId",
+    ): ProvisionedModelState {
+        return ProvisionedModelState(
+            modelId = modelId,
+            displayName = modelId,
+            fileName = "$modelId.gguf",
+            absolutePath = absolutePath,
+            sha256 = sha,
+            importedAtEpochMs = null,
+            activeVersion = activeVersion,
+            installedVersions = emptyList(),
+        )
+    }
+
+    private fun emptyStorage(): StorageSummary {
+        return StorageSummary(
+            totalBytes = 0L,
+            freeBytes = 0L,
+            usedByModelsBytes = 0L,
+            tempDownloadBytes = 0L,
+        )
+    }
+}

@@ -132,11 +132,16 @@ fun PocketAgentApp(
             val previous = previousDownloadStatuses[task.taskId]
             previous != null && previous != task.status
         }
-        transitioned
-            ?.provisioningFeedback(context)
-            ?.let { feedback ->
-                modelProvisioningStatus = feedback
-            }
+        val transitionFeedback = transitioned?.provisioningFeedback(context)
+        transitionFeedback?.let { feedback ->
+            modelProvisioningStatus = feedback
+        }
+        if (
+            transitioned?.status == DownloadTaskStatus.COMPLETED ||
+            transitioned?.status == DownloadTaskStatus.INSTALLED_INACTIVE
+        ) {
+            viewModel.refreshRuntimeReadiness(statusDetailOverride = transitionFeedback)
+        }
         previousDownloadStatuses.clear()
         downloads.forEach { task ->
             previousDownloadStatuses[task.taskId] = task.status
@@ -284,6 +289,8 @@ fun PocketAgentApp(
             AdvancedSettingsSheet(
                 state = state,
                 onRoutingModeSelected = viewModel::setRoutingMode,
+                onPerformanceProfileSelected = viewModel::setPerformanceProfile,
+                onGpuAccelerationEnabledChanged = viewModel::setGpuAccelerationEnabled,
                 onExportDiagnostics = viewModel::exportDiagnostics,
                 onOpenModelSetup = {
                     provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
@@ -407,6 +414,11 @@ private fun startModelDownload(
 
 private fun DownloadTaskState.provisioningFeedback(context: android.content.Context): String? {
     return when (status) {
+        DownloadTaskStatus.COMPLETED -> context.getString(
+            R.string.ui_model_download_verified_active,
+            modelId,
+            version,
+        )
         DownloadTaskStatus.INSTALLED_INACTIVE -> context.getString(
             R.string.ui_model_download_verified_inactive,
             modelId,

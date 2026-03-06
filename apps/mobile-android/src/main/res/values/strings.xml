@@ -40,12 +40,23 @@
     <string name="ui_tool_reminder_prompt">remind me to run QA closeout</string>
     <string name="ui_close">Close</string>
     <string name="ui_advanced_controls_title">Advanced controls</string>
+    <string name="ui_speed_battery_title">Speed &amp; Battery</string>
+    <string name="ui_speed_battery_subtitle">Choose a simple profile. Most users should stay on Balanced.</string>
+    <string name="ui_advanced_experimental_title">Advanced (Experimental)</string>
+    <string name="ui_gpu_acceleration_toggle">Enable GPU acceleration</string>
+    <string name="ui_gpu_acceleration_unavailable">GPU acceleration unavailable on this build/device</string>
+    <string name="ui_gpu_acceleration_hint">GPU is opt-in. If unsupported or unstable, runtime automatically falls back to CPU.</string>
     <string name="ui_model_selection_title">Model selection</string>
     <string name="ui_export_diagnostics">Export diagnostics</string>
     <string name="ui_model_provisioning_title">Model provisioning</string>
     <string name="ui_model_provisioning_subtitle">Import verified GGUF files for both required runtime models.</string>
-    <string name="ui_model_provisioning_subtitle_v2">Choose one path: import local files now, or download verified versions. Runtime unlocks only after active versions pass startup checks.</string>
+    <string name="ui_model_provisioning_subtitle_v2">Choose one path: import local files now, or download verified versions. Chat unlocks when at least one verified active model passes startup checks.</string>
     <string name="ui_model_required_models_section">Required models</string>
+    <string name="ui_model_get_ready_title">Get chat ready</string>
+    <string name="ui_model_get_ready_blocked_body">No active verified model is available yet. Start with the lightweight default model, or import a local GGUF file.</string>
+    <string name="ui_model_get_ready_degraded_body">Chat is available, but optional models are missing. Add more models for better coverage and routing.</string>
+    <string name="ui_model_get_ready_download_default">Download default model</string>
+    <string name="ui_model_get_ready_import_default">Import local GGUF</string>
     <string name="ui_model_downloads_section">Downloads</string>
     <string name="ui_model_installed_versions_section">Installed versions</string>
     <string name="ui_model_installed_versions_hint">Each required model keeps one active version. To change it, set another installed version active.</string>
@@ -64,7 +75,13 @@
     <string name="ui_model_refresh_manifest">Refresh download list</string>
     <string name="ui_model_refresh_manifest_success">Download list refreshed.</string>
     <string name="ui_model_refresh_runtime_feedback">Runtime checks refreshed. If still blocked, review the latest error details.</string>
-    <string name="ui_model_downloads_manifest_empty">No downloadable versions available from current manifest source.</string>
+    <string name="ui_model_downloads_manifest_empty">No downloadable versions available right now. You can still import a local GGUF file.</string>
+    <string name="ui_model_catalog_source_bundled">bundled</string>
+    <string name="ui_model_catalog_source_remote">remote</string>
+    <string name="ui_model_catalog_source_bundled_and_remote">bundled + remote</string>
+    <string name="ui_model_catalog_sync_summary">Catalog source: %1$s • Last sync: %2$s</string>
+    <string name="ui_model_catalog_sync_unknown">not yet</string>
+    <string name="ui_model_catalog_sync_warning">Catalog refresh warning: %1$s</string>
     <string name="ui_model_download_start">Start download</string>
     <string name="ui_model_download_pause">Pause</string>
     <string name="ui_model_download_resume">Resume</string>
@@ -73,6 +90,7 @@
     <string name="ui_model_download_resumed">Download resumed.</string>
     <string name="ui_model_download_retried">Download retry queued.</string>
     <string name="ui_model_download_enqueued">Download queued for %1$s (%2$s). Task: %3$s</string>
+    <string name="ui_model_download_verified_active">Downloaded %1$s (%2$s): verified and active.</string>
     <string name="ui_model_download_verified_inactive">Downloaded %1$s (%2$s): verified, activation pending.</string>
     <string name="ui_model_download_failed_checksum">Download failed for %1$s (%2$s): checksum mismatch. Re-download from a trusted source.</string>
     <string name="ui_model_download_failed_provenance">Download failed for %1$s (%2$s): provenance mismatch. Verify artifact source and retry.</string>
@@ -120,6 +138,7 @@
     <string name="a11y_send_button">Send</string>
     <string name="a11y_copy_message">Copy message</string>
     <string name="a11y_routing_mode">Routing mode %1$s</string>
+    <string name="a11y_performance_profile">Performance profile %1$s</string>
 
     <string name="ui_onboarding_title">Welcome to Pocket GPT</string>
     <string name="ui_onboarding_page_1">Private by default: your chats and tool runs stay on your device.</string>

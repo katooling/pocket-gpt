@@ -14,6 +14,28 @@ enum class CachePolicy(val code: Int) {
     PREFIX_KV_REUSE_STRICT(2),
 }
 
+data class RuntimeGenerationConfig(
+    val nThreads: Int,
+    val nThreadsBatch: Int,
+    val nBatch: Int,
+    val nUbatch: Int,
+    val gpuEnabled: Boolean,
+    val gpuLayers: Int,
+) {
+    companion object {
+        fun default(): RuntimeGenerationConfig {
+            return RuntimeGenerationConfig(
+                nThreads = 0,
+                nThreadsBatch = 0,
+                nBatch = 512,
+                nUbatch = 512,
+                gpuEnabled = false,
+                gpuLayers = 0,
+            )
+        }
+    }
+}
+
 enum class GenerationFinishReason {
     COMPLETED,
     MAX_TOKENS,
@@ -29,6 +51,9 @@ data class GenerationResult(
     val firstTokenMs: Long,
     val totalMs: Long,
     val cancelled: Boolean,
+    val prefillMs: Long? = null,
+    val decodeMs: Long? = null,
+    val tokensPerSec: Double? = null,
     val errorCode: String? = null,
 ) {
     val success: Boolean
@@ -40,6 +65,9 @@ interface LlamaCppRuntimeBridge {
     fun listAvailableModels(): List<String>
     fun loadModel(modelId: String): Boolean = loadModel(modelId, null)
     fun loadModel(modelId: String, modelPath: String?): Boolean
+    fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {}
+    fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = RuntimeGenerationConfig.default()
+    fun supportsGpuOffload(): Boolean = false
     fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): GenerationResult =
         generate(
             requestId = "legacy",

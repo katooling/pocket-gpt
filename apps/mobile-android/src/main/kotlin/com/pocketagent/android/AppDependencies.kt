@@ -207,4 +207,6 @@ private class HotSwappableRuntimeFacade(
     override fun deleteSession(sessionId: SessionId): Boolean = delegate.deleteSession(sessionId)
 
     override fun runtimeBackend(): String? = delegate.runtimeBackend()
+
+    override fun supportsGpuOffload(): Boolean = delegate.supportsGpuOffload()
 }
