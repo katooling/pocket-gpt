@@ -1,6 +1,7 @@
 appId: com.pocketagent.android
 ---
-- launchApp
+- launchApp:
+    clearState: true
 - runFlow:
     when:
       visible: "Welcome to Pocket GPT"
@@ -27,7 +28,7 @@ appId: com.pocketagent.android
 - tapOn: "Send"
 - assertVisible: "Tool: calculator"
 - assertNotVisible: "UI-RUNTIME-001"
-- takeScreenshot: "scenario-b-02-tool"
+- takeScreenshot: "ui-14-tool-result-visible-maestro"
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
 - tapOn: "QWEN_2B"

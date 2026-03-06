@@ -1,6 +1,7 @@
 appId: com.pocketagent.android
 ---
-- launchApp
+- launchApp:
+    clearState: true
 - runFlow:
     when:
       visible: "Welcome to Pocket GPT"

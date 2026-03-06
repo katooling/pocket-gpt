@@ -12,9 +12,11 @@ from unittest import mock
 
 from tools.devctl.config_models import load_devctl_configs
 from tools.devctl.lanes import (
+    ScreenshotInventoryItem,
     RuntimeContext,
     SendCaptureSnapshot,
     JourneyStepResult,
+    _build_screenshot_inventory_report,
     _ensure_remote_dir,
     _extract_first_session_progress,
     _extract_instrumentation_failure,
@@ -24,6 +26,8 @@ from tools.devctl.lanes import (
     _normalize_test_mode,
     _parse_model_sync_manifest,
     _parse_journey_args,
+    _parse_screenshot_pack_args,
+    _promote_screenshot_reference_set,
     _parse_package_uid,
     _remote_file_sha256,
     _remote_file_size_bytes,
@@ -214,6 +218,87 @@ class LanesTest(unittest.TestCase):
         self.assertEqual("fast-smoke", parsed.mode)
         self.assertEqual(60, parsed.reply_timeout_seconds)
         self.assertEqual([0, 5, 15, 30, 60], parsed.capture_intervals)
+
+    def test_screenshot_pack_parser_supports_update_reference_flag(self) -> None:
+        parsed = _parse_screenshot_pack_args(["--update-reference"])
+        self.assertTrue(parsed.update_reference)
+
+    def test_build_screenshot_inventory_report_marks_missing_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "artifacts"
+            instrumented_dir = artifact_root / "instrumented"
+            maestro_dir = artifact_root / "maestro"
+            combined_dir = artifact_root / "combined"
+            report_json_path = artifact_root / "inventory-report.json"
+            report_md_path = artifact_root / "inventory-report.md"
+
+            instrumented_dir.mkdir(parents=True, exist_ok=True)
+            maestro_dir.mkdir(parents=True, exist_ok=True)
+            (instrumented_dir / "ui-01-onboarding-page-1.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+            inventory = [
+                ScreenshotInventoryItem(
+                    id="ui-01-onboarding-page-1",
+                    filename="ui-01-onboarding-page-1.png",
+                    candidates=("instrumented/ui-01-onboarding-page-1.png",),
+                ),
+                ScreenshotInventoryItem(
+                    id="ui-02-onboarding-page-2",
+                    filename="ui-02-onboarding-page-2.png",
+                    candidates=("instrumented/ui-02-onboarding-page-2.png",),
+                ),
+            ]
+
+            payload = _build_screenshot_inventory_report(
+                inventory=inventory,
+                serial="SER123",
+                artifact_root=artifact_root,
+                instrumented_dir=instrumented_dir,
+                maestro_dir=maestro_dir,
+                combined_dir=combined_dir,
+                report_json_path=report_json_path,
+                report_md_path=report_md_path,
+            )
+
+            self.assertEqual(["ui-02-onboarding-page-2"], payload["missing_ids"])
+            self.assertTrue((combined_dir / "ui-01-onboarding-page-1.png").exists())
+            self.assertFalse((combined_dir / "ui-02-onboarding-page-2.png").exists())
+            self.assertTrue(report_json_path.exists())
+            self.assertTrue(report_md_path.exists())
+
+    def test_promote_screenshot_reference_set_writes_gallery_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            combined_dir = root / "combined"
+            reference_dir = root / "reference"
+            combined_dir.mkdir(parents=True, exist_ok=True)
+            (combined_dir / "ui-01-onboarding-page-1.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            (combined_dir / "ui-02-onboarding-page-2.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            inventory = [
+                ScreenshotInventoryItem(
+                    id="ui-01-onboarding-page-1",
+                    filename="ui-01-onboarding-page-1.png",
+                    candidates=("instrumented/ui-01-onboarding-page-1.png",),
+                ),
+                ScreenshotInventoryItem(
+                    id="ui-02-onboarding-page-2",
+                    filename="ui-02-onboarding-page-2.png",
+                    candidates=("instrumented/ui-02-onboarding-page-2.png",),
+                ),
+            ]
+
+            _promote_screenshot_reference_set(
+                combined_dir=combined_dir,
+                inventory=inventory,
+                reference_dir=reference_dir,
+            )
+
+            self.assertTrue((reference_dir / "ui-01-onboarding-page-1.png").exists())
+            self.assertTrue((reference_dir / "ui-02-onboarding-page-2.png").exists())
+            index_text = (reference_dir / "index.md").read_text(encoding="utf-8")
+            self.assertIn("ui-01-onboarding-page-1", index_text)
+            self.assertIn("ui-02-onboarding-page-2", index_text)
 
     def test_send_capture_valid_output_requires_terminal_event(self) -> None:
         configs = load_devctl_configs(REPO_ROOT)

@@ -1,6 +1,7 @@
 appId: com.pocketagent.android
 ---
-- launchApp
+- launchApp:
+    clearState: true
 - runFlow:
     when:
       visible: "Welcome to Pocket GPT"
@@ -12,7 +13,7 @@ appId: com.pocketagent.android
       visible: "Runtime: Error"
     commands:
       - tapOn: "Refresh runtime checks"
-- takeScreenshot: "scenario-c-01-ready"
+- takeScreenshot: "ui-15-image-entry-visible-maestro"
 - tapOn: "Message"
 - eraseText
 - inputText: "Remember this launch risk list for scenario C."

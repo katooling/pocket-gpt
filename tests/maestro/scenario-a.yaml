@@ -1,6 +1,7 @@
 appId: com.pocketagent.android
 ---
-- launchApp
+- launchApp:
+    clearState: true
 - runFlow:
     when:
       visible: "Welcome to Pocket GPT"
@@ -12,7 +13,7 @@ appId: com.pocketagent.android
       visible: "Runtime: Error"
     commands:
       - tapOn: "Refresh runtime checks"
-- takeScreenshot: "scenario-a-01-ready"
+- takeScreenshot: "ui-04-chat-ready-empty-maestro"
 - tapOn: "Message"
 - eraseText
 - inputText: "Hello from Maestro scenario A"
@@ -25,4 +26,4 @@ appId: com.pocketagent.android
     commands:
       - tapOn: "Refresh runtime checks"
 - assertNotVisible: "UI-RUNTIME-001"
-- takeScreenshot: "scenario-a-03-sent"
+- takeScreenshot: "ui-05-chat-post-send-maestro"

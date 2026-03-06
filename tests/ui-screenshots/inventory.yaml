@@ -1,0 +1,67 @@
+schema: ui-screenshot-inventory-v1
+screenshots:
+  - id: ui-01-onboarding-page-1
+    filename: ui-01-onboarding-page-1.png
+    candidates:
+      - instrumented/ui-01-onboarding-page-1.png
+  - id: ui-02-onboarding-page-2
+    filename: ui-02-onboarding-page-2.png
+    candidates:
+      - instrumented/ui-02-onboarding-page-2.png
+  - id: ui-03-onboarding-page-3
+    filename: ui-03-onboarding-page-3.png
+    candidates:
+      - instrumented/ui-03-onboarding-page-3.png
+  - id: ui-04-chat-ready-empty
+    filename: ui-04-chat-ready-empty.png
+    candidates:
+      - instrumented/ui-04-chat-ready-empty.png
+      - maestro/ui-04-chat-ready-empty-maestro.png
+  - id: ui-05-chat-post-send
+    filename: ui-05-chat-post-send.png
+    candidates:
+      - instrumented/ui-05-chat-post-send.png
+      - maestro/ui-05-chat-post-send-maestro.png
+  - id: ui-06-session-drawer
+    filename: ui-06-session-drawer.png
+    candidates:
+      - instrumented/ui-06-session-drawer.png
+  - id: ui-07-privacy-sheet
+    filename: ui-07-privacy-sheet.png
+    candidates:
+      - instrumented/ui-07-privacy-sheet.png
+  - id: ui-08-tools-dialog
+    filename: ui-08-tools-dialog.png
+    candidates:
+      - instrumented/ui-08-tools-dialog.png
+  - id: ui-09-advanced-controls-sheet
+    filename: ui-09-advanced-controls-sheet.png
+    candidates:
+      - instrumented/ui-09-advanced-controls-sheet.png
+  - id: ui-10-model-provisioning-sheet
+    filename: ui-10-model-provisioning-sheet.png
+    candidates:
+      - instrumented/ui-10-model-provisioning-sheet.png
+  - id: ui-11-advanced-unlock-cue
+    filename: ui-11-advanced-unlock-cue.png
+    candidates:
+      - instrumented/ui-11-advanced-unlock-cue.png
+  - id: ui-12-runtime-loading
+    filename: ui-12-runtime-loading.png
+    candidates:
+      - instrumented/ui-12-runtime-loading.png
+  - id: ui-13-runtime-error-ui-runtime-001
+    filename: ui-13-runtime-error-ui-runtime-001.png
+    candidates:
+      - instrumented/ui-13-runtime-error-ui-runtime-001.png
+      - maestro/ui-13-runtime-error-ui-runtime-001-maestro.png
+  - id: ui-14-tool-result-visible
+    filename: ui-14-tool-result-visible.png
+    candidates:
+      - instrumented/ui-14-tool-result-visible.png
+      - maestro/ui-14-tool-result-visible-maestro.png
+  - id: ui-15-image-entry-visible
+    filename: ui-15-image-entry-visible.png
+    candidates:
+      - instrumented/ui-15-image-entry-visible.png
+      - maestro/ui-15-image-entry-visible-maestro.png

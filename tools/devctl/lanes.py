@@ -24,6 +24,11 @@ try:
 except ImportError:  # pragma: no cover - fcntl is unavailable on non-POSIX platforms.
     fcntl = None
 
+try:
+    import yaml  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - dependency guard is handled at runtime.
+    yaml = None
+
 from tools.devctl.subprocess_utils import DevctlError, REPO_ROOT, format_command, print_step, run_subprocess
 
 if TYPE_CHECKING:
@@ -114,6 +119,13 @@ class SendCaptureSnapshot:
     follow_up_completed: bool | None = None
 
 
+@dataclass(frozen=True)
+class ScreenshotInventoryItem:
+    id: str
+    filename: str
+    candidates: tuple[str, ...]
+
+
 def _now_stamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -127,6 +139,9 @@ _SEND_CAPTURE_POST_TERMINAL_GRACE_SECONDS = 30
 _MODEL_SYNC_MANIFEST_FILE = "model-sync-v1.json"
 _MODEL_SYNC_MANIFEST_SCHEMA = "model-sync-v1"
 _FORCE_MODEL_SYNC_ENV = "POCKETGPT_FORCE_MODEL_SYNC"
+_SCREENSHOT_INVENTORY_SCHEMA = "ui-screenshot-inventory-v1"
+_SCREENSHOT_INVENTORY_PATH = REPO_ROOT / "tests/ui-screenshots/inventory.yaml"
+_SCREENSHOT_REFERENCE_DIR = REPO_ROOT / "tests/ui-screenshots/reference/sm-a515f-android13"
 
 
 def _append_native_build_flag(command: Sequence[str]) -> list[str]:
@@ -1154,6 +1169,242 @@ def _collect_maestro_screenshots(debug_dir: Path) -> list[str]:
         except ValueError:
             screenshots.append(str(path))
     return screenshots
+
+
+def _copy_pngs_flat(source_dir: Path, target_dir: Path) -> list[Path]:
+    if not source_dir.exists():
+        return []
+    target_dir.mkdir(parents=True, exist_ok=True)
+    copied: list[Path] = []
+    used_names: set[str] = {path.name for path in target_dir.glob("*.png")}
+    for source in sorted(source_dir.rglob("*.png")):
+        candidate_name = source.name
+        stem = source.stem
+        suffix = source.suffix
+        counter = 2
+        while candidate_name in used_names:
+            candidate_name = f"{stem}-{counter}{suffix}"
+            counter += 1
+        destination = target_dir / candidate_name
+        shutil.copy2(source, destination)
+        used_names.add(candidate_name)
+        copied.append(destination)
+    return copied
+
+
+def _parse_screenshot_pack_args(raw_args: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="devctl lane screenshot-pack")
+    parser.add_argument("--update-reference", action="store_true")
+    return parser.parse_args(list(raw_args))
+
+
+def _load_screenshot_inventory(path: Path = _SCREENSHOT_INVENTORY_PATH) -> list[ScreenshotInventoryItem]:
+    if yaml is None:
+        raise DevctlError(
+            "ENVIRONMENT_ERROR",
+            "PyYAML is required. Install dependencies with: python3 -m pip install -r tools/devctl/requirements.txt",
+        )
+    if not path.exists():
+        raise DevctlError("CONFIG_ERROR", f"Missing screenshot inventory file: {path}")
+
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise DevctlError("CONFIG_ERROR", f"Failed to parse screenshot inventory {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise DevctlError("CONFIG_ERROR", f"Invalid screenshot inventory root in {path}; expected object.")
+    if data.get("schema") != _SCREENSHOT_INVENTORY_SCHEMA:
+        raise DevctlError(
+            "CONFIG_ERROR",
+            f"Unsupported screenshot inventory schema in {path}. Expected '{_SCREENSHOT_INVENTORY_SCHEMA}'.",
+        )
+    raw_entries = data.get("screenshots")
+    if not isinstance(raw_entries, list) or not raw_entries:
+        raise DevctlError("CONFIG_ERROR", f"Screenshot inventory {path} must define a non-empty screenshots list.")
+
+    entries: list[ScreenshotInventoryItem] = []
+    seen_ids: set[str] = set()
+    seen_filenames: set[str] = set()
+    id_pattern = re.compile(r"^ui-\d{2}-[a-z0-9-]+$")
+    for index, raw in enumerate(raw_entries, start=1):
+        if not isinstance(raw, dict):
+            raise DevctlError("CONFIG_ERROR", f"Invalid screenshot entry #{index} in {path}; expected object.")
+        shot_id = str(raw.get("id", "")).strip()
+        filename = str(raw.get("filename", "")).strip()
+        candidates_raw = raw.get("candidates")
+        if not shot_id or not filename:
+            raise DevctlError("CONFIG_ERROR", f"Screenshot entry #{index} in {path} requires id and filename.")
+        if not id_pattern.match(shot_id):
+            raise DevctlError("CONFIG_ERROR", f"Invalid screenshot id '{shot_id}' in {path}.")
+        if not filename.endswith(".png"):
+            raise DevctlError("CONFIG_ERROR", f"Screenshot filename must end with .png in {path}: {filename}")
+        if shot_id in seen_ids:
+            raise DevctlError("CONFIG_ERROR", f"Duplicate screenshot id in {path}: {shot_id}")
+        if filename in seen_filenames:
+            raise DevctlError("CONFIG_ERROR", f"Duplicate screenshot filename in {path}: {filename}")
+        if not isinstance(candidates_raw, list) or not candidates_raw:
+            raise DevctlError(
+                "CONFIG_ERROR",
+                f"Screenshot entry '{shot_id}' in {path} must define a non-empty candidates list.",
+            )
+        candidates = tuple(str(value).strip() for value in candidates_raw if str(value).strip())
+        if not candidates:
+            raise DevctlError(
+                "CONFIG_ERROR",
+                f"Screenshot entry '{shot_id}' in {path} must define at least one candidate value.",
+            )
+        entries.append(ScreenshotInventoryItem(id=shot_id, filename=filename, candidates=candidates))
+        seen_ids.add(shot_id)
+        seen_filenames.add(filename)
+    return entries
+
+
+def _resolve_inventory_candidate_path(
+    candidate: str,
+    *,
+    artifact_root: Path,
+    instrumented_dir: Path,
+    maestro_dir: Path,
+    combined_dir: Path,
+) -> Path:
+    value = candidate.strip()
+    if value.startswith("instrumented/"):
+        return instrumented_dir / value.removeprefix("instrumented/")
+    if value.startswith("maestro/"):
+        return maestro_dir / value.removeprefix("maestro/")
+    if value.startswith("combined/"):
+        return combined_dir / value.removeprefix("combined/")
+    if value.startswith("/"):
+        return Path(value)
+    return artifact_root / value
+
+
+def _build_screenshot_inventory_report(
+    *,
+    inventory: Sequence[ScreenshotInventoryItem],
+    serial: str,
+    artifact_root: Path,
+    instrumented_dir: Path,
+    maestro_dir: Path,
+    combined_dir: Path,
+    report_json_path: Path,
+    report_md_path: Path,
+) -> dict[str, Any]:
+    combined_dir.mkdir(parents=True, exist_ok=True)
+    entries: list[dict[str, Any]] = []
+    missing_ids: list[str] = []
+
+    for item in inventory:
+        selected_path: Path | None = None
+        matched_candidate: str | None = None
+        for candidate in item.candidates:
+            candidate_path = _resolve_inventory_candidate_path(
+                candidate,
+                artifact_root=artifact_root,
+                instrumented_dir=instrumented_dir,
+                maestro_dir=maestro_dir,
+                combined_dir=combined_dir,
+            )
+            if candidate_path.exists() and candidate_path.is_file():
+                selected_path = candidate_path
+                matched_candidate = candidate
+                break
+
+        combined_target = combined_dir / item.filename
+        if selected_path is not None:
+            shutil.copy2(selected_path, combined_target)
+            status = "PASS"
+        else:
+            status = "MISSING"
+            missing_ids.append(item.id)
+
+        entries.append(
+            {
+                "id": item.id,
+                "filename": item.filename,
+                "status": status,
+                "matched_candidate": matched_candidate,
+                "resolved_path": _report_path(selected_path) if selected_path is not None else None,
+                "combined_path": _report_path(combined_target) if combined_target.exists() else None,
+            }
+        )
+
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "serial": serial,
+        "artifact_root": _report_path(artifact_root),
+        "missing_ids": missing_ids,
+        "summary": {
+            "total_required": len(inventory),
+            "passed": len(inventory) - len(missing_ids),
+            "missing": len(missing_ids),
+        },
+        "entries": entries,
+    }
+
+    report_json_path.parent.mkdir(parents=True, exist_ok=True)
+    report_json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    lines = [
+        "# Screenshot Inventory Report",
+        "",
+        f"- Device: `{serial}`",
+        f"- Artifact root: `{_report_path(artifact_root)}`",
+        f"- Generated: `{payload['generated_at']}`",
+        f"- Required: `{payload['summary']['total_required']}`",
+        f"- Passed: `{payload['summary']['passed']}`",
+        f"- Missing: `{payload['summary']['missing']}`",
+        "",
+        "| Screenshot ID | Status | Normalized File | Source |",
+        "|---|---|---|---|",
+    ]
+    for entry in entries:
+        lines.append(
+            "| "
+            f"{entry['id']} | {entry['status']} | {entry['filename']} | "
+            f"{entry['resolved_path'] or '-'} |"
+        )
+    report_md_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return payload
+
+
+def _promote_screenshot_reference_set(
+    *,
+    combined_dir: Path,
+    inventory: Sequence[ScreenshotInventoryItem],
+    reference_dir: Path = _SCREENSHOT_REFERENCE_DIR,
+) -> None:
+    reference_dir.mkdir(parents=True, exist_ok=True)
+    for existing in sorted(reference_dir.glob("*.png")):
+        existing.unlink()
+
+    missing: list[str] = []
+    for item in inventory:
+        source = combined_dir / item.filename
+        if not source.exists():
+            missing.append(item.id)
+            continue
+        shutil.copy2(source, reference_dir / item.filename)
+    if missing:
+        raise DevctlError(
+            "CONFIG_ERROR",
+            "Cannot update screenshot references; combined set is missing required IDs: " + ", ".join(missing),
+        )
+
+    index_path = reference_dir / "index.md"
+    lines = [
+        "# Screenshot Reference Gallery (`sm-a515f-android13`)",
+        "",
+        f"- Updated: `{datetime.now().isoformat(timespec='seconds')}`",
+        f"- Source: `{_report_path(combined_dir)}`",
+        "",
+    ]
+    for item in inventory:
+        lines.append(f"## {item.id}")
+        lines.append("")
+        lines.append(f"![{item.id}]({item.filename})")
+        lines.append("")
+    index_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
 def _report_path(path: Path) -> str:
@@ -2712,6 +2963,231 @@ def lane_maestro(raw_args: Sequence[str], context: RuntimeContext, strict: bool 
         _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
 
 
+def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    args = _parse_screenshot_pack_args(raw_args)
+    maestro_bin = shutil.which("maestro")
+    if maestro_bin is None:
+        raise DevctlError(
+            "ENVIRONMENT_ERROR",
+            "Maestro CLI is not installed. Install with: curl -Ls https://get.maestro.mobile.dev | bash",
+        )
+
+    android_configured, resolved_env = _resolve_android_env(context.env)
+    if not android_configured:
+        raise DevctlError("ENVIRONMENT_ERROR", "Android SDK not configured for screenshot-pack lane.")
+
+    inventory = _load_screenshot_inventory()
+    serial = _ensure_serial(context)
+    with _device_lock(serial, owner="lane:screenshot-pack"):
+        real_runtime_cfg = context.configs.lanes.lanes.real_runtime
+        _run_device_health_preflight(context, serial, app_package=real_runtime_cfg.app_package)
+
+        date_value = datetime.now().strftime("%Y-%m-%d")
+        stamp = _now_stamp()
+        artifact_root = build_artifact_dir(
+            "scripts/benchmarks/runs/{date}/{device}/{label}/{stamp}",
+            date_value,
+            serial,
+            "screenshot-pack",
+            stamp,
+        )
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        instrumented_pull_dir = artifact_root / "instrumented-pull"
+        instrumented_dir = artifact_root / "instrumented"
+        maestro_dir = artifact_root / "maestro"
+        combined_dir = artifact_root / "combined"
+        report_json_path = artifact_root / "inventory-report.json"
+        report_md_path = artifact_root / "inventory-report.md"
+        maestro_debug_root = artifact_root / "maestro-debug"
+        maestro_debug_root.mkdir(parents=True, exist_ok=True)
+        print_step(f"screenshot-pack artifacts: {artifact_root}")
+
+        install_debug = _append_native_build_flag(
+            ["./gradlew", "--no-daemon", ":apps:mobile-android:installDebug"],
+        )
+        install_debug_android_test = _append_native_build_flag(
+            ["./gradlew", "--no-daemon", ":apps:mobile-android:installDebugAndroidTest"],
+        )
+        connected_debug_android_test = _append_native_build_flag(
+            ["./gradlew", "--no-daemon", ":apps:mobile-android:connectedDebugAndroidTest"],
+        )
+        context.run(install_debug, check=True, env=resolved_env)
+        context.run(install_debug_android_test, check=True, env=resolved_env)
+
+        preflight = prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
+        runner_args = _instrumentation_args_from_model_paths(preflight.model_device_paths_by_id)
+        device_screenshot_dir = f"/sdcard/Android/media/{real_runtime_cfg.app_package}/screenshot-pack/{stamp}"
+        device_screenshot_fallback_dir = (
+            f"/sdcard/Android/media/{real_runtime_cfg.app_package}/screenshot-pack-fallback/{stamp}"
+        )
+        device_screenshot_export_dir = (
+            f"/sdcard/Android/media/{real_runtime_cfg.app_package}/screenshot-pack-export/{stamp}"
+        )
+        runner_args["screenshot_pack_dir"] = device_screenshot_dir
+        runner_args["screenshot_pack_fallback_dir"] = device_screenshot_fallback_dir
+        _run_remote_shell_script(
+            context=context,
+            serial=serial,
+            script=(
+                f"rm -rf {_shell_single_quote(device_screenshot_dir)} "
+                f"{_shell_single_quote(device_screenshot_fallback_dir)} "
+                f"{_shell_single_quote(device_screenshot_export_dir)}"
+            ),
+        )
+        context.run(
+            [
+                "adb",
+                "-s",
+                serial,
+                "shell",
+                "run-as",
+                real_runtime_cfg.app_package,
+                "sh",
+                "-c",
+                "rm -rf files/screenshot-pack",
+            ],
+            check=False,
+            env=context.env,
+        )
+        context.run(
+            _append_gradle_instrumentation_args(connected_debug_android_test, runner_args),
+            check=True,
+            env=resolved_env,
+        )
+        context.run(
+            [
+                "adb",
+                "-s",
+                serial,
+                "shell",
+                "run-as",
+                real_runtime_cfg.app_package,
+                "sh",
+                "-c",
+                (
+                    "if [ -d files/screenshot-pack ]; then "
+                    f"mkdir -p {_shell_single_quote(device_screenshot_export_dir)} && "
+                    f"cp files/screenshot-pack/*.png {_shell_single_quote(device_screenshot_export_dir + '/')} "
+                    "2>/dev/null; "
+                    "fi"
+                ),
+            ],
+            check=False,
+            env=context.env,
+        )
+
+        pulled_remote_dirs: list[str] = []
+        instrumented_pull_dir.mkdir(parents=True, exist_ok=True)
+        for remote_dir in (device_screenshot_dir, device_screenshot_fallback_dir, device_screenshot_export_dir):
+            if not _remote_path_exists(context, serial, remote_dir):
+                continue
+            context.run(
+                ["adb", "-s", serial, "pull", remote_dir, str(instrumented_pull_dir)],
+                check=False,
+                env=context.env,
+            )
+            pulled_remote_dirs.append(remote_dir)
+
+        if not pulled_remote_dirs:
+            fallback_root = f"/sdcard/Android/media/{real_runtime_cfg.app_package}/screenshot-pack-fallback"
+            find_result = _run_remote_shell_script(
+                context=context,
+                serial=serial,
+                script=(
+                    f"if [ -d {_shell_single_quote(fallback_root)} ]; then "
+                    f"find {_shell_single_quote(fallback_root)} -type f -name '*.png' | head -n 1; "
+                    "fi"
+                ),
+            )
+            if (find_result.stdout or "").strip():
+                context.run(
+                    ["adb", "-s", serial, "pull", fallback_root, str(instrumented_pull_dir)],
+                    check=False,
+                    env=context.env,
+                )
+                pulled_remote_dirs.append(fallback_root)
+
+        if not pulled_remote_dirs:
+            raise DevctlError(
+                "DEVICE_ERROR",
+                "Instrumentation screenshot output directory not found on device. "
+                "Checked: "
+                f"{device_screenshot_dir}, {device_screenshot_fallback_dir}, {device_screenshot_export_dir}",
+            )
+        _run_remote_shell_script(
+            context=context,
+            serial=serial,
+            script=(
+                f"rm -rf {_shell_single_quote(device_screenshot_dir)} "
+                f"{_shell_single_quote(device_screenshot_fallback_dir)} "
+                f"{_shell_single_quote(device_screenshot_export_dir)}"
+            ),
+        )
+        context.run(
+            [
+                "adb",
+                "-s",
+                serial,
+                "shell",
+                "run-as",
+                real_runtime_cfg.app_package,
+                "sh",
+                "-c",
+                "rm -rf files/screenshot-pack",
+            ],
+            check=False,
+            env=context.env,
+        )
+        _copy_pngs_flat(instrumented_pull_dir, instrumented_dir)
+
+        lane_cfg = context.configs.lanes.lanes.maestro
+        for flow in lane_cfg.flows:
+            flow_path = REPO_ROOT / flow
+            if not flow_path.exists():
+                raise DevctlError("CONFIG_ERROR", f"Missing Maestro flow: {flow_path}")
+            step = _run_maestro_flow(
+                context=context,
+                maestro_bin=maestro_bin,
+                serial=serial,
+                flow_path=flow_path,
+                debug_output_dir=maestro_debug_root / flow_path.stem,
+            )
+            _copy_pngs_flat(maestro_debug_root / flow_path.stem, maestro_dir)
+            if step.status != "passed":
+                _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
+                raise DevctlError(
+                    "DEVICE_ERROR",
+                    f"Screenshot-pack Maestro flow failed: {flow_path}. Failure signature: {step.failure_signature}",
+                )
+
+        report_payload = _build_screenshot_inventory_report(
+            inventory=inventory,
+            serial=serial,
+            artifact_root=artifact_root,
+            instrumented_dir=instrumented_dir,
+            maestro_dir=maestro_dir,
+            combined_dir=combined_dir,
+            report_json_path=report_json_path,
+            report_md_path=report_md_path,
+        )
+        _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
+
+        if args.update_reference:
+            _promote_screenshot_reference_set(combined_dir=combined_dir, inventory=inventory)
+            print_step(f"Updated screenshot references: {_SCREENSHOT_REFERENCE_DIR}")
+
+        missing_ids = report_payload.get("missing_ids", [])
+        if missing_ids:
+            raise DevctlError(
+                "DEVICE_ERROR",
+                "Screenshot inventory is incomplete. Missing required IDs: "
+                f"{', '.join(str(item) for item in missing_ids)}. See {report_json_path}",
+            )
+
+        print_step(f"Screenshot inventory report: {report_json_path}")
+        print_step(f"Screenshot inventory markdown: {report_md_path}")
+
+
 def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
     lane_cfg = context.configs.lanes.lanes.journey
     args = _parse_journey_args(
@@ -3187,6 +3663,7 @@ def dispatch_lane(lane_name: str, lane_args: Sequence[str], context: RuntimeCont
         "stage2": lane_stage2,
         "android-instrumented": lane_android_instrumented,
         "maestro": lane_maestro,
+        "screenshot-pack": lane_screenshot_pack,
         "journey": lane_journey,
         "fast-smoke": lane_fast_smoke,
         "valid-output": lane_valid_output,

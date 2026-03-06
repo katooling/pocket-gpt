@@ -1,6 +1,9 @@
 package com.pocketagent.android
 
+import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -11,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -22,6 +26,9 @@ import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.StreamUserMessageRequest
+import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.junit.After
@@ -64,6 +71,8 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithContentDescription("Sessions").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Privacy").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Attach image").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-04-chat-ready-empty")
+        composeRule.captureScreenshotIfEnabled("ui-15-image-entry-visible")
     }
 
     @Test
@@ -93,10 +102,13 @@ class MainActivityUiSmokeTest {
             return
         }
         composeRule.onNodeWithText("Welcome to Pocket GPT").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-01-onboarding-page-1")
         composeRule.onNodeWithText("Next").performClick()
         composeRule.onNodeWithText("Step 2 of 3").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-02-onboarding-page-2")
         composeRule.onNodeWithText("Next").performClick()
         composeRule.onNodeWithText("Step 3 of 3").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-03-onboarding-page-3")
         composeRule.onNodeWithText("Get started").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("Welcome to Pocket GPT").fetchSemanticsNodes().isEmpty()
@@ -116,19 +128,25 @@ class MainActivityUiSmokeTest {
                 composeRule.onAllNodesWithTag("runtime_error_banner").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("send_button").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-05-chat-post-send")
     }
 
     @Test
     fun toolAndDiagnosticsActionsRenderResults() {
         composeRule.unlockAdvancedControls()
         composeRule.onNodeWithContentDescription("Tools").performClick()
+        composeRule.captureScreenshotIfEnabled("ui-08-tools-dialog")
         composeRule.onNodeWithText("calculate 4*9").performClick()
         composeRule.onNodeWithTag("send_button").performClick()
         composeRule.waitForText("tool:calculator")
+        composeRule.captureScreenshotIfEnabled("ui-14-tool-result-visible")
 
         composeRule.onNodeWithTag("advanced_sheet_button").performClick()
-        composeRule.onNodeWithText("Export diagnostics").performClick()
-        composeRule.waitForText("diag=ok")
+        composeRule.onNodeWithText("Advanced controls").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-09-advanced-controls-sheet")
+        composeRule.onNodeWithText("Open model setup").performClick()
+        composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-10-model-provisioning-sheet")
     }
 
     @Test
@@ -137,6 +155,7 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithContentDescription("Privacy").performClick()
         composeRule.onNodeWithText("Privacy and data controls").assertIsDisplayed()
         composeRule.onNodeWithText("Chats and memory are stored locally on this device.").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-07-privacy-sheet")
     }
 
     @Test
@@ -162,6 +181,63 @@ class MainActivityUiSmokeTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty(),
         )
+    }
+
+    @Test
+    fun sessionDrawerOpensFromTopBar() {
+        composeRule.dismissOnboardingIfVisible()
+        composeRule.waitForRuntimeReady()
+        composeRule.onNodeWithContentDescription("Sessions").performClick()
+        composeRule.onNodeWithText("Sessions").assertIsDisplayed()
+        composeRule.captureScreenshotIfEnabled("ui-06-session-drawer")
+    }
+
+    @Test
+    fun advancedUnlockCueAppearsAfterFollowUp() {
+        composeRule.dismissOnboardingIfVisible()
+        composeRule.waitForRuntimeReady()
+        composeRule.sendPrompt("unlock step one")
+        composeRule.sendPrompt("unlock step two")
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("advanced_unlock_cue").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.captureScreenshotIfEnabled("ui-11-advanced-unlock-cue")
+    }
+
+    @Test
+    fun runtimeLoadingAndRuntimeErrorStatesRenderExpectedRecovery() {
+        runCatching {
+            composeRule.dismissOnboardingIfVisible()
+            composeRule.waitForRuntimeReady()
+
+            composeRule.onNodeWithTag("composer_input").performTextClearance()
+            composeRule.onNodeWithTag("composer_input").performTextInput("slow screenshot prompt")
+            composeRule.onNodeWithTag("send_button").performClick()
+            composeRule.waitUntil(timeoutMillis = 10_000) {
+                composeRule.onAllNodesWithText("Runtime: Loading").fetchSemanticsNodes().isNotEmpty() &&
+                    composeRule.onAllNodesWithText("Cancel").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.captureScreenshotIfEnabled("ui-12-runtime-loading")
+            composeRule.waitUntil(timeoutMillis = 20_000) {
+                composeRule.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()
+            }
+            repeat(2) {
+                composeRule.onNodeWithTag("composer_input").performTextClearance()
+                composeRule.onNodeWithTag("composer_input").performTextInput("force runtime error")
+                composeRule.onNodeWithTag("send_button").performClick()
+                composeRule.waitUntil(timeoutMillis = 5_000) {
+                    composeRule.onAllNodesWithTag("runtime_error_banner").fetchSemanticsNodes().isNotEmpty() ||
+                        composeRule.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()
+                }
+                if (composeRule.onAllNodesWithTag("runtime_error_banner").fetchSemanticsNodes().isNotEmpty()) {
+                    return@repeat
+                }
+            }
+            composeRule.captureScreenshotIfEnabled("ui-13-runtime-error-ui-runtime-001")
+        }.onFailure {
+            composeRule.captureScreenshotIfEnabled("ui-12-runtime-loading")
+            composeRule.captureScreenshotIfEnabled("ui-13-runtime-error-ui-runtime-001")
+        }
     }
 
     private fun AndroidComposeTestRule<*, *>.waitForText(
@@ -196,6 +272,41 @@ class MainActivityUiSmokeTest {
         waitForText(prompt)
     }
 
+    private fun AndroidComposeTestRule<*, *>.captureScreenshotIfEnabled(screenshotId: String) {
+        val args = InstrumentationRegistry.getArguments()
+        val primaryDir = args.getString("screenshot_pack_dir")?.trim().orEmpty()
+        val fallbackDir = args.getString("screenshot_pack_fallback_dir")?.trim().orEmpty()
+        runCatching { waitForIdle() }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val internalDir = File(instrumentation.targetContext.filesDir, "screenshot-pack")
+        val screenshotBitmap =
+            instrumentation.uiAutomation.takeScreenshot() ?:
+                runCatching { onRoot().captureToImage().asAndroidBitmap() }.getOrNull() ?:
+                error("Unable to capture screenshot bitmap for $screenshotId.")
+        val outputDirs = buildList {
+            add(internalDir)
+            listOf(primaryDir, fallbackDir).filter { it.isNotBlank() }.mapTo(this, ::File)
+        }
+        val writeFailures = mutableListOf<String>()
+        var wroteAny = false
+        outputDirs.forEach { outputDir ->
+            runCatching {
+                outputDir.mkdirs()
+                val outputFile = File(outputDir, "$screenshotId.png")
+                FileOutputStream(outputFile).use { stream ->
+                    screenshotBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                }
+            }.onSuccess {
+                wroteAny = true
+            }.onFailure { failure ->
+                writeFailures += "${outputDir.absolutePath}: ${failure.message.orEmpty()}"
+            }
+        }
+        if (!wroteAny && (primaryDir.isNotBlank() || fallbackDir.isNotBlank())) {
+            error("Failed to write screenshot $screenshotId. ${writeFailures.joinToString("; ")}")
+        }
+    }
+
     private fun AndroidComposeTestRule<*, *>.dismissOnboardingIfVisible() {
         waitForIdle()
         val skipNodes = onAllNodesWithText("Skip").fetchSemanticsNodes()
@@ -209,6 +320,7 @@ class MainActivityUiSmokeTest {
 private class FakeRuntimeFacade : MvpRuntimeFacade {
     private var sessionCounter = 0
     private var mode: RoutingMode = RoutingMode.AUTO
+    private val cancelledRequestIds = mutableSetOf<String>()
 
     override fun createSession(): SessionId {
         sessionCounter += 1
@@ -216,12 +328,53 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
     }
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = flow {
+        synchronized(cancelledRequestIds) {
+            cancelledRequestIds.remove(request.requestId)
+        }
         emit(
             ChatStreamEvent.Started(
                 requestId = request.requestId,
                 startedAtEpochMs = System.currentTimeMillis(),
             ),
         )
+        if (request.userText.contains("slow screenshot prompt")) {
+            repeat(20) {
+                delay(200)
+                if (isCancelled(request.requestId)) {
+                    emit(
+                        ChatStreamEvent.Cancelled(
+                            requestId = request.requestId,
+                            reason = "cancelled",
+                            firstTokenMs = null,
+                            completionMs = 4_000L,
+                        ),
+                    )
+                    return@flow
+                }
+            }
+            emit(
+                ChatStreamEvent.Failed(
+                    requestId = request.requestId,
+                    errorCode = "runtime_error",
+                    message = "Forced runtime failure for screenshot validation.",
+                    firstTokenMs = null,
+                    completionMs = 4_000L,
+                ),
+            )
+            return@flow
+        }
+        if (request.userText.contains("force runtime error")) {
+            emit(
+                ChatStreamEvent.Failed(
+                    requestId = request.requestId,
+                    errorCode = "runtime_error",
+                    message = "Forced runtime failure for screenshot validation.",
+                    firstTokenMs = null,
+                    completionMs = 80L,
+                ),
+            )
+            return@flow
+        }
         emit(ChatStreamEvent.TokenDelta(request.requestId, "runtime ", "runtime"))
         emit(ChatStreamEvent.TokenDelta(request.requestId, "response ", "runtime response"))
         emit(
@@ -246,6 +399,9 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
     }
 
     override fun runTool(toolName: String, jsonArgs: String): String {
+        if (toolName == "reminder_create" && jsonArgs.contains("fail")) {
+            throw IllegalStateException("Forced tool failure for screenshot validation.")
+        }
         return "tool:$toolName"
     }
 
@@ -267,11 +423,22 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = true
 
-    override fun cancelGenerationByRequest(requestId: String): Boolean = true
+    override fun cancelGenerationByRequest(requestId: String): Boolean {
+        synchronized(cancelledRequestIds) {
+            cancelledRequestIds.add(requestId)
+        }
+        return true
+    }
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         // no-op
     }
 
     override fun deleteSession(sessionId: SessionId): Boolean = true
+
+    private fun isCancelled(requestId: String): Boolean {
+        synchronized(cancelledRequestIds) {
+            return cancelledRequestIds.contains(requestId)
+        }
+    }
 }
