@@ -48,6 +48,7 @@ def run_subprocess(
             cwd=str(cwd),
             env=dict(env) if env is not None else None,
             text=True,
+            errors="replace",
             capture_output=capture_output,
             timeout=timeout_seconds,
         )

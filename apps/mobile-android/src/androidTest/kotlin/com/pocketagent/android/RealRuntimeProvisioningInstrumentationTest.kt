@@ -46,6 +46,23 @@ class RealRuntimeProvisioningInstrumentationTest {
             seeded0 to seeded2b
         }.getOrThrow()
 
+        assertTrue(
+            "Failed to activate seeded 0.8B version ${seeded0.version}.",
+            AppRuntimeDependencies.setActiveVersion(
+                context = appContext,
+                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                version = seeded0.version,
+            ),
+        )
+        assertTrue(
+            "Failed to activate seeded 2B version ${seeded2b.version}.",
+            AppRuntimeDependencies.setActiveVersion(
+                context = appContext,
+                modelId = ModelCatalog.QWEN_3_5_2B_Q4,
+                version = seeded2b.version,
+            ),
+        )
+
         val snapshot = AppRuntimeDependencies.currentProvisioningSnapshot(appContext)
         val state0 = snapshot.models.firstOrNull { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
         val state2 = snapshot.models.firstOrNull { it.modelId == ModelCatalog.QWEN_3_5_2B_Q4 }

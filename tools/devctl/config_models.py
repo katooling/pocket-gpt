@@ -113,6 +113,9 @@ class LanesContainer(_StrictModel):
     android_instrumented: AndroidInstrumentedLaneConfig = Field(alias="android-instrumented")
     maestro: MaestroLaneConfig
     journey: JourneyLaneConfig
+    fast_smoke: JourneyLaneConfig = Field(alias="fast-smoke")
+    valid_output: JourneyLaneConfig = Field(alias="valid-output")
+    strict_journey: JourneyLaneConfig = Field(alias="strict-journey")
     nightly_hardware: NightlyHardwareLaneConfig = Field(alias="nightly-hardware")
     real_runtime: RealRuntimeConfig = Field(alias="real-runtime")
 

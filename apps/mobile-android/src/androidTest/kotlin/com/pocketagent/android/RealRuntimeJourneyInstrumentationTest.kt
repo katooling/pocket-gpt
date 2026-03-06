@@ -62,6 +62,23 @@ class RealRuntimeJourneyInstrumentationTest {
                 absolutePath = modelPath2b,
             )
             trace("provision", "seeded ${ModelCatalog.QWEN_3_5_2B_Q4}")
+
+            assertTrue(
+                "Failed to activate seeded 0.8B version ${seeded0.version}.",
+                AppRuntimeDependencies.setActiveVersion(
+                    context = appContext,
+                    modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                    version = seeded0.version,
+                ),
+            )
+            assertTrue(
+                "Failed to activate seeded 2B version ${seeded2.version}.",
+                AppRuntimeDependencies.setActiveVersion(
+                    context = appContext,
+                    modelId = ModelCatalog.QWEN_3_5_2B_Q4,
+                    version = seeded2.version,
+                ),
+            )
             val snapshot = AppRuntimeDependencies.currentProvisioningSnapshot(appContext)
             val state0 = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
             val state2 = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_2B_Q4 }

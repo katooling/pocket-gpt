@@ -609,14 +609,24 @@ def _shell_single_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
-def _remote_file_size_bytes(context: RuntimeContext, serial: str, path: str) -> int | None:
-    # Use sh+wc to avoid dependence on toybox stat variants across devices.
-    quoted = _shell_single_quote(path)
-    probe = context.run(
-        ["adb", "-s", serial, "shell", "sh", "-c", f"if [ -f {quoted} ]; then wc -c < {quoted}; fi"],
+def _run_remote_shell_script(context: RuntimeContext, serial: str, script: str):
+    # Use a single adb shell script argument instead of `sh -c ...`.
+    # Some device shells mis-handle tokenized `sh -c` argv and return syntax errors.
+    return context.run(
+        ["adb", "-s", serial, "shell", script],
         check=False,
         capture_output=True,
         env=context.env,
+    )
+
+
+def _remote_file_size_bytes(context: RuntimeContext, serial: str, path: str) -> int | None:
+    # Use sh+wc to avoid dependence on toybox stat variants across devices.
+    quoted = _shell_single_quote(path)
+    probe = _run_remote_shell_script(
+        context=context,
+        serial=serial,
+        script=f"if [ -f {quoted} ]; then wc -c < {quoted}; fi",
     )
     if probe.returncode != 0:
         return None
@@ -634,11 +644,10 @@ def _remote_file_size_bytes(context: RuntimeContext, serial: str, path: str) -> 
 
 def _remote_path_exists(context: RuntimeContext, serial: str, path: str) -> bool:
     quoted_path = path.replace("'", "'\"'\"'")
-    result = context.run(
-        ["adb", "-s", serial, "shell", "sh", "-c", f"[ -e '{quoted_path}' ] && echo 1 || echo 0"],
-        check=False,
-        capture_output=True,
-        env=context.env,
+    result = _run_remote_shell_script(
+        context=context,
+        serial=serial,
+        script=f"[ -e '{quoted_path}' ] && echo 1 || echo 0",
     )
     if result.returncode != 0:
         return False
@@ -658,19 +667,14 @@ def _compute_file_sha256(path: str | Path) -> str:
 
 def _remote_file_sha256(context: RuntimeContext, serial: str, path: str) -> str | None:
     quoted = _shell_single_quote(path)
-    probe = context.run(
-        [
-            "adb",
-            "-s",
-            serial,
-            "shell",
-            "sh",
-            "-c",
-            f"if [ -f {quoted} ]; then (sha256sum {quoted} 2>/dev/null || toybox sha256sum {quoted} 2>/dev/null); fi",
-        ],
-        check=False,
-        capture_output=True,
-        env=context.env,
+    probe = _run_remote_shell_script(
+        context=context,
+        serial=serial,
+        script=(
+            f"if [ -f {quoted} ]; then "
+            f"(sha256sum {quoted} 2>/dev/null || toybox sha256sum {quoted} 2>/dev/null); "
+            "fi"
+        ),
     )
     if probe.returncode != 0:
         return None
@@ -685,11 +689,10 @@ def _remote_file_sha256(context: RuntimeContext, serial: str, path: str) -> str 
 
 def _remote_read_text_file(context: RuntimeContext, serial: str, path: str) -> str | None:
     quoted = _shell_single_quote(path)
-    probe = context.run(
-        ["adb", "-s", serial, "shell", "sh", "-c", f"if [ -f {quoted} ]; then cat {quoted}; fi"],
-        check=False,
-        capture_output=True,
-        env=context.env,
+    probe = _run_remote_shell_script(
+        context=context,
+        serial=serial,
+        script=f"if [ -f {quoted} ]; then cat {quoted}; fi",
     )
     if probe.returncode != 0:
         return None
@@ -919,6 +922,8 @@ def prepare_real_runtime_env(
                         selected_model_dir_for_cache = str(Path(candidate_path).parent)
                     else:
                         decision_reason = "manifest fingerprint matched but remote hash mismatched"
+                elif remote_size is None:
+                    decision_reason = "manifest fingerprint matched but remote size probe was unavailable"
                 else:
                     decision_reason = "manifest fingerprint matched but cached device path is stale"
 
@@ -963,6 +968,8 @@ def prepare_real_runtime_env(
                         preferred_model_dirs = [ensured_dir, *[path for path in preferred_model_dirs if path != ensured_dir]]
                     break
                 decision_reason = "device artifact size matched but hash mismatched; forcing push"
+            elif remote_size is None and not force_model_sync:
+                decision_reason = "remote size probe unavailable; pushing model to guarantee consistency"
 
             if force_model_sync:
                 decision = "forced_sync"
@@ -1241,7 +1248,60 @@ def _capture_shared_pref_snapshots(
     return outputs
 
 
-def _extract_ui_runtime_fields(window_dump: str) -> tuple[str | None, str | None, str | None, bool, bool, bool]:
+def _extract_ui_response_visible(
+    texts: Sequence[str],
+    *,
+    prompt: str,
+) -> bool:
+    prompt_folded = prompt.strip().lower()
+    ignored_exact = {
+        "pocket gpt",
+        "offline-first",
+        "message",
+        "send",
+        "cancel",
+        "advanced",
+        "privacy",
+        "tools",
+        "sessions",
+        "copy message",
+        "attach image",
+    }
+
+    for token in texts:
+        value = token.strip()
+        if not value:
+            continue
+        folded = value.lower()
+        if prompt_folded and folded == prompt_folded:
+            continue
+        if folded in ignored_exact:
+            continue
+        if (
+            folded == "..."
+            or folded.startswith("runtime:")
+            or folded.startswith("backend:")
+            or folded.startswith("model:")
+            or folded.startswith("routing mode")
+            or folded.startswith("ui-")
+            or folded.startswith("request timed out")
+            or folded.startswith("speed & battery:")
+            or folded.startswith("prefill")
+            or folded.startswith("generating")
+            or folded.startswith("loading model")
+            or folded.startswith("warming model")
+            or folded.startswith("still working on this device")
+        ):
+            continue
+        return True
+    return False
+
+
+def _extract_ui_runtime_fields(
+    window_dump: str,
+    *,
+    prompt: str,
+) -> tuple[str | None, str | None, str | None, bool, bool, bool, bool]:
     texts = [html.unescape(token).strip() for token in re.findall(r'text="([^"]*)"', window_dump)]
     runtime_status = next((token.split(":", 1)[1].strip() for token in texts if token.startswith("Runtime:")), None)
     backend = next((token.split(":", 1)[1].strip() for token in texts if token.startswith("Backend:")), None)
@@ -1249,7 +1309,16 @@ def _extract_ui_runtime_fields(window_dump: str) -> tuple[str | None, str | None
     placeholder_visible = any(token == "..." for token in texts)
     runtime_error_visible = any("UI-RUNTIME-001" in token for token in texts)
     timeout_message_visible = any("Request timed out" in token for token in texts)
-    return runtime_status, backend, active_model_id, placeholder_visible, runtime_error_visible, timeout_message_visible
+    ui_response_visible = _extract_ui_response_visible(texts, prompt=prompt)
+    return (
+        runtime_status,
+        backend,
+        active_model_id,
+        placeholder_visible,
+        runtime_error_visible,
+        timeout_message_visible,
+        ui_response_visible,
+    )
 
 
 def _extract_chat_response_state(
@@ -1402,6 +1471,7 @@ def _capture_send_snapshot(
     placeholder_from_ui = False
     runtime_error_visible = False
     timeout_message_visible = False
+    ui_response_visible = False
     if window_ok:
         window_text = window_path.read_text(encoding="utf-8", errors="replace")
         (
@@ -1411,7 +1481,11 @@ def _capture_send_snapshot(
             placeholder_from_ui,
             runtime_error_visible,
             timeout_message_visible,
-        ) = _extract_ui_runtime_fields(window_text)
+            ui_response_visible,
+        ) = _extract_ui_runtime_fields(
+            window_text,
+            prompt=prompt,
+        )
 
     chat_snapshot_path = state_outputs.get("chat")
     placeholder_from_state = False
@@ -1439,6 +1513,13 @@ def _capture_send_snapshot(
             chat_text,
             prompt=prompt,
         )
+
+    ui_non_placeholder_response = ui_response_visible and not placeholder_from_ui
+    response_visible = response_visible or ui_response_visible
+    response_non_empty = response_non_empty or ui_non_placeholder_response
+    first_token_seen = first_token_seen or ui_non_placeholder_response
+    if response_visible and response_role is None:
+        response_role = "assistant"
 
     return SendCaptureSnapshot(
         second=second,
@@ -1481,6 +1562,7 @@ def _run_send_capture_stage(
 
     kickoff_flow = capture_root / "send-kickoff.yaml"
     strict_mode = mode == "strict"
+    fast_smoke_mode = mode == "fast-smoke"
     ready_wait_lines = [
         "- extendedWaitUntil:",
         "    visible: \"Runtime: Ready\"",
@@ -1628,6 +1710,19 @@ def _run_send_capture_stage(
                 reply_timeout_seconds,
                 second + _SEND_CAPTURE_POST_TERMINAL_GRACE_SECONDS,
             )
+        if (
+            terminal_capture_cutoff is None
+            and fast_smoke_mode
+            and snapshot.first_token_seen
+            and snapshot.response_visible
+            and snapshot.response_non_empty
+        ):
+            # In fast-smoke mode, first non-empty assistant text is sufficient.
+            # Stop early after a small grace window to keep feedback loops fast.
+            terminal_capture_cutoff = min(
+                reply_timeout_seconds,
+                second + _SEND_CAPTURE_READY_GRACE_SECONDS,
+            )
         if terminal_capture_cutoff is not None:
             has_more_within_cutoff = any(
                 value > second and value <= terminal_capture_cutoff for value in capture_intervals
@@ -1748,31 +1843,54 @@ def _run_send_capture_stage(
             phase = "error"
             failure_signature = "utf8_stream_error"
     elif final.timeout_message_visible or final.runtime_error_visible:
-        status = "failed"
-        phase = "timeout"
-        elapsed_ms = reply_timeout_seconds * 1000
-        if first_token is not None and not terminal_event_seen:
-            failure_signature = "cancel_ack_missing"
-        elif first_token is None:
-            failure_signature = f"no_first_token_{reply_timeout_seconds}s"
-        elif final.timeout_message_visible:
-            failure_signature = "ui_timeout_message_visible_at_sla"
-        else:
+        if fast_smoke_mode and final.timeout_message_visible and first_token is not None:
+            status = "passed"
+            phase = "timeout"
+            elapsed_ms = reply_timeout_seconds * 1000
+            failure_signature = None
+        elif final.runtime_error_visible:
+            status = "failed"
+            phase = "error"
+            elapsed_ms = reply_timeout_seconds * 1000
             failure_signature = "ui_runtime_error_visible_at_sla"
+        else:
+            status = "failed"
+            phase = "timeout"
+            elapsed_ms = reply_timeout_seconds * 1000
+            if first_token is not None and not terminal_event_seen:
+                failure_signature = "cancel_ack_missing"
+            elif first_token is None:
+                failure_signature = f"no_first_token_{reply_timeout_seconds}s"
+            elif final.timeout_message_visible:
+                failure_signature = "ui_timeout_message_visible_at_sla"
+            else:
+                failure_signature = "ui_runtime_error_visible_at_sla"
     elif first_token is not None and not terminal_event_seen:
-        status = "failed"
-        phase = "first_token"
-        elapsed_ms = first_token.second * 1000
-        failure_signature = "no_terminal_event"
+        if fast_smoke_mode:
+            status = "passed"
+            phase = "first_token"
+            elapsed_ms = first_token.second * 1000
+            failure_signature = None
+        else:
+            status = "failed"
+            phase = "first_token"
+            elapsed_ms = first_token.second * 1000
+            failure_signature = "no_terminal_event"
     elif utf8_error_snapshot is not None:
         status = "failed"
         phase = "error"
         failure_signature = "utf8_stream_error"
     elif final.placeholder_visible or ((final.runtime_status or "").strip().lower() == "loading"):
-        status = "failed"
-        phase = "timeout"
-        elapsed_ms = reply_timeout_seconds * 1000
-        failure_signature = f"placeholder_or_loading_persisted_at_{reply_timeout_seconds}s"
+        if fast_smoke_mode and not final.runtime_error_visible and not final.timeout_message_visible:
+            status = "passed"
+            phase = "first_token"
+            elapsed_ms = min(reply_timeout_seconds * 1000, int(duration_seconds * 1000))
+            failure_signature = None
+        else:
+            status = "failed"
+            phase = "timeout"
+            elapsed_ms = reply_timeout_seconds * 1000
+            failure_signature = f"placeholder_or_loading_persisted_at_{reply_timeout_seconds}s"
     else:
         status = "failed"
         phase = "error"
@@ -1978,7 +2096,7 @@ def _parse_journey_args(
         default=",".join(str(value) for value in capture_intervals_default),
     )
     parser.add_argument("--prompt", type=str, default=prompt_default)
-    parser.add_argument("--mode", choices={"strict", "valid-output"}, default="strict")
+    parser.add_argument("--mode", choices={"strict", "valid-output", "fast-smoke"}, default="strict")
     parser.add_argument("--steps", type=str, default="instrumentation,send-capture,maestro")
     parser.add_argument("--maestro-flows", type=str, default="")
     parsed = parser.parse_args(raw_arg_list)
@@ -1991,9 +2109,13 @@ def _parse_journey_args(
 
     if parsed.mode == "valid-output" and not timeout_explicit:
         parsed.reply_timeout_seconds = 480
+    elif parsed.mode == "fast-smoke" and not timeout_explicit:
+        parsed.reply_timeout_seconds = 60
 
     if parsed.mode == "valid-output" and not capture_explicit:
         capture_intervals = [0, 5, 15, 30, 60, 90, 120, 180, 240, 300, 420, parsed.reply_timeout_seconds]
+    elif parsed.mode == "fast-smoke" and not capture_explicit:
+        capture_intervals = [0, 5, 15, 30, parsed.reply_timeout_seconds]
     else:
         capture_intervals = _parse_capture_intervals(parsed.capture_intervals)
     capture_intervals = sorted({0, *capture_intervals})
@@ -2690,6 +2812,18 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
         print_step(f"Journey report: {report_path}")
 
 
+def lane_fast_smoke(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    lane_journey(["--mode", "fast-smoke", "--steps", "instrumentation,send-capture", *list(raw_args)], context)
+
+
+def lane_valid_output(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    lane_journey(["--mode", "valid-output", *list(raw_args)], context)
+
+
+def lane_strict_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    lane_journey(["--mode", "strict", *list(raw_args)], context)
+
+
 def lane_device(raw_args: Sequence[str], context: RuntimeContext) -> None:
     lane_cfg = context.configs.lanes.lanes.device
 
@@ -2987,6 +3121,9 @@ def dispatch_lane(lane_name: str, lane_args: Sequence[str], context: RuntimeCont
         "android-instrumented": lane_android_instrumented,
         "maestro": lane_maestro,
         "journey": lane_journey,
+        "fast-smoke": lane_fast_smoke,
+        "valid-output": lane_valid_output,
+        "strict-journey": lane_strict_journey,
         "nightly-hardware": lane_nightly_hardware,
     }
     handler = handlers.get(lane_name)

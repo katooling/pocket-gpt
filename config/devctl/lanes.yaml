@@ -124,6 +124,59 @@ lanes:
       - 90
     prompt_default: "ola, how you doin"
 
+  fast-smoke:
+    requires_android_sdk: true
+    requires_device: true
+    artifacts:
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/journey/{stamp}
+    repeats_default: 1
+    repeats_max: 5
+    reply_timeout_seconds_default: 60
+    capture_intervals_default:
+      - 5
+      - 15
+      - 30
+      - 60
+    prompt_default: "ola, how you doin"
+
+  valid-output:
+    requires_android_sdk: true
+    requires_device: true
+    artifacts:
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/journey/{stamp}
+    repeats_default: 1
+    repeats_max: 5
+    reply_timeout_seconds_default: 480
+    capture_intervals_default:
+      - 5
+      - 15
+      - 30
+      - 60
+      - 90
+      - 120
+      - 180
+      - 240
+      - 300
+      - 420
+      - 480
+    prompt_default: "ola, how you doin"
+
+  strict-journey:
+    requires_android_sdk: true
+    requires_device: true
+    artifacts:
+      output_dir_template: scripts/benchmarks/runs/{date}/{device}/journey/{stamp}
+    repeats_default: 1
+    repeats_max: 5
+    reply_timeout_seconds_default: 90
+    capture_intervals_default:
+      - 5
+      - 15
+      - 30
+      - 60
+      - 90
+    prompt_default: "ola, how you doin"
+
   nightly-hardware:
     requires_android_sdk: false
     requires_device: false

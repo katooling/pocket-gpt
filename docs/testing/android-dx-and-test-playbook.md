@@ -60,33 +60,40 @@ bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models
 4. Canonical stuck-reply gate command:
    - `python3 tools/devctl/main.py lane journey --repeats 1 --reply-timeout-seconds 90`
 5. Valid-output gate for slower/older phones:
-   - `python3 tools/devctl/main.py lane journey --repeats 1 --mode valid-output --steps instrumentation,send-capture`
+   - `python3 tools/devctl/main.py lane valid-output --steps instrumentation,send-capture`
+   - Equivalent explicit mode: `python3 tools/devctl/main.py lane journey --repeats 1 --mode valid-output --steps instrumentation,send-capture`
    - Defaults in `valid-output` mode: timeout `480s`, capture timeline through timeout.
-6. `lane journey` supports deterministic send diagnostics:
+6. Fast feedback gate:
+   - `python3 tools/devctl/main.py lane fast-smoke --steps instrumentation,send-capture`
+   - Fast-smoke may pass on first-token/in-progress evidence only; it is not a completion gate.
+7. `lane journey` supports deterministic send diagnostics:
    - `--reply-timeout-seconds` (default `90`)
    - `--capture-intervals` (default `5,15,30,60,90`; `t+0` and timeout are always captured)
    - `--prompt` (default probe prompt: `"ola, how you doin"`)
-   - `--mode strict|valid-output` (`strict` keeps SLA-oriented checks; `valid-output` prioritizes terminal proof of response)
+   - `--mode strict|valid-output|fast-smoke`
+   - `strict`: SLA-oriented checks (90s policy gate)
+   - `valid-output`: requires non-empty assistant/system response plus terminal proof (`terminal_event_seen=true`)
+   - `fast-smoke`: first-token/in-progress permissive mode for short loops
    - `--steps instrumentation,send-capture,maestro` (run only the stage(s) you need for fast feedback)
    - `--maestro-flows` (optional comma list to run a subset of Maestro flows during journey lane)
-7. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
-8. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
-9. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
-10. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
-11. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
-12. Device lanes run health preflight before execution:
+8. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
+9. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
+10. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
+11. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
+12. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
+13. Device lanes run health preflight before execution:
    - wake/unlock attempt
    - `/data` utilization guard
    - writable runtime-media probe under app media path (with retry/fallback to `/sdcard/Download/<package>/...` for busy media-path edge cases)
    - installed package owner metadata check (`dumpsys package`)
-13. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
-14. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
-15. Model preflight uses persistent on-device cache manifest `model-sync-v1.json`:
+14. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
+15. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
+16. Model preflight uses persistent on-device cache manifest `model-sync-v1.json`:
    - primary path: `/sdcard/Android/media/<app>/devctl-cache/model-sync-v1.json`
    - fallback path: `/sdcard/Download/<app>/devctl-cache/model-sync-v1.json`
    - each lane run still performs provisioning instrumentation probe.
-16. Cache decisions are written to `real-runtime-preflight.json` (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`) for operator auditability.
-17. Debug override: set `POCKETGPT_FORCE_MODEL_SYNC=1` to force model push even when cache matches.
+17. Cache decisions are written to `real-runtime-preflight.json` (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`) for operator auditability.
+18. Debug override: set `POCKETGPT_FORCE_MODEL_SYNC=1` to force model push even when cache matches.
 
 Maestro install (validated against `v1.39.13`):
 
@@ -164,9 +171,10 @@ Interpretation rubric for send-capture:
 
 1. Pass: `phase=completed`, `placeholder_visible=false`, `response_non_empty=true`, `terminal_event_seen=true`.
    Runtime may transiently show `Loading` immediately after completion; use the bounded post-completion grace window.
-2. Timeout fail: `phase=timeout`, placeholder or loading persists at SLA.
-3. First-token fail: `phase=first_token`, tokens started but no terminal event by SLA (`no_terminal_event` / `cancel_ack_missing`).
-4. Error fail: `phase=error` with failure signature + kickoff/debug output path.
+2. Fast-smoke pass: `phase=first_token` with non-error in-progress evidence (used only for short-loop iteration).
+3. Timeout fail: `phase=timeout`, placeholder or loading persists at SLA.
+4. First-token fail: `phase=first_token`, tokens started but no terminal event by SLA (`no_terminal_event` / `cancel_ack_missing`).
+5. Error fail: `phase=error` with failure signature + kickoff/debug output path.
 
 ## Regression Rules (Fail Stage)
 
