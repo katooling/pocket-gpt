@@ -16,6 +16,7 @@ from tools.devctl.lanes import (
     SendCaptureSnapshot,
     JourneyStepResult,
     _ensure_remote_dir,
+    _extract_first_session_progress,
     _extract_instrumentation_failure,
     _extract_ui_runtime_fields,
     _media_path_fallbacks,
@@ -410,6 +411,22 @@ class LanesTest(unittest.TestCase):
         ) = _extract_ui_runtime_fields(dump, prompt="ola, how you doin")
         self.assertTrue(placeholder_visible)
         self.assertFalse(ui_response_visible)
+
+    def test_extract_first_session_progress_reads_state_from_snapshot(self) -> None:
+        payload = json.dumps(
+            {
+                "firstSessionStage": "FOLLOW_UP_DONE",
+                "advancedUnlocked": False,
+                "firstAnswerCompleted": True,
+                "followUpCompleted": True,
+            }
+        )
+        snapshot = f'<map><string name="chat_state_v2">{payload}</string></map>'
+        stage, advanced_unlocked, first_answer_completed, follow_up_completed = _extract_first_session_progress(snapshot)
+        self.assertEqual("FOLLOW_UP_DONE", stage)
+        self.assertFalse(advanced_unlocked)
+        self.assertTrue(first_answer_completed)
+        self.assertTrue(follow_up_completed)
 
     def test_journey_parser_supports_step_and_flow_filters(self) -> None:
         parsed = _parse_journey_args(

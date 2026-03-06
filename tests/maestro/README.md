@@ -19,6 +19,6 @@ python3 tools/devctl/main.py lane maestro
 Flows:
 
 1. `scenario-a.yaml` - send-message chat loop smoke
-2. `scenario-b.yaml` - advanced controls, tools, and diagnostics flow
+2. `scenario-b.yaml` - simple-first unlock prelude + advanced controls/tools/diagnostics flow
 3. `scenario-c.yaml` - continuity/image-aware journey flow
-4. `scenario-activation-send-smoke.yaml` - model setup activation + send recovery smoke
+4. `scenario-activation-send-smoke.yaml` - unlock prelude + model setup activation + send recovery smoke

@@ -82,6 +82,10 @@ class JourneyStepResult:
     first_token_ms: int | None = None
     completion_ms: int | None = None
     mode: str | None = None
+    first_session_stage: str | None = None
+    advanced_unlocked: bool | None = None
+    first_answer_completed: bool | None = None
+    follow_up_completed: bool | None = None
 
 
 @dataclass
@@ -104,6 +108,10 @@ class SendCaptureSnapshot:
     request_id: str | None
     finish_reason: str | None
     terminal_event_seen: bool
+    first_session_stage: str | None = None
+    advanced_unlocked: bool | None = None
+    first_answer_completed: bool | None = None
+    follow_up_completed: bool | None = None
 
 
 def _now_stamp() -> str:
@@ -1441,6 +1449,34 @@ def _extract_chat_response_state(
     )
 
 
+def _extract_first_session_progress(chat_snapshot: str) -> tuple[str | None, bool | None, bool | None, bool | None]:
+    if not chat_snapshot:
+        return None, None, None, None
+
+    match = re.search(r'<string name="chat_state_v2">(.*?)</string>', chat_snapshot, flags=re.DOTALL)
+    if match is None:
+        return None, None, None, None
+
+    raw_json = html.unescape(match.group(1))
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return None, None, None, None
+
+    first_session_stage = payload.get("firstSessionStage")
+    stage_value = first_session_stage.strip() if isinstance(first_session_stage, str) and first_session_stage.strip() else None
+
+    advanced_unlocked_raw = payload.get("advancedUnlocked")
+    first_answer_completed_raw = payload.get("firstAnswerCompleted")
+    follow_up_completed_raw = payload.get("followUpCompleted")
+
+    advanced_unlocked = advanced_unlocked_raw if isinstance(advanced_unlocked_raw, bool) else None
+    first_answer_completed = first_answer_completed_raw if isinstance(first_answer_completed_raw, bool) else None
+    follow_up_completed = follow_up_completed_raw if isinstance(follow_up_completed_raw, bool) else None
+
+    return stage_value, advanced_unlocked, first_answer_completed, follow_up_completed
+
+
 def _capture_send_snapshot(
     *,
     context: RuntimeContext,
@@ -1497,6 +1533,10 @@ def _capture_send_snapshot(
     request_id: str | None = None
     finish_reason: str | None = None
     terminal_event_seen = False
+    first_session_stage: str | None = None
+    advanced_unlocked: bool | None = None
+    first_answer_completed: bool | None = None
+    follow_up_completed: bool | None = None
     if chat_snapshot_path is not None and chat_snapshot_path.exists():
         chat_text = chat_snapshot_path.read_text(encoding="utf-8", errors="replace")
         (
@@ -1513,6 +1553,12 @@ def _capture_send_snapshot(
             chat_text,
             prompt=prompt,
         )
+        (
+            first_session_stage,
+            advanced_unlocked,
+            first_answer_completed,
+            follow_up_completed,
+        ) = _extract_first_session_progress(chat_text)
 
     ui_non_placeholder_response = ui_response_visible and not placeholder_from_ui
     response_visible = response_visible or ui_response_visible
@@ -1540,6 +1586,10 @@ def _capture_send_snapshot(
         request_id=request_id,
         finish_reason=finish_reason,
         terminal_event_seen=terminal_event_seen,
+        first_session_stage=first_session_stage,
+        advanced_unlocked=advanced_unlocked,
+        first_answer_completed=first_answer_completed,
+        follow_up_completed=follow_up_completed,
     )
 
 
@@ -1593,21 +1643,22 @@ def _run_send_capture_stage(
                 "    commands:",
                 "      - tapOn: \"PocketAgent\"",
                 *ready_wait_lines,
-                "- tapOn: \"Advanced\"",
                 "- runFlow:",
                 "    when:",
-                "      visible: \"Routing mode QWEN_0_8B\"",
+                "      visible: \"Advanced\"",
                 "    commands:",
-                "      - tapOn: \"Routing mode QWEN_0_8B\"",
-                "- runFlow:",
-                "    when:",
-                "      visible: \"QWEN_0_8B\"",
-                "    commands:",
-                "      - tapOn: \"QWEN_0_8B\"",
-                "- back",
-                "- extendedWaitUntil:",
-                "    visible: \"Model: QWEN_0_8B\"",
-                "    timeout: 5000",
+                "      - tapOn: \"Advanced\"",
+                "      - runFlow:",
+                "          when:",
+                "            visible: \"Routing mode QWEN_0_8B\"",
+                "          commands:",
+                "            - tapOn: \"Routing mode QWEN_0_8B\"",
+                "      - runFlow:",
+                "          when:",
+                "            visible: \"QWEN_0_8B\"",
+                "          commands:",
+                "            - tapOn: \"QWEN_0_8B\"",
+                "      - back",
                 *runtime_clean_assert_lines,
                 "- takeScreenshot: \"send-kickoff-02-ready\"",
                 "- tapOn: \"Message\"",
@@ -1753,6 +1804,10 @@ def _run_send_capture_stage(
                     "request_id": snapshot.request_id,
                     "finish_reason": snapshot.finish_reason,
                     "terminal_event_seen": snapshot.terminal_event_seen,
+                    "first_session_stage": snapshot.first_session_stage,
+                    "advanced_unlocked": snapshot.advanced_unlocked,
+                    "first_answer_completed": snapshot.first_answer_completed,
+                    "follow_up_completed": snapshot.follow_up_completed,
                 }
                 for snapshot in snapshots
             ],
@@ -1928,6 +1983,10 @@ def _run_send_capture_stage(
         first_token_ms=first_token_ms,
         completion_ms=completion_ms,
         mode=mode,
+        first_session_stage=final.first_session_stage,
+        advanced_unlocked=final.advanced_unlocked,
+        first_answer_completed=final.first_answer_completed,
+        follow_up_completed=final.follow_up_completed,
     )
 
 def _extract_summary_path(output: str) -> Path | None:
@@ -2235,6 +2294,10 @@ def _write_journey_report(
                 "first_token_ms": step.first_token_ms,
                 "completion_ms": step.completion_ms,
                 "mode": step.mode,
+                "first_session_stage": step.first_session_stage,
+                "advanced_unlocked": step.advanced_unlocked,
+                "first_answer_completed": step.first_answer_completed,
+                "follow_up_completed": step.follow_up_completed,
             }
             for step in steps
         ],
@@ -2250,8 +2313,8 @@ def _write_journey_report(
         f"- Run host: `{run_host}`",
         f"- Generated: `{payload['generated_at']}`",
         "",
-        "| Step | Mode | Phase | Status | Duration (s) | Elapsed (ms) | Runtime | Backend | Model | Placeholder | Response | Role | Non-empty | First token | Request ID | Finish reason | Terminal | First token ms | Completion ms |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Step | Mode | Phase | Status | Duration (s) | Elapsed (ms) | Runtime | Backend | Model | Placeholder | Response | Role | Non-empty | First token | Request ID | Finish reason | Terminal | First token ms | Completion ms | First-session stage | Advanced unlocked | First answer done | Follow-up done |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for step in steps:
         lines.append(
@@ -2268,7 +2331,11 @@ def _write_journey_report(
             f"{step.finish_reason or '-'} | "
             f"{step.terminal_event_seen if step.terminal_event_seen is not None else '-'} | "
             f"{step.first_token_ms if step.first_token_ms is not None else '-'} | "
-            f"{step.completion_ms if step.completion_ms is not None else '-'} |"
+            f"{step.completion_ms if step.completion_ms is not None else '-'} | "
+            f"{step.first_session_stage or '-'} | "
+            f"{step.advanced_unlocked if step.advanced_unlocked is not None else '-'} | "
+            f"{step.first_answer_completed if step.first_answer_completed is not None else '-'} | "
+            f"{step.follow_up_completed if step.follow_up_completed is not None else '-'} |"
         )
         if step.details:
             lines.append(f"- Details: {step.details}")

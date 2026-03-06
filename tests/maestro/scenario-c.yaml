@@ -18,6 +18,9 @@ appId: com.pocketagent.android
 - inputText: "Remember this launch risk list for scenario C."
 - tapOn: "Send"
 - assertVisible: "Remember this launch risk list for scenario C."
+- extendedWaitUntil:
+    notVisible: "Cancel"
+    timeout: 120000
 - runFlow:
     when:
       visible: "Runtime: Error"
