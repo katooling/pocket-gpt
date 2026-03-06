@@ -14,6 +14,7 @@ Engineering and quality excellence are the default operating mode.
 
 - Command contract: `scripts/dev/README.md`
 - Strategy/release gates: `docs/testing/test-strategy.md`
+- Screenshot workflow details: `docs/testing/screenshot-regression-workflow.md`
 
 ## Purpose
 
@@ -34,7 +35,8 @@ Use only commands documented in `scripts/dev/README.md` for:
 2. Physical-device lane
 3. Stage-2 benchmark wrapper
 4. Framework lanes (`android-instrumented`, `maestro`)
-5. Governance checks (`docs-drift-check`, `evidence-check`)
+5. Screenshot inventory lane (`screenshot-pack`)
+6. Governance checks (`docs-drift-check`, `evidence-check`, `screenshot-inventory-check`)
 
 Stage-2 profile examples:
 
@@ -56,17 +58,18 @@ bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models
 
 1. Espresso: `python3 tools/devctl/main.py lane android-instrumented`
 2. Maestro: `python3 tools/devctl/main.py lane maestro`
-3. Combined real-runtime user journey gate: `python3 tools/devctl/main.py lane journey`
-4. Canonical stuck-reply gate command:
+3. Screenshot pack (capture + manual review contract): `python3 tools/devctl/main.py lane screenshot-pack`
+4. Combined real-runtime user journey gate: `python3 tools/devctl/main.py lane journey`
+5. Canonical stuck-reply gate command:
    - `python3 tools/devctl/main.py lane journey --repeats 1 --reply-timeout-seconds 90`
-5. Valid-output gate for slower/older phones:
+6. Valid-output gate for slower/older phones:
    - `python3 tools/devctl/main.py lane valid-output --steps instrumentation,send-capture`
    - Equivalent explicit mode: `python3 tools/devctl/main.py lane journey --repeats 1 --mode valid-output --steps instrumentation,send-capture`
    - Defaults in `valid-output` mode: timeout `480s`, capture timeline through timeout.
-6. Fast feedback gate:
+7. Fast feedback gate:
    - `python3 tools/devctl/main.py lane fast-smoke --steps instrumentation,send-capture`
    - Fast-smoke may pass on first-token/in-progress evidence only; it is not a completion gate.
-7. `lane journey` supports deterministic send diagnostics:
+8. `lane journey` supports deterministic send diagnostics:
    - `--reply-timeout-seconds` (default `90`)
    - `--capture-intervals` (default `5,15,30,60,90`; `t+0` and timeout are always captured)
    - `--prompt` (default probe prompt: `"ola, how you doin"`)
@@ -76,24 +79,29 @@ bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models
    - `fast-smoke`: first-token/in-progress permissive mode for short loops
    - `--steps instrumentation,send-capture,maestro` (run only the stage(s) you need for fast feedback)
    - `--maestro-flows` (optional comma list to run a subset of Maestro flows during journey lane)
-8. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
-9. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
-10. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
-11. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
-12. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
-13. Device lanes run health preflight before execution:
+9. `android-instrumented` and `maestro` now default to native packaging + real-runtime preflight (model cache resolve, device push, provisioning sanity).
+10. `lane screenshot-pack` runs instrumented + Maestro captures, writes normalized inventory artifacts, and fails when required IDs are missing.
+11. Reference promotion command:
+    - `python3 tools/devctl/main.py lane screenshot-pack --update-reference`
+12. Screenshot contract governance:
+    - `python3 tools/devctl/main.py governance screenshot-inventory-check`
+13. Maestro flow set includes Scenario A/B/C under `tests/maestro/` with checkpoint screenshots and failure debug bundles.
+14. Device lane wrapper supports: `--framework espresso|maestro|both` (default `both`)
+15. Device lanes now enforce a per-serial lock file under `scripts/benchmarks/device-env/locks/` to prevent concurrent run interference on shared phones.
+16. Lock bypass is allowed only for manual break-glass debugging: `POCKETGPT_SKIP_DEVICE_LOCK=1`.
+17. Device lanes run health preflight before execution:
    - wake/unlock attempt
    - `/data` utilization guard
    - writable runtime-media probe under app media path (with retry/fallback to `/sdcard/Download/<package>/...` for busy media-path edge cases)
    - installed package owner metadata check (`dumpsys package`)
-14. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
-15. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
-16. Model preflight uses persistent on-device cache manifest `model-sync-v1.json`:
+18. Journey reports include run-owner metadata (`POCKETGPT_RUN_OWNER`, host).
+19. Real-runtime provisioning resolves the installed instrumentation runner dynamically to avoid flavor-specific package mismatch.
+20. Model preflight uses persistent on-device cache manifest `model-sync-v1.json`:
    - primary path: `/sdcard/Android/media/<app>/devctl-cache/model-sync-v1.json`
    - fallback path: `/sdcard/Download/<app>/devctl-cache/model-sync-v1.json`
    - each lane run still performs provisioning instrumentation probe.
-17. Cache decisions are written to `real-runtime-preflight.json` (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`) for operator auditability.
-18. Debug override: set `POCKETGPT_FORCE_MODEL_SYNC=1` to force model push even when cache matches.
+21. Cache decisions are written to `real-runtime-preflight.json` (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`) for operator auditability.
+22. Debug override: set `POCKETGPT_FORCE_MODEL_SYNC=1` to force model push even when cache matches.
 
 Maestro install (validated against `v1.39.13`):
 

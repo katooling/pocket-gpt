@@ -26,6 +26,13 @@ python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
 ```
 
+For UI-focused changes, also run:
+
+```bash
+python3 tools/devctl/main.py lane screenshot-pack
+python3 tools/devctl/main.py governance screenshot-inventory-check
+```
+
 ## 4) Find your role lane
 
 - Engineering: `docs/operations/role-playbooks/engineering-playbook.md`

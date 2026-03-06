@@ -14,7 +14,13 @@ Run via orchestrator:
 
 ```bash
 python3 tools/devctl/main.py lane maestro
+python3 tools/devctl/main.py lane screenshot-pack
 ```
+
+Flow contract notes:
+
+1. All flows launch with `clearState: true` to prevent cross-scenario state leakage.
+2. Screenshot checkpoints are consumed by `tests/ui-screenshots/inventory.yaml` during `lane screenshot-pack`.
 
 Flows:
 

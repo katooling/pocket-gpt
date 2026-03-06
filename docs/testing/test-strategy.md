@@ -15,6 +15,7 @@ Engineering and quality excellence are always required.
 
 - Command contract: `scripts/dev/README.md`
 - Android device execution details: `docs/testing/android-dx-and-test-playbook.md`
+- Screenshot capture/manual review workflow: `docs/testing/screenshot-regression-workflow.md`
 
 ## Goals
 
@@ -39,6 +40,7 @@ Engineering and quality excellence are always required.
 | L1 Core contracts lane | Engineering | run full module + Android unit safety net | before PR | `bash scripts/dev/test.sh core` | unit test reports |
 | L2 Merge gate lane | Engineering + CI | clean merge gate and governance checks | every PR | `bash scripts/dev/test.sh merge` + governance checks | CI reports and artifacts |
 | L3 Android smoke lane | QA + Engineering | device/emulator UI wiring confidence | weekly + pre-promotion | `python3 tools/devctl/main.py lane android-instrumented`, `python3 tools/devctl/main.py lane maestro` | weekly QA packets under `docs/operations/evidence/wp-09/` |
+| L3.5 Screenshot-pack lane | QA + Engineering + Product | full UI surface capture pack for manual regression review | every UI-significant change + weekly | `python3 tools/devctl/main.py lane screenshot-pack` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/screenshot-pack/<stamp>/...` |
 | L4 Stage-2 quick lane | Engineering | fast native runtime sanity/perf loop | runtime/native edits | `bash scripts/dev/bench.sh stage2 --profile quick --device <id>` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` |
 | L5 Stage-2 closure lane | Engineering + QA | strict closure evidence (native JNI + thresholds + validator) | closure/signoff windows | `bash scripts/dev/bench.sh stage2 --profile closure --device <id>` | `scripts/benchmarks/runs/YYYY-MM-DD/<device>/...` + evidence note |
 | L6 Real-runtime app-path lane | Engineering + QA | prove user-message app path on native runtime in RC builds | release-candidate windows | `adb shell am instrument ... -e stage2_enable_app_path_test true -e stage2_model_0_8b_path ... -e stage2_model_2b_path ... com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner` | instrumentation output + linked evidence note |
@@ -84,6 +86,7 @@ Coverage rule:
 | Model manager recovery journey pass (import/download -> activate -> refresh unlock) | RC readiness windows |
 | Timeout/cancel recovery assertions pass (`UI-RUNTIME-001` mapping + send-capture pass) | WP-13 promotion readiness |
 | Template contract availability checks pass (`TEMPLATE_UNAVAILABLE` absent for active required models) | WP-13 promotion readiness |
+| Screenshot inventory report has zero missing IDs and manual review completed (`lane screenshot-pack`) | UI-touching PRs and promotion readiness |
 
 ## CI Baseline
 
@@ -127,7 +130,8 @@ CI note:
    - `tests/maestro/scenario-b.yaml`
    - `tests/maestro/scenario-c.yaml`
    - `tests/maestro/scenario-activation-send-smoke.yaml`
-4. Real-runtime app-path instrumentation (release candidates only):
+4. Screenshot inventory/manual regression lane: `python3 tools/devctl/main.py lane screenshot-pack`
+5. Real-runtime app-path instrumentation (release candidates only):
    - `apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/RealRuntimeAppPathInstrumentationTest.kt`
 
 ## Runtime Lane Optimization Rules

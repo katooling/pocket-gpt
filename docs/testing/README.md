@@ -8,6 +8,7 @@ Canonical ownership by concern:
 4. Maestro flow assets: `tests/maestro/`
 5. Weekly QA UI regression matrix (WP-09 + WP-13 UX extension): `docs/testing/wp-09-ui-regression-matrix.md`
 6. Lane profiles and changed-file selection matrix: `docs/testing/test-lane-profiles-and-selection.md`
+7. Screenshot capture and manual regression workflow: `docs/testing/screenshot-regression-workflow.md`
 
 Pointer-only companions:
 
