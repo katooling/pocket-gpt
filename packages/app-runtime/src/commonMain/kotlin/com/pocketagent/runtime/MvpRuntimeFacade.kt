@@ -187,12 +187,14 @@ class DefaultMvpRuntimeFacade(
 
                         else -> ChatStreamEvent.Failed(
                             requestId = request.requestId,
-                            errorCode = (error as? RuntimeGenerationFailureException)
-                                ?.errorCode
-                                ?.trim()
-                                ?.lowercase()
-                                ?.ifBlank { null }
-                                ?: "runtime_error",
+                            errorCode = when (error) {
+                                is RuntimeTemplateUnavailableException -> "template_unavailable"
+                                is RuntimeGenerationFailureException -> error.errorCode
+                                    ?.trim()
+                                    ?.lowercase()
+                                    ?.ifBlank { null }
+                                else -> null
+                            } ?: "runtime_error",
                             message = error.message ?: "Runtime stream failed.",
                             firstTokenMs = firstTokenMs,
                             completionMs = completionMs,

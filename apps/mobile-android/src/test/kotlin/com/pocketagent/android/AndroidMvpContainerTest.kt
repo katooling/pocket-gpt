@@ -140,8 +140,10 @@ class AndroidMvpContainerTest {
         )
 
         val prompt = inference.capturedPrompts.last()
-        assertTrue(prompt.contains("user: remember this project update"))
-        assertTrue(prompt.contains("assistant: I will remember it"))
+        assertTrue(prompt.contains("remember this project update"))
+        assertTrue(prompt.contains("I will remember it"))
+        assertTrue(prompt.contains("<|im_start|>user"))
+        assertTrue(prompt.contains("<|im_start|>assistant"))
     }
 
     @Test

@@ -81,6 +81,7 @@ Coverage rule:
 | Real-runtime app-path smoke pass on RC candidate (native claim path) | production-claim promotion windows |
 | Model manager recovery journey pass (import/download -> activate -> refresh unlock) | RC readiness windows |
 | Timeout/cancel recovery assertions pass (`UI-RUNTIME-001` mapping + send-capture pass) | WP-13 promotion readiness |
+| Template contract availability checks pass (`TEMPLATE_UNAVAILABLE` absent for active required models) | WP-13 promotion readiness |
 
 ## CI Baseline
 

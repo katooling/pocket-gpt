@@ -135,6 +135,7 @@ Engineering and quality excellence are mandatory program-wide.
 - [x] UI-P1 NotReady/Error flow polish implemented (CTA hierarchy + transition feedback after import/download/refresh/activate) (`docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`)
 - [x] WP-13 wireless device lane rerun complete (`android-instrumented` + `maestro` + `journey` on attached wireless device) (`docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`)
 - [x] WP-13 rerun refresh after single-build download-manager de-gating (`android-instrumented` + `maestro` pass; Maestro Scenario A/B/C + activation smoke recovery assertions validated) (`docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`)
+- [x] ENG-21 interaction architecture refactor landed (typed interaction contract + template registry/renderer + inference executor + stream reducer + persistence backward compatibility) (`docs/operations/evidence/wp-13/2026-03-06-eng-interaction-contract-refactor.md`)
 - [x] PROD-09 soft-gate pilot policy published (single-build default downloads, 25 testers/7 days, hard-stop and fallback rules) (`docs/operations/prod-09-soft-gate-pilot-policy.md`)
 - [x] UX-12 recovery journey spec published (`NotReady -> setup -> Ready` with event schema + success targets) (`docs/ux/ux-12-recovery-journey-spec.md`)
 - [x] TEST-QA-01 weekly UI regression matrix update with WP-13 UX extensions (`docs/testing/wp-09-ui-regression-matrix.md`)
@@ -234,6 +235,7 @@ Engineering and quality excellence are mandatory program-wide.
 - WP-13 (Usability gate run-01 operational packet): `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md`
 - WP-13 (Engineering chat layout hardening + viewport regression guard): `docs/operations/evidence/wp-13/2026-03-05-eng-chat-layout-hardening.md`
 - WP-13 (Engineering P1 model manager phase-2 + recovery UX/UI closure): `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`
+- WP-13 (Engineering interaction architecture refactor: typed contract + template rendering + stream reducer + persistence migration): `docs/operations/evidence/wp-13/2026-03-06-eng-interaction-contract-refactor.md`
 - WP-13 (QA/Engineering wireless rerun for device lanes `android-instrumented` + `maestro` + `journey`): `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md`
 - WP-13 (Product soft-gate pilot policy): `docs/operations/prod-09-soft-gate-pilot-policy.md`
 - WP-13 (Recovery journey acceptance contract): `docs/ux/ux-12-recovery-journey-spec.md`

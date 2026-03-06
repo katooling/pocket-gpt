@@ -31,6 +31,8 @@ object UiErrorMapper {
                 "Model runtime compatibility failed. Import a compatible model build and refresh checks."
             normalized.contains("runtime backend is adb_fallback") || normalized.contains("runtime backend is unavailable") ->
                 "Native runtime backend is unavailable. Confirm device/runtime setup and retry."
+            normalized.contains("template_unavailable") || normalized.contains("model profile missing") ->
+                "Model interaction template is unavailable. Reinstall/update model setup, then refresh checks."
             normalized.contains("startup checks timed out") || normalized.contains("timed out") ->
                 "Runtime checks timed out. You can still send a message, but first output may take longer on older devices."
             else ->

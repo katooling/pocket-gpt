@@ -17,6 +17,7 @@ class InMemoryConversationModule : ConversationModule {
         return appendTurn(sessionId, "assistant", content)
     }
 
+    @Deprecated("Template rendering now consumes structured turns; avoid using string prompt context directly.")
     override fun buildPromptContext(sessionId: SessionId): String {
         val turns = sessions[sessionId].orEmpty()
         return turns.takeLast(8).joinToString(separator = "\n") { turn ->

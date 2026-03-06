@@ -21,7 +21,7 @@ Define a decision-complete first-run recovery journey for users who land in `Not
 1. `NotReady` -> open model setup.
 2. Choose path:
    - import local files, or
-   - download (internal-enabled build).
+   - download (built-in manager in the standard app build).
 3. Verify result:
    - `verified and active`, or
    - `verified, activation pending`.

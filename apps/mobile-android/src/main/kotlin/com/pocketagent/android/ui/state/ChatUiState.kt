@@ -27,6 +27,26 @@ data class MessageUiModel(
     val requestId: String? = null,
     val finishReason: String? = null,
     val terminalEventSeen: Boolean = false,
+    val interaction: PersistedInteractionMessage? = null,
+)
+
+data class PersistedInteractionMessage(
+    val role: String,
+    val parts: List<PersistedInteractionPart> = emptyList(),
+    val toolCalls: List<PersistedToolCall> = emptyList(),
+    val toolCallId: String? = null,
+    val metadata: Map<String, String> = emptyMap(),
+)
+
+data class PersistedInteractionPart(
+    val type: String,
+    val text: String? = null,
+)
+
+data class PersistedToolCall(
+    val id: String,
+    val name: String,
+    val argumentsJson: String,
 )
 
 data class ChatSessionUiModel(

@@ -16,6 +16,7 @@ Map deterministic UI error codes to user-facing guidance and support actions so 
 | Provenance mismatch | `PROVENANCE_*_MISMATCH` | Use trusted source and retry provisioning | Capture issuer/signature details and verification logs |
 | Runtime incompatible | `RUNTIME_INCOMPATIBLE` | Install compatible model version and refresh checks | Confirm runtime compatibility tag match |
 | Backend not native | `Runtime backend is ADB_FALLBACK/UNAVAILABLE` | Validate device/runtime setup, then rerun checks | Capture backend label and startup detail in evidence |
+| Template unavailable | `TEMPLATE_UNAVAILABLE` / `model profile missing` | Reinstall/update model package and refresh checks | Confirm required model ids have template profile mappings |
 
 ## Other Deterministic Codes
 
@@ -40,7 +41,7 @@ Map deterministic UI error codes to user-facing guidance and support actions so 
 When runtime state is `Not ready` or `Error`:
 
 1. Open `Advanced` -> `Open model setup`
-2. Provision required models (import local or download in internal-enabled builds):
+2. Provision required models (import local files or use the built-in download manager):
    - `Qwen 3.5 0.8B (Q4)`
    - `Qwen 3.5 2B (Q4)`
 3. If downloaded version is inactive, activate it

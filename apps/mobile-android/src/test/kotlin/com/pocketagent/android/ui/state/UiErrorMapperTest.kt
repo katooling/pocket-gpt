@@ -64,6 +64,16 @@ class UiErrorMapperTest {
     }
 
     @Test
+    fun `startup mapper differentiates template unavailable guidance`() {
+        val error = UiErrorMapper.startupFailure(
+            listOf("TEMPLATE_UNAVAILABLE: model profile missing for qwen3.5-0.8b-q4"),
+        )
+
+        assertNotNull(error)
+        assertTrue(error.userMessage.contains("template", ignoreCase = true))
+    }
+
+    @Test
     fun `startup mapper differentiates timeout guidance`() {
         val error = UiErrorMapper.startupFailure(
             listOf("Startup checks timed out after 30s."),

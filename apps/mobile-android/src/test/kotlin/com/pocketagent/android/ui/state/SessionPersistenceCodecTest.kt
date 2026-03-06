@@ -49,6 +49,8 @@ class SessionPersistenceCodecTest {
         assertEquals(1, decoded.sessions.size)
         assertEquals(2, decoded.sessions.first().messages.size)
         assertEquals("calculator", decoded.sessions.first().messages.last().toolName)
+        assertEquals("USER", decoded.sessions.first().messages.first().interaction?.role)
+        assertEquals("text", decoded.sessions.first().messages.first().interaction?.parts?.firstOrNull()?.type)
     }
 
     @Test
@@ -91,5 +93,44 @@ class SessionPersistenceCodecTest {
         assertNull(message.requestId)
         assertNull(message.finishReason)
         assertFalse(message.terminalEventSeen)
+        assertEquals("ASSISTANT", message.interaction?.role)
+        assertTrue(message.interaction?.metadata?.get("source")?.contains("legacy") == true)
+    }
+
+    @Test
+    fun `decode preserves explicit interaction payload when present`() {
+        val decoded = PersistedChatStateCodec.decode(
+            """
+            {
+              "activeSessionId": "s1",
+              "sessions": [
+                {
+                  "id": "s1",
+                  "title": "Tool call session",
+                  "messages": [
+                    {
+                      "id": "m1",
+                      "role": "USER",
+                      "content": "calculate 1+2",
+                      "timestampEpochMs": 1,
+                      "kind": "TOOL",
+                      "interaction": {
+                        "role": "USER",
+                        "toolCallId": "tc-1",
+                        "parts": [{"type":"text","text":"calculate 1+2"}],
+                        "toolCalls": [{"id":"tc-1","name":"calculator","argumentsJson":"{\"expression\":\"1+2\"}"}],
+                        "metadata": {"kind":"TOOL"}
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+        val interaction = decoded.sessions.single().messages.single().interaction
+        assertEquals("USER", interaction?.role)
+        assertEquals("tc-1", interaction?.toolCallId)
+        assertEquals("calculator", interaction?.toolCalls?.singleOrNull()?.name)
     }
 }

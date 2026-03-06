@@ -25,13 +25,11 @@ import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
 import com.pocketagent.tools.SafeLocalToolRuntime
-import com.pocketagent.tools.ToolCall
 import com.pocketagent.tools.ToolModule
 import java.security.MessageDigest
 import java.util.Timer
 import java.util.TimerTask
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 class RuntimeOrchestrator(
     private val conversationModule: ConversationModule = InMemoryConversationModule(),
@@ -48,7 +46,13 @@ class RuntimeOrchestrator(
 ) : RuntimeContainer {
     private val imageInputModule = RuntimeImageInputModule(inferenceModule)
     private val sessionManager = RuntimeSessionManager(conversationModule, memoryModule)
-    private val activeGeneration = AtomicReference<ActiveGenerationState?>(null)
+    private val templateRegistry = ModelTemplateRegistry()
+    private val interactionPlanner = InteractionPlanner(templateRegistry = templateRegistry)
+    private val inferenceExecutor = InferenceExecutor(
+        inferenceModule = inferenceModule,
+        runtimeConfig = runtimeConfig,
+    )
+    private val toolLoopCoordinator = ToolLoopCoordinator(toolModule)
     private val responseCache = RuntimeResponseCache(
         maxEntries = runtimeConfig.responseCacheMaxEntries,
         ttlMs = runtimeConfig.responseCacheTtlSec.coerceAtLeast(0L) * 1000L,
@@ -84,6 +88,9 @@ class RuntimeOrchestrator(
             "Model artifact not registered for runtime model: $modelId"
         }
         artifactVerifier.verifyArtifactOrThrow(modelId)
+        interactionPlanner.ensureTemplateAvailable(modelId)?.let { message ->
+            throw RuntimeTemplateUnavailableException(message)
+        }
 
         conversationModule.appendUserTurn(sessionId, userText)
         requirePolicyEvent(
@@ -98,7 +105,21 @@ class RuntimeOrchestrator(
             ),
         )
 
-        val prompt = buildPrompt(userText, sessionId, taskType, deviceState)
+        val contextBudget = routingModule.selectContextBudget(taskType, deviceState)
+        val promptCharBudget = when (taskType) {
+            "long_text" -> MAX_PROMPT_CHARS_LONG
+            else -> MAX_PROMPT_CHARS_SHORT
+        }
+        val memorySnippets = memoryModule.retrieveRelevantMemory(userText, 3).map { it.content }
+        val renderedPrompt = interactionPlanner.buildRenderedPrompt(
+            modelId = modelId,
+            turns = conversationModule.listTurns(sessionId),
+            memorySnippets = memorySnippets,
+            taskType = taskType,
+            deviceState = deviceState,
+            promptCharBudget = minOf(contextBudget * 4, promptCharBudget),
+        )
+        val prompt = renderedPrompt.prompt
         val prefixCacheKey = buildPrefixCacheKey(
             modelId = modelId,
             taskType = taskType,
@@ -148,15 +169,8 @@ class RuntimeOrchestrator(
 
         val cachePolicy = resolveNativeCachePolicy()
         var firstTokenLatencyMs = -1L
-        val builder = StringBuilder()
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
         var finishReason = "completed"
-        var bridgeErrorCode: String? = null
-        val generationState = ActiveGenerationState(
-            requestId = requestId,
-            sessionId = sessionId,
-        )
-        activeGeneration.set(generationState)
+        var responseText = ""
         val timeoutGuard = GenerationTimeoutGuard(
             timeoutMs = requestTimeoutMs,
             onTimeout = {
@@ -168,47 +182,25 @@ class RuntimeOrchestrator(
             },
         )
         try {
-            if (nativeInference != null) {
-                val generationResult = nativeInference.generateStreamWithCache(
-                    requestId = requestId,
-                    request = InferenceRequest(prompt = prompt, maxTokens = maxTokens),
-                    cacheKey = prefixCacheKey,
-                    cachePolicy = cachePolicy,
-                    onToken = { token ->
-                        if (timeoutGuard.timedOut()) {
-                            return@generateStreamWithCache
-                        }
-                        if (firstTokenLatencyMs < 0) {
-                            firstTokenLatencyMs = System.currentTimeMillis() - startedMs
-                        }
-                        builder.append(token)
-                        onToken(token)
-                    },
-                )
-                finishReason = generationResult.finishReason.name.lowercase()
-                bridgeErrorCode = generationResult.errorCode
-                if (!generationResult.success && !timeoutGuard.timedOut()) {
-                    if (generationResult.cancelled) {
-                        throw RuntimeGenerationCancelledException(requestId = requestId)
-                    }
-                    throw RuntimeGenerationFailureException(
-                        message = "llama.cpp runtime generation failed: finish=${generationResult.finishReason} code=${generationResult.errorCode.orEmpty()}",
-                        errorCode = generationResult.errorCode,
-                    )
-                }
-            } else {
-                inferenceModule.generateStream(InferenceRequest(prompt = prompt, maxTokens = maxTokens)) { token ->
+            val executionResult = inferenceExecutor.execute(
+                sessionId = sessionId.value,
+                requestId = requestId,
+                request = InferenceRequest(prompt = prompt, maxTokens = maxTokens),
+                cacheKey = prefixCacheKey,
+                cachePolicy = cachePolicy,
+                stopSequences = renderedPrompt.stopSequences,
+                onToken = { token ->
                     if (timeoutGuard.timedOut()) {
-                        return@generateStream
+                        return@execute
                     }
                     if (firstTokenLatencyMs < 0) {
                         firstTokenLatencyMs = System.currentTimeMillis() - startedMs
                     }
-                    builder.append(token)
                     onToken(token)
-                }
-                finishReason = "completed"
-            }
+                },
+            )
+            finishReason = executionResult.finishReason
+            responseText = executionResult.text.trim()
             if (timeoutGuard.timedOut()) {
                 throw RuntimeGenerationTimeoutException(requestTimeoutMs)
             }
@@ -218,7 +210,6 @@ class RuntimeOrchestrator(
             }
             throw error
         } finally {
-            activeGeneration.compareAndSet(generationState, null)
             timeoutGuard.finish()
             if (!keepModelLoaded) {
                 inferenceModule.unloadModel()
@@ -227,9 +218,11 @@ class RuntimeOrchestrator(
         if (timeoutGuard.timedOut()) {
             throw RuntimeGenerationTimeoutException(requestTimeoutMs)
         }
-        check(firstTokenLatencyMs >= 0) { "Runtime returned no tokens." }
+        check(responseText.isNotBlank()) { "Runtime returned no tokens." }
+        if (firstTokenLatencyMs < 0) {
+            firstTokenLatencyMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(1L)
+        }
         val totalLatency = System.currentTimeMillis() - startedMs
-        val responseText = builder.toString().trim()
         responseCache.put(responseCacheKey, responseText)
         requirePolicyEvent(
             eventType = "observability.record_runtime_metrics",
@@ -247,7 +240,7 @@ class RuntimeOrchestrator(
             firstTokenLatencyMs = firstTokenLatencyMs,
             totalLatencyMs = totalLatency,
             requestId = requestId,
-            finishReason = if (bridgeErrorCode.isNullOrBlank()) finishReason else "$finishReason:${bridgeErrorCode.lowercase()}",
+            finishReason = finishReason,
         )
     }
 
@@ -255,7 +248,7 @@ class RuntimeOrchestrator(
         if (!policyModule.enforceDataBoundary("tool.execute")) {
             return "Tool error: Policy module rejected tool event type."
         }
-        val result = toolModule.executeToolCall(ToolCall(toolName, jsonArgs))
+        val result = toolLoopCoordinator.executeToolCall(toolName = toolName, jsonArgs = jsonArgs)
         if (result.success) {
             return result.content
         }
@@ -352,6 +345,10 @@ class RuntimeOrchestrator(
                 checks.add("Artifact manifest missing required model registration: $modelId.")
                 return@forEach
             }
+            interactionPlanner.ensureTemplateAvailable(modelId)?.let { templateError ->
+                checks.add(templateError)
+                return@forEach
+            }
             val verification = artifactVerifier.verifyArtifactForModel(modelId)
             if (!verification.passed) {
                 checks.add("Artifact verification failed for $modelId: ${artifactVerifier.artifactVerificationFailureMessage(verification)}")
@@ -401,24 +398,11 @@ class RuntimeOrchestrator(
     override fun deleteSession(sessionId: SessionId): Boolean = sessionManager.deleteSession(sessionId)
 
     override fun cancelGeneration(sessionId: SessionId): Boolean {
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return false
-        val active = activeGeneration.get() ?: return false
-        if (active.sessionId != sessionId) {
-            return false
-        }
-        return nativeInference.cancelGeneration()
+        return inferenceExecutor.cancelBySession(sessionId.value)
     }
 
     override fun cancelGenerationByRequest(requestId: String): Boolean {
-        if (!runtimeConfig.streamContractV2Enabled) {
-            return false
-        }
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return false
-        val active = activeGeneration.get() ?: return false
-        if (active.requestId != requestId) {
-            return false
-        }
-        return nativeInference.cancelGeneration(requestId)
+        return inferenceExecutor.cancelByRequest(requestId)
     }
 
     fun listSessions(): List<SessionId> = sessionManager.listSessions()
@@ -429,34 +413,6 @@ class RuntimeOrchestrator(
 
     fun runtimeBackendEnum(): RuntimeBackend? {
         return (inferenceModule as? LlamaCppInferenceModule)?.runtimeBackend()
-    }
-
-    private fun buildPrompt(
-        userText: String,
-        sessionId: SessionId,
-        taskType: String,
-        deviceState: DeviceState,
-    ): String {
-        val contextBudget = routingModule.selectContextBudget(taskType, deviceState)
-        val promptCharBudget = when (taskType) {
-            "long_text" -> MAX_PROMPT_CHARS_LONG
-            else -> MAX_PROMPT_CHARS_SHORT
-        }
-        val memorySnippets = memoryModule.retrieveRelevantMemory(userText, 3)
-            .joinToString("\n") { "memory: ${it.content}" }
-        return buildString {
-            append("task=")
-            append(taskType)
-            append(" context_budget=")
-            append(contextBudget)
-            append("\n")
-            append(conversationModule.buildPromptContext(sessionId))
-            append("\n")
-            append(memorySnippets)
-            append("\n")
-            append("user: ")
-            append(userText)
-        }.take(minOf(contextBudget * 4, promptCharBudget))
     }
 
     private fun resolveNativeCachePolicy(): CachePolicy {
@@ -559,11 +515,6 @@ class RuntimeGenerationFailureException(
     message: String,
     val errorCode: String? = null,
 ) : RuntimeException(message)
-
-private data class ActiveGenerationState(
-    val requestId: String,
-    val sessionId: SessionId,
-)
 
 private class GenerationTimeoutGuard(
     timeoutMs: Long,

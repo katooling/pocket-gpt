@@ -12,6 +12,7 @@ interface ConversationModule {
     fun createSession(): SessionId
     fun appendUserTurn(sessionId: SessionId, content: String): Turn
     fun appendAssistantTurn(sessionId: SessionId, content: String): Turn
+    @Deprecated("Template rendering now consumes structured turns; avoid using string prompt context directly.")
     fun buildPromptContext(sessionId: SessionId): String
     fun listSessions(): List<SessionId>
     fun listTurns(sessionId: SessionId): List<Turn>

@@ -11,9 +11,15 @@ import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedChatState
+import com.pocketagent.android.ui.state.PersistedInteractionMessage
+import com.pocketagent.android.ui.state.PersistedInteractionPart
+import com.pocketagent.android.ui.state.PersistedToolCall
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.StartupProbeState
+import com.pocketagent.android.ui.state.StreamReducerState
+import com.pocketagent.android.ui.state.StreamStateReducer
+import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.android.ui.state.UiError
 import com.pocketagent.android.ui.state.UiErrorMapper
 import com.pocketagent.core.RoutingMode
@@ -25,7 +31,6 @@ import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
 import com.pocketagent.runtime.StreamUserMessageRequest
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,7 +99,9 @@ class ChatViewModel(
         val userMessage = createMessage(
             role = MessageRole.USER,
             content = prompt,
-            kind = MessageKind.TEXT,
+            kind = if (toolIntent != null) MessageKind.TOOL else MessageKind.TEXT,
+            toolName = toolIntent?.name,
+            toolArgsJson = toolIntent?.jsonArgs,
         )
 
         updateActiveSession(activeSession.id) { session ->
@@ -138,6 +145,11 @@ class ChatViewModel(
             requestId = requestId,
             finishReason = null,
             terminalEventSeen = false,
+            interaction = PersistedInteractionMessage(
+                role = MessageRole.ASSISTANT.name,
+                parts = listOf(PersistedInteractionPart(type = "text", text = "")),
+                metadata = mapOf("state" to "streaming"),
+            ),
         )
         updateActiveSession(activeSession.id) { session ->
             session.copy(
@@ -149,9 +161,10 @@ class ChatViewModel(
         viewModelScope.launch(ioDispatcher) {
             var pendingStreamingText: String? = null
             var lastStreamingUiUpdateAtMs = 0L
-            var firstTokenMs: Long? = null
             val sendStartedAtMs = System.currentTimeMillis()
-            val terminalHandled = AtomicBoolean(false)
+            val streamReducer = StreamStateReducer(requestTimeoutMs = requestTimeoutMs)
+            val streamReducerLock = Any()
+            var streamState = StreamReducerState.initial(requestId = requestId)
 
             fun flushPendingStreamingText(force: Boolean = false, triggerToken: String? = null) {
                 val text = pendingStreamingText?.trim().orEmpty()
@@ -230,13 +243,63 @@ class ChatViewModel(
                 persistState()
             }
 
-            fun claimTerminalEvent(): Boolean = terminalHandled.compareAndSet(false, true)
+            fun reduce(block: (StreamReducerState) -> StreamReducerState): Pair<StreamTerminalState?, StreamReducerState> {
+                synchronized(streamReducerLock) {
+                    val previous = streamState.terminal
+                    streamState = block(streamState)
+                    return previous to streamState
+                }
+            }
+
+            fun hasTerminal(): Boolean = synchronized(streamReducerLock) { streamState.terminal != null }
+
+            fun streamFirstTokenMs(): Long? = synchronized(streamReducerLock) { streamState.firstTokenMs }
+
+            fun finalizeFromTerminal(terminal: StreamTerminalState) {
+                if (terminal.uiError != null) {
+                    finalizeWithRuntimeError(
+                        uiError = terminal.uiError,
+                        terminalReason = terminal.finishReason,
+                        terminalRequestId = terminal.requestId,
+                        terminalEventSeen = terminal.terminalEventSeen,
+                    )
+                    return
+                }
+                val finalText = terminal.responseText?.trim().orEmpty()
+                finalizeStreamingMessage(
+                    sessionId = activeSession.id,
+                    messageId = assistantMessageId,
+                    finalText = finalText,
+                    requestId = terminal.requestId,
+                    finishReason = terminal.finishReason,
+                    terminalEventSeen = terminal.terminalEventSeen,
+                )
+                val effectiveFirstToken = terminal.firstTokenMs
+                val effectiveCompletion = terminal.completionMs ?: (System.currentTimeMillis() - sendStartedAtMs)
+                _uiState.update { state ->
+                    state.copy(
+                        composer = state.composer.copy(isSending = false),
+                        runtime = state.runtime.copy(
+                            runtimeBackend = runtimeFacade.runtimeBackend(),
+                            startupProbeState = StartupProbeState.READY,
+                            modelRuntimeStatus = ModelRuntimeStatus.READY,
+                            modelStatusDetail = readyStatusDetail(runtimeFacade.runtimeBackend()),
+                            activeModelId = terminal.responseModelId,
+                            lastFirstTokenLatencyMs = effectiveFirstToken,
+                            lastTotalLatencyMs = effectiveCompletion,
+                            sendElapsedMs = null,
+                            sendSlowState = null,
+                        ).clearError(),
+                    )
+                }
+                persistState()
+            }
 
             val elapsedTicker = launch {
-                while (!terminalHandled.get()) {
+                while (!hasTerminal()) {
                     val elapsed = (System.currentTimeMillis() - sendStartedAtMs).coerceAtLeast(0L)
                     val slowState = when {
-                        firstTokenMs != null -> null
+                        streamFirstTokenMs() != null -> null
                         elapsed >= NO_FIRST_TOKEN_STALL_MS -> "No output yet. This may be stalled on current device conditions."
                         elapsed >= NO_FIRST_TOKEN_WARN_MS -> "Still loading the local model. Older phones may need extra time."
                         else -> null
@@ -255,17 +318,14 @@ class ChatViewModel(
 
             val terminalWatchdog = launch {
                 delay(requestTimeoutMs + SEND_TERMINAL_WATCHDOG_GRACE_MS)
-                if (!claimTerminalEvent()) {
-                    return@launch
+                val (previousTerminal, nextState) = reduce { state ->
+                    streamReducer.onWatchdogTimeout(state)
                 }
+                if (previousTerminal != null || nextState.terminal == null) return@launch
                 elapsedTicker.cancel()
                 flushPendingStreamingText(force = true)
                 runtimeFacade.cancelGenerationByRequest(requestId)
-                finalizeWithRuntimeError(
-                    uiError = UiErrorMapper.runtimeTimeout(requestTimeoutMs),
-                    terminalReason = "timeout",
-                    terminalRequestId = requestId,
-                )
+                finalizeFromTerminal(nextState.terminal!!)
             }
 
             runCatching {
@@ -281,103 +341,49 @@ class ChatViewModel(
                             requestTimeoutMs = requestTimeoutMs,
                         ),
                     ).collect { event ->
-                        if (event.requestId != requestId) {
+                        if (event.requestId != requestId || hasTerminal()) {
                             return@collect
                         }
-                        if (terminalHandled.get()) {
-                            return@collect
+                        val elapsed = (System.currentTimeMillis() - sendStartedAtMs).coerceAtLeast(0L)
+                        val (previousTerminal, nextState) = reduce { state ->
+                            streamReducer.onEvent(state = state, event = event, elapsedMs = elapsed)
                         }
+                        if (previousTerminal != null) return@collect
                         when (event) {
                             is ChatStreamEvent.Started -> {
                                 // request lifecycle started; keep UI in loading until first delta/terminal event.
                             }
 
                             is ChatStreamEvent.TokenDelta -> {
-                                if (firstTokenMs == null && event.accumulatedText.isNotBlank()) {
-                                    firstTokenMs = (System.currentTimeMillis() - sendStartedAtMs).coerceAtLeast(0L)
-                                }
-                                pendingStreamingText = event.accumulatedText
+                                pendingStreamingText = nextState.accumulatedText
                                 flushPendingStreamingText(triggerToken = event.token)
                             }
 
                             is ChatStreamEvent.Completed -> {
-                                if (!claimTerminalEvent()) {
-                                    return@collect
-                                }
-                                terminalWatchdog.cancel()
-                                elapsedTicker.cancel()
-                                flushPendingStreamingText(force = true)
-                                finalizeStreamingMessage(
-                                    sessionId = activeSession.id,
-                                    messageId = assistantMessageId,
-                                    finalText = event.response.text,
-                                    requestId = event.requestId,
-                                    finishReason = event.finishReason,
-                                    terminalEventSeen = event.terminalEventSeen,
-                                )
-                                val effectiveFirstToken = firstTokenMs ?: event.firstTokenMs
-                                val effectiveCompletion = event.completionMs ?: (System.currentTimeMillis() - sendStartedAtMs)
-                                _uiState.update { state ->
-                                    state.copy(
-                                        composer = state.composer.copy(isSending = false),
-                                        runtime = state.runtime.copy(
-                                            runtimeBackend = runtimeFacade.runtimeBackend(),
-                                            startupProbeState = StartupProbeState.READY,
-                                            modelRuntimeStatus = ModelRuntimeStatus.READY,
-                                            modelStatusDetail = readyStatusDetail(runtimeFacade.runtimeBackend()),
-                                            activeModelId = event.response.modelId,
-                                            lastFirstTokenLatencyMs = effectiveFirstToken,
-                                            lastTotalLatencyMs = effectiveCompletion,
-                                            sendElapsedMs = null,
-                                            sendSlowState = null,
-                                        ).clearError(),
-                                    )
-                                }
-                                persistState()
+                                // Terminal transition is handled below by reducer-derived state.
                             }
 
                             is ChatStreamEvent.Cancelled -> {
-                                if (!claimTerminalEvent()) {
-                                    return@collect
-                                }
-                                terminalWatchdog.cancel()
-                                elapsedTicker.cancel()
-                                flushPendingStreamingText(force = true)
-                                val uiError = if (event.reason.equals("timeout", ignoreCase = true)) {
-                                    UiErrorMapper.runtimeTimeout(requestTimeoutMs)
-                                } else {
-                                    UiErrorMapper.runtimeCancelled(event.reason)
-                                }
-                                finalizeWithRuntimeError(
-                                    uiError = uiError,
-                                    terminalReason = event.reason,
-                                    terminalRequestId = event.requestId,
-                                    terminalEventSeen = event.terminalEventSeen,
-                                )
+                                // Terminal transition is handled below by reducer-derived state.
                             }
 
                             is ChatStreamEvent.Failed -> {
-                                if (!claimTerminalEvent()) {
-                                    return@collect
-                                }
-                                terminalWatchdog.cancel()
-                                elapsedTicker.cancel()
-                                flushPendingStreamingText(force = true)
-                                val uiError = UiErrorMapper.runtimeFailure(event.message)
-                                finalizeWithRuntimeError(
-                                    uiError = uiError,
-                                    terminalReason = "failed:${event.errorCode}",
-                                    terminalRequestId = event.requestId,
-                                    terminalEventSeen = event.terminalEventSeen,
-                                )
+                                // Terminal transition is handled below by reducer-derived state.
                             }
+                        }
+                        nextState.terminal?.let { terminal ->
+                            terminalWatchdog.cancel()
+                            elapsedTicker.cancel()
+                            flushPendingStreamingText(force = true)
+                            finalizeFromTerminal(terminal)
                         }
                     }
                 }
             }.onFailure { error ->
-                if (!claimTerminalEvent()) {
-                    return@onFailure
+                val (previousTerminal, nextState) = reduce { state ->
+                    streamReducer.onFailure(state = state, error = error)
                 }
+                if (previousTerminal != null || nextState.terminal == null) return@onFailure
                 terminalWatchdog.cancel()
                 elapsedTicker.cancel()
                 flushPendingStreamingText(force = true)
@@ -385,17 +391,7 @@ class ChatViewModel(
                 if (generationTimedOut) {
                     runtimeFacade.cancelGenerationByRequest(requestId)
                 }
-                val uiError = if (generationTimedOut) {
-                    UiErrorMapper.runtimeTimeout(requestTimeoutMs)
-                } else {
-                    UiErrorMapper.runtimeFailure(error.message)
-                }
-                val terminalReason = if (generationTimedOut) "timeout" else "runtime_error"
-                finalizeWithRuntimeError(
-                    uiError = uiError,
-                    terminalReason = terminalReason,
-                    terminalRequestId = requestId,
-                )
+                finalizeFromTerminal(nextState.terminal!!)
             }
             activeSendRequestId = null
         }
@@ -570,6 +566,7 @@ class ChatViewModel(
             content = "Run tool: $toolName",
             kind = MessageKind.TOOL,
             toolName = toolName,
+            toolArgsJson = jsonArgs,
         )
         updateActiveSession(activeSession.id) { session ->
             session.copy(
@@ -880,7 +877,17 @@ class ChatViewModel(
                 if (message.id != messageId) {
                     message
                 } else {
-                    message.copy(content = text, isStreaming = true)
+                    message.copy(
+                        content = text,
+                        isStreaming = true,
+                        interaction = (message.interaction ?: PersistedInteractionMessage(
+                            role = message.role.name,
+                            parts = listOf(PersistedInteractionPart(type = "text", text = "")),
+                        )).copy(
+                            parts = listOf(PersistedInteractionPart(type = "text", text = text)),
+                            metadata = (message.interaction?.metadata ?: emptyMap()) + ("state" to "streaming"),
+                        ),
+                    )
                 }
             }
             session.copy(
@@ -912,6 +919,14 @@ class ChatViewModel(
                         requestId = requestId ?: message.requestId,
                         finishReason = finishReason,
                         terminalEventSeen = terminalEventSeen,
+                        interaction = (message.interaction ?: PersistedInteractionMessage(
+                            role = role.name,
+                            parts = listOf(PersistedInteractionPart(type = "text", text = finalText)),
+                        )).copy(
+                            role = role.name,
+                            parts = listOf(PersistedInteractionPart(type = "text", text = finalText)),
+                            metadata = (message.interaction?.metadata ?: emptyMap()) + ("state" to "final"),
+                        ),
                     )
                 }
             }
@@ -1180,10 +1195,37 @@ class ChatViewModel(
         kind: MessageKind,
         imagePath: String? = null,
         toolName: String? = null,
+        toolArgsJson: String? = null,
         requestId: String? = null,
         finishReason: String? = null,
         terminalEventSeen: Boolean = false,
     ): MessageUiModel {
+        val interactionToolCall = if (
+            role == MessageRole.USER &&
+            kind == MessageKind.TOOL &&
+            !toolName.isNullOrBlank() &&
+            !toolArgsJson.isNullOrBlank()
+        ) {
+            listOf(
+                PersistedToolCall(
+                    id = "toolcall-${UUID.randomUUID()}",
+                    name = toolName,
+                    argumentsJson = toolArgsJson,
+                ),
+            )
+        } else {
+            emptyList()
+        }
+        val interaction = PersistedInteractionMessage(
+            role = role.name,
+            parts = listOf(PersistedInteractionPart(type = "text", text = content)),
+            toolCalls = interactionToolCall,
+            metadata = buildMap {
+                put("kind", kind.name)
+                imagePath?.let { put("imagePath", it) }
+                toolName?.let { put("toolName", it) }
+            },
+        )
         return MessageUiModel(
             id = newMessageId(prefix = "msg-${role.name.lowercase()}"),
             role = role,
@@ -1196,6 +1238,7 @@ class ChatViewModel(
             requestId = requestId,
             finishReason = finishReason,
             terminalEventSeen = terminalEventSeen,
+            interaction = interaction,
         )
     }
 

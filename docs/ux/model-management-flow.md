@@ -27,6 +27,7 @@ Runtime backend identity is surfaced as:
 3. `UNAVAILABLE`
 
 Composer/image actions remain locked until startup checks pass and runtime state is `Ready`.
+Startup checks now also require a valid interaction template profile for each active required model.
 
 ## In-App Provisioning Paths
 

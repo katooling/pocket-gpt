@@ -22,7 +22,7 @@ Close documentation drift so product, UX, QA, and marketing operate on the same 
 
 1. Add explicit user stories for stuck send + timeout recovery.
 2. Add timeout/cancel failure-state UX contract.
-3. Add manifest outage UX fallback behavior for internal download cohorts.
+3. Add manifest outage UX fallback behavior for single-build download manager cohorts.
 4. Ensure journey send-capture fields and pass/fail rubric are consistently referenced.
 
 ## Acceptance
