@@ -37,6 +37,9 @@ class ModelDownloadWorker(
         val expectedSha = inputData.getString(KEY_EXPECTED_SHA256).orEmpty().trim()
         val issuer = inputData.getString(KEY_PROVENANCE_ISSUER).orEmpty().trim()
         val signature = inputData.getString(KEY_PROVENANCE_SIGNATURE).orEmpty().trim()
+        val verificationPolicy = parseVerificationPolicy(
+            inputData.getString(KEY_VERIFICATION_POLICY).orEmpty(),
+        )
         val runtimeCompatibility = inputData.getString(KEY_RUNTIME_COMPATIBILITY).orEmpty().trim()
         val declaredTotalBytes = inputData.getLong(KEY_TOTAL_BYTES, 0L).coerceAtLeast(0L)
 
@@ -50,6 +53,7 @@ class ModelDownloadWorker(
                 modelId = modelId,
                 version = version,
                 reason = DownloadFailureReason.NETWORK_UNAVAILABLE,
+                processingStage = DownloadProcessingStage.DOWNLOADING,
                 message = "No network connection available.",
             )
             return@withContext if (retryAllowed) Result.retry() else Result.failure(outputDataOf(taskId))
@@ -73,6 +77,8 @@ class ModelDownloadWorker(
                 status = DownloadTaskStatus.DOWNLOADING,
                 progressBytes = partFile.length().coerceAtLeast(0L),
                 totalBytes = declaredTotalBytes,
+                processingStage = DownloadProcessingStage.DOWNLOADING,
+                verificationPolicy = verificationPolicy,
                 message = "Downloading",
             )
 
@@ -82,7 +88,9 @@ class ModelDownloadWorker(
                 downloadUrl = downloadUrl,
                 partFile = partFile,
                 declaredTotalBytes = declaredTotalBytes,
+                verificationPolicy = verificationPolicy,
             )
+            val verificationTotalBytes = computedTotalBytes.takeIf { it > 0L } ?: downloadedBytes
 
             updateState(
                 taskId = taskId,
@@ -90,7 +98,9 @@ class ModelDownloadWorker(
                 version = version,
                 status = DownloadTaskStatus.VERIFYING,
                 progressBytes = downloadedBytes,
-                totalBytes = computedTotalBytes,
+                totalBytes = verificationTotalBytes,
+                processingStage = DownloadProcessingStage.VERIFYING,
+                verificationPolicy = verificationPolicy,
                 message = "Verifying",
             )
 
@@ -102,6 +112,9 @@ class ModelDownloadWorker(
                     modelId = modelId,
                     version = version,
                     reason = DownloadFailureReason.CHECKSUM_MISMATCH,
+                    processingStage = DownloadProcessingStage.VERIFYING,
+                    progressBytes = downloadedBytes,
+                    totalBytes = verificationTotalBytes,
                     message = "Checksum verification failed.",
                 )
                 return@withContext Result.failure(outputDataOf(taskId))
@@ -115,12 +128,15 @@ class ModelDownloadWorker(
                     modelId = modelId,
                     version = version,
                     reason = DownloadFailureReason.RUNTIME_INCOMPATIBLE,
+                    processingStage = DownloadProcessingStage.VERIFYING,
+                    progressBytes = downloadedBytes,
+                    totalBytes = verificationTotalBytes,
                     message = "Runtime compatibility mismatch.",
                 )
                 return@withContext Result.failure(outputDataOf(taskId))
             }
 
-            if (!verifyProvenanceSignature(
+            if (verificationPolicy.enforcesProvenance && !verifyProvenanceSignature(
                     issuer = issuer,
                     modelId = modelId,
                     sha = sha,
@@ -133,11 +149,25 @@ class ModelDownloadWorker(
                     modelId = modelId,
                     version = version,
                     reason = DownloadFailureReason.PROVENANCE_MISMATCH,
+                    processingStage = DownloadProcessingStage.VERIFYING,
+                    progressBytes = downloadedBytes,
+                    totalBytes = verificationTotalBytes,
                     message = "Provenance signature mismatch.",
                 )
                 return@withContext Result.failure(outputDataOf(taskId))
             }
 
+            updateState(
+                taskId = taskId,
+                modelId = modelId,
+                version = version,
+                status = DownloadTaskStatus.VERIFYING,
+                progressBytes = downloadedBytes,
+                totalBytes = verificationTotalBytes,
+                processingStage = DownloadProcessingStage.INSTALLING,
+                verificationPolicy = verificationPolicy,
+                message = "Installing",
+            )
             if (destinationFile.exists()) {
                 destinationFile.delete()
             }
@@ -147,12 +177,15 @@ class ModelDownloadWorker(
                     modelId = modelId,
                     version = version,
                     reason = DownloadFailureReason.UNKNOWN,
+                    processingStage = DownloadProcessingStage.INSTALLING,
+                    progressBytes = downloadedBytes,
+                    totalBytes = verificationTotalBytes,
                     message = "Failed to move downloaded model into install location.",
                 )
                 return@withContext Result.failure(outputDataOf(taskId))
             }
 
-            provisioningStore.installDownloadedModel(
+            val installResult = provisioningStore.installDownloadedModel(
                 modelId = modelId,
                 version = version,
                 absolutePath = destinationFile.absolutePath,
@@ -167,10 +200,20 @@ class ModelDownloadWorker(
                 taskId = taskId,
                 modelId = modelId,
                 version = version,
-                status = DownloadTaskStatus.INSTALLED_INACTIVE,
+                status = if (installResult.isActive) {
+                    DownloadTaskStatus.COMPLETED
+                } else {
+                    DownloadTaskStatus.INSTALLED_INACTIVE
+                },
                 progressBytes = destinationFile.length().coerceAtLeast(0L),
                 totalBytes = destinationFile.length().coerceAtLeast(0L),
-                message = "Downloaded and verified. Activation pending.",
+                processingStage = DownloadProcessingStage.INSTALLING,
+                verificationPolicy = verificationPolicy,
+                message = if (installResult.isActive) {
+                    "Downloaded, verified, and active."
+                } else {
+                    "Downloaded and verified. Activation pending."
+                },
             )
             Result.success(outputDataOf(taskId))
         } catch (timeout: SocketTimeoutException) {
@@ -179,6 +222,8 @@ class ModelDownloadWorker(
                 modelId = modelId,
                 version = version,
                 reason = DownloadFailureReason.TIMEOUT,
+                processingStage = ModelDownloadTaskStateStore.get(appContext, taskId)?.processingStage
+                    ?: DownloadProcessingStage.DOWNLOADING,
                 message = "Download timed out.",
             )
             if (retryAllowed) Result.retry() else Result.failure(outputDataOf(taskId))
@@ -193,6 +238,7 @@ class ModelDownloadWorker(
                     modelId = modelId,
                     version = version,
                     reason = DownloadFailureReason.CANCELLED,
+                    processingStage = current?.processingStage ?: DownloadProcessingStage.DOWNLOADING,
                     message = "Download cancelled.",
                 )
                 return@withContext Result.failure(outputDataOf(taskId))
@@ -202,6 +248,8 @@ class ModelDownloadWorker(
                 modelId = modelId,
                 version = version,
                 reason = DownloadFailureReason.NETWORK_ERROR,
+                processingStage = ModelDownloadTaskStateStore.get(appContext, taskId)?.processingStage
+                    ?: DownloadProcessingStage.DOWNLOADING,
                 message = cancellation.message ?: "Download failed.",
             )
             if (retryAllowed) Result.retry() else Result.failure(outputDataOf(taskId))
@@ -214,6 +262,7 @@ class ModelDownloadWorker(
         downloadUrl: String,
         partFile: File,
         declaredTotalBytes: Long,
+        verificationPolicy: DownloadVerificationPolicy,
     ): Pair<Long, Long> {
         var existingBytes = partFile.length().coerceAtLeast(0L)
         val connection = URL(downloadUrl).openConnection() as HttpURLConnection
@@ -223,59 +272,64 @@ class ModelDownloadWorker(
         if (existingBytes > 0L) {
             connection.setRequestProperty("Range", "bytes=$existingBytes-")
         }
-
-        val responseCode = connection.responseCode
-        if (responseCode !in 200..299 && responseCode != HttpURLConnection.HTTP_PARTIAL) {
-            throw IllegalStateException("Download server returned HTTP $responseCode")
-        }
-        if (responseCode == HttpURLConnection.HTTP_OK && existingBytes > 0L) {
-            partFile.delete()
-            existingBytes = 0L
-        }
-
-        val bodyLength = connection.contentLengthLong.coerceAtLeast(0L)
-        val expectedTotal = when {
-            declaredTotalBytes > 0L -> declaredTotalBytes
-            responseCode == HttpURLConnection.HTTP_PARTIAL -> existingBytes + bodyLength
-            else -> bodyLength
-        }
-
-        BufferedInputStream(connection.inputStream).use { input ->
-            val append = responseCode == HttpURLConnection.HTTP_PARTIAL && existingBytes > 0L
-            BufferedOutputStream(FileOutputStream(partFile, append), COPY_BUFFER_SIZE).use { output ->
-                val buffer = ByteArray(COPY_BUFFER_SIZE)
-                var downloaded = existingBytes
-                var bytesSinceUpdate = 0L
-                while (true) {
-                    if (isStopped) {
-                        throw IllegalStateException("Worker stopped")
-                    }
-                    val read = input.read(buffer)
-                    if (read <= 0) {
-                        break
-                    }
-                    output.write(buffer, 0, read)
-                    downloaded += read
-                    bytesSinceUpdate += read
-                    if (bytesSinceUpdate >= PROGRESS_UPDATE_STEP_BYTES || downloaded == expectedTotal) {
-                        bytesSinceUpdate = 0L
-                        val percent = if (expectedTotal <= 0L) 0 else ((downloaded * 100L) / expectedTotal).toInt()
-                        setForegroundAsync(createForegroundInfo(taskId = taskId, modelId = modelId, percent = percent))
-                        updateState(
-                            taskId = taskId,
-                            modelId = modelId,
-                            version = inputData.getString(KEY_VERSION).orEmpty(),
-                            status = DownloadTaskStatus.DOWNLOADING,
-                            progressBytes = downloaded,
-                            totalBytes = expectedTotal,
-                            message = "Downloading ($percent%)",
-                        )
-                        setProgressAsync(outputDataOf(taskId))
-                    }
-                }
-                output.flush()
-                return downloaded to expectedTotal
+        return try {
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299 && responseCode != HttpURLConnection.HTTP_PARTIAL) {
+                throw IllegalStateException("Download server returned HTTP $responseCode")
             }
+            if (responseCode == HttpURLConnection.HTTP_OK && existingBytes > 0L) {
+                partFile.delete()
+                existingBytes = 0L
+            }
+
+            val bodyLength = connection.contentLengthLong.coerceAtLeast(0L)
+            val expectedTotal = when {
+                declaredTotalBytes > 0L -> declaredTotalBytes
+                responseCode == HttpURLConnection.HTTP_PARTIAL -> existingBytes + bodyLength
+                else -> bodyLength
+            }
+
+            BufferedInputStream(connection.inputStream).use { input ->
+                val append = responseCode == HttpURLConnection.HTTP_PARTIAL && existingBytes > 0L
+                BufferedOutputStream(FileOutputStream(partFile, append), COPY_BUFFER_SIZE).use { output ->
+                    val buffer = ByteArray(COPY_BUFFER_SIZE)
+                    var downloaded = existingBytes
+                    var bytesSinceUpdate = 0L
+                    while (true) {
+                        if (isStopped) {
+                            throw IllegalStateException("Worker stopped")
+                        }
+                        val read = input.read(buffer)
+                        if (read <= 0) {
+                            break
+                        }
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        bytesSinceUpdate += read
+                        if (bytesSinceUpdate >= PROGRESS_UPDATE_STEP_BYTES || downloaded == expectedTotal) {
+                            bytesSinceUpdate = 0L
+                            val percent = if (expectedTotal <= 0L) 0 else ((downloaded * 100L) / expectedTotal).toInt()
+                            setForegroundAsync(createForegroundInfo(taskId = taskId, modelId = modelId, percent = percent))
+                            updateState(
+                                taskId = taskId,
+                                modelId = modelId,
+                                version = inputData.getString(KEY_VERSION).orEmpty(),
+                                status = DownloadTaskStatus.DOWNLOADING,
+                                progressBytes = downloaded,
+                                totalBytes = expectedTotal,
+                                processingStage = DownloadProcessingStage.DOWNLOADING,
+                                verificationPolicy = verificationPolicy,
+                                message = "Downloading ($percent%)",
+                            )
+                            setProgressAsync(outputDataOf(taskId))
+                        }
+                    }
+                    output.flush()
+                    return@use downloaded to expectedTotal
+                }
+            }
+        } finally {
+            connection.disconnect()
         }
     }
 
@@ -300,6 +354,8 @@ class ModelDownloadWorker(
         status: DownloadTaskStatus,
         progressBytes: Long,
         totalBytes: Long,
+        processingStage: DownloadProcessingStage,
+        verificationPolicy: DownloadVerificationPolicy,
         message: String,
         reason: DownloadFailureReason? = null,
     ) {
@@ -312,7 +368,9 @@ class ModelDownloadWorker(
             expectedSha256 = inputData.getString(KEY_EXPECTED_SHA256).orEmpty(),
             provenanceIssuer = inputData.getString(KEY_PROVENANCE_ISSUER).orEmpty(),
             provenanceSignature = inputData.getString(KEY_PROVENANCE_SIGNATURE).orEmpty(),
+            verificationPolicy = verificationPolicy,
             runtimeCompatibility = inputData.getString(KEY_RUNTIME_COMPATIBILITY).orEmpty(),
+            processingStage = processingStage,
             status = DownloadTaskStatus.QUEUED,
             progressBytes = 0L,
             totalBytes = 0L,
@@ -320,7 +378,9 @@ class ModelDownloadWorker(
         )).copy(
             status = status,
             progressBytes = progressBytes.coerceAtLeast(0L),
-            totalBytes = totalBytes.coerceAtLeast(0L),
+            totalBytes = totalBytes.coerceAtLeast(0L).coerceAtLeast(progressBytes.coerceAtLeast(0L)),
+            processingStage = processingStage,
+            verificationPolicy = verificationPolicy,
             updatedAtEpochMs = System.currentTimeMillis(),
             failureReason = reason,
             message = message,
@@ -333,15 +393,30 @@ class ModelDownloadWorker(
         modelId: String,
         version: String,
         reason: DownloadFailureReason,
+        processingStage: DownloadProcessingStage,
         message: String,
+        progressBytes: Long? = null,
+        totalBytes: Long? = null,
     ) {
+        val previous = ModelDownloadTaskStateStore.get(appContext, taskId)
+        val resolvedProgress = progressBytes
+            ?: previous?.progressBytes
+            ?: 0L
+        val resolvedTotal = (totalBytes
+            ?: previous?.totalBytes
+            ?: inputData.getLong(KEY_TOTAL_BYTES, 0L))
+            .coerceAtLeast(0L)
+            .coerceAtLeast(resolvedProgress.coerceAtLeast(0L))
         updateState(
             taskId = taskId,
             modelId = modelId,
             version = version,
             status = DownloadTaskStatus.FAILED,
-            progressBytes = 0L,
-            totalBytes = inputData.getLong(KEY_TOTAL_BYTES, 0L),
+            progressBytes = resolvedProgress,
+            totalBytes = resolvedTotal,
+            processingStage = processingStage,
+            verificationPolicy = previous?.verificationPolicy
+                ?: parseVerificationPolicy(inputData.getString(KEY_VERIFICATION_POLICY).orEmpty()),
             message = message,
             reason = reason,
         )
@@ -420,6 +495,7 @@ class ModelDownloadWorker(
         internal const val KEY_EXPECTED_SHA256 = "expected_sha256"
         internal const val KEY_PROVENANCE_ISSUER = "provenance_issuer"
         internal const val KEY_PROVENANCE_SIGNATURE = "provenance_signature"
+        internal const val KEY_VERIFICATION_POLICY = "verification_policy"
         internal const val KEY_RUNTIME_COMPATIBILITY = "runtime_compatibility"
         internal const val KEY_TOTAL_BYTES = "total_bytes"
 
@@ -427,5 +503,11 @@ class ModelDownloadWorker(
         private const val COPY_BUFFER_SIZE = 1024 * 1024
         private const val PROGRESS_UPDATE_STEP_BYTES = 1024 * 256
         private const val MAX_RETRY_ATTEMPTS = 3
+    }
+
+    private fun parseVerificationPolicy(raw: String): DownloadVerificationPolicy {
+        return runCatching {
+            DownloadVerificationPolicy.valueOf(raw.trim())
+        }.getOrDefault(DownloadVerificationPolicy.INTEGRITY_ONLY)
     }
 }

@@ -58,7 +58,9 @@ internal object ModelDownloadTaskStateStore {
             .put("expectedSha256", task.expectedSha256)
             .put("provenanceIssuer", task.provenanceIssuer)
             .put("provenanceSignature", task.provenanceSignature)
+            .put("verificationPolicy", task.verificationPolicy.name)
             .put("runtimeCompatibility", task.runtimeCompatibility)
+            .put("processingStage", task.processingStage.name)
             .put("status", task.status.name)
             .put("progressBytes", task.progressBytes)
             .put("totalBytes", task.totalBytes)
@@ -79,6 +81,20 @@ internal object ModelDownloadTaskStateStore {
                 DownloadFailureReason.valueOf(failureRaw)
             }
         }.getOrNull()
+        val verificationPolicyRaw = json.optString(
+            "verificationPolicy",
+            DownloadVerificationPolicy.INTEGRITY_ONLY.name,
+        )
+        val verificationPolicy = runCatching {
+            DownloadVerificationPolicy.valueOf(verificationPolicyRaw)
+        }.getOrDefault(DownloadVerificationPolicy.INTEGRITY_ONLY)
+        val processingStageRaw = json.optString(
+            "processingStage",
+            DownloadProcessingStage.DOWNLOADING.name,
+        )
+        val processingStage = runCatching {
+            DownloadProcessingStage.valueOf(processingStageRaw)
+        }.getOrDefault(DownloadProcessingStage.DOWNLOADING)
         val taskId = json.optString("taskId", "").trim()
         val modelId = json.optString("modelId", "").trim()
         val version = json.optString("version", "").trim()
@@ -93,7 +109,9 @@ internal object ModelDownloadTaskStateStore {
             expectedSha256 = json.optString("expectedSha256", "").trim(),
             provenanceIssuer = json.optString("provenanceIssuer", "").trim(),
             provenanceSignature = json.optString("provenanceSignature", "").trim(),
+            verificationPolicy = verificationPolicy,
             runtimeCompatibility = json.optString("runtimeCompatibility", "").trim(),
+            processingStage = processingStage,
             status = status,
             progressBytes = json.optLong("progressBytes", 0L).coerceAtLeast(0L),
             totalBytes = json.optLong("totalBytes", 0L).coerceAtLeast(0L),

@@ -10,77 +10,262 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class ModelDistributionManifestProvider(
-    private val context: Context,
+    private val context: Context?,
+    private val endpointOverride: String? = null,
+    private val bundledAssetPath: String = DEFAULT_BUNDLED_MANIFEST_ASSET,
+    private val remoteManifestLoader: suspend (String) -> String = { endpoint ->
+        fetchRemoteManifest(endpoint)
+    },
+    private val bundledManifestLoader: (() -> String?)? = null,
 ) {
     suspend fun loadManifest(): ModelDistributionManifest = withContext(Dispatchers.IO) {
-        val endpoint = BuildConfig.MODEL_MANIFEST_URL.trim()
+        val now = System.currentTimeMillis()
+        val bundled = loadBundledManifest()
+        val endpoint = (endpointOverride ?: BuildConfig.MODEL_MANIFEST_URL).trim()
         if (endpoint.isEmpty()) {
-            return@withContext ModelDistributionManifest(models = emptyList())
+            return@withContext bundled.copy(
+                source = ManifestSource.BUNDLED,
+                syncedAtEpochMs = now,
+            )
+        }
+
+        val remotePayload = runCatching { remoteManifestLoader(endpoint) }
+        val remoteManifest = remotePayload.mapCatching { parseManifest(it) }
+        if (remoteManifest.isSuccess) {
+            val parsedRemote = remoteManifest.getOrThrow()
+            val merged = mergeManifests(bundled, parsedRemote)
+            return@withContext merged.copy(
+                source = if (bundled.models.isEmpty()) {
+                    ManifestSource.REMOTE
+                } else {
+                    ManifestSource.BUNDLED_AND_REMOTE
+                },
+                syncedAtEpochMs = now,
+                lastError = mergeWarnings(bundled.lastError, parsedRemote.lastError),
+            )
+        }
+
+        val remoteError = remoteManifest.exceptionOrNull()?.message
+            ?: remotePayload.exceptionOrNull()?.message
+            ?: "unknown remote catalog error"
+        return@withContext bundled.copy(
+            source = ManifestSource.BUNDLED,
+            syncedAtEpochMs = now,
+            lastError = mergeWarnings(
+                bundled.lastError,
+                "Remote catalog refresh failed: $remoteError",
+            ),
+        )
+    }
+
+    private fun loadBundledManifest(): ModelDistributionManifest {
+        if (bundledManifestLoader == null && context == null) {
+            return ModelDistributionManifest(
+                models = emptyList(),
+                source = ManifestSource.BUNDLED,
+                lastError = "Bundled catalog cannot be loaded: context is unavailable.",
+            )
         }
         val payload = runCatching {
+            bundledManifestLoader?.invoke()
+                ?: context?.assets?.open(bundledAssetPath)?.bufferedReader()?.use { it.readText() }
+        }.getOrElse {
+            return ModelDistributionManifest(
+                models = emptyList(),
+                source = ManifestSource.BUNDLED,
+                lastError = "Bundled catalog asset missing: $bundledAssetPath",
+            )
+        }
+        if (payload.isNullOrBlank()) {
+            return ModelDistributionManifest(
+                models = emptyList(),
+                source = ManifestSource.BUNDLED,
+                lastError = "Bundled catalog asset empty: $bundledAssetPath",
+            )
+        }
+        return runCatching { parseManifest(payload) }.getOrElse { error ->
+            ModelDistributionManifest(
+                models = emptyList(),
+                source = ManifestSource.BUNDLED,
+                lastError = "Bundled catalog parse failed: ${error.message ?: "invalid json"}",
+            )
+        }
+    }
+
+    private fun parseManifest(raw: String): ModelDistributionManifest {
+        val root = JSONObject(raw)
+        val modelsJson = root.optJSONArray("models") ?: JSONArray()
+        val warnings = mutableListOf<String>()
+        val models = buildList {
+            for (index in 0 until modelsJson.length()) {
+                val item = modelsJson.optJSONObject(index) ?: continue
+                val modelId = item.optString("modelId", "").trim()
+                val displayName = item.optString("displayName", modelId).trim()
+                if (modelId.isEmpty()) {
+                    warnings += "Dropped manifest model entry at index=$index: missing modelId."
+                    continue
+                }
+                val versionsJson = item.optJSONArray("versions") ?: JSONArray()
+                val versions = buildList {
+                    for (v in 0 until versionsJson.length()) {
+                        val versionItem = versionsJson.optJSONObject(v) ?: continue
+                        val version = versionItem.optString("version", "").trim()
+                        val downloadUrl = versionItem.optString("downloadUrl", "").trim()
+                        val sha = versionItem.optString("expectedSha256", "").trim()
+                        val issuer = versionItem.optString("provenanceIssuer", "").trim()
+                        val signature = versionItem.optString("provenanceSignature", "").trim()
+                        val runtimeCompatibility = versionItem
+                            .optString("runtimeCompatibility", "android-arm64-v8a")
+                            .trim()
+                            .ifEmpty { "android-arm64-v8a" }
+                        val fileSizeBytes = versionItem.optLong("fileSizeBytes", 0L)
+                        val rejectionReason = validateVersionEntry(
+                            version = version,
+                            downloadUrl = downloadUrl,
+                            expectedSha256 = sha,
+                            fileSizeBytes = fileSizeBytes,
+                        )
+                        if (rejectionReason != null) {
+                            warnings += "Dropped $modelId/$version: $rejectionReason"
+                            continue
+                        }
+                        add(
+                            ModelDistributionVersion(
+                                modelId = modelId,
+                                version = version,
+                                downloadUrl = downloadUrl,
+                                expectedSha256 = sha,
+                                provenanceIssuer = issuer,
+                                provenanceSignature = signature,
+                                runtimeCompatibility = runtimeCompatibility,
+                                fileSizeBytes = fileSizeBytes,
+                            ),
+                        )
+                    }
+                }
+                if (versions.isEmpty()) {
+                    warnings += "Dropped model '$modelId': no valid versions."
+                    continue
+                }
+                add(
+                    ModelDistributionModel(
+                        modelId = modelId,
+                        displayName = displayName,
+                        versions = versions.sortedByDescending { it.version },
+                    ),
+                )
+            }
+        }
+        return ModelDistributionManifest(
+            models = models,
+            lastError = summarizeWarnings(warnings),
+        )
+    }
+
+    private fun mergeManifests(
+        bundled: ModelDistributionManifest,
+        remote: ModelDistributionManifest,
+    ): ModelDistributionManifest {
+        val bundledById = bundled.models.associateBy { it.modelId }
+        val remoteById = remote.models.associateBy { it.modelId }
+        val mergedModels = (bundledById.keys + remoteById.keys).sorted().mapNotNull { modelId ->
+            val bundledModel = bundledById[modelId]
+            val remoteModel = remoteById[modelId]
+            val displayName = remoteModel?.displayName?.takeIf { it.isNotBlank() }
+                ?: bundledModel?.displayName?.takeIf { it.isNotBlank() }
+                ?: modelId
+            val versionByKey = linkedMapOf<String, ModelDistributionVersion>()
+            bundledModel?.versions?.forEach { version ->
+                versionByKey[version.version] = version
+            }
+            remoteModel?.versions?.forEach { version ->
+                versionByKey[version.version] = version
+            }
+            if (versionByKey.isEmpty()) {
+                null
+            } else {
+                ModelDistributionModel(
+                    modelId = modelId,
+                    displayName = displayName,
+                    versions = versionByKey.values.sortedByDescending { it.version },
+                )
+            }
+        }
+        return ModelDistributionManifest(models = mergedModels)
+    }
+
+    private fun validateVersionEntry(
+        version: String,
+        downloadUrl: String,
+        expectedSha256: String,
+        fileSizeBytes: Long,
+    ): String? {
+        if (version.isBlank()) {
+            return "missing version"
+        }
+        if (downloadUrl.isBlank()) {
+            return "missing downloadUrl"
+        }
+        if (!isHttpsUrl(downloadUrl)) {
+            return "downloadUrl must be HTTPS"
+        }
+        if (expectedSha256.isBlank()) {
+            return "missing expectedSha256"
+        }
+        if (!SHA256_HEX_REGEX.matches(expectedSha256)) {
+            return "expectedSha256 must be 64 lowercase/uppercase hex chars"
+        }
+        if (fileSizeBytes <= 0L) {
+            return "fileSizeBytes must be > 0"
+        }
+        return null
+    }
+
+    private fun isHttpsUrl(url: String): Boolean {
+        return runCatching {
+            URL(url).protocol.equals("https", ignoreCase = true)
+        }.getOrDefault(false)
+    }
+
+    private fun mergeWarnings(vararg warnings: String?): String? {
+        val merged = warnings
+            .mapNotNull { it?.trim()?.takeIf { value -> value.isNotBlank() } }
+            .distinct()
+        return summarizeWarnings(merged)
+    }
+
+    private fun summarizeWarnings(warnings: List<String>): String? {
+        if (warnings.isEmpty()) {
+            return null
+        }
+        val visible = warnings.take(MAX_WARNING_MESSAGES)
+        val suffix = if (warnings.size > visible.size) {
+            " (+${warnings.size - visible.size} more)"
+        } else {
+            ""
+        }
+        return visible.joinToString(separator = " | ") + suffix
+    }
+
+    companion object {
+        private const val DEFAULT_BUNDLED_MANIFEST_ASSET = "model-distribution-catalog.json"
+        private const val MAX_WARNING_MESSAGES = 6
+        private val SHA256_HEX_REGEX = Regex("^[a-fA-F0-9]{64}$")
+
+        private fun fetchRemoteManifest(endpoint: String): String {
             val connection = URL(endpoint).openConnection() as HttpURLConnection
             connection.connectTimeout = 15_000
             connection.readTimeout = 30_000
             connection.requestMethod = "GET"
-            connection.inputStream.bufferedReader().use { it.readText() }
-        }.getOrElse { return@withContext ModelDistributionManifest(models = emptyList()) }
-
-        parseManifest(payload)
-    }
-
-    private fun parseManifest(raw: String): ModelDistributionManifest {
-        return runCatching {
-            val root = JSONObject(raw)
-            val modelsJson = root.optJSONArray("models") ?: JSONArray()
-            val models = buildList {
-                for (index in 0 until modelsJson.length()) {
-                    val item = modelsJson.optJSONObject(index) ?: continue
-                    val modelId = item.optString("modelId", "").trim()
-                    val displayName = item.optString("displayName", modelId).trim()
-                    if (modelId.isEmpty()) {
-                        continue
-                    }
-                    val versionsJson = item.optJSONArray("versions") ?: JSONArray()
-                    val versions = buildList {
-                        for (v in 0 until versionsJson.length()) {
-                            val versionItem = versionsJson.optJSONObject(v) ?: continue
-                            val version = versionItem.optString("version", "").trim()
-                            val downloadUrl = versionItem.optString("downloadUrl", "").trim()
-                            val sha = versionItem.optString("expectedSha256", "").trim()
-                            val issuer = versionItem.optString("provenanceIssuer", "").trim()
-                            val signature = versionItem.optString("provenanceSignature", "").trim()
-                            val runtimeCompatibility = versionItem
-                                .optString("runtimeCompatibility", "android-arm64-v8a")
-                                .trim()
-                                .ifEmpty { "android-arm64-v8a" }
-                            val fileSizeBytes = versionItem.optLong("fileSizeBytes", 0L)
-                            if (version.isEmpty() || downloadUrl.isEmpty() || sha.isEmpty()) {
-                                continue
-                            }
-                            add(
-                                ModelDistributionVersion(
-                                    modelId = modelId,
-                                    version = version,
-                                    downloadUrl = downloadUrl,
-                                    expectedSha256 = sha,
-                                    provenanceIssuer = issuer,
-                                    provenanceSignature = signature,
-                                    runtimeCompatibility = runtimeCompatibility,
-                                    fileSizeBytes = fileSizeBytes.coerceAtLeast(0L),
-                                ),
-                            )
-                        }
-                    }
-                    add(
-                        ModelDistributionModel(
-                            modelId = modelId,
-                            displayName = displayName,
-                            versions = versions.sortedByDescending { it.version },
-                        ),
-                    )
+            return try {
+                val responseCode = connection.responseCode
+                if (responseCode !in 200..299) {
+                    error("HTTP $responseCode")
                 }
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                connection.disconnect()
             }
-            ModelDistributionManifest(models = models)
-        }.getOrElse { ModelDistributionManifest(models = emptyList()) }
+        }
     }
 }

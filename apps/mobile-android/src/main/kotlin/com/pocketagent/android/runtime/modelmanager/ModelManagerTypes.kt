@@ -2,7 +2,16 @@ package com.pocketagent.android.runtime.modelmanager
 
 data class ModelDistributionManifest(
     val models: List<ModelDistributionModel>,
+    val source: ManifestSource = ManifestSource.BUNDLED,
+    val syncedAtEpochMs: Long? = null,
+    val lastError: String? = null,
 )
+
+enum class ManifestSource {
+    BUNDLED,
+    REMOTE,
+    BUNDLED_AND_REMOTE,
+}
 
 data class ModelDistributionModel(
     val modelId: String,
@@ -46,6 +55,19 @@ enum class DownloadTaskStatus {
     CANCELLED,
 }
 
+enum class DownloadVerificationPolicy {
+    INTEGRITY_ONLY;
+
+    val enforcesProvenance: Boolean
+        get() = false
+}
+
+enum class DownloadProcessingStage {
+    DOWNLOADING,
+    VERIFYING,
+    INSTALLING,
+}
+
 enum class DownloadFailureReason {
     NETWORK_UNAVAILABLE,
     NETWORK_ERROR,
@@ -66,7 +88,9 @@ data class DownloadTaskState(
     val expectedSha256: String,
     val provenanceIssuer: String,
     val provenanceSignature: String,
+    val verificationPolicy: DownloadVerificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
     val runtimeCompatibility: String,
+    val processingStage: DownloadProcessingStage = DownloadProcessingStage.DOWNLOADING,
     val status: DownloadTaskStatus,
     val progressBytes: Long,
     val totalBytes: Long,
@@ -77,6 +101,12 @@ data class DownloadTaskState(
     val progressPercent: Int
         get() {
             if (totalBytes <= 0L) {
+                if (progressBytes <= 0L) {
+                    return 0
+                }
+                if (processingStage != DownloadProcessingStage.DOWNLOADING || status == DownloadTaskStatus.FAILED) {
+                    return 100
+                }
                 return 0
             }
             return ((progressBytes * 100L) / totalBytes).coerceIn(0L, 100L).toInt()

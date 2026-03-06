@@ -1,15 +1,16 @@
 # Model Management and Runtime Readiness Flow
 
-Last updated: 2026-03-05
+Last updated: 2026-03-06
 Owner: Runtime + Android
 Status: Phase-2 implemented (versioned install + downloads + activation control)
 
 ## Product Defaults (P1)
 
 1. Download channel: enabled by default in the primary app build.
-2. Version activation: manual switch (new downloads stay inactive until user activates).
+2. Version activation: auto-activate only when no active version exists for that model; otherwise keep manual activation control.
 3. Storage cleanup: guided safe (active version delete blocked, failed/temp artifacts handled by manager flows).
 4. Lifecycle on close/background/reopen: WorkManager-backed background continuation with persisted task state.
+5. Provisioning registry is `modelId`-keyed and supports baseline models plus dynamically discovered model IDs.
 
 ## Runtime Status Model
 
@@ -26,34 +27,38 @@ Runtime backend identity is surfaced as:
 2. `ADB_FALLBACK`
 3. `UNAVAILABLE`
 
-Composer/image actions remain locked until startup checks pass and runtime state is `Ready`.
-Startup checks now also require a valid interaction template profile for each active required model.
+Chat send unlocks when startup checks return `Ready` or `Degraded` (for example, one optional baseline model missing or startup probe timeout on slower devices).
+Image actions remain strict and require runtime state `Ready`.
+Startup checks still enforce valid interaction template availability and artifact verification for active baseline models.
 
 ## In-App Provisioning Paths
 
 ### A) Local import (all builds)
 
 1. Open `Advanced` -> `Open model setup`.
-2. Import both required GGUF files:
-   - `Qwen 3.5 0.8B (Q4)`
-   - `Qwen 3.5 2B (Q4)`
+2. Import at least one required GGUF file to unlock chat quickly:
+   - recommended first model: `Qwen 3.5 0.8B (Q4)`
+   - optional additional model: `Qwen 3.5 2B (Q4)`
 3. App copies files into private storage and records versioned metadata:
    - absolute path
    - SHA-256
    - provenance issuer/signature metadata
    - runtime compatibility
-4. Imported version becomes active by default for that model.
-5. Tap `Refresh runtime checks`; if both required active versions verify, runtime moves to `Ready`.
+4. Imported version auto-activates only if that model has no active version yet.
+5. Tap `Refresh runtime checks`; if at least one baseline active version verifies, runtime moves to `Ready` or `Degraded` and chat is available.
 
 ### B) Download manager
 
 1. Open model setup and refresh manifest.
 2. Start download for selected model/version.
 3. Task enters `Queued -> Downloading -> Verifying`.
-4. Verification pipeline enforces checksum/provenance/runtime compatibility checks.
-5. On pass: version is recorded as `InstalledInactive`.
-6. User activates selected version.
-7. User refreshes runtime checks to unlock runtime for chat/image actions.
+4. Verification pipeline enforces checksum/runtime compatibility as hard gates.
+5. Provenance issuer/signature metadata is currently informational in app download flow (`INTEGRITY_ONLY` policy) and is retained for diagnostics/future hardening.
+6. On pass:
+   - `Completed` when this becomes the first active version for the model.
+   - `InstalledInactive` when another active version already exists.
+7. User can optionally switch active version from installed versions.
+8. Runtime checks refresh updates status immediately after terminal download states.
 
 ## Journey State Contract (Forward/Back/Close/Pause/Load/Unlock)
 
@@ -67,11 +72,18 @@ Startup checks now also require a valid interaction template profile for each ac
 
 ## Verification and Failure Rules
 
-1. Runtime startup remains strict: missing/invalid artifacts block unlock.
-2. Checksum/provenance/runtime mismatch never marks a version as installed.
-3. Duplicate enqueue of active non-terminal task returns existing task id.
-4. One active download task per model/version; retries use persisted task state.
-5. Active version cannot be removed until another version is activated.
+1. Runtime startup is strict for zero-active-model state; chat unlock is allowed in degraded mode when one baseline model is verified and active.
+2. Checksum/runtime mismatch never marks a version as installed.
+3. Provenance mismatch is non-blocking in current app download policy and should be surfaced as diagnostics only.
+4. Duplicate enqueue of active non-terminal task returns existing task id.
+5. One active download task per model/version; retries use persisted task state.
+6. Active version cannot be removed until another version is activated.
+7. Bundled distribution catalog is always available offline; remote catalog refresh overlays when reachable and reports sync source/error in UI.
+
+## Migration Note
+
+1. Prior download failures tagged `PROVENANCE_MISMATCH` were produced by the old blocking policy path.
+2. After this policy update, users should retry once; successful SHA-256 verification is now the hard gate for install.
 
 ## Network Policy
 

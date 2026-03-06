@@ -76,7 +76,8 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
 2. Refresh feedback:
    - explicit message after runtime checks refresh
 3. Download feedback:
-   - terminal guidance for checksum/provenance/runtime compatibility/storage/network failure reasons
+   - terminal guidance for checksum/runtime compatibility/storage/network failure reasons
+   - provenance metadata is currently informational in app download flow (`INTEGRITY_ONLY`) and not a hard-block failure
 
 ## Manifest Outage Behavior
 

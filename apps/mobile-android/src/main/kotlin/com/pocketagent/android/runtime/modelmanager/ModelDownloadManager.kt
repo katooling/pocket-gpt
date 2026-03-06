@@ -72,7 +72,9 @@ class ModelDownloadManager(
             expectedSha256 = version.expectedSha256,
             provenanceIssuer = version.provenanceIssuer,
             provenanceSignature = version.provenanceSignature,
+            verificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
             runtimeCompatibility = version.runtimeCompatibility,
+            processingStage = DownloadProcessingStage.DOWNLOADING,
             status = DownloadTaskStatus.QUEUED,
             progressBytes = 0L,
             totalBytes = version.fileSizeBytes,
@@ -106,6 +108,7 @@ class ModelDownloadManager(
         }
         val resumed = state.copy(
             status = DownloadTaskStatus.QUEUED,
+            processingStage = DownloadProcessingStage.DOWNLOADING,
             updatedAtEpochMs = System.currentTimeMillis(),
             failureReason = null,
             message = "Resumed",
@@ -123,6 +126,7 @@ class ModelDownloadManager(
         cleanupPartial(taskId)
         val retried = state.copy(
             status = DownloadTaskStatus.QUEUED,
+            processingStage = DownloadProcessingStage.DOWNLOADING,
             progressBytes = 0L,
             updatedAtEpochMs = System.currentTimeMillis(),
             failureReason = null,
@@ -198,7 +202,9 @@ class ModelDownloadManager(
                 expectedSha256 = "",
                 provenanceIssuer = "",
                 provenanceSignature = "",
+                verificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
                 runtimeCompatibility = provisioningStore.expectedRuntimeCompatibilityTag(),
+                processingStage = DownloadProcessingStage.DOWNLOADING,
                 status = DownloadTaskStatus.FAILED,
                 progressBytes = 0L,
                 totalBytes = 0L,
@@ -228,6 +234,7 @@ private fun DownloadTaskState.toWorkerData(): Data {
         .putString(ModelDownloadWorker.KEY_EXPECTED_SHA256, expectedSha256)
         .putString(ModelDownloadWorker.KEY_PROVENANCE_ISSUER, provenanceIssuer)
         .putString(ModelDownloadWorker.KEY_PROVENANCE_SIGNATURE, provenanceSignature)
+        .putString(ModelDownloadWorker.KEY_VERIFICATION_POLICY, verificationPolicy.name)
         .putString(ModelDownloadWorker.KEY_RUNTIME_COMPATIBILITY, runtimeCompatibility)
         .putLong(ModelDownloadWorker.KEY_TOTAL_BYTES, totalBytes)
         .build()

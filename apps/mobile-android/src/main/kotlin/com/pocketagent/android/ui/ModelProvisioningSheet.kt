@@ -20,11 +20,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.runtime.ProvisioningReadiness
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
+import com.pocketagent.android.runtime.modelmanager.DownloadProcessingStage
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
+import com.pocketagent.android.runtime.modelmanager.ManifestSource
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import com.pocketagent.inference.ModelCatalog
 import java.text.DateFormat
 import java.util.Date
 
@@ -46,6 +50,11 @@ internal fun ModelProvisioningSheet(
     onRefreshRuntime: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val defaultModelVersion = manifest.models
+        .firstOrNull { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+        ?.versions
+        ?.firstOrNull()
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
@@ -65,6 +74,52 @@ internal fun ModelProvisioningSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        if (snapshot.readiness != ProvisioningReadiness.READY) {
+            item {
+                Card {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.ui_model_get_ready_title),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = stringResource(
+                                id = if (snapshot.readiness == ProvisioningReadiness.BLOCKED) {
+                                    R.string.ui_model_get_ready_blocked_body
+                                } else {
+                                    R.string.ui_model_get_ready_degraded_body
+                                },
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Button(
+                                onClick = { defaultModelVersion?.let(onDownloadVersion) },
+                                enabled = !isImporting && defaultModelVersion != null,
+                            ) {
+                                Text(stringResource(id = R.string.ui_model_get_ready_download_default))
+                            }
+                            OutlinedButton(
+                                onClick = { onImportModel(ModelCatalog.QWEN_3_5_0_8B_Q4) },
+                                enabled = !isImporting,
+                            ) {
+                                Text(stringResource(id = R.string.ui_model_get_ready_import_default))
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         item {
@@ -134,6 +189,30 @@ internal fun ModelProvisioningSheet(
                 fontWeight = FontWeight.SemiBold,
             )
         }
+        item {
+            Text(
+                text = stringResource(
+                    id = R.string.ui_model_catalog_sync_summary,
+                    stringResource(id = manifest.source.readableNameRes()),
+                    manifest.syncedAtEpochMs?.formatAsTimestamp()
+                        ?: stringResource(id = R.string.ui_model_catalog_sync_unknown),
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        manifest.lastError?.let { catalogError ->
+            item {
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_model_catalog_sync_warning,
+                        catalogError,
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
 
         val versions = manifest.models.flatMap { it.versions }
         if (versions.isEmpty()) {
@@ -175,7 +254,7 @@ internal fun ModelProvisioningSheet(
                         Text(
                             text = stringResource(
                                 id = R.string.ui_model_download_state,
-                                latest.status.readableName(),
+                                latest.readableStateName(),
                                 latest.progressPercent,
                             ),
                             style = MaterialTheme.typography.bodySmall,
@@ -372,16 +451,36 @@ internal fun ModelProvisioningSheet(
     }
 }
 
-private fun DownloadTaskStatus.readableName(): String {
-    return when (this) {
+internal fun DownloadTaskState.readableStateName(): String {
+    return when (status) {
         DownloadTaskStatus.QUEUED -> "Queued"
         DownloadTaskStatus.DOWNLOADING -> "Downloading"
         DownloadTaskStatus.PAUSED -> "Paused"
-        DownloadTaskStatus.VERIFYING -> "Verifying"
+        DownloadTaskStatus.VERIFYING -> {
+            if (processingStage == DownloadProcessingStage.INSTALLING) {
+                "Installing"
+            } else {
+                "Verifying"
+            }
+        }
         DownloadTaskStatus.INSTALLED_INACTIVE -> "Verified (activation pending)"
-        DownloadTaskStatus.FAILED -> "Failed"
+        DownloadTaskStatus.FAILED -> {
+            when (processingStage) {
+                DownloadProcessingStage.DOWNLOADING -> "Failed during download"
+                DownloadProcessingStage.VERIFYING -> "Failed during verification"
+                DownloadProcessingStage.INSTALLING -> "Failed during install"
+            }
+        }
         DownloadTaskStatus.COMPLETED -> "Completed"
         DownloadTaskStatus.CANCELLED -> "Cancelled"
+    }
+}
+
+private fun ManifestSource.readableNameRes(): Int {
+    return when (this) {
+        ManifestSource.BUNDLED -> R.string.ui_model_catalog_source_bundled
+        ManifestSource.REMOTE -> R.string.ui_model_catalog_source_remote
+        ManifestSource.BUNDLED_AND_REMOTE -> R.string.ui_model_catalog_source_bundled_and_remote
     }
 }
 
