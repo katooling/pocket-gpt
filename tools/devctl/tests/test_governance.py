@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -145,6 +146,78 @@ class GovernanceTest(unittest.TestCase):
             )
             with self.assertRaises(DevctlError) as raised:
                 governance.docs_health_check(root)
+            self.assertEqual("CONFIG_ERROR", raised.exception.code)
+
+    def _seed_screenshot_inventory_repo(self, root: Path) -> None:
+        inventory_dir = root / "tests/ui-screenshots"
+        reference_dir = root / "tests/ui-screenshots/reference/sm-a515f-android13"
+        inventory_dir.mkdir(parents=True, exist_ok=True)
+        reference_dir.mkdir(parents=True, exist_ok=True)
+        (inventory_dir / "inventory.yaml").write_text(
+            "\n".join(
+                [
+                    "schema: ui-screenshot-inventory-v1",
+                    "screenshots:",
+                    "  - id: ui-01-onboarding-page-1",
+                    "    filename: ui-01-onboarding-page-1.png",
+                    "    candidates:",
+                    "      - instrumented/ui-01-onboarding-page-1.png",
+                    "  - id: ui-02-onboarding-page-2",
+                    "    filename: ui-02-onboarding-page-2.png",
+                    "    candidates:",
+                    "      - instrumented/ui-02-onboarding-page-2.png",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (reference_dir / "ui-01-onboarding-page-1.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (reference_dir / "ui-02-onboarding-page-2.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (reference_dir / "index.md").write_text("# Gallery\n", encoding="utf-8")
+
+        report_dir = root / "scripts/benchmarks/runs/2026-03-06/SER123/screenshot-pack/20260306-010101"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "inventory-report.json").write_text(
+            json.dumps(
+                {
+                    "missing_ids": [],
+                    "entries": [
+                        {"id": "ui-01-onboarding-page-1", "status": "PASS"},
+                        {"id": "ui-02-onboarding-page-2", "status": "PASS"},
+                    ],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def test_screenshot_inventory_check_passes_for_complete_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_screenshot_inventory_repo(root)
+            governance.screenshot_inventory_check(root)
+
+    def test_screenshot_inventory_check_fails_when_reference_or_report_is_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_screenshot_inventory_repo(root)
+            (root / "tests/ui-screenshots/reference/sm-a515f-android13/ui-02-onboarding-page-2.png").unlink()
+            broken_report = root / "scripts/benchmarks/runs/2026-03-06/SER123/screenshot-pack/20260306-010101/inventory-report.json"
+            broken_report.write_text(
+                json.dumps(
+                    {
+                        "missing_ids": ["ui-02-onboarding-page-2"],
+                        "entries": [
+                            {"id": "ui-01-onboarding-page-1", "status": "PASS"},
+                            {"id": "ui-02-onboarding-page-2", "status": "MISSING"},
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(DevctlError) as raised:
+                governance.screenshot_inventory_check(root)
             self.assertEqual("CONFIG_ERROR", raised.exception.code)
 
 

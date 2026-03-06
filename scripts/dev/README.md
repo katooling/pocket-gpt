@@ -148,6 +148,7 @@ Optional cache controls (env):
 ```bash
 python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
+python3 tools/devctl/main.py lane screenshot-pack
 python3 tools/devctl/main.py lane journey [--repeats N]
 ```
 
@@ -168,6 +169,13 @@ Wrapper:
 bash scripts/dev/journey.sh [--repeats N]
 ```
 
+Screenshot pack workflow:
+
+```bash
+python3 tools/devctl/main.py lane screenshot-pack
+python3 tools/devctl/main.py lane screenshot-pack --update-reference
+```
+
 Maestro install:
 
 ```bash
@@ -181,6 +189,7 @@ Wrappers remain callable, but all governance logic runs via `devctl governance`.
 ```bash
 python3 tools/devctl/main.py governance docs-drift
 python3 tools/devctl/main.py governance docs-health
+python3 tools/devctl/main.py governance screenshot-inventory-check
 python3 tools/devctl/main.py governance evidence-check docs/operations/evidence/wp-xx/YYYY-MM-DD-note.md
 python3 tools/devctl/main.py governance evidence-check-changed
 python3 tools/devctl/main.py governance validate-pr-body /tmp/pr-body.md

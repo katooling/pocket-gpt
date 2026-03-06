@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -7,6 +8,11 @@ from datetime import datetime
 from pathlib import Path
 
 from tools.devctl.subprocess_utils import DevctlError, REPO_ROOT, run_subprocess
+
+try:
+    import yaml  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - dependency guard is handled at runtime.
+    yaml = None
 
 CANONICAL_DOCS = [
     "scripts/dev/README.md",
@@ -38,6 +44,10 @@ PR_REQUIRED_PATTERNS: list[tuple[str, str]] = [
         r"- \[x\] I ran `python3 tools/devctl/main\.py governance docs-health` and it passed\.",
         "docs-health checkbox must be checked",
     ),
+    (
+        r"- \[x\] For UI-touching changes, I ran `python3 tools/devctl/main\.py lane screenshot-pack` and manually reviewed screenshots \(or documented why not needed\)\.",
+        "screenshot workflow checkbox must be checked",
+    ),
 ]
 
 STAGE_EVIDENCE_PATTERN = (
@@ -66,6 +76,10 @@ DOCS_HEALTH_RETAINED_WP12_NOTES = {
     "2026-03-05-eng-13-native-runtime-rerun.md",
     "2026-03-05-qa-wp12-closeout-rerun.md",
 }
+
+SCREENSHOT_INVENTORY_SCHEMA = "ui-screenshot-inventory-v1"
+SCREENSHOT_INVENTORY_PATH = Path("tests/ui-screenshots/inventory.yaml")
+SCREENSHOT_REFERENCE_DIR = Path("tests/ui-screenshots/reference/sm-a515f-android13")
 
 
 def _read_file(path: Path) -> str:
@@ -265,6 +279,130 @@ def docs_health_check(repo_root: Path = REPO_ROOT) -> None:
     print("Docs health check passed.")
 
 
+def _load_screenshot_inventory_entries(repo_root: Path) -> list[tuple[str, str]]:
+    if yaml is None:
+        raise DevctlError(
+            "ENVIRONMENT_ERROR",
+            "PyYAML is required. Install dependencies with: python3 -m pip install -r tools/devctl/requirements.txt",
+        )
+    inventory_path = repo_root / SCREENSHOT_INVENTORY_PATH
+    if not inventory_path.exists():
+        raise DevctlError("CONFIG_ERROR", f"Missing screenshot inventory file: {inventory_path}")
+
+    try:
+        data = yaml.safe_load(inventory_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise DevctlError("CONFIG_ERROR", f"Failed to parse screenshot inventory {inventory_path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise DevctlError("CONFIG_ERROR", f"Invalid screenshot inventory root in {inventory_path}; expected object.")
+    if data.get("schema") != SCREENSHOT_INVENTORY_SCHEMA:
+        raise DevctlError(
+            "CONFIG_ERROR",
+            f"Unsupported screenshot inventory schema in {inventory_path}. "
+            f"Expected '{SCREENSHOT_INVENTORY_SCHEMA}'.",
+        )
+    screenshots = data.get("screenshots")
+    if not isinstance(screenshots, list) or not screenshots:
+        raise DevctlError("CONFIG_ERROR", f"Screenshot inventory must define a non-empty screenshots list: {inventory_path}")
+
+    id_pattern = re.compile(r"^ui-\d{2}-[a-z0-9-]+$")
+    entries: list[tuple[str, str]] = []
+    seen_ids: set[str] = set()
+    seen_filenames: set[str] = set()
+    for index, item in enumerate(screenshots, start=1):
+        if not isinstance(item, dict):
+            raise DevctlError("CONFIG_ERROR", f"Invalid screenshot inventory entry #{index} in {inventory_path}.")
+        shot_id = str(item.get("id", "")).strip()
+        filename = str(item.get("filename", "")).strip()
+        if not shot_id or not filename:
+            raise DevctlError(
+                "CONFIG_ERROR",
+                f"Screenshot inventory entry #{index} in {inventory_path} is missing id or filename.",
+            )
+        if not id_pattern.match(shot_id):
+            raise DevctlError("CONFIG_ERROR", f"Invalid screenshot id '{shot_id}' in {inventory_path}.")
+        if not filename.endswith(".png"):
+            raise DevctlError(
+                "CONFIG_ERROR",
+                f"Screenshot filename must end with .png in {inventory_path}: {filename}",
+            )
+        if shot_id in seen_ids:
+            raise DevctlError("CONFIG_ERROR", f"Duplicate screenshot id in {inventory_path}: {shot_id}")
+        if filename in seen_filenames:
+            raise DevctlError("CONFIG_ERROR", f"Duplicate screenshot filename in {inventory_path}: {filename}")
+        seen_ids.add(shot_id)
+        seen_filenames.add(filename)
+        entries.append((shot_id, filename))
+    return entries
+
+
+def _latest_screenshot_inventory_report(repo_root: Path) -> Path | None:
+    reports_root = repo_root / "scripts/benchmarks/runs"
+    if not reports_root.exists():
+        return None
+    reports = sorted(
+        reports_root.glob("*/*/screenshot-pack/*/inventory-report.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return reports[0] if reports else None
+
+
+def screenshot_inventory_check(repo_root: Path = REPO_ROOT) -> None:
+    entries = _load_screenshot_inventory_entries(repo_root)
+    violations: list[str] = []
+
+    reference_dir = repo_root / SCREENSHOT_REFERENCE_DIR
+    if not reference_dir.exists():
+        violations.append(f"Missing screenshot reference directory: {SCREENSHOT_REFERENCE_DIR.as_posix()}")
+    else:
+        for shot_id, filename in entries:
+            if not (reference_dir / filename).exists():
+                violations.append(f"Missing screenshot reference for {shot_id}: {SCREENSHOT_REFERENCE_DIR.as_posix()}/{filename}")
+        index_path = reference_dir / "index.md"
+        if not index_path.exists():
+            violations.append(f"Missing screenshot reference gallery index: {SCREENSHOT_REFERENCE_DIR.as_posix()}/index.md")
+
+    latest_report_path = _latest_screenshot_inventory_report(repo_root)
+    if latest_report_path is None:
+        violations.append("No screenshot inventory report found under scripts/benchmarks/runs/*/*/screenshot-pack/*.")
+    else:
+        try:
+            report_payload = json.loads(latest_report_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            violations.append(f"Failed to parse latest screenshot inventory report {latest_report_path}: {exc}")
+            report_payload = {}
+
+        if isinstance(report_payload, dict):
+            missing_ids = report_payload.get("missing_ids")
+            if not isinstance(missing_ids, list):
+                violations.append(f"Latest screenshot inventory report is missing list field 'missing_ids': {latest_report_path}")
+            elif missing_ids:
+                violations.append(
+                    "Latest screenshot inventory report has missing required IDs: "
+                    f"{', '.join(str(item) for item in missing_ids)} ({latest_report_path})"
+                )
+            entry_rows = report_payload.get("entries")
+            if isinstance(entry_rows, list):
+                status_by_id = {
+                    str(row.get("id")): str(row.get("status"))
+                    for row in entry_rows
+                    if isinstance(row, dict) and row.get("id") is not None
+                }
+                for shot_id, _filename in entries:
+                    if status_by_id.get(shot_id) != "PASS":
+                        violations.append(
+                            f"Latest screenshot report does not mark {shot_id} as PASS: {latest_report_path}"
+                        )
+            else:
+                violations.append(f"Latest screenshot inventory report is missing list field 'entries': {latest_report_path}")
+
+    if violations:
+        raise DevctlError("CONFIG_ERROR", "\n".join(sorted(violations)))
+
+    print("Screenshot inventory check passed.")
+
+
 def evidence_check(evidence_file: str, repo_root: Path = REPO_ROOT) -> None:
     if not evidence_file:
         raise DevctlError("CONFIG_ERROR", "Usage: evidence-check <evidence-markdown-file>")
@@ -427,6 +565,7 @@ def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
             "- [x] I used canonical orchestrator lanes (`python3 tools/devctl/main.py lane ...`) directly or via the `scripts/dev/*` wrappers.\n"
             "- [x] I updated docs affected by this change, or confirmed no docs changes are needed.\n"
             "- [x] I ran `python3 tools/devctl/main.py governance docs-health` and it passed.\n"
+            "- [x] For UI-touching changes, I ran `python3 tools/devctl/main.py lane screenshot-pack` and manually reviewed screenshots (or documented why not needed).\n"
             "- [x] If this is stage/work-package work, I added/updated evidence under `docs/operations/evidence/` and linked it below.\n\n"
             "Stage close: no\n\n"
             f"Evidence note(s): {evidence_note_rel}\n",
@@ -453,6 +592,7 @@ def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
             "- [x] I used canonical orchestrator lanes (`python3 tools/devctl/main.py lane ...`) directly or via the `scripts/dev/*` wrappers.\n"
             "- [x] I updated docs affected by this change, or confirmed no docs changes are needed.\n"
             "- [x] I ran `python3 tools/devctl/main.py governance docs-health` and it passed.\n"
+            "- [x] For UI-touching changes, I ran `python3 tools/devctl/main.py lane screenshot-pack` and manually reviewed screenshots (or documented why not needed).\n"
             "- [x] If this is stage/work-package work, I added/updated evidence under `docs/operations/evidence/` and linked it below.\n\n"
             "Stage close: yes\n\n"
             f"Evidence note(s): {evidence_note_rel}\n"
