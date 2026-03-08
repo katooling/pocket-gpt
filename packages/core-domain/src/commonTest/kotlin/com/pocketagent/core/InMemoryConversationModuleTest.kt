@@ -33,4 +33,33 @@ class InMemoryConversationModuleTest {
         assertEquals(emptyList(), module.listTurns(session))
         assertFalse(module.listSessions().contains(session))
     }
+
+    @Test
+    fun `delete and recreate session does not overwrite existing session id`() {
+        val module = InMemoryConversationModule()
+        val first = module.createSession()
+        val second = module.createSession()
+        module.appendUserTurn(second, "persist me")
+
+        assertTrue(module.deleteSession(first))
+
+        val recreated = module.createSession()
+        val secondTurns = module.listTurns(second)
+
+        assertEquals("session-3", recreated.value)
+        assertEquals(1, secondTurns.size)
+        assertEquals("user", secondTurns.single().role)
+        assertEquals("persist me", secondTurns.single().content)
+        assertTrue(module.listTurns(recreated).isEmpty())
+    }
+
+    @Test
+    fun `create session advances beyond restored session ordinal`() {
+        val module = InMemoryConversationModule()
+        module.restoreSession(SessionId("session-8"), turns = emptyList())
+
+        val created = module.createSession()
+
+        assertEquals("session-9", created.value)
+    }
 }

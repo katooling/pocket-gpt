@@ -1,6 +1,6 @@
 # Current Release Plan
 
-Last updated: 2026-03-06
+Last updated: 2026-03-08
 
 This is the single current-release planning document. It replaces:
 
@@ -27,6 +27,7 @@ Ship a usable privacy-first Android MVP under soft-gate pilot policy with comple
 1. Keep docs, board, and ticket specs synchronized to one source-of-truth model.
 2. Keep lane reliability stable for `android-instrumented`, `maestro`, and `journey`.
 3. Ensure runtime timeout/cancel and send-capture contracts remain deterministic.
+4. 2026-03-08 update: session-ID collision hardening, provenance strict-mode wiring, and chat-flow split landed with unit-test validation.
 
 ### Phase 2: Close usability and operations gaps
 

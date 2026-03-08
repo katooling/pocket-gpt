@@ -28,6 +28,12 @@ class DownloadTaskStateTest {
         assertEquals(0, state.progressPercent)
     }
 
+    @Test
+    fun `strict verification policy enforces provenance checks`() {
+        assertEquals(true, DownloadVerificationPolicy.PROVENANCE_STRICT.enforcesProvenance)
+        assertEquals(false, DownloadVerificationPolicy.INTEGRITY_ONLY.enforcesProvenance)
+    }
+
     private fun fixture(
         status: DownloadTaskStatus,
         processingStage: DownloadProcessingStage,

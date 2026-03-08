@@ -113,6 +113,36 @@ class ModelDistributionManifestProviderTest {
     }
 
     @Test
+    fun `load manifest parses provenance strict verification policy`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "",
+            bundledManifestLoader = { manifestWithStrictVerificationPolicyJson() },
+        )
+
+        val manifest = provider.loadManifest()
+
+        val version = manifest.models.single().versions.single()
+        assertEquals(DownloadVerificationPolicy.PROVENANCE_STRICT, version.verificationPolicy)
+        assertEquals(null, manifest.lastError)
+    }
+
+    @Test
+    fun `load manifest falls back to integrity policy when verification policy is invalid`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "",
+            bundledManifestLoader = { manifestWithInvalidVerificationPolicyJson() },
+        )
+
+        val manifest = provider.loadManifest()
+
+        val version = manifest.models.single().versions.single()
+        assertEquals(DownloadVerificationPolicy.INTEGRITY_ONLY, version.verificationPolicy)
+        assertTrue(manifest.lastError?.contains("invalid verificationPolicy") == true)
+    }
+
+    @Test
     fun `bundled catalog unavailable returns deterministic error code`() = runTest {
         val provider = ModelDistributionManifestProvider(
             context = null,
@@ -299,6 +329,56 @@ private fun manifestWithDuplicateEntriesJson(): String {
                   "version": "q4_0",
                   "downloadUrl": "https://example.test/dup-b.gguf",
                   "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithStrictVerificationPolicyJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "qwen3.5-0.8b-q4",
+              "displayName": "Qwen 3.5 0.8B (Q4)",
+              "versions": [
+                {
+                  "version": "q4_0",
+                  "downloadUrl": "https://example.test/strict.gguf",
+                  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "provenanceIssuer": "internal",
+                  "provenanceSignature": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "verificationPolicy": "PROVENANCE_STRICT",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithInvalidVerificationPolicyJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "qwen3.5-0.8b-q4",
+              "displayName": "Qwen 3.5 0.8B (Q4)",
+              "versions": [
+                {
+                  "version": "q4_0",
+                  "downloadUrl": "https://example.test/invalid-policy.gguf",
+                  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "provenanceIssuer": "internal",
+                  "provenanceSignature": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "verificationPolicy": "STRICT_UNKNOWN",
                   "runtimeCompatibility": "android-arm64-v8a",
                   "fileSizeBytes": 1234
                 }

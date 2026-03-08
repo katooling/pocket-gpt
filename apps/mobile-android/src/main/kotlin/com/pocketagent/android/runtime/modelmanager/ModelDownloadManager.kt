@@ -65,7 +65,7 @@ class ModelDownloadManager(
             expectedSha256 = version.expectedSha256,
             provenanceIssuer = version.provenanceIssuer,
             provenanceSignature = version.provenanceSignature,
-            verificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
+            verificationPolicy = version.verificationPolicy,
             runtimeCompatibility = version.runtimeCompatibility,
             processingStage = DownloadProcessingStage.DOWNLOADING,
             status = DownloadTaskStatus.QUEUED,

@@ -2,9 +2,10 @@ package com.pocketagent.core
 
 class InMemoryConversationModule : ConversationModule {
     private val sessions: MutableMap<SessionId, MutableList<Turn>> = mutableMapOf()
+    private var sessionCounter: Long = 0L
 
     override fun createSession(): SessionId {
-        val session = SessionId("session-${sessions.size + 1}")
+        val session = nextSessionId()
         sessions[session] = mutableListOf()
         return session
     }
@@ -31,6 +32,10 @@ class InMemoryConversationModule : ConversationModule {
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         sessions[sessionId] = turns.toMutableList()
+        val parsedId = sessionOrdinal(sessionId)
+        if (parsedId != null && parsedId > sessionCounter) {
+            sessionCounter = parsedId
+        }
     }
 
     override fun deleteSession(sessionId: SessionId): Boolean {
@@ -46,5 +51,24 @@ class InMemoryConversationModule : ConversationModule {
         )
         turns.add(turn)
         return turn
+    }
+
+    private fun nextSessionId(): SessionId {
+        while (true) {
+            sessionCounter += 1
+            val candidate = SessionId("session-$sessionCounter")
+            if (!sessions.containsKey(candidate)) {
+                return candidate
+            }
+        }
+    }
+
+    private fun sessionOrdinal(sessionId: SessionId): Long? {
+        val match = SESSION_ID_REGEX.matchEntire(sessionId.value) ?: return null
+        return match.groupValues[1].toLongOrNull()
+    }
+
+    private companion object {
+        val SESSION_ID_REGEX = Regex("^session-(\\d+)$")
     }
 }

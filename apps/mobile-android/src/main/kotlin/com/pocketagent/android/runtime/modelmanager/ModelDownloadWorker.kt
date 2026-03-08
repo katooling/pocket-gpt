@@ -206,6 +206,7 @@ class ModelDownloadWorker(
                 provenanceSignature = signature.ifBlank { sha256Hex("${issuer.ifBlank { "internal-release" }}|$modelId|$sha|v1".encodeToByteArray()) },
                 runtimeCompatibility = runtimeTag,
                 fileSizeBytes = destinationFile.length().coerceAtLeast(0L),
+                makeActive = verificationPolicy.enforcesProvenance,
             )
 
             updateState(
@@ -355,7 +356,7 @@ class ModelDownloadWorker(
         expectedSignature: String,
     ): Boolean {
         if (expectedSignature.isBlank()) {
-            return true
+            return false
         }
         val normalizedIssuer = issuer.ifBlank { "internal-release" }
         val computed = sha256Hex("$normalizedIssuer|$modelId|$sha|v1".encodeToByteArray())

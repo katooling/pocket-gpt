@@ -1,6 +1,6 @@
 # Evidence Index
 
-Last updated: 2026-03-06
+Last updated: 2026-03-08
 
 This index is the canonical evidence inventory after hard-prune.
 
@@ -20,6 +20,8 @@ This index is the canonical evidence inventory after hard-prune.
 ### WP-13 (`docs/operations/evidence/wp-13/`)
 
 - Full active set retained for UX-quality closure, usability packet support, and runtime/user-journey closure evidence.
+- Includes 2026-03-08 manual capture prune summary and GPU observation distillation.
+- Includes 2026-03-08 engineering closure note for session ID safety, provenance strict policy wiring, and chat-flow refactor.
 
 ## WP-12 Retained (Production-Claim Critical)
 

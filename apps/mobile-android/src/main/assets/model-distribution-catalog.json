@@ -9,7 +9,8 @@
           "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf",
           "expectedSha256": "444406ddd926550c724ec18d5120a9d40ded44908a063b0e66e9a7e5464c652c",
           "provenanceIssuer": "huggingface/unsloth",
-          "provenanceSignature": "444406ddd926550c724ec18d5120a9d40ded44908a063b0e66e9a7e5464c652c",
+          "provenanceSignature": "c28b899147e60e4c0f974e4d11f5f1bd3417d7aafb326d9f28b5e54266a0a1e0",
+          "verificationPolicy": "PROVENANCE_STRICT",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 507154688
         },
@@ -18,7 +19,8 @@
           "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-UD-IQ2_XXS.gguf",
           "expectedSha256": "a369165c8ec45a92d55cbad98b5377e2c32ca8dfc824c899d9d05b33b6b53e54",
           "provenanceIssuer": "huggingface/unsloth",
-          "provenanceSignature": "a369165c8ec45a92d55cbad98b5377e2c32ca8dfc824c899d9d05b33b6b53e54",
+          "provenanceSignature": "ef42b8e64526a2827b03c21ff6020d32bd5c19e107853413229b81b922cdc331",
+          "verificationPolicy": "PROVENANCE_STRICT",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 338227456
         }
@@ -33,7 +35,8 @@
           "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_0.gguf",
           "expectedSha256": "cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1",
           "provenanceIssuer": "huggingface/unsloth",
-          "provenanceSignature": "cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1",
+          "provenanceSignature": "cd7eb3f1ffa2840d5766104dcc0acf2730e9a7c322a14dc253dfd4290178fd62",
+          "verificationPolicy": "PROVENANCE_STRICT",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 1214873856
         },
@@ -42,7 +45,8 @@
           "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-UD-IQ2_XXS.gguf",
           "expectedSha256": "43aedbd2b03a3c2cc39f49ccf74fcd3c394ed0b2a1ede8a30ee652ee9cfc27ef",
           "provenanceIssuer": "huggingface/unsloth",
-          "provenanceSignature": "43aedbd2b03a3c2cc39f49ccf74fcd3c394ed0b2a1ede8a30ee652ee9cfc27ef",
+          "provenanceSignature": "065298256ae8743eebce768ea77954371df4f4bad819976450e3a7e4c776886f",
+          "verificationPolicy": "PROVENANCE_STRICT",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 768270592
         }
@@ -57,7 +61,8 @@
           "downloadUrl": "https://huggingface.co/unsloth/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf",
           "expectedSha256": "16c7f1667fea34bacad196a57b548effcb37614db4ab5677a20c8c7b823b9e63",
           "provenanceIssuer": "huggingface/unsloth",
-          "provenanceSignature": "16c7f1667fea34bacad196a57b548effcb37614db4ab5677a20c8c7b823b9e63",
+          "provenanceSignature": "854d771be74244d9d8cd920c521217c52f74b851478ac7521a80b4859c6036e6",
+          "verificationPolicy": "PROVENANCE_STRICT",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 270590560
         }
@@ -72,7 +77,8 @@
           "downloadUrl": "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf",
           "expectedSha256": "ed5fa30c487b282ec156c29062f1222e5c20875a944ac98289dbd242e947f747",
           "provenanceIssuer": "huggingface/unsloth",
-          "provenanceSignature": "ed5fa30c487b282ec156c29062f1222e5c20875a944ac98289dbd242e947f747",
+          "provenanceSignature": "120b142e19eb9de62bc2045b2e21c61d58294206230138975d72f4eb1fffff9f",
+          "verificationPolicy": "PROVENANCE_STRICT",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 105454144
         }

@@ -28,6 +28,7 @@ data class ModelDistributionVersion(
     val provenanceSignature: String,
     val runtimeCompatibility: String,
     val fileSizeBytes: Long,
+    val verificationPolicy: DownloadVerificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
 )
 
 data class ModelVersionDescriptor(
@@ -57,10 +58,11 @@ enum class DownloadTaskStatus {
 
 enum class DownloadVerificationPolicy {
     INTEGRITY_ONLY,
+    PROVENANCE_STRICT,
     UNKNOWN;
 
     val enforcesProvenance: Boolean
-        get() = false
+        get() = this == PROVENANCE_STRICT
 }
 
 enum class DownloadProcessingStage {

@@ -2,11 +2,15 @@ package com.pocketagent.android.ui
 
 import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.ui.controllers.ChatPersistenceFlow
 import com.pocketagent.android.ui.controllers.ChatStreamCoordinator
 import com.pocketagent.android.ui.controllers.ChatPersistenceCoordinator
+import com.pocketagent.android.ui.controllers.ChatSendFlow
 import com.pocketagent.android.ui.controllers.ChatSendController
+import com.pocketagent.android.ui.controllers.ChatStartupFlow
 import com.pocketagent.android.ui.controllers.StartupProbeController
 import com.pocketagent.android.ui.controllers.StartupReadinessCoordinator
+import com.pocketagent.android.ui.controllers.ToolIntent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -19,13 +23,11 @@ import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
-import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.PersistedInteractionMessage
 import com.pocketagent.android.ui.state.PersistedInteractionPart
 import com.pocketagent.android.ui.state.PersistedToolCall
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
-import com.pocketagent.android.ui.state.SessionStateLoadResult
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.state.StreamStateReducer
 import com.pocketagent.android.ui.state.StreamTerminalState
@@ -33,13 +35,8 @@ import com.pocketagent.android.ui.state.UiError
 import com.pocketagent.android.ui.state.UiErrorMapper
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
-import com.pocketagent.core.Turn
-import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.ModelResidencyPolicy
-import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimePerformanceProfile
-import com.pocketagent.runtime.StreamUserMessageRequest
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
@@ -52,7 +49,7 @@ import kotlinx.coroutines.launch
 
 class ChatViewModel(
     private val runtimeFacade: RuntimeGateway,
-    private val sessionPersistence: SessionPersistence,
+    sessionPersistence: SessionPersistence,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val runtimeGenerationTimeoutMs: Long = 0L,
     private val runtimeStartupProbeTimeoutMs: Long = DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS,
@@ -63,6 +60,18 @@ class ChatViewModel(
         runtimeProfile = resolveModelRuntimeProfile(isDebugBuild = BuildConfig.DEBUG),
     ),
     private val persistenceCoordinator: ChatPersistenceCoordinator = ChatPersistenceCoordinator(sessionPersistence),
+    private val persistenceFlow: ChatPersistenceFlow = ChatPersistenceFlow(persistenceCoordinator),
+    private val startupFlow: ChatStartupFlow = ChatStartupFlow(
+        runtimeGateway = runtimeFacade,
+        startupProbeController = startupProbeController,
+        startupReadinessCoordinator = startupReadinessCoordinator,
+        ioDispatcher = ioDispatcher,
+        runtimeStartupProbeTimeoutMs = runtimeStartupProbeTimeoutMs,
+        nativeRuntimeLibraryPackaged = BuildConfig.NATIVE_RUNTIME_LIBRARY_PACKAGED,
+    ),
+    private val sendFlow: ChatSendFlow = ChatSendFlow(
+        runtimeGenerationTimeoutMs = runtimeGenerationTimeoutMs,
+    ),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState = _uiState.asStateFlow()
@@ -88,9 +97,9 @@ class ChatViewModel(
             return
         }
 
-        val toolIntent = parseToolIntent(prompt)
-        if (toolIntent == null && !isRuntimeReadyForSend(snapshot.runtime)) {
-            val uiError = startupBlockError(snapshot.runtime)
+        val toolIntent = sendFlow.parseToolIntent(prompt)
+        if (toolIntent == null && !sendFlow.isRuntimeReadyForSend(snapshot.runtime)) {
+            val uiError = startupFlow.startupBlockError(snapshot.runtime)
             appendSystemMessage(
                 sessionId = activeSession.id,
                 content = formatUserFacingError(uiError),
@@ -109,11 +118,11 @@ class ChatViewModel(
             persistState()
             return
         }
-        val performanceConfig = resolvePerformanceConfig(
+        val performanceConfig = sendFlow.resolvePerformanceConfig(
             profile = snapshot.runtime.performanceProfile,
             gpuEnabled = snapshot.runtime.gpuAccelerationEnabled,
         )
-        val requestTimeoutMs = resolveRequestTimeoutMs(performanceConfig)
+        val requestTimeoutMs = sendFlow.resolveRequestTimeoutMs(performanceConfig)
         val userMessage = createMessage(
             role = MessageRole.USER,
             content = prompt,
@@ -303,7 +312,7 @@ class ChatViewModel(
                             runtimeBackend = runtimeFacade.runtimeBackend(),
                             startupProbeState = StartupProbeState.READY,
                             modelRuntimeStatus = ModelRuntimeStatus.READY,
-                            modelStatusDetail = readyStatusDetail(runtimeFacade.runtimeBackend()),
+                            modelStatusDetail = startupFlow.readyStatusDetail(runtimeFacade.runtimeBackend()),
                             activeModelId = terminal.responseModelId,
                             lastFirstTokenLatencyMs = effectiveFirstToken,
                             lastTotalLatencyMs = effectiveCompletion,
@@ -321,20 +330,12 @@ class ChatViewModel(
 
             streamCoordinator.collectStream(
                 runtimeGateway = runtimeFacade,
-                request = StreamUserMessageRequest(
-                    sessionId = SessionId(activeSession.id),
+                request = sendFlow.buildStreamRequest(
+                    sessionId = activeSession.id,
                     requestId = requestId,
-                    userText = prompt,
-                    taskType = resolveTaskType(prompt),
-                    maxTokens = resolveMaxTokens(prompt, performanceConfig),
-                    deviceState = DEFAULT_DEVICE_STATE,
-                    requestTimeoutMs = requestTimeoutMs,
+                    prompt = prompt,
                     performanceConfig = performanceConfig,
-                    residencyPolicy = ModelResidencyPolicy(
-                        keepLoadedWhileAppForeground = true,
-                        idleUnloadTtlMs = IDLE_MODEL_UNLOAD_TTL_MS,
-                        warmupOnStartup = true,
-                    ),
+                    requestTimeoutMs = requestTimeoutMs,
                 ),
                 requestTimeoutMs = requestTimeoutMs,
                 streamReducer = streamReducer,
@@ -452,8 +453,8 @@ class ChatViewModel(
     fun attachImage(imagePath: String) {
         val snapshot = _uiState.value
         val activeSession = snapshot.activeSession ?: return
-        if (!isRuntimeReady(snapshot.runtime)) {
-            val uiError = startupBlockError(snapshot.runtime)
+        if (!sendFlow.isRuntimeReadyForSend(snapshot.runtime)) {
+            val uiError = startupFlow.startupBlockError(snapshot.runtime)
             appendSystemMessage(
                 sessionId = activeSession.id,
                 content = formatUserFacingError(uiError),
@@ -714,7 +715,7 @@ class ChatViewModel(
             state.copy(
                 showOnboarding = false,
                 onboardingPage = ONBOARDING_LAST_PAGE,
-                firstSessionStage = if (isRuntimeReadyForSend(state.runtime)) {
+                firstSessionStage = if (sendFlow.isRuntimeReadyForSend(state.runtime)) {
                     FirstSessionStage.READY_TO_CHAT
                 } else {
                     FirstSessionStage.GET_READY
@@ -784,113 +785,14 @@ class ChatViewModel(
     }
 
     private fun bootstrapState() {
-        val runtimeBackend = runtimeFacade.runtimeBackend()
-        val persistedResult = persistenceCoordinator.loadStateResult()
-        val persisted = when (persistedResult) {
-            is SessionStateLoadResult.Success -> persistedResult.state
-            is SessionStateLoadResult.RecoverableCorruption -> persistedResult.resetState
-            is SessionStateLoadResult.FatalCorruption -> PersistedChatState()
-        }
-        val loadError = sessionStateLoadError(persistedResult)
-        val shouldRunStartupProbe = loadError == null
-        val restoredRoutingMode = RoutingMode.valueOf(persisted.routingMode)
-        val restoredPerformanceProfile = RuntimePerformanceProfile.valueOf(persisted.performanceProfile)
-        val restoredFirstSessionStage = FirstSessionStage.valueOf(persisted.firstSessionStage)
-        val restoredAdvancedUnlocked = true
-        val initialFirstSessionStage = when {
-            !persisted.onboardingCompleted -> FirstSessionStage.ONBOARDING
-            restoredFirstSessionStage == FirstSessionStage.ONBOARDING -> FirstSessionStage.GET_READY
-            else -> restoredFirstSessionStage
-        }
-        val gpuSupported = runtimeFacade.supportsGpuOffload()
-        val restoredGpuEnabled = persisted.gpuAccelerationEnabled && gpuSupported
-        runtimeFacade.setRoutingMode(restoredRoutingMode)
-        val bootstrapRuntimeState = if (loadError == null) {
-            RuntimeUiState(
-                routingMode = restoredRoutingMode,
-                performanceProfile = restoredPerformanceProfile,
-                gpuAccelerationEnabled = restoredGpuEnabled,
-                gpuAccelerationSupported = gpuSupported,
-                runtimeBackend = runtimeBackend,
-                startupProbeState = StartupProbeState.RUNNING,
-                modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                modelStatusDetail = "Warming model and running startup checks...",
-            ).clearError()
-        } else {
-            RuntimeUiState(
-                routingMode = restoredRoutingMode,
-                performanceProfile = restoredPerformanceProfile,
-                gpuAccelerationEnabled = restoredGpuEnabled,
-                gpuAccelerationSupported = gpuSupported,
-                runtimeBackend = runtimeBackend,
-                startupProbeState = StartupProbeState.BLOCKED,
-                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                modelStatusDetail = loadError.userMessage,
-                startupChecks = listOf(loadError.technicalDetail ?: loadError.userMessage),
-            ).withUiError(loadError)
-        }
-
-        val restoredSessions = persisted.sessions.map { session ->
-            val turns = session.messages
-                .filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
-                .map { message ->
-                    Turn(
-                        role = if (message.role == MessageRole.USER) "user" else "assistant",
-                        content = message.content,
-                        timestampEpochMs = message.timestampEpochMs,
-                    )
-                }
-            runtimeFacade.restoreSession(sessionId = SessionId(session.id), turns = turns)
-            session
-        }
-
-        if (restoredSessions.isEmpty()) {
-            val newSessionId = runtimeFacade.createSession().value
-            val now = System.currentTimeMillis()
-            _uiState.value = ChatUiState(
-                sessions = listOf(
-                    ChatSessionUiModel(
-                        id = newSessionId,
-                        title = "New chat",
-                        createdAtEpochMs = now,
-                        updatedAtEpochMs = now,
-                        messages = emptyList(),
-                    ),
-                ),
-                activeSessionId = newSessionId,
-                runtime = bootstrapRuntimeState,
-                showOnboarding = !persisted.onboardingCompleted,
-                firstSessionStage = initialFirstSessionStage,
-                advancedUnlocked = restoredAdvancedUnlocked,
-                firstAnswerCompleted = persisted.firstAnswerCompleted,
-                followUpCompleted = persisted.followUpCompleted,
-                firstSessionTelemetryEvents = persisted.firstSessionTelemetryEvents,
-            )
-            ensureSimpleFirstEnteredTelemetryIfNeeded()
-            persistState()
-            if (shouldRunStartupProbe) {
-                launchStartupProbe()
-            }
-            return
-        }
-
-        val activeSessionId = persisted.activeSessionId
-            ?.takeIf { id -> restoredSessions.any { it.id == id } }
-            ?: restoredSessions.last().id
-
-        _uiState.value = ChatUiState(
-            sessions = restoredSessions,
-            activeSessionId = activeSessionId,
-            runtime = bootstrapRuntimeState,
-            showOnboarding = !persisted.onboardingCompleted,
-            firstSessionStage = initialFirstSessionStage,
-            advancedUnlocked = restoredAdvancedUnlocked,
-            firstAnswerCompleted = persisted.firstAnswerCompleted,
-            followUpCompleted = persisted.followUpCompleted,
-            firstSessionTelemetryEvents = persisted.firstSessionTelemetryEvents,
-        )
+        val loadedState = persistenceFlow.loadBootstrapState()
+        val bootstrapResult = startupFlow.bootstrap(loadedState)
+        _uiState.value = bootstrapResult.state
         ensureSimpleFirstEnteredTelemetryIfNeeded()
-        if (shouldRunStartupProbe) {
+        if (bootstrapResult.shouldPersist) {
+            persistState()
+        }
+        if (bootstrapResult.shouldRunStartupProbe) {
             launchStartupProbe()
         }
     }
@@ -898,68 +800,9 @@ class ChatViewModel(
     private fun launchStartupProbe(statusDetailOverride: String? = null) {
         startupProbeJob?.cancel()
         startupProbeJob = viewModelScope.launch(ioDispatcher) {
-            _uiState.update { state ->
-                state.copy(
-                    runtime = state.runtime.copy(
-                        startupProbeState = StartupProbeState.RUNNING,
-                        modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                        modelStatusDetail = "Warming model and running startup checks...",
-                    ).clearError(),
-                )
-            }
-            val startupChecks = if (!BuildConfig.NATIVE_RUNTIME_LIBRARY_PACKAGED) {
-                listOf(MISSING_NATIVE_RUNTIME_BUILD_CHECK)
-            } else {
-                startupProbeController.runStartupChecks(
-                    runtimeGateway = runtimeFacade,
-                    ioDispatcher = ioDispatcher,
-                    timeoutMs = runtimeStartupProbeTimeoutMs,
-                )
-            }
-            val gpuSupported = runtimeFacade.supportsGpuOffload()
-            val runtimeBackend = runtimeFacade.runtimeBackend()
-            val readinessDecision = startupReadinessCoordinator.decide(
-                startupChecks = startupChecks,
-                runtimeBackend = runtimeBackend,
-                statusDetailOverride = statusDetailOverride,
-            )
-            _uiState.update { state ->
-                val nextRuntime = state.runtime.copy(
-                    runtimeBackend = runtimeBackend,
-                    gpuAccelerationSupported = gpuSupported,
-                    gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled && gpuSupported,
-                    startupProbeState = readinessDecision.startupProbeState,
-                    modelRuntimeStatus = readinessDecision.modelRuntimeStatus,
-                    modelStatusDetail = readinessDecision.modelStatusDetail,
-                    startupChecks = startupChecks,
-                    startupWarnings = readinessDecision.startupWarnings,
-                ).withUiError(readinessDecision.startupError)
-                val sendAllowed = readinessDecision.startupProbeState == StartupProbeState.READY
-                val blocked = readinessDecision.startupProbeState == StartupProbeState.BLOCKED ||
-                    readinessDecision.startupProbeState == StartupProbeState.BLOCKED_TIMEOUT
-                val nextStage = when {
-                    state.showOnboarding -> FirstSessionStage.ONBOARDING
-                    state.firstAnswerCompleted -> state.firstSessionStage
-                    sendAllowed -> FirstSessionStage.READY_TO_CHAT
-                    blocked -> FirstSessionStage.GET_READY
-                    else -> state.firstSessionStage
-                }
-                val completedGetReadyNow = state.firstSessionStage == FirstSessionStage.GET_READY &&
-                    nextStage == FirstSessionStage.READY_TO_CHAT
-                val telemetry = if (completedGetReadyNow) {
-                    addTelemetryEventIfMissing(
-                        events = state.firstSessionTelemetryEvents,
-                        eventName = TELEMETRY_EVENT_GET_READY_COMPLETED,
-                    )
-                } else {
-                    state.firstSessionTelemetryEvents
-                }
-                state.copy(
-                    runtime = nextRuntime,
-                    firstSessionStage = nextStage,
-                    firstSessionTelemetryEvents = telemetry,
-                )
-            }
+            _uiState.update { state -> startupFlow.markProbeRunning(state) }
+            val outcome = startupFlow.evaluateStartup(statusDetailOverride = statusDetailOverride)
+            _uiState.update { state -> startupFlow.applyProbeOutcome(state, outcome) }
             persistState()
         }
     }
@@ -1077,26 +920,7 @@ class ChatViewModel(
     }
 
     private fun persistState() {
-        val state = _uiState.value
-        persistenceCoordinator.saveState(
-            PersistedChatState(
-                sessions = state.sessions.map { session ->
-                    session.copy(
-                        messages = session.messages.map { message -> message.copy(isStreaming = false) },
-                    )
-                },
-                activeSessionId = state.activeSessionId,
-                routingMode = state.runtime.routingMode.name,
-                performanceProfile = state.runtime.performanceProfile.name,
-                gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled,
-                onboardingCompleted = !state.showOnboarding,
-                firstSessionStage = state.firstSessionStage.name,
-                advancedUnlocked = state.advancedUnlocked,
-                firstAnswerCompleted = state.firstAnswerCompleted,
-                followUpCompleted = state.followUpCompleted,
-                firstSessionTelemetryEvents = state.firstSessionTelemetryEvents,
-            ),
-        )
+        persistenceFlow.saveState(_uiState.value)
     }
 
     private fun executeToolCommand(
@@ -1182,88 +1006,6 @@ class ChatViewModel(
         )
     }
 
-    private fun parseToolIntent(prompt: String): ToolIntent? {
-        val normalized = prompt.trim()
-        val lowercase = normalized.lowercase()
-        val calcPrefix = listOf("calculate ", "calc ", "what is ")
-            .firstOrNull { lowercase.startsWith(it) }
-        if (calcPrefix != null) {
-            val expression = normalized.drop(calcPrefix.length).trim()
-            if (expression.matches(Regex("[0-9+\\-*/().\\s]{1,64}")) && expression.any { it.isDigit() }) {
-                return ToolIntent(name = "calculator", jsonArgs = """{"expression":"$expression"}""")
-            }
-        }
-        if (lowercase == "time" || lowercase == "date" || lowercase.contains("what time")) {
-            return ToolIntent(name = "date_time", jsonArgs = "{}")
-        }
-        if (lowercase.startsWith("search ")) {
-            val query = normalized.drop("search ".length).trim()
-            if (query.isNotEmpty()) {
-                return ToolIntent(name = "local_search", jsonArgs = """{"query":"${escapeJson(query)}"}""")
-            }
-        }
-        if (lowercase.startsWith("find notes ")) {
-            val query = normalized.drop("find notes ".length).trim()
-            if (query.isNotEmpty()) {
-                return ToolIntent(name = "notes_lookup", jsonArgs = """{"query":"${escapeJson(query)}"}""")
-            }
-        }
-        if (lowercase.startsWith("remind me to ")) {
-            val title = normalized.drop("remind me to ".length).trim()
-            if (title.isNotEmpty()) {
-                return ToolIntent(name = "reminder_create", jsonArgs = """{"title":"${escapeJson(title)}"}""")
-            }
-        }
-        return null
-    }
-
-    private fun escapeJson(value: String): String {
-        return value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-    }
-
-    private fun resolveTaskType(prompt: String): String {
-        return if (prompt.length >= LONG_PROMPT_LENGTH) "long_text" else "short_text"
-    }
-
-    private fun resolveMaxTokens(prompt: String, performanceConfig: PerformanceRuntimeConfig): Int {
-        val promptBudget = if (prompt.length >= LONG_PROMPT_LENGTH) {
-            LONG_PROMPT_MAX_TOKENS
-        } else {
-            SHORT_PROMPT_MAX_TOKENS
-        }
-        return minOf(promptBudget, performanceConfig.maxTokensDefault.coerceAtLeast(16))
-    }
-
-    private fun isRuntimeReady(runtime: RuntimeUiState): Boolean {
-        return runtime.startupProbeState == StartupProbeState.READY &&
-            runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
-    }
-
-    private fun isRuntimeReadyForSend(runtime: RuntimeUiState): Boolean {
-        return isRuntimeReady(runtime)
-    }
-
-    private fun resolveRequestTimeoutMs(performanceConfig: PerformanceRuntimeConfig): Long {
-        if (runtimeGenerationTimeoutMs > 0L) {
-            return runtimeGenerationTimeoutMs
-        }
-        return performanceConfig.requestTimeoutMs
-    }
-
-    private fun resolvePerformanceConfig(
-        profile: RuntimePerformanceProfile,
-        gpuEnabled: Boolean,
-    ): PerformanceRuntimeConfig {
-        val cpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        return PerformanceRuntimeConfig.forProfile(
-            profile = profile,
-            availableCpuThreads = cpuThreads,
-            gpuEnabled = gpuEnabled,
-        )
-    }
-
     private fun performanceProfileStatusDetail(
         profile: RuntimePerformanceProfile,
         gpuEnabled: Boolean,
@@ -1276,38 +1018,6 @@ class ChatViewModel(
             else -> "GPU off"
         }
         return "Speed & Battery: $profileLabel ($gpuLabel)"
-    }
-
-    private fun startupBlockError(runtime: RuntimeUiState): UiError {
-        val checks = runtime.startupChecks.ifEmpty {
-            listOf(runtime.modelStatusDetail ?: "Runtime startup checks are still running.")
-        }
-        return UiErrorMapper.startupFailure(checks)
-            ?: UiErrorMapper.runtimeFailure(runtime.modelStatusDetail ?: "Runtime is not ready yet.")
-    }
-
-    private fun sessionStateLoadError(loadResult: SessionStateLoadResult): UiError? {
-        return when (loadResult) {
-            is SessionStateLoadResult.Success -> null
-            is SessionStateLoadResult.RecoverableCorruption -> UiError(
-                code = UI_SESSION_STATE_CORRUPTION_CODE,
-                userMessage = "Saved chat state was corrupted and reset. Refresh runtime checks to continue.",
-                technicalDetail = loadResult.technicalDetail,
-            )
-            is SessionStateLoadResult.FatalCorruption -> UiError(
-                code = UI_SESSION_STATE_FATAL_CODE,
-                userMessage = "Saved chat state could not be loaded. Refresh runtime checks and retry.",
-                technicalDetail = loadResult.technicalDetail,
-            )
-        }
-    }
-
-    private fun readyStatusDetail(runtimeBackend: String?): String {
-        return if (runtimeBackend.isNullOrBlank()) {
-            "Runtime model ready"
-        } else {
-            "Runtime model ready ($runtimeBackend)"
-        }
     }
 
     private fun deriveSessionTitle(messages: List<MessageUiModel>): String {
@@ -1421,34 +1131,19 @@ class ChatViewModel(
     private fun newMessageId(prefix: String): String = "$prefix-${UUID.randomUUID()}"
 
     companion object {
-        private const val UI_SESSION_STATE_CORRUPTION_CODE = "UI-SESSION-001"
-        private const val UI_SESSION_STATE_FATAL_CODE = "UI-SESSION-002"
-        private const val MISSING_NATIVE_RUNTIME_BUILD_CHECK =
-            "Build is missing native runtime library (libpocket_llama.so). " +
-                "Install an app build that packages native runtime."
         private const val TITLE_MAX_CHARS = 42
-        private const val LONG_PROMPT_LENGTH = 160
-        private const val SHORT_PROMPT_MAX_TOKENS = 32
-        private const val LONG_PROMPT_MAX_TOKENS = 96
         private const val ONBOARDING_LAST_PAGE = 2
         private const val DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS = 30_000L
-        private const val IDLE_MODEL_UNLOAD_TTL_MS = 10 * 60 * 1000L
         private const val STREAM_UI_UPDATE_MIN_INTERVAL_MS = 80L
         private const val TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED = "simple_first_entered"
         private const val TELEMETRY_EVENT_GET_READY_STARTED = "get_ready_started"
-        private const val TELEMETRY_EVENT_GET_READY_COMPLETED = "get_ready_completed"
         private const val TELEMETRY_EVENT_FIRST_ANSWER_COMPLETED = "first_answer_completed"
         private const val TELEMETRY_EVENT_FOLLOW_UP_COMPLETED = "follow_up_completed"
         private const val TELEMETRY_EVENT_ADVANCED_UNLOCKED = "advanced_unlocked"
-        private val DEFAULT_DEVICE_STATE = DeviceState(
-            batteryPercent = 85,
-            thermalLevel = 3,
-            ramClassGb = 8,
-        )
     }
 }
 
-private fun addTelemetryEventIfMissing(
+internal fun addTelemetryEventIfMissing(
     events: List<FirstSessionTelemetryEvent>,
     eventName: String,
 ): List<FirstSessionTelemetryEvent> {
@@ -1459,12 +1154,7 @@ private fun addTelemetryEventIfMissing(
         .takeLast(64)
 }
 
-private data class ToolIntent(
-    val name: String,
-    val jsonArgs: String,
-)
-
-private fun RuntimeUiState.clearError(): RuntimeUiState {
+internal fun RuntimeUiState.clearError(): RuntimeUiState {
     return copy(
         lastErrorCode = null,
         lastErrorUserMessage = null,
@@ -1473,7 +1163,7 @@ private fun RuntimeUiState.clearError(): RuntimeUiState {
     )
 }
 
-private fun RuntimeUiState.withUiError(error: UiError?): RuntimeUiState {
+internal fun RuntimeUiState.withUiError(error: UiError?): RuntimeUiState {
     if (error == null) {
         return clearError()
     }

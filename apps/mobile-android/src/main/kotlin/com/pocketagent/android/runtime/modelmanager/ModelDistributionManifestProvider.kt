@@ -119,11 +119,19 @@ class ModelDistributionManifestProvider(
                 val sha = versionItem.optString("expectedSha256", "").trim()
                 val issuer = versionItem.optString("provenanceIssuer", "").trim()
                 val signature = versionItem.optString("provenanceSignature", "").trim()
+                val verificationPolicyRaw = versionItem
+                    .optString("verificationPolicy", DownloadVerificationPolicy.INTEGRITY_ONLY.name)
+                    .trim()
                 val runtimeCompatibility = versionItem
                     .optString("runtimeCompatibility", "android-arm64-v8a")
                     .trim()
                     .ifEmpty { "android-arm64-v8a" }
                 val fileSizeBytes = versionItem.optLong("fileSizeBytes", 0L)
+                val verificationPolicy = parseVerificationPolicy(verificationPolicyRaw)
+                    ?: run {
+                        warnings += "Version '$modelId/$version' has invalid verificationPolicy '$verificationPolicyRaw'; using INTEGRITY_ONLY."
+                        DownloadVerificationPolicy.INTEGRITY_ONLY
+                    }
                 val rejectionReason = validateVersionEntry(
                     version = version,
                     downloadUrl = downloadUrl,
@@ -147,6 +155,7 @@ class ModelDistributionManifestProvider(
                     provenanceSignature = signature,
                     runtimeCompatibility = runtimeCompatibility,
                     fileSizeBytes = fileSizeBytes,
+                    verificationPolicy = verificationPolicy,
                 )
             }
         }
@@ -237,6 +246,14 @@ class ModelDistributionManifestProvider(
         return runCatching {
             URL(url).protocol.equals("https", ignoreCase = true)
         }.getOrDefault(false)
+    }
+
+    private fun parseVerificationPolicy(raw: String): DownloadVerificationPolicy? {
+        if (raw.isBlank()) {
+            return DownloadVerificationPolicy.INTEGRITY_ONLY
+        }
+        val normalized = raw.trim().uppercase()
+        return runCatching { DownloadVerificationPolicy.valueOf(normalized) }.getOrNull()
     }
 
     private fun mergeWarnings(vararg warnings: String?): String? {
