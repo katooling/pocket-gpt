@@ -1,6 +1,7 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.inference.ModelRuntimeProfile
 import java.io.BufferedInputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -19,14 +20,14 @@ data class RuntimeConfig(
     val responseCacheTtlSec: Long,
     val responseCacheMaxEntries: Int,
     val streamContractV2Enabled: Boolean = true,
+    val modelRuntimeProfile: ModelRuntimeProfile = ModelRuntimeProfile.PROD,
 ) {
     companion object {
-        const val QWEN_0_8B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SHA256"
-        const val QWEN_2B_SHA256_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_SHA256"
-        const val QWEN_0_8B_SIDELOAD_PATH_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH"
-        const val QWEN_2B_SIDELOAD_PATH_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH"
-        const val QWEN_0_8B_PROVENANCE_SIG_ENV: String = "POCKETGPT_QWEN_3_5_0_8B_Q4_PROVENANCE_SIGNATURE"
-        const val QWEN_2B_PROVENANCE_SIG_ENV: String = "POCKETGPT_QWEN_3_5_2B_Q4_PROVENANCE_SIGNATURE"
+        const val MODEL_ENV_PREFIX: String = "POCKETGPT_MODEL_"
+        const val MODEL_SIDELOAD_PATH_ENV_SUFFIX: String = "_SIDELOAD_PATH"
+        const val MODEL_SHA256_ENV_SUFFIX: String = "_SHA256"
+        const val MODEL_PROVENANCE_SIGNATURE_ENV_SUFFIX: String = "_PROVENANCE_SIGNATURE"
+        const val MODEL_PROVENANCE_ISSUER_ENV_SUFFIX: String = "_PROVENANCE_ISSUER"
         const val MODEL_PROVENANCE_ISSUER_ENV: String = "POCKETGPT_MODEL_PROVENANCE_ISSUER"
         const val MODEL_RUNTIME_COMPATIBILITY_ENV: String = "POCKETGPT_MODEL_RUNTIME_COMPATIBILITY"
         const val REQUIRE_NATIVE_RUNTIME_STARTUP_ENV: String = "POCKETGPT_REQUIRE_NATIVE_RUNTIME_STARTUP"
@@ -35,6 +36,7 @@ data class RuntimeConfig(
         const val RESPONSE_CACHE_TTL_SEC_ENV: String = "POCKETGPT_RESPONSE_CACHE_TTL_SEC"
         const val RESPONSE_CACHE_MAX_ENTRIES_ENV: String = "POCKETGPT_RESPONSE_CACHE_MAX_ENTRIES"
         const val STREAM_CONTRACT_V2_ENV: String = "POCKETGPT_STREAM_CONTRACT_V2"
+        const val MODEL_RUNTIME_PROFILE_ENV: String = "POCKETGPT_MODEL_RUNTIME_PROFILE"
         private const val DEFAULT_PROVENANCE_ISSUER: String = "internal-release"
         private const val DEFAULT_RUNTIME_COMPATIBILITY_TAG: String = "android-arm64-v8a"
         private const val DEFAULT_SHA_BUFFER_SIZE: Int = 1024 * 1024
@@ -43,91 +45,96 @@ data class RuntimeConfig(
         private const val DEFAULT_RESPONSE_CACHE_TTL_SEC: Long = 0L
         private const val DEFAULT_RESPONSE_CACHE_MAX_ENTRIES: Int = 0
 
-        fun fromEnvironment(): RuntimeConfig {
-            val artifactPayloadByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to resolvePayload(
-                    sideLoadPathEnv = QWEN_0_8B_SIDELOAD_PATH_ENV,
-                    fallbackSeed = "sideload:${ModelCatalog.QWEN_3_5_0_8B_Q4}:v1",
-                ),
-                ModelCatalog.QWEN_3_5_2B_Q4 to resolvePayload(
-                    sideLoadPathEnv = QWEN_2B_SIDELOAD_PATH_ENV,
-                    fallbackSeed = "sideload:${ModelCatalog.QWEN_3_5_2B_Q4}:v1",
-                ),
-            )
-            val artifactFilePathByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to System.getenv(QWEN_0_8B_SIDELOAD_PATH_ENV).orEmpty(),
-                ModelCatalog.QWEN_3_5_2B_Q4 to System.getenv(QWEN_2B_SIDELOAD_PATH_ENV).orEmpty(),
-            )
-            val artifactSha256ByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to resolveSha(
-                    envValue = System.getenv(QWEN_0_8B_SHA256_ENV),
-                    payload = artifactPayloadByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
-                    sideLoadPath = System.getenv(QWEN_0_8B_SIDELOAD_PATH_ENV),
-                ),
-                ModelCatalog.QWEN_3_5_2B_Q4 to resolveSha(
-                    envValue = System.getenv(QWEN_2B_SHA256_ENV),
-                    payload = artifactPayloadByModelId.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
-                    sideLoadPath = System.getenv(QWEN_2B_SIDELOAD_PATH_ENV),
-                ),
-            )
-            val issuer = System.getenv(MODEL_PROVENANCE_ISSUER_ENV)
+        fun fromEnvironment(
+            environment: Map<String, String> = System.getenv(),
+        ): RuntimeConfig {
+            val artifactPayloadByModelId = mutableMapOf<String, ByteArray>()
+            val artifactFilePathByModelId = mutableMapOf<String, String>()
+            val artifactSha256ByModelId = mutableMapOf<String, String>()
+            val artifactProvenanceIssuerByModelId = mutableMapOf<String, String>()
+            val artifactProvenanceSignatureByModelId = mutableMapOf<String, String>()
+
+            val issuer = environment[MODEL_PROVENANCE_ISSUER_ENV]
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: DEFAULT_PROVENANCE_ISSUER
-            val artifactProvenanceIssuerByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to issuer,
-                ModelCatalog.QWEN_3_5_2B_Q4 to issuer,
-            )
-            val artifactProvenanceSignatureByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to resolveProvenanceSignature(
-                    envValue = System.getenv(QWEN_0_8B_PROVENANCE_SIG_ENV),
-                    issuer = artifactProvenanceIssuerByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
-                    modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
-                    payload = artifactPayloadByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
-                ),
-                ModelCatalog.QWEN_3_5_2B_Q4 to resolveProvenanceSignature(
-                    envValue = System.getenv(QWEN_2B_PROVENANCE_SIG_ENV),
-                    issuer = artifactProvenanceIssuerByModelId.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
-                    modelId = ModelCatalog.QWEN_3_5_2B_Q4,
-                    payload = artifactPayloadByModelId.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
-                ),
-            )
-            val runtimeCompatibilityTag = System.getenv(MODEL_RUNTIME_COMPATIBILITY_ENV)
+
+            ModelCatalog.modelDescriptors().forEach { descriptor ->
+                val modelId = descriptor.modelId
+                val sideLoadPath = environment[sideLoadPathEnvName(modelId)].orEmpty()
+                val payload = resolvePayload(sideLoadPath = sideLoadPath)
+                if (payload != null) {
+                    artifactPayloadByModelId[modelId] = payload
+                }
+                artifactFilePathByModelId[modelId] = sideLoadPath
+
+                val payloadSha = resolveSha(
+                    envValue = environment[sha256EnvName(modelId)],
+                    payload = payload,
+                    sideLoadPath = sideLoadPath,
+                )
+                artifactSha256ByModelId[modelId] = payloadSha
+
+                val modelIssuer = environment[provenanceIssuerEnvName(modelId)]
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: issuer
+                artifactProvenanceIssuerByModelId[modelId] = modelIssuer
+                artifactProvenanceSignatureByModelId[modelId] = resolveProvenanceSignature(
+                    envValue = environment[provenanceSignatureEnvName(modelId)],
+                    issuer = modelIssuer,
+                    modelId = modelId,
+                    payloadSha = payloadSha,
+                )
+            }
+
+            val runtimeCompatibilityTag = environment[MODEL_RUNTIME_COMPATIBILITY_ENV]
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: DEFAULT_RUNTIME_COMPATIBILITY_TAG
             val requireNativeRuntimeForStartupChecks = booleanEnv(
+                environment = environment,
                 name = REQUIRE_NATIVE_RUNTIME_STARTUP_ENV,
                 defaultValue = true,
             )
             val prefixCacheEnabled = booleanEnv(
+                environment = environment,
                 name = PREFIX_CACHE_ENABLED_ENV,
                 defaultValue = DEFAULT_PREFIX_CACHE_ENABLED,
             )
             val prefixCacheStrict = booleanEnv(
+                environment = environment,
                 name = PREFIX_CACHE_STRICT_ENV,
                 defaultValue = DEFAULT_PREFIX_CACHE_STRICT,
             )
             val responseCacheTtlSec = longEnv(
+                environment = environment,
                 name = RESPONSE_CACHE_TTL_SEC_ENV,
                 defaultValue = DEFAULT_RESPONSE_CACHE_TTL_SEC,
                 minValue = 0L,
             )
             val responseCacheMaxEntries = intEnv(
+                environment = environment,
                 name = RESPONSE_CACHE_MAX_ENTRIES_ENV,
                 defaultValue = DEFAULT_RESPONSE_CACHE_MAX_ENTRIES,
                 minValue = 0,
             )
             val streamContractV2Enabled = booleanEnv(
+                environment = environment,
                 name = STREAM_CONTRACT_V2_ENV,
                 defaultValue = true,
             )
+            val modelRuntimeProfile = runtimeProfileEnv(
+                environment = environment,
+                name = MODEL_RUNTIME_PROFILE_ENV,
+                defaultValue = ModelRuntimeProfile.PROD,
+            )
             return RuntimeConfig(
-                artifactPayloadByModelId = artifactPayloadByModelId,
-                artifactFilePathByModelId = artifactFilePathByModelId,
-                artifactSha256ByModelId = artifactSha256ByModelId,
-                artifactProvenanceIssuerByModelId = artifactProvenanceIssuerByModelId,
-                artifactProvenanceSignatureByModelId = artifactProvenanceSignatureByModelId,
+                artifactPayloadByModelId = artifactPayloadByModelId.toMap(),
+                artifactFilePathByModelId = artifactFilePathByModelId.toMap(),
+                artifactSha256ByModelId = artifactSha256ByModelId.toMap(),
+                artifactProvenanceIssuerByModelId = artifactProvenanceIssuerByModelId.toMap(),
+                artifactProvenanceSignatureByModelId = artifactProvenanceSignatureByModelId.toMap(),
                 runtimeCompatibilityTag = runtimeCompatibilityTag,
                 requireNativeRuntimeForStartupChecks = requireNativeRuntimeForStartupChecks,
                 prefixCacheEnabled = prefixCacheEnabled,
@@ -135,11 +142,44 @@ data class RuntimeConfig(
                 responseCacheTtlSec = responseCacheTtlSec,
                 responseCacheMaxEntries = responseCacheMaxEntries,
                 streamContractV2Enabled = streamContractV2Enabled,
+                modelRuntimeProfile = modelRuntimeProfile,
             )
         }
 
-        private fun booleanEnv(name: String, defaultValue: Boolean): Boolean {
-            val raw = System.getenv(name)
+        fun sideLoadPathEnvName(modelId: String): String {
+            return envNameForModel(modelId = modelId, suffix = MODEL_SIDELOAD_PATH_ENV_SUFFIX)
+        }
+
+        fun sha256EnvName(modelId: String): String {
+            return envNameForModel(modelId = modelId, suffix = MODEL_SHA256_ENV_SUFFIX)
+        }
+
+        fun provenanceSignatureEnvName(modelId: String): String {
+            return envNameForModel(modelId = modelId, suffix = MODEL_PROVENANCE_SIGNATURE_ENV_SUFFIX)
+        }
+
+        fun provenanceIssuerEnvName(modelId: String): String {
+            return envNameForModel(modelId = modelId, suffix = MODEL_PROVENANCE_ISSUER_ENV_SUFFIX)
+        }
+
+        private fun envNameForModel(modelId: String, suffix: String): String {
+            val normalizedModelId = modelId.trim()
+            val descriptor = ModelCatalog.descriptorFor(normalizedModelId)
+                ?: ModelCatalog.descriptorForEnvKeyToken(normalizedModelId)
+            val envToken = descriptor?.envKeyToken ?: normalizeModelEnvToken(normalizedModelId)
+            return "$MODEL_ENV_PREFIX$envToken$suffix"
+        }
+
+        private fun normalizeModelEnvToken(modelId: String): String {
+            return modelId
+                .uppercase()
+                .replace(Regex("[^A-Z0-9]+"), "_")
+                .trim('_')
+                .ifEmpty { "MODEL" }
+        }
+
+        private fun booleanEnv(environment: Map<String, String>, name: String, defaultValue: Boolean): Boolean {
+            val raw = environment[name]
                 ?.trim()
                 ?.lowercase()
                 ?: return defaultValue
@@ -150,25 +190,55 @@ data class RuntimeConfig(
             }
         }
 
-        private fun intEnv(name: String, defaultValue: Int, minValue: Int): Int {
-            val parsed = System.getenv(name)?.trim()?.toIntOrNull() ?: return defaultValue
+        private fun intEnv(
+            environment: Map<String, String>,
+            name: String,
+            defaultValue: Int,
+            minValue: Int,
+        ): Int {
+            val parsed = environment[name]?.trim()?.toIntOrNull() ?: return defaultValue
             return parsed.coerceAtLeast(minValue)
         }
 
-        private fun longEnv(name: String, defaultValue: Long, minValue: Long): Long {
-            val parsed = System.getenv(name)?.trim()?.toLongOrNull() ?: return defaultValue
+        private fun longEnv(
+            environment: Map<String, String>,
+            name: String,
+            defaultValue: Long,
+            minValue: Long,
+        ): Long {
+            val parsed = environment[name]?.trim()?.toLongOrNull() ?: return defaultValue
             return parsed.coerceAtLeast(minValue)
         }
 
-        private fun resolvePayload(sideLoadPathEnv: String, fallbackSeed: String): ByteArray {
-            val sideLoadDefined = System.getenv(sideLoadPathEnv)
+        private fun runtimeProfileEnv(
+            environment: Map<String, String>,
+            name: String,
+            defaultValue: ModelRuntimeProfile,
+        ): ModelRuntimeProfile {
+            val normalized = environment[name]
                 ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-                ?: return fallbackSeed.encodeToByteArray()
-            return "sideload-path:$sideLoadDefined".encodeToByteArray()
+                ?.lowercase()
+                ?: return defaultValue
+            return when (normalized) {
+                "prod", "production" -> ModelRuntimeProfile.PROD
+                "dev_fast", "dev-fast", "devfast", "debug" -> ModelRuntimeProfile.DEV_FAST
+                else -> defaultValue
+            }
         }
 
-        private fun resolveSha(envValue: String?, payload: ByteArray, sideLoadPath: String?): String {
+        private fun resolvePayload(sideLoadPath: String): ByteArray? {
+            val normalized = sideLoadPath.trim()
+            if (normalized.isEmpty()) {
+                return null
+            }
+            val filePath = runCatching { Path.of(normalized) }.getOrNull() ?: return null
+            if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
+                return null
+            }
+            return null
+        }
+
+        private fun resolveSha(envValue: String?, payload: ByteArray?, sideLoadPath: String?): String {
             val envSha = envValue?.trim()?.takeIf { it.isNotEmpty() }
             if (envSha != null) {
                 return envSha
@@ -180,20 +250,22 @@ data class RuntimeConfig(
             if (filePath != null && Files.exists(filePath) && Files.isRegularFile(filePath)) {
                 return sha256HexFromFilePath(filePath)
             }
-            return sha256Hex(payload)
+            return payload?.let(::sha256Hex).orEmpty()
         }
 
         private fun resolveProvenanceSignature(
             envValue: String?,
             issuer: String,
             modelId: String,
-            payload: ByteArray,
+            payloadSha: String,
         ): String {
             val envSig = envValue?.trim()?.takeIf { it.isNotEmpty() }
             if (envSig != null) {
                 return envSig
             }
-            val payloadSha = sha256Hex(payload)
+            if (payloadSha.isBlank()) {
+                return ""
+            }
             return sha256Hex("$issuer|$modelId|$payloadSha|v1".encodeToByteArray())
         }
 

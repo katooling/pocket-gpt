@@ -1,7 +1,5 @@
 package com.pocketagent.runtime
 
-import com.pocketagent.inference.ModelCatalog
-
 class ModelTemplateRegistry(
     private val profileByModelId: Map<String, ModelTemplateProfile> = defaultProfiles(),
 ) {
@@ -17,11 +15,8 @@ class ModelTemplateRegistry(
     }
 
     companion object {
-        fun defaultProfiles(): Map<String, ModelTemplateProfile> {
-            return mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to ModelTemplateProfile.CHATML,
-                ModelCatalog.QWEN_3_5_2B_Q4 to ModelTemplateProfile.CHATML,
-            )
+        fun defaultProfiles(modelRegistry: ModelRegistry = ModelRegistry.default()): Map<String, ModelTemplateProfile> {
+            return modelRegistry.templateProfilesByModelId()
         }
     }
 }

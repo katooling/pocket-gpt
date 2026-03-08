@@ -27,7 +27,7 @@ class AdbDeviceLlamaCppBridgeTest {
 
         assertTrue(bridge.isReady())
         assertEquals(RuntimeBackend.ADB_FALLBACK, bridge.runtimeBackend())
-        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
 
         val tokens = mutableListOf<String>()
         val result = bridge.generate(prompt = "hello", maxTokens = 64) { tokens.add(it) }
@@ -51,7 +51,7 @@ class AdbDeviceLlamaCppBridgeTest {
 
         assertFalse(bridge.isReady())
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
-        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
     }
 
     @Test
@@ -60,7 +60,7 @@ class AdbDeviceLlamaCppBridgeTest {
 
         assertFalse(bridge.isReady())
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
-        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
     }
 }
 

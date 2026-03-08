@@ -1,5 +1,8 @@
 package com.pocketagent.android.ui.state
 
+import com.pocketagent.runtime.ImageAnalysisResult
+import com.pocketagent.runtime.ToolExecutionResult
+
 data class UiError(
     val code: String,
     val userMessage: String,
@@ -21,6 +24,8 @@ object UiErrorMapper {
         val userMessage = when {
             normalized.contains("missing runtime model") ->
                 "Runtime setup is incomplete. Download or import required models, then refresh checks."
+            normalized.contains("model_artifact_config_missing") ->
+                "Runtime artifact metadata is missing. Reinstall or re-provision models, then refresh checks."
             normalized.contains("checksum_mismatch") || normalized.contains("checksum mismatch") ->
                 "Model verification failed (checksum mismatch). Re-download or re-import the model."
             normalized.contains("provenance_issuer_mismatch") ||
@@ -29,12 +34,15 @@ object UiErrorMapper {
                 "Model verification failed (provenance mismatch). Use a trusted model source and retry."
             normalized.contains("runtime_incompatible") || normalized.contains("runtime compatibility") ->
                 "Model runtime compatibility failed. Import a compatible model build and refresh checks."
+            normalized.contains("build is missing native runtime library") ||
+                normalized.contains("libpocket_llama.so") ->
+                "This app build is missing the native runtime. Install a full build and retry."
             normalized.contains("runtime backend is adb_fallback") || normalized.contains("runtime backend is unavailable") ->
                 "Native runtime backend is unavailable. Confirm device/runtime setup and retry."
             normalized.contains("template_unavailable") || normalized.contains("model profile missing") ->
                 "Model interaction template is unavailable. Reinstall/update model setup, then refresh checks."
             normalized.contains("startup checks timed out") || normalized.contains("timed out") ->
-                "Runtime checks timed out. You can still send a message, but first output may take longer on older devices."
+                "Runtime checks timed out. Refresh runtime checks before sending a message."
             else ->
                 "Runtime setup is incomplete. Open model setup, refresh checks, and retry."
         }
@@ -56,6 +64,24 @@ object UiErrorMapper {
         )
     }
 
+    fun fromImageResult(result: ImageAnalysisResult): UiError? {
+        return when (result) {
+            is ImageAnalysisResult.Success -> null
+            is ImageAnalysisResult.Failure -> when (result.failure) {
+                is com.pocketagent.runtime.ImageFailure.Validation -> UiError(
+                    code = IMAGE_VALIDATION_CODE,
+                    userMessage = result.failure.userMessage,
+                    technicalDetail = result.failure.technicalDetail,
+                )
+                else -> UiError(
+                    code = RUNTIME_CODE,
+                    userMessage = result.failure.userMessage,
+                    technicalDetail = result.failure.technicalDetail,
+                )
+            }
+        }
+    }
+
     fun fromToolResult(result: String): UiError? {
         if (result.startsWith("TOOL_VALIDATION_ERROR:")) {
             return UiError(
@@ -75,6 +101,24 @@ object UiErrorMapper {
             return runtimeFailure(result)
         }
         return null
+    }
+
+    fun fromToolResult(result: ToolExecutionResult): UiError? {
+        return when (result) {
+            is ToolExecutionResult.Success -> null
+            is ToolExecutionResult.Failure -> when (result.failure) {
+                is com.pocketagent.runtime.ToolFailure.Validation -> UiError(
+                    code = TOOL_SCHEMA_CODE,
+                    userMessage = result.failure.userMessage,
+                    technicalDetail = result.failure.technicalDetail,
+                )
+                else -> UiError(
+                    code = RUNTIME_CODE,
+                    userMessage = result.failure.userMessage,
+                    technicalDetail = result.failure.technicalDetail,
+                )
+            }
+        }
     }
 
     fun runtimeFailure(detail: String?): UiError {

@@ -217,7 +217,7 @@ class ModelArtifactManagerTest {
     }
 
     @Test
-    fun `missing payload uses last known good artifact when previously verified`() {
+    fun `missing payload is strict by default and allows opt-in last known good fallback`() {
         val manager = ModelArtifactManager()
         val payload = "known-good".encodeToByteArray()
         val modelId = "model-lkg"
@@ -253,7 +253,18 @@ class ModelArtifactManagerTest {
             provenanceSignature = signature,
             runtimeCompatibility = "android-arm64-v8a",
         )
-        assertEquals(ArtifactVerificationStatus.PASS_LAST_KNOWN_GOOD, fallback.status)
+        assertEquals(ArtifactVerificationStatus.MISSING_PAYLOAD, fallback.status)
+
+        val debugFallback = manager.verifyArtifactForLoad(
+            modelId = modelId,
+            version = "1.0.0",
+            payload = null,
+            allowLastKnownGoodFallback = true,
+            provenanceIssuer = issuer,
+            provenanceSignature = signature,
+            runtimeCompatibility = "android-arm64-v8a",
+        )
+        assertEquals(ArtifactVerificationStatus.PASS_LAST_KNOWN_GOOD, debugFallback.status)
         assertEquals("1.0.0", manager.getLastKnownGoodArtifact(modelId)?.version)
     }
 

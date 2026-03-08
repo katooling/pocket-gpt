@@ -11,6 +11,8 @@ class ToolLoopCoordinator(
         return InteractionToolExecutionResult(
             success = result.success,
             content = result.content,
+            validationErrorCode = result.validationErrorCode,
+            validationErrorDetail = result.validationErrorDetail,
             message = InteractionMessage(
                 role = InteractionRole.TOOL,
                 toolCallId = "tool-${System.currentTimeMillis()}",
@@ -24,5 +26,7 @@ class ToolLoopCoordinator(
 data class InteractionToolExecutionResult(
     val success: Boolean,
     val content: String,
+    val validationErrorCode: String? = null,
+    val validationErrorDetail: String? = null,
     val message: InteractionMessage,
 )

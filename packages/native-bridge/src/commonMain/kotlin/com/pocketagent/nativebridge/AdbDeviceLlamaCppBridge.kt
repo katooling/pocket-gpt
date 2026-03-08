@@ -3,10 +3,7 @@ package com.pocketagent.nativebridge
 import com.pocketagent.inference.ModelCatalog
 
 class AdbDeviceLlamaCppBridge(
-    private val supportedModels: Set<String> = setOf(
-        ModelCatalog.QWEN_3_5_0_8B_Q4,
-        ModelCatalog.QWEN_3_5_2B_Q4,
-    ),
+    private val supportedModels: Set<String> = ModelCatalog.bridgeSupportedModels().toSet(),
     private val commandRunner: CommandRunner = ProcessCommandRunner(),
     private val env: Map<String, String> = System.getenv(),
 ) : LlamaCppRuntimeBridge {
@@ -27,7 +24,12 @@ class AdbDeviceLlamaCppBridge(
     override fun supportsGpuOffload(): Boolean = false
 
     override fun loadModel(modelId: String, modelPath: String?): Boolean {
-        if (!supportedModels.contains(modelId)) {
+        val validation = ModelCatalog.validateBridgeLoad(
+            modelId = modelId,
+            modelPath = modelPath,
+            supportedModels = supportedModels,
+        )
+        if (!validation.accepted) {
             return false
         }
         val serial = resolveSerial() ?: return false

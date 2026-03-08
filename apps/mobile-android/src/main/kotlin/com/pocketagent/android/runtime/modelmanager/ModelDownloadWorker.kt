@@ -2,9 +2,11 @@ package com.pocketagent.android.runtime.modelmanager
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.pm.ServiceInfo
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -37,13 +39,23 @@ class ModelDownloadWorker(
         val expectedSha = inputData.getString(KEY_EXPECTED_SHA256).orEmpty().trim()
         val issuer = inputData.getString(KEY_PROVENANCE_ISSUER).orEmpty().trim()
         val signature = inputData.getString(KEY_PROVENANCE_SIGNATURE).orEmpty().trim()
-        val verificationPolicy = parseVerificationPolicy(
-            inputData.getString(KEY_VERIFICATION_POLICY).orEmpty(),
-        )
+        val verificationPolicyRaw = inputData.getString(KEY_VERIFICATION_POLICY).orEmpty()
+        val verificationPolicy = parseVerificationPolicy(verificationPolicyRaw)
         val runtimeCompatibility = inputData.getString(KEY_RUNTIME_COMPATIBILITY).orEmpty().trim()
         val declaredTotalBytes = inputData.getLong(KEY_TOTAL_BYTES, 0L).coerceAtLeast(0L)
 
         if (taskId.isEmpty() || modelId.isEmpty() || version.isEmpty() || downloadUrl.isEmpty()) {
+            return@withContext Result.failure(outputDataOf(taskId))
+        }
+        if (verificationPolicy == null) {
+            fail(
+                taskId = taskId,
+                modelId = modelId,
+                version = version,
+                reason = DownloadFailureReason.UNKNOWN,
+                processingStage = DownloadProcessingStage.DOWNLOADING,
+                message = "Corrupt task metadata: invalid verification policy '$verificationPolicyRaw'.",
+            )
             return@withContext Result.failure(outputDataOf(taskId))
         }
         val retryAllowed = runAttemptCount < MAX_RETRY_ATTEMPTS
@@ -64,9 +76,9 @@ class ModelDownloadWorker(
             return@withContext Result.success(outputDataOf(taskId))
         }
 
-        val downloadDir = File(appContext.filesDir, DOWNLOAD_DIR).apply { mkdirs() }
+        val downloadDir = provisioningStore.managedDownloadWorkspaceDirectory()
         val partFile = File(downloadDir, "$taskId.part")
-        val destinationFile = File(downloadDir, buildDestinationFileName(modelId, version))
+        val destinationFile = provisioningStore.destinationFileForVersion(modelId = modelId, version = version)
 
         try {
             setForeground(createForegroundInfo(taskId = taskId, modelId = modelId, percent = 0))
@@ -230,7 +242,10 @@ class ModelDownloadWorker(
         } catch (cancellation: Exception) {
             if (isStopped) {
                 val current = ModelDownloadTaskStateStore.get(appContext, taskId)
-                if (current?.status == DownloadTaskStatus.PAUSED) {
+                if (
+                    current?.status == DownloadTaskStatus.PAUSED ||
+                    current?.status == DownloadTaskStatus.CANCELLED
+                ) {
                     return@withContext Result.success(outputDataOf(taskId))
                 }
                 fail(
@@ -416,7 +431,7 @@ class ModelDownloadWorker(
             totalBytes = resolvedTotal,
             processingStage = processingStage,
             verificationPolicy = previous?.verificationPolicy
-                ?: parseVerificationPolicy(inputData.getString(KEY_VERIFICATION_POLICY).orEmpty()),
+                ?: DownloadVerificationPolicy.INTEGRITY_ONLY,
             message = message,
             reason = reason,
         )
@@ -442,7 +457,15 @@ class ModelDownloadWorker(
             .setOngoing(safePercent < 100)
             .setProgress(100, safePercent, false)
             .build()
-        return ForegroundInfo(taskId.hashCode(), notification)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(
+                taskId.hashCode(),
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            ForegroundInfo(taskId.hashCode(), notification)
+        }
     }
 
     private fun hasNetworkConnection(): Boolean {
@@ -479,12 +502,6 @@ class ModelDownloadWorker(
             .joinToString(separator = "") { "%02x".format(it) }
     }
 
-    private fun buildDestinationFileName(modelId: String, version: String): String {
-        val normalizedModel = modelId.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-        val normalizedVersion = version.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-        return "$normalizedModel-$normalizedVersion.gguf"
-    }
-
     companion object {
         internal const val WORK_TAG = "model-download"
         internal const val DOWNLOAD_DIR = "runtime-model-downloads"
@@ -505,9 +522,13 @@ class ModelDownloadWorker(
         private const val MAX_RETRY_ATTEMPTS = 3
     }
 
-    private fun parseVerificationPolicy(raw: String): DownloadVerificationPolicy {
+    private fun parseVerificationPolicy(raw: String): DownloadVerificationPolicy? {
+        val normalized = raw.trim()
+        if (normalized.isEmpty()) {
+            return null
+        }
         return runCatching {
-            DownloadVerificationPolicy.valueOf(raw.trim())
-        }.getOrDefault(DownloadVerificationPolicy.INTEGRITY_ONLY)
+            DownloadVerificationPolicy.valueOf(normalized)
+        }.getOrNull()
     }
 }

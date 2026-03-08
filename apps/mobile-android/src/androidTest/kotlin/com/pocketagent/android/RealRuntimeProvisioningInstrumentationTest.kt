@@ -97,9 +97,27 @@ class RealRuntimeProvisioningInstrumentationTest {
     }
 
     private fun requireFile(value: String): String {
-        val file = java.io.File(value)
-        require(file.exists() && file.isFile) { "Model path does not exist: $value" }
-        return file.absolutePath
+        val resolved = resolveModelPath(value)
+        require(resolved != null) { "Model path does not exist: $value" }
+        return resolved
+    }
+
+    private fun resolveModelPath(value: String): String? {
+        val normalized = value.trim()
+        if (normalized.isEmpty()) {
+            return null
+        }
+        val candidates = listOf(
+            normalized,
+            normalized.replace("/Android/media/", "/Download/"),
+            normalized.replace("/storage/emulated/0/Android/media/", "/storage/emulated/0/Download/"),
+            normalized.replace("/sdcard/Android/media/", "/sdcard/Download/"),
+        )
+        return candidates
+            .asSequence()
+            .map { candidate -> File(candidate) }
+            .firstOrNull { file -> file.exists() && file.isFile }
+            ?.absolutePath
     }
 
     private fun normalizePath(value: String): String {

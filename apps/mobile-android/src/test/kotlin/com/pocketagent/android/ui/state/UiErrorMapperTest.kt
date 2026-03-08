@@ -1,5 +1,9 @@
 package com.pocketagent.android.ui.state
 
+import com.pocketagent.runtime.ImageAnalysisResult
+import com.pocketagent.runtime.ImageFailure
+import com.pocketagent.runtime.ToolExecutionResult
+import com.pocketagent.runtime.ToolFailure
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -64,6 +68,16 @@ class UiErrorMapperTest {
     }
 
     @Test
+    fun `startup mapper differentiates missing native build packaging guidance`() {
+        val error = UiErrorMapper.startupFailure(
+            listOf("Build is missing native runtime library (libpocket_llama.so). Install proper build."),
+        )
+
+        assertNotNull(error)
+        assertTrue(error.userMessage.contains("missing the native runtime", ignoreCase = true))
+    }
+
+    @Test
     fun `startup mapper differentiates template unavailable guidance`() {
         val error = UiErrorMapper.startupFailure(
             listOf("TEMPLATE_UNAVAILABLE: model profile missing for qwen3.5-0.8b-q4"),
@@ -90,5 +104,37 @@ class UiErrorMapperTest {
         assertEquals("UI-RUNTIME-001", error.code)
         assertTrue(error.userMessage.contains("cancelled", ignoreCase = true))
         assertTrue(error.technicalDetail?.contains("cancelled", ignoreCase = true) == true)
+    }
+
+    @Test
+    fun `typed tool validation failure maps to deterministic tool schema ui code`() {
+        val error = UiErrorMapper.fromToolResult(
+            ToolExecutionResult.Failure(
+                ToolFailure.Validation(
+                    code = "invalid_field_value",
+                    userMessage = "That tool request was rejected for safety.",
+                    technicalDetail = "Field 'expression' has disallowed characters.",
+                ),
+            ),
+        )
+
+        assertNotNull(error)
+        assertEquals("UI-TOOL-SCHEMA-001", error.code)
+    }
+
+    @Test
+    fun `typed image validation failure maps to deterministic image ui code`() {
+        val error = UiErrorMapper.fromImageResult(
+            ImageAnalysisResult.Failure(
+                ImageFailure.Validation(
+                    code = "unsupported_extension",
+                    userMessage = "That image could not be processed.",
+                    technicalDetail = "extension 'tiff' is not supported",
+                ),
+            ),
+        )
+
+        assertNotNull(error)
+        assertEquals("UI-IMG-VAL-001", error.code)
     }
 }

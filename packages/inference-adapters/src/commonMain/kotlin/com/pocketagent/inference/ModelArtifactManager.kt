@@ -84,7 +84,9 @@ data class ArtifactVerificationResult(
 
 class ModelArtifactManager {
     private val manifests: MutableMap<String, MutableMap<String, ModelArtifact>> = mutableMapOf()
-    private var activeModelId: String = ModelCatalog.QWEN_3_5_0_8B_Q4
+    private var activeModelId: String = ModelCatalog.defaultGetReadyModelId(ModelRuntimeProfile.PROD)
+        ?: ModelCatalog.bridgeSupportedModels().firstOrNull()
+        ?: ModelCatalog.SMOKE_ECHO_120M
     private var pinnedActiveVersion: String? = null
     private val lastKnownGoodArtifactByModelId: MutableMap<String, ModelArtifact> = mutableMapOf()
 
@@ -261,6 +263,7 @@ class ModelArtifactManager {
         payload: ByteArray? = null,
         payloadSha256: String? = null,
         payloadPresent: Boolean = payload != null || !payloadSha256.isNullOrBlank(),
+        allowLastKnownGoodFallback: Boolean = false,
         provenanceIssuer: String,
         provenanceSignature: String,
         runtimeCompatibility: String,
@@ -310,7 +313,7 @@ class ModelArtifactManager {
         val actualSha = resolveActualSha(payload = payload, payloadSha256 = payloadSha256)
         if (!payloadPresent || actualSha == null) {
             val knownGood = lastKnownGoodArtifactByModelId[modelId]
-            if (knownGood != null && knownGood.version == artifact.version) {
+            if (allowLastKnownGoodFallback && knownGood != null && knownGood.version == artifact.version) {
                 return ArtifactVerificationResult(
                     status = ArtifactVerificationStatus.PASS_LAST_KNOWN_GOOD,
                     modelId = knownGood.modelId,

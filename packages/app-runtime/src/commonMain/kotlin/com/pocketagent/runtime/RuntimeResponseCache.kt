@@ -5,6 +5,7 @@ internal class RuntimeResponseCache(
     private val ttlMs: Long,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
+    private val lock = Any()
     private val entries = object : LinkedHashMap<String, CacheEntry>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry>?): Boolean {
             return size > maxEntries
@@ -17,23 +18,29 @@ internal class RuntimeResponseCache(
         if (!enabled()) {
             return null
         }
-        val entry = entries[key] ?: return null
-        if (isExpired(entry)) {
-            entries.remove(key)
-            return null
+        synchronized(lock) {
+            val entry = entries[key] ?: return null
+            if (isExpired(entry)) {
+                entries.remove(key)
+                return null
+            }
+            return entry.text
         }
-        return entry.text
     }
 
     fun put(key: String, text: String) {
         if (!enabled()) {
             return
         }
-        entries[key] = CacheEntry(text = text, storedAtMs = nowMs())
+        synchronized(lock) {
+            entries[key] = CacheEntry(text = text, storedAtMs = nowMs())
+        }
     }
 
     fun clear() {
-        entries.clear()
+        synchronized(lock) {
+            entries.clear()
+        }
     }
 
     private fun isExpired(entry: CacheEntry): Boolean {

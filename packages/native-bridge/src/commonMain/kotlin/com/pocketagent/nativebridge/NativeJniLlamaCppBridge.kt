@@ -2,20 +2,24 @@ package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
 
+data class BridgeError(
+    val code: String,
+    val detail: String? = null,
+)
+
 class NativeJniLlamaCppBridge(
     private val libraryName: String = "pocket_llama",
     private val nativeApi: NativeApi = JniNativeApi(),
     private val libraryLoader: (String) -> Unit = System::loadLibrary,
-    private val supportedModels: Set<String> = setOf(
-        ModelCatalog.QWEN_3_5_0_8B_Q4,
-        ModelCatalog.QWEN_3_5_2B_Q4,
-    ),
+    private val supportedModels: Set<String> = ModelCatalog.bridgeSupportedModels().toSet(),
     private val fallbackBridge: LlamaCppRuntimeBridge = AdbDeviceLlamaCppBridge(),
     private val fallbackEnabled: Boolean = defaultFallbackEnabled(),
 ) : LlamaCppRuntimeBridge {
     private var initialized = false
     private var runtimeReady = false
     private var usingFallback = false
+    @Volatile
+    private var lastBridgeError: BridgeError? = null
     @Volatile
     private var runtimeGenerationConfig: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
     @Volatile
@@ -42,26 +46,37 @@ class NativeJniLlamaCppBridge(
         return if (usingFallback) {
             fallbackBridge.supportsGpuOffload()
         } else {
-            runCatching { nativeApi.supportsGpuOffload() }.getOrDefault(false)
+            runCatching { nativeApi.supportsGpuOffload() }
+                .onSuccess { clearBridgeError() }
+                .onFailure { error -> recordBridgeError("JNI_GPU_SUPPORT_EXCEPTION", error) }
+                .getOrElse { false }
         }
     }
 
     override fun loadModel(modelId: String, modelPath: String?): Boolean {
         ensureRuntimeInitialized()
-        if (!runtimeReady || !supportedModels.contains(modelId)) {
+        if (!runtimeReady) {
+            recordBridgeError("RUNTIME_NOT_READY", "Runtime is not initialized.")
+            return false
+        }
+        val validation = ModelCatalog.validateBridgeLoad(
+            modelId = modelId,
+            modelPath = modelPath,
+            supportedModels = supportedModels,
+        )
+        if (!validation.accepted) {
+            recordBridgeError(validation.code ?: "MODEL_INVALID", validation.detail)
             return false
         }
         if (usingFallback) {
             fallbackBridge.setRuntimeGenerationConfig(runtimeGenerationConfig)
-            return fallbackBridge.loadModel(modelId, modelPath)
+            return fallbackBridge.loadModel(modelId, validation.normalizedModelPath)
         }
-        val normalizedModelPath = modelPath?.trim().orEmpty()
-        if (normalizedModelPath.isBlank()) {
-            return false
-        }
+        val normalizedModelPath = validation.normalizedModelPath.orEmpty()
         val config = runtimeGenerationConfig
         val gpuEnabledAndSupported = config.gpuEnabled && supportsGpuOffload()
-        return runCatching {
+        val requestedGpuLayers = if (gpuEnabledAndSupported) config.gpuLayers else 0
+        val primaryAttempt = runCatching {
             nativeApi.loadModel(
                 modelId = modelId,
                 modelPath = normalizedModelPath,
@@ -69,9 +84,46 @@ class NativeJniLlamaCppBridge(
                 nThreadsBatch = config.nThreadsBatch,
                 nBatch = config.nBatch,
                 nUbatch = config.nUbatch,
-                nGpuLayers = if (gpuEnabledAndSupported) config.gpuLayers else 0,
+                nGpuLayers = requestedGpuLayers,
             )
-        }.getOrDefault(false)
+        }
+        if (primaryAttempt.getOrNull() == true) {
+            clearBridgeError()
+            return true
+        }
+
+        if (requestedGpuLayers > 0) {
+            val cpuFallbackAttempt = runCatching {
+                nativeApi.loadModel(
+                    modelId = modelId,
+                    modelPath = normalizedModelPath,
+                    nThreads = config.nThreads,
+                    nThreadsBatch = config.nThreadsBatch,
+                    nBatch = config.nBatch,
+                    nUbatch = config.nUbatch,
+                    nGpuLayers = 0,
+                )
+            }
+            if (cpuFallbackAttempt.getOrNull() == true) {
+                clearBridgeError()
+                return true
+            }
+            val finalError = cpuFallbackAttempt.exceptionOrNull() ?: primaryAttempt.exceptionOrNull()
+            if (finalError != null) {
+                recordBridgeError("JNI_LOAD_EXCEPTION", finalError)
+            } else {
+                recordBridgeError("JNI_LOAD_FAILED", "modelId=$modelId|gpu_layers=$requestedGpuLayers|cpu_retry=true")
+            }
+            return false
+        }
+
+        val finalError = primaryAttempt.exceptionOrNull()
+        if (finalError != null) {
+            recordBridgeError("JNI_LOAD_EXCEPTION", finalError)
+        } else {
+            recordBridgeError("JNI_LOAD_FAILED", "modelId=$modelId")
+        }
+        return false
     }
 
     override fun generate(
@@ -123,6 +175,8 @@ class NativeJniLlamaCppBridge(
                         onToken(token)
                     },
                 )
+            }.onFailure { error ->
+                recordBridgeError("JNI_GENERATE_EXCEPTION", error)
             }.getOrElse {
                 return GenerationResult(
                     finishReason = GenerationFinishReason.ERROR,
@@ -130,10 +184,23 @@ class NativeJniLlamaCppBridge(
                     firstTokenMs = firstTokenMs,
                     totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
                     cancelled = false,
-                    errorCode = "JNI_EXCEPTION",
+                    errorCode = "JNI_GENERATE_EXCEPTION",
                 )
             }
             val finishReason = status.finishReason
+            val statusErrorCode = status.errorCode?.trim()?.takeIf { it.isNotEmpty() }
+            if (
+                finishReason == GenerationFinishReason.ERROR ||
+                finishReason == GenerationFinishReason.CALLBACK_ERROR ||
+                finishReason == GenerationFinishReason.UTF8_STREAM_ERROR
+            ) {
+                recordBridgeError(
+                    code = statusErrorCode ?: "JNI_STREAM_ERROR",
+                    detail = "requestId=$requestId",
+                )
+            } else if (finishReason != GenerationFinishReason.CANCELLED) {
+                clearBridgeError()
+            }
             GenerationResult(
                 finishReason = finishReason,
                 tokenCount = tokenCount,
@@ -152,7 +219,7 @@ class NativeJniLlamaCppBridge(
                 } else {
                     null
                 },
-                errorCode = status.errorCode,
+                errorCode = statusErrorCode,
             )
         } finally {
             activeRequestId = null
@@ -172,12 +239,22 @@ class NativeJniLlamaCppBridge(
 
     override fun cancelGeneration(): Boolean {
         if (!runtimeReady) {
+            recordBridgeError("RUNTIME_NOT_READY", "Cancel requested while runtime not ready.")
             return false
         }
         if (usingFallback) {
             return fallbackBridge.cancelGeneration()
         }
-        return runCatching { nativeApi.cancelGeneration() }.getOrDefault(false)
+        return runCatching { nativeApi.cancelGeneration() }
+            .onSuccess { cancelled ->
+                if (cancelled) {
+                    clearBridgeError()
+                } else {
+                    recordBridgeError("JNI_CANCEL_RETURNED_FALSE", "native cancel returned false")
+                }
+            }
+            .onFailure { error -> recordBridgeError("JNI_CANCEL_EXCEPTION", error) }
+            .getOrElse { false }
     }
 
     override fun cancelGeneration(requestId: String): Boolean {
@@ -199,6 +276,8 @@ class NativeJniLlamaCppBridge(
         return if (usingFallback) RuntimeBackend.ADB_FALLBACK else RuntimeBackend.NATIVE_JNI
     }
 
+    fun lastError(): BridgeError? = lastBridgeError
+
     private fun ensureRuntimeInitialized() {
         if (initialized) {
             return
@@ -207,21 +286,46 @@ class NativeJniLlamaCppBridge(
         val nativeReady = runCatching {
             libraryLoader(libraryName)
             nativeApi.initialize()
-        }.getOrDefault(false)
+        }.onFailure { error ->
+            recordBridgeError("JNI_LIBRARY_OR_INIT_EXCEPTION", error)
+        }.getOrElse { false }
         if (nativeReady) {
             runtimeReady = true
             usingFallback = false
+            clearBridgeError()
             return
+        }
+        if (lastBridgeError == null) {
+            recordBridgeError("JNI_INIT_FAILED", "native initialize returned false")
         }
 
         if (fallbackEnabled && fallbackBridge.isReady()) {
             runtimeReady = true
             usingFallback = true
+            recordBridgeError("ADB_FALLBACK_ACTIVE", "Native runtime unavailable; using adb fallback.")
             return
         }
 
         runtimeReady = false
         usingFallback = false
+        if (lastBridgeError == null) {
+            recordBridgeError("RUNTIME_UNAVAILABLE", "Native and fallback runtimes unavailable.")
+        }
+    }
+
+    private fun clearBridgeError() {
+        lastBridgeError = null
+    }
+
+    private fun recordBridgeError(code: String, error: Throwable) {
+        lastBridgeError = BridgeError(
+            code = code,
+            detail = error.message ?: error::class.simpleName,
+        )
+    }
+
+    private fun recordBridgeError(code: String, detail: String?) {
+        lastBridgeError = BridgeError(code = code, detail = detail)
     }
 
     interface NativeApi {

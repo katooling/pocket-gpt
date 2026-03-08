@@ -1,6 +1,6 @@
 # Model Management and Runtime Readiness Flow
 
-Last updated: 2026-03-06
+Last updated: 2026-03-08
 Owner: Runtime + Android
 Lifecycle: Phase-2 implemented (versioned install + downloads + activation control)
 
@@ -16,14 +16,15 @@ Lifecycle: Phase-2 implemented (versioned install + downloads + activation contr
 
 1. Runtime performance profile defaults to `BALANCED` on first launch.
 2. Profile options exposed to users are fixed: `BATTERY`, `BALANCED`, `FAST`.
-3. GPU acceleration toggle is capability-gated:
+3. Routing defaults remain `AUTO` with baseline model options, and optional fast-tier routes are available when registered/supported.
+4. GPU acceleration toggle is capability-gated:
    - unsupported runtimes show explicit disabled state
    - supported runtimes allow persisted on/off selection from advanced controls
-4. Model residency defaults:
+5. Model residency defaults:
    - keep-loaded while app is foreground: enabled
    - idle unload TTL: `10m`
    - warmup on startup: enabled
-5. Runtime details surface support telemetry labels after generation:
+6. Runtime details surface support telemetry labels after generation:
    - first-token latency
    - total latency
    - prefill latency
@@ -84,7 +85,8 @@ Startup checks still enforce valid interaction template availability and artifac
    - `Completed` when this becomes the first active version for the model.
    - `InstalledInactive` when another active version already exists.
 7. User can optionally switch active version from installed versions.
-8. Runtime checks refresh updates status immediately after terminal download states.
+8. Active downloads support in-app pause/resume/retry/cancel controls.
+9. Runtime checks refresh updates status immediately after terminal download states.
 
 ## Journey State Contract (Forward/Back/Close/Pause/Load/Unlock)
 

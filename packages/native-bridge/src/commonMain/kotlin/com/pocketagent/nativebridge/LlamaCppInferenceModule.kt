@@ -87,6 +87,10 @@ class LlamaCppInferenceModule(
 
     fun runtimeBackend(): RuntimeBackend = runtimeBridge.runtimeBackend()
 
+    fun lastBridgeError(): BridgeError? {
+        return (runtimeBridge as? NativeJniLlamaCppBridge)?.lastError()
+    }
+
     fun registerModelPath(modelId: String, absolutePath: String) {
         val normalizedPath = absolutePath.trim()
         if (normalizedPath.isBlank()) {

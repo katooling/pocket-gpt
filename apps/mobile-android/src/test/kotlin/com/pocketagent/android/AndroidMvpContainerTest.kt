@@ -1,5 +1,6 @@
 package com.pocketagent.android
 
+import com.pocketagent.core.InMemoryObservabilityModule
 import com.pocketagent.core.ObservabilityModule
 import com.pocketagent.core.PolicyModule
 import com.pocketagent.core.RoutingMode
@@ -21,7 +22,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `manual routing mode override forces selected model`() {
         val inference = RecordingInferenceModule()
-        val container = AndroidMvpContainer(inferenceModule = inference)
+        val container = defaultContainer(inferenceModule = inference)
         val session = container.createSession()
 
         container.setRoutingMode(RoutingMode.QWEN_2B)
@@ -38,7 +39,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `send user message runs load generate unload lifecycle`() {
         val inference = RecordingInferenceModule()
-        val container = AndroidMvpContainer(inferenceModule = inference)
+        val container = defaultContainer(inferenceModule = inference)
         val session = container.createSession()
         val response = container.sendUserMessage(
             sessionId = session,
@@ -57,7 +58,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `send user message fails when runtime model cannot load`() {
         val inference = RecordingInferenceModule(allowLoad = false)
-        val container = AndroidMvpContainer(inferenceModule = inference)
+        val container = defaultContainer(inferenceModule = inference)
         val session = container.createSession()
 
         val error = assertFailsWith<IllegalStateException> {
@@ -76,7 +77,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `send user message fails when runtime emits no tokens`() {
         val inference = RecordingInferenceModule(tokensToEmit = emptyList())
-        val container = AndroidMvpContainer(inferenceModule = inference)
+        val container = defaultContainer(inferenceModule = inference)
         val session = container.createSession()
 
         val error = assertFailsWith<IllegalStateException> {
@@ -94,7 +95,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `follow-up prompt includes relevant memory snippet`() {
         val inference = RecordingInferenceModule()
-        val container = AndroidMvpContainer(inferenceModule = inference)
+        val container = defaultContainer(inferenceModule = inference)
         val session = container.createSession()
 
         container.sendUserMessage(
@@ -122,7 +123,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `restored session history is used for follow up prompts`() {
         val inference = RecordingInferenceModule()
-        val container = AndroidMvpContainer(inferenceModule = inference)
+        val container = defaultContainer(inferenceModule = inference)
         val session = SessionId("restored-session")
         container.restoreSession(
             sessionId = session,
@@ -156,9 +157,8 @@ class AndroidMvpContainerTest {
         val checks = container.runStartupChecks()
 
         assertTrue(checks.isNotEmpty())
-        assertTrue(checks.first().contains("Artifact manifest invalid"))
-        assertTrue(checks.first().contains(AndroidMvpContainer.QWEN_0_8B_SHA256_ENV))
-        assertTrue(checks.first().contains(AndroidMvpContainer.QWEN_2B_SHA256_ENV))
+        assertTrue(checks.any { it.contains("MODEL_ARTIFACT_CONFIG_MISSING:model=${ModelCatalog.QWEN_3_5_0_8B_Q4};field=sha256") })
+        assertTrue(checks.any { it.contains("MODEL_ARTIFACT_CONFIG_MISSING:model=${ModelCatalog.QWEN_3_5_2B_Q4};field=sha256") })
     }
 
     @Test
@@ -218,7 +218,7 @@ class AndroidMvpContainerTest {
         val inference = RecordingInferenceModule(
             availableModels = listOf(ModelCatalog.QWEN_3_5_0_8B_Q4),
         )
-        val container = AndroidMvpContainer(inferenceModule = inference)
+        val container = defaultContainer(inferenceModule = inference)
         val session = container.createSession()
 
         container.setRoutingMode(RoutingMode.QWEN_2B)
@@ -286,7 +286,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `send user message fails when policy rejects inference event`() {
         val policy = RecordingPolicyModule(deniedEvents = setOf("inference.generate"))
-        val container = AndroidMvpContainer(
+        val container = defaultContainer(
             inferenceModule = RecordingInferenceModule(),
             policyModule = policy,
         )
@@ -309,7 +309,7 @@ class AndroidMvpContainerTest {
 
     @Test
     fun `run tool is blocked when policy rejects tool event`() {
-        val container = AndroidMvpContainer(
+        val container = defaultContainer(
             policyModule = RecordingPolicyModule(deniedEvents = setOf("tool.execute")),
         )
 
@@ -322,7 +322,7 @@ class AndroidMvpContainerTest {
     fun `analyze image fails when policy rejects image event`() {
         val inference = RecordingInferenceModule()
         val policy = RecordingPolicyModule(deniedEvents = setOf("inference.image_analyze"))
-        val container = AndroidMvpContainer(
+        val container = defaultContainer(
             inferenceModule = inference,
             policyModule = policy,
         )
@@ -342,7 +342,7 @@ class AndroidMvpContainerTest {
         val inference = RecordingInferenceModule()
         val observability = RecordingObservabilityModule()
         val policy = RecordingPolicyModule()
-        val container = AndroidMvpContainer(
+        val container = defaultContainer(
             inferenceModule = inference,
             observabilityModule = observability,
             policyModule = policy,
@@ -368,7 +368,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `analyze image fails when runtime image model cannot load`() {
         val inference = RecordingInferenceModule(allowLoad = false)
-        val container = AndroidMvpContainer(inferenceModule = inference)
+        val container = defaultContainer(inferenceModule = inference)
 
         val error = assertFailsWith<IllegalStateException> {
             container.analyzeImage("photo.jpg", "describe this image")
@@ -417,7 +417,7 @@ class AndroidMvpContainerTest {
     @Test
     fun `startup checks fail when offline probe is unexpectedly allowlisted`() {
         val policy = RecordingPolicyModule(allowlistedNetworkActions = setOf("runtime.offline_probe"))
-        val container = AndroidMvpContainer(
+        val container = defaultContainer(
             inferenceModule = RecordingInferenceModule(),
             policyModule = policy,
         )
@@ -429,7 +429,7 @@ class AndroidMvpContainerTest {
 
     @Test
     fun `export diagnostics fails when policy rejects diagnostics export event`() {
-        val container = AndroidMvpContainer(
+        val container = defaultContainer(
             policyModule = RecordingPolicyModule(deniedEvents = setOf("observability.export")),
         )
 
@@ -442,7 +442,7 @@ class AndroidMvpContainerTest {
 
     @Test
     fun `export diagnostics redacts sensitive payload fields`() {
-        val container = AndroidMvpContainer(
+        val container = defaultContainer(
             policyModule = RecordingPolicyModule(),
             observabilityModule = LeakyObservabilityModule(
                 diagnostics = "inference.total_ms=count:1,avg_ms:65.00|prompt:secret-value;memory=user-ssn;tool_args={\"token\":\"abc\"};thermal_samples=3",
@@ -571,6 +571,39 @@ private class LeakyObservabilityModule(
     }
 
     override fun exportLocalDiagnostics(): String = diagnostics
+}
+
+private fun defaultContainer(
+    inferenceModule: InferenceModule = RecordingInferenceModule(),
+    policyModule: PolicyModule = RecordingPolicyModule(),
+    observabilityModule: ObservabilityModule = InMemoryObservabilityModule(),
+): AndroidMvpContainer {
+    val payloads = testPayloads()
+    val issuerByModel = mapOf(
+        ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
+        ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+    )
+    val signatureByModel = mapOf(
+        ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature(
+            "internal-release",
+            ModelCatalog.QWEN_3_5_0_8B_Q4,
+            payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
+        ),
+        ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature(
+            "internal-release",
+            ModelCatalog.QWEN_3_5_2B_Q4,
+            payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
+        ),
+    )
+    return AndroidMvpContainer(
+        inferenceModule = inferenceModule,
+        policyModule = policyModule,
+        observabilityModule = observabilityModule,
+        artifactPayloadByModelId = payloads,
+        artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
+        artifactProvenanceIssuerByModelId = issuerByModel,
+        artifactProvenanceSignatureByModelId = signatureByModel,
+    )
 }
 
 private fun testPayloads(): Map<String, ByteArray> {

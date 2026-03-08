@@ -100,6 +100,7 @@ internal fun ChatScreenBody(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun OfflineAndStatusHeader(
     state: ChatUiState,
     onGetReadyTapped: () -> Unit,
@@ -118,7 +119,6 @@ private fun OfflineAndStatusHeader(
     }
     val backendLabel = state.runtime.runtimeBackend?.trim().orEmpty()
 
-    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     fun StatusChips() {
         FlowRow(
@@ -196,6 +196,17 @@ private fun OfflineAndStatusHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    if (backendLabel.equals("ADB_FALLBACK", ignoreCase = true)) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Card(modifier = Modifier.testTag("runtime_backend_fallback_banner")) {
+            Text(
+                text = stringResource(id = R.string.ui_runtime_backend_fallback_debug_warning),
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
 
     if (state.runtime.lastErrorUserMessage != null && state.runtime.lastErrorCode != null) {
         val recoveryHint = stringResource(id = state.runtime.recoveryHintTextResId())
@@ -237,8 +248,10 @@ private fun OfflineAndStatusHeader(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Button(onClick = if (simpleFirstLocked) onGetReadyTapped else onOpenModelSetup) {
                             Text(
@@ -253,9 +266,6 @@ private fun OfflineAndStatusHeader(
                         }
                         OutlinedButton(onClick = onRefreshRuntimeChecks) {
                             Text(stringResource(id = R.string.ui_refresh_runtime_checks))
-                        }
-                        OutlinedButton(onClick = onOpenModelSetup) {
-                            Text(stringResource(id = R.string.ui_open_model_setup))
                         }
                     }
                     TextButton(
@@ -328,10 +338,15 @@ private fun OfflineAndStatusHeader(
 }
 
 private fun RuntimeUiState.recoveryHintTextResId(): Int {
+    val nativeRuntimeMissing = lastErrorTechnicalDetail
+        ?.contains("libpocket_llama.so", ignoreCase = true) == true ||
+        lastErrorTechnicalDetail?.contains("build is missing native runtime library", ignoreCase = true) == true
     val timeoutError = lastErrorTechnicalDetail
         ?.contains("timed out", ignoreCase = true) == true ||
         lastErrorUserMessage?.contains("timed out", ignoreCase = true) == true
-    return if (timeoutError) {
+    return if (nativeRuntimeMissing) {
+        R.string.ui_native_runtime_missing_hint
+    } else if (timeoutError) {
         R.string.ui_runtime_timeout_hint
     } else {
         R.string.ui_model_setup_hint

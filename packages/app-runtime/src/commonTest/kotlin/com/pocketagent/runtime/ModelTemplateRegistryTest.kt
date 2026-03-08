@@ -12,6 +12,8 @@ class ModelTemplateRegistryTest {
 
         assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
         assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.QWEN_3_5_2B_Q4))
+        assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M))
+        assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M))
     }
 
     @Test
@@ -20,5 +22,24 @@ class ModelTemplateRegistryTest {
 
         val message = registry.ensureTemplateAvailable("unknown-model")
         assertTrue(message?.contains("TEMPLATE_UNAVAILABLE") == true)
+    }
+
+    @Test
+    fun `default profiles are derived from model registry metadata`() {
+        val customRegistry = ModelRegistry(
+            metadataByModelId = mapOf(
+                "custom-model" to RuntimeModelMetadata(
+                    modelId = "custom-model",
+                    templateProfile = ModelTemplateProfile.LLAMA3,
+                    tier = RuntimeModelTier.DEBUG,
+                    startupRequirement = StartupRequirement.NONE,
+                ),
+            ),
+            startupMinimumReadyCount = 1,
+        )
+
+        val profiles = ModelTemplateRegistry.defaultProfiles(modelRegistry = customRegistry)
+
+        assertEquals(ModelTemplateProfile.LLAMA3, profiles["custom-model"])
     }
 }

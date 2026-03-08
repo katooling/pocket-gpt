@@ -53,7 +53,7 @@ class ModelDistributionManifestProvider(
             syncedAtEpochMs = now,
             lastError = mergeWarnings(
                 bundled.lastError,
-                "Remote catalog refresh failed: $remoteError",
+                "MODEL_MANIFEST_REMOTE_FETCH_FAILED:$remoteError",
             ),
         )
     }
@@ -63,7 +63,7 @@ class ModelDistributionManifestProvider(
             return ModelDistributionManifest(
                 models = emptyList(),
                 source = ManifestSource.BUNDLED,
-                lastError = "Bundled catalog cannot be loaded: context is unavailable.",
+                lastError = "MODEL_MANIFEST_BUNDLED_UNAVAILABLE:context_unavailable",
             )
         }
         val payload = runCatching {
@@ -73,21 +73,21 @@ class ModelDistributionManifestProvider(
             return ModelDistributionManifest(
                 models = emptyList(),
                 source = ManifestSource.BUNDLED,
-                lastError = "Bundled catalog asset missing: $bundledAssetPath",
+                lastError = "MODEL_MANIFEST_BUNDLED_UNAVAILABLE:asset_missing:$bundledAssetPath",
             )
         }
         if (payload.isNullOrBlank()) {
             return ModelDistributionManifest(
                 models = emptyList(),
                 source = ManifestSource.BUNDLED,
-                lastError = "Bundled catalog asset empty: $bundledAssetPath",
+                lastError = "MODEL_MANIFEST_BUNDLED_INVALID:asset_empty:$bundledAssetPath",
             )
         }
         return runCatching { parseManifest(payload) }.getOrElse { error ->
             ModelDistributionManifest(
                 models = emptyList(),
                 source = ManifestSource.BUNDLED,
-                lastError = "Bundled catalog parse failed: ${error.message ?: "invalid json"}",
+                lastError = "MODEL_MANIFEST_BUNDLED_INVALID:parse_failed:${error.message ?: "invalid json"}",
             )
         }
     }
@@ -96,63 +96,70 @@ class ModelDistributionManifestProvider(
         val root = JSONObject(raw)
         val modelsJson = root.optJSONArray("models") ?: JSONArray()
         val warnings = mutableListOf<String>()
-        val models = buildList {
-            for (index in 0 until modelsJson.length()) {
-                val item = modelsJson.optJSONObject(index) ?: continue
-                val modelId = item.optString("modelId", "").trim()
-                val displayName = item.optString("displayName", modelId).trim()
-                if (modelId.isEmpty()) {
-                    warnings += "Dropped manifest model entry at index=$index: missing modelId."
+        val byModelId = linkedMapOf<String, ParsedModelAccumulator>()
+        for (index in 0 until modelsJson.length()) {
+            val item = modelsJson.optJSONObject(index) ?: continue
+            val modelId = item.optString("modelId", "").trim()
+            val displayName = item.optString("displayName", modelId).trim()
+            if (modelId.isEmpty()) {
+                warnings += "Dropped manifest model entry at index=$index: missing modelId."
+                continue
+            }
+            val accumulator = byModelId.getOrPut(modelId) {
+                ParsedModelAccumulator(displayName = displayName.ifBlank { modelId })
+            }
+            if (accumulator.displayName != displayName && displayName.isNotBlank()) {
+                warnings += "Model '$modelId' declared multiple display names; keeping '${accumulator.displayName}'."
+            }
+            val versionsJson = item.optJSONArray("versions") ?: JSONArray()
+            for (v in 0 until versionsJson.length()) {
+                val versionItem = versionsJson.optJSONObject(v) ?: continue
+                val version = versionItem.optString("version", "").trim()
+                val downloadUrl = versionItem.optString("downloadUrl", "").trim()
+                val sha = versionItem.optString("expectedSha256", "").trim()
+                val issuer = versionItem.optString("provenanceIssuer", "").trim()
+                val signature = versionItem.optString("provenanceSignature", "").trim()
+                val runtimeCompatibility = versionItem
+                    .optString("runtimeCompatibility", "android-arm64-v8a")
+                    .trim()
+                    .ifEmpty { "android-arm64-v8a" }
+                val fileSizeBytes = versionItem.optLong("fileSizeBytes", 0L)
+                val rejectionReason = validateVersionEntry(
+                    version = version,
+                    downloadUrl = downloadUrl,
+                    expectedSha256 = sha,
+                    fileSizeBytes = fileSizeBytes,
+                )
+                if (rejectionReason != null) {
+                    warnings += "Dropped $modelId/$version: $rejectionReason"
                     continue
                 }
-                val versionsJson = item.optJSONArray("versions") ?: JSONArray()
-                val versions = buildList {
-                    for (v in 0 until versionsJson.length()) {
-                        val versionItem = versionsJson.optJSONObject(v) ?: continue
-                        val version = versionItem.optString("version", "").trim()
-                        val downloadUrl = versionItem.optString("downloadUrl", "").trim()
-                        val sha = versionItem.optString("expectedSha256", "").trim()
-                        val issuer = versionItem.optString("provenanceIssuer", "").trim()
-                        val signature = versionItem.optString("provenanceSignature", "").trim()
-                        val runtimeCompatibility = versionItem
-                            .optString("runtimeCompatibility", "android-arm64-v8a")
-                            .trim()
-                            .ifEmpty { "android-arm64-v8a" }
-                        val fileSizeBytes = versionItem.optLong("fileSizeBytes", 0L)
-                        val rejectionReason = validateVersionEntry(
-                            version = version,
-                            downloadUrl = downloadUrl,
-                            expectedSha256 = sha,
-                            fileSizeBytes = fileSizeBytes,
-                        )
-                        if (rejectionReason != null) {
-                            warnings += "Dropped $modelId/$version: $rejectionReason"
-                            continue
-                        }
-                        add(
-                            ModelDistributionVersion(
-                                modelId = modelId,
-                                version = version,
-                                downloadUrl = downloadUrl,
-                                expectedSha256 = sha,
-                                provenanceIssuer = issuer,
-                                provenanceSignature = signature,
-                                runtimeCompatibility = runtimeCompatibility,
-                                fileSizeBytes = fileSizeBytes,
-                            ),
-                        )
-                    }
-                }
-                if (versions.isEmpty()) {
-                    warnings += "Dropped model '$modelId': no valid versions."
+                if (accumulator.versionsByVersion.containsKey(version)) {
+                    warnings += "Dropped duplicate $modelId/$version entry from manifest."
                     continue
                 }
-                add(
-                    ModelDistributionModel(
-                        modelId = modelId,
-                        displayName = displayName,
-                        versions = versions.sortedByDescending { it.version },
-                    ),
+                accumulator.versionsByVersion[version] = ModelDistributionVersion(
+                    modelId = modelId,
+                    version = version,
+                    downloadUrl = downloadUrl,
+                    expectedSha256 = sha,
+                    provenanceIssuer = issuer,
+                    provenanceSignature = signature,
+                    runtimeCompatibility = runtimeCompatibility,
+                    fileSizeBytes = fileSizeBytes,
+                )
+            }
+        }
+        val models = byModelId.entries.mapNotNull { (modelId, accumulator) ->
+            val versions = accumulator.versionsByVersion.values.sortedByDescending { it.version }
+            if (versions.isEmpty()) {
+                warnings += "Dropped model '$modelId': no valid versions."
+                null
+            } else {
+                ModelDistributionModel(
+                    modelId = modelId,
+                    displayName = accumulator.displayName,
+                    versions = versions,
                 )
             }
         }
@@ -161,6 +168,11 @@ class ModelDistributionManifestProvider(
             lastError = summarizeWarnings(warnings),
         )
     }
+
+    private data class ParsedModelAccumulator(
+        val displayName: String,
+        val versionsByVersion: LinkedHashMap<String, ModelDistributionVersion> = linkedMapOf(),
+    )
 
     private fun mergeManifests(
         bundled: ModelDistributionManifest,

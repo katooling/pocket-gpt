@@ -28,3 +28,5 @@ __pycache__/
 scripts/benchmarks/logcat-*.txt
 scripts/benchmarks/runs/
 scripts/benchmarks/device-env/
+
+.env*

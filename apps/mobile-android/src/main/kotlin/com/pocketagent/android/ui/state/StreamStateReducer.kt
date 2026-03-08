@@ -34,7 +34,7 @@ class StreamStateReducer(
         event: ChatStreamEvent,
         elapsedMs: Long,
     ): StreamReducerState {
-        if (state.terminal != null || event.requestId != state.requestId) {
+        if (state.terminal != null) {
             return state
         }
         return when (event) {
@@ -137,4 +137,5 @@ class StreamStateReducer(
             ),
         )
     }
+
 }

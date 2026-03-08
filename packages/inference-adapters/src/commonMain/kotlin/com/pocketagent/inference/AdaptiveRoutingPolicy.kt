@@ -2,16 +2,25 @@ package com.pocketagent.inference
 
 class AdaptiveRoutingPolicy : RoutingModule {
     override fun selectModel(taskType: String, deviceState: DeviceState): String {
-        if (deviceState.thermalLevel >= 7 || deviceState.batteryPercent < 20) {
+        val allCandidates = ModelCatalog.autoRoutingCandidates(taskType)
+        val candidates = allCandidates
+            .filter { descriptor -> deviceState.ramClassGb >= descriptor.minRamGb }
+            .ifEmpty { allCandidates }
+        if (candidates.isEmpty()) {
             return ModelCatalog.QWEN_3_5_0_8B_Q4
         }
-        if (deviceState.ramClassGb >= 8 && taskType in setOf("reasoning", "image")) {
-            return ModelCatalog.QWEN_3_5_0_8B_Q4
+        val pressure = resourcePressure(deviceState)
+        if (pressure >= 2) {
+            return selectBySpeed(candidates).modelId
         }
-        if (deviceState.ramClassGb >= 12 && taskType == "long_text") {
-            return ModelCatalog.QWEN_3_5_2B_Q4
+        if (pressure == 1) {
+            val nonDebugCandidates = candidates.filterNot { descriptor -> descriptor.tier == ModelTier.DEBUG }
+            return selectBySpeed(nonDebugCandidates.ifEmpty { candidates }).modelId
         }
-        return ModelCatalog.QWEN_3_5_0_8B_Q4
+        if (wantsQuality(taskType, deviceState)) {
+            return selectByQuality(candidates).modelId
+        }
+        return selectBalanced(candidates).modelId
     }
 
     override fun selectContextBudget(taskType: String, deviceState: DeviceState): Int {
@@ -25,5 +34,47 @@ class AdaptiveRoutingPolicy : RoutingModule {
             deviceState.batteryPercent < 20 -> 2048
             else -> base
         }
+    }
+
+    private fun resourcePressure(deviceState: DeviceState): Int {
+        if (deviceState.thermalLevel >= 7 || deviceState.batteryPercent < 20) {
+            return 2
+        }
+        if (deviceState.thermalLevel >= 5 || deviceState.batteryPercent < 35 || deviceState.ramClassGb < 8) {
+            return 1
+        }
+        return 0
+    }
+
+    private fun wantsQuality(taskType: String, deviceState: DeviceState): Boolean {
+        return when (taskType.trim().lowercase()) {
+            "long_text" -> deviceState.ramClassGb >= 12
+            "reasoning", "image" -> deviceState.ramClassGb >= 10
+            else -> deviceState.ramClassGb >= 12 && deviceState.batteryPercent >= 50 && deviceState.thermalLevel <= 4
+        }
+    }
+
+    private fun selectBySpeed(candidates: List<ModelDescriptor>): ModelDescriptor {
+        return candidates.sortedWith(
+            compareByDescending<ModelDescriptor> { descriptor -> descriptor.speedRank }
+                .thenByDescending { descriptor -> descriptor.qualityRank }
+                .thenBy { descriptor -> descriptor.fallbackPriority },
+        ).first()
+    }
+
+    private fun selectByQuality(candidates: List<ModelDescriptor>): ModelDescriptor {
+        return candidates.sortedWith(
+            compareByDescending<ModelDescriptor> { descriptor -> descriptor.qualityRank }
+                .thenByDescending { descriptor -> descriptor.speedRank }
+                .thenBy { descriptor -> descriptor.fallbackPriority },
+        ).first()
+    }
+
+    private fun selectBalanced(candidates: List<ModelDescriptor>): ModelDescriptor {
+        return candidates.minWith(
+            compareBy<ModelDescriptor> { descriptor -> descriptor.fallbackPriority }
+                .thenByDescending { descriptor -> descriptor.qualityRank }
+                .thenByDescending { descriptor -> descriptor.speedRank },
+        )
     }
 }

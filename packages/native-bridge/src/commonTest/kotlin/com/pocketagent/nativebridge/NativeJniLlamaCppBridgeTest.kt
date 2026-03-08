@@ -111,12 +111,78 @@ class NativeJniLlamaCppBridgeTest {
         assertTrue(fallbackBridge.cancelGeneration())
         assertTrue(fallback.cancelCalled)
     }
+
+    @Test
+    fun `jni exceptions are recorded with deterministic bridge error code`() {
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(
+                initializeOk = true,
+                loadOk = true,
+                generatedText = "native hello",
+                throwOnLoad = true,
+            ),
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertTrue(bridge.isReady())
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals("JNI_LOAD_EXCEPTION", bridge.lastError()?.code)
+    }
+
+    @Test
+    fun `gpu load failure retries once with cpu layers`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = false,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            loadResults = mutableListOf(false, true),
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 32,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(listOf(32, 0), nativeApi.loadGpuLayers)
+        assertEquals(null, bridge.lastError())
+    }
+
+    @Test
+    fun `invalid model path extension is rejected before native load`() {
+        val nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello")
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertTrue(bridge.isReady())
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.bin"))
+        assertEquals("MODEL_PATH_INVALID", bridge.lastError()?.code)
+        assertFalse(nativeApi.loadCalled)
+    }
 }
 
 private class FakeNativeApi(
     private val initializeOk: Boolean,
     private val loadOk: Boolean,
     private val generatedText: String,
+    private val throwOnLoad: Boolean = false,
+    private val supportsGpuOffload: Boolean = false,
+    private val loadResults: MutableList<Boolean>? = null,
 ) : NativeJniLlamaCppBridge.NativeApi {
     var loadCalled = false
     var generateCalled = false
@@ -124,6 +190,7 @@ private class FakeNativeApi(
     var cancelCalled = false
     var lastCacheKey: String? = null
     var lastCachePolicyCode: Int? = null
+    val loadGpuLayers = mutableListOf<Int>()
 
     override fun initialize(): Boolean = initializeOk
 
@@ -136,8 +203,16 @@ private class FakeNativeApi(
         nUbatch: Int,
         nGpuLayers: Int,
     ): Boolean {
+        if (throwOnLoad) {
+            error("simulated native load exception")
+        }
         loadCalled = true
-        return loadOk
+        loadGpuLayers += nGpuLayers
+        return if (loadResults != null && loadResults.isNotEmpty()) {
+            loadResults.removeAt(0)
+        } else {
+            loadOk
+        }
     }
 
     override fun generateStream(
@@ -174,7 +249,7 @@ private class FakeNativeApi(
         return true
     }
 
-    override fun supportsGpuOffload(): Boolean = false
+    override fun supportsGpuOffload(): Boolean = supportsGpuOffload
 }
 
 private class FakeFallbackBridge(

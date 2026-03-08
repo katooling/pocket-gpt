@@ -4,9 +4,9 @@ import com.pocketagent.inference.ArtifactDistributionChannel
 import com.pocketagent.inference.ArtifactVerificationResult
 import com.pocketagent.inference.ModelArtifact
 import com.pocketagent.inference.ModelArtifactManager
-import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import java.io.BufferedInputStream
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -14,20 +14,33 @@ import java.security.MessageDigest
 
 class ArtifactVerifier(
     private val config: RuntimeConfig,
+    private val modelRegistry: ModelRegistry = ModelRegistry.default(),
     private val modelArtifactManager: ModelArtifactManager = ModelArtifactManager(),
 ) {
     private val artifactShaByFilePath: MutableMap<String, String> = mutableMapOf()
 
     init {
-        registerArtifact(
-            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
-            fileName = "qwen3.5-0.8b-q4.gguf",
-        )
-        registerArtifact(
-            modelId = ModelCatalog.QWEN_3_5_2B_Q4,
-            fileName = "qwen3.5-2b-q4.gguf",
-        )
-        modelArtifactManager.setActiveModel(ModelCatalog.QWEN_3_5_0_8B_Q4)
+        val candidateModelIds = linkedSetOf<String>()
+        candidateModelIds += modelRegistry.allMetadata().map { metadata -> metadata.modelId }
+        candidateModelIds += config.artifactPayloadByModelId.keys
+        candidateModelIds += config.artifactFilePathByModelId.keys
+        candidateModelIds += config.artifactSha256ByModelId.keys
+        candidateModelIds += config.artifactProvenanceIssuerByModelId.keys
+        candidateModelIds += config.artifactProvenanceSignatureByModelId.keys
+
+        val registeredModelIds = candidateModelIds.filter { modelId -> hasRuntimeConfigEntry(modelId) }
+        registeredModelIds.forEach { modelId ->
+            registerArtifact(
+                modelId = modelId,
+                fileName = resolveArtifactFileName(modelId),
+            )
+        }
+        val defaultModelId = modelRegistry.defaultGetReadyModelId(profile = config.modelRuntimeProfile)
+            ?.takeIf { candidate -> registeredModelIds.contains(candidate) }
+            ?: registeredModelIds.firstOrNull()
+        if (defaultModelId != null) {
+            modelArtifactManager.setActiveModel(defaultModelId)
+        }
     }
 
     fun manager(): ModelArtifactManager = modelArtifactManager
@@ -66,6 +79,7 @@ class ArtifactVerifier(
                 payload = null,
                 payloadSha256 = payloadSha256,
                 payloadPresent = payloadPresent,
+                allowLastKnownGoodFallback = false,
                 provenanceIssuer = config.artifactProvenanceIssuerByModelId[modelId].orEmpty(),
                 provenanceSignature = config.artifactProvenanceSignatureByModelId[modelId].orEmpty(),
                 runtimeCompatibility = config.runtimeCompatibilityTag,
@@ -75,6 +89,7 @@ class ArtifactVerifier(
             modelId = modelId,
             version = null,
             payload = config.artifactPayloadByModelId[modelId],
+            allowLastKnownGoodFallback = false,
             provenanceIssuer = config.artifactProvenanceIssuerByModelId[modelId].orEmpty(),
             provenanceSignature = config.artifactProvenanceSignatureByModelId[modelId].orEmpty(),
             runtimeCompatibility = config.runtimeCompatibilityTag,
@@ -117,6 +132,40 @@ class ArtifactVerifier(
                 runtimeCompatibility = config.runtimeCompatibilityTag,
             ),
         )
+    }
+
+    private fun hasRuntimeConfigEntry(modelId: String): Boolean {
+        val hasPayload = config.artifactPayloadByModelId[modelId]?.isNotEmpty() == true
+        val hasPath = config.artifactFilePathByModelId[modelId]
+            ?.trim()
+            ?.isNotEmpty() == true
+        if (!hasPayload && !hasPath) {
+            return false
+        }
+        val expectedSha = config.artifactSha256ByModelId[modelId]?.trim().orEmpty()
+        if (expectedSha.isEmpty()) {
+            return false
+        }
+        val issuer = config.artifactProvenanceIssuerByModelId[modelId]?.trim().orEmpty()
+        if (issuer.isEmpty()) {
+            return false
+        }
+        val signature = config.artifactProvenanceSignatureByModelId[modelId]?.trim().orEmpty()
+        if (signature.isEmpty()) {
+            return false
+        }
+        return true
+    }
+
+    private fun resolveArtifactFileName(modelId: String): String {
+        val absolutePath = config.artifactFilePathByModelId[modelId]
+            ?.trim()
+            .orEmpty()
+        val fromPath = absolutePath
+            .takeIf { it.isNotEmpty() }
+            ?.let { File(it).name }
+            ?.takeIf { it.isNotEmpty() }
+        return fromPath ?: "$modelId.gguf"
     }
 
     private fun sha256HexFromFile(path: Path): String {

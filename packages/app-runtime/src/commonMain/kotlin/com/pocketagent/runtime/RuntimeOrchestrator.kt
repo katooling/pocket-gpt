@@ -13,21 +13,15 @@ import com.pocketagent.core.Turn
 import com.pocketagent.inference.AdaptiveRoutingPolicy
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
-import com.pocketagent.inference.InferenceRequest
-import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.RuntimeImageInputModule
 import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.FileBackedMemoryModule
-import com.pocketagent.memory.MemoryChunk
 import com.pocketagent.memory.MemoryModule
-import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
-import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolModule
-import java.security.MessageDigest
 import java.util.Timer
 import java.util.TimerTask
 import java.util.concurrent.atomic.AtomicBoolean
@@ -42,12 +36,15 @@ class RuntimeOrchestrator(
     private val memoryModule: MemoryModule = FileBackedMemoryModule.ephemeralRuntimeModule(),
     private val runtimeConfig: RuntimeConfig = RuntimeConfig.fromEnvironment(),
     private val networkPolicyClient: PolicyAwareNetworkClient = PolicyAwareNetworkClient(policyModule),
-    private val artifactVerifier: ArtifactVerifier = ArtifactVerifier(runtimeConfig),
+    private val modelRegistry: ModelRegistry = ModelRegistry.default(),
+    private val artifactVerifier: ArtifactVerifier = ArtifactVerifier(runtimeConfig, modelRegistry = modelRegistry),
     private val diagnosticsRedactor: DiagnosticsRedactor = DiagnosticsRedactor(),
 ) : RuntimeContainer {
     private val imageInputModule = RuntimeImageInputModule(inferenceModule)
     private val sessionManager = RuntimeSessionManager(conversationModule, memoryModule)
-    private val templateRegistry = ModelTemplateRegistry()
+    private val templateRegistry = ModelTemplateRegistry(
+        profileByModelId = ModelTemplateRegistry.defaultProfiles(modelRegistry = modelRegistry),
+    )
     private val interactionPlanner = InteractionPlanner(templateRegistry = templateRegistry)
     private val inferenceExecutor = InferenceExecutor(
         inferenceModule = inferenceModule,
@@ -60,6 +57,59 @@ class RuntimeOrchestrator(
     )
     private val idleUnloadGuard = IdleModelUnloadGuard(inferenceModule)
     private var routingMode: RoutingMode = RoutingMode.AUTO
+    private val modelLifecycleCoordinator = ModelLifecycleCoordinator(
+        inferenceModule = inferenceModule,
+        routingModule = routingModule,
+        runtimeConfig = runtimeConfig,
+    )
+    private val sendMessageUseCase = SendMessageUseCase(
+        conversationModule = conversationModule,
+        routingModule = routingModule,
+        policyModule = policyModule,
+        observabilityModule = observabilityModule,
+        memoryModule = memoryModule,
+        inferenceModule = inferenceModule,
+        runtimeConfig = runtimeConfig,
+        artifactVerifier = artifactVerifier,
+        interactionPlanner = interactionPlanner,
+        inferenceExecutor = inferenceExecutor,
+        responseCache = responseCache,
+        modelLifecycleCoordinator = modelLifecycleCoordinator,
+        cancelIdleUnload = idleUnloadGuard::cancel,
+        unloadNow = idleUnloadGuard::unloadNow,
+        scheduleIdleUnload = idleUnloadGuard::schedule,
+        cancelByRequest = ::cancelGenerationByRequest,
+        cancelBySession = ::cancelGeneration,
+    )
+    private val toolExecutionUseCase = ToolExecutionUseCase(
+        policyModule = policyModule,
+        toolLoopCoordinator = toolLoopCoordinator,
+    )
+    private val imageAnalyzeUseCase = ImageAnalyzeUseCase(
+        policyModule = policyModule,
+        inferenceModule = inferenceModule,
+        artifactVerifier = artifactVerifier,
+        imageInputModule = imageInputModule,
+        observabilityModule = observabilityModule,
+        modelLifecycleCoordinator = modelLifecycleCoordinator,
+        routingModeProvider = { routingMode },
+    )
+    private val diagnosticsUseCase = DiagnosticsUseCase(
+        policyModule = policyModule,
+        observabilityModule = observabilityModule,
+        diagnosticsRedactor = diagnosticsRedactor,
+    )
+    private val startupChecksUseCase = StartupChecksUseCase(
+        artifactVerifier = artifactVerifier,
+        interactionPlanner = interactionPlanner,
+        inferenceModule = inferenceModule,
+        policyModule = policyModule,
+        runtimeConfig = runtimeConfig,
+        networkPolicyClient = networkPolicyClient,
+        modelLifecycleCoordinator = modelLifecycleCoordinator,
+        runtimeBackendProvider = ::runtimeBackend,
+        modelRegistry = modelRegistry,
+    )
 
     init {
         val nativeInference = inferenceModule as? LlamaCppInferenceModule
@@ -83,228 +133,50 @@ class RuntimeOrchestrator(
         performanceConfig: PerformanceRuntimeConfig,
         residencyPolicy: ModelResidencyPolicy,
     ): ChatResponse {
-        idleUnloadGuard.cancel()
-        requirePolicyEvent(
-            eventType = "routing.model_select",
-            failureMessage = "Policy module rejected routing event type.",
-        )
-        val modelId = selectRunnableModelId(taskType = taskType, deviceState = deviceState)
-        check(artifactVerifier.manager().setActiveModel(modelId)) {
-            "Model artifact not registered for runtime model: $modelId"
-        }
-        artifactVerifier.verifyArtifactOrThrow(modelId)
-        interactionPlanner.ensureTemplateAvailable(modelId)?.let { message ->
-            throw RuntimeTemplateUnavailableException(message)
-        }
-
-        conversationModule.appendUserTurn(sessionId, userText)
-        requirePolicyEvent(
-            eventType = "memory.write_user_turn",
-            failureMessage = "Policy module rejected memory write event type.",
-        )
-        memoryModule.saveMemoryChunk(
-            MemoryChunk(
-                id = "mem-${System.currentTimeMillis()}",
-                content = userText,
-                createdAtEpochMs = System.currentTimeMillis(),
-            ),
-        )
-
-        val contextBudget = routingModule.selectContextBudget(taskType, deviceState)
-        val promptCharBudget = when (taskType) {
-            "long_text" -> MAX_PROMPT_CHARS_LONG
-            else -> MAX_PROMPT_CHARS_SHORT
-        }
-        val memorySnippets = memoryModule.retrieveRelevantMemory(userText, 3).map { it.content }
-        val renderedPrompt = interactionPlanner.buildRenderedPrompt(
-            modelId = modelId,
-            turns = conversationModule.listTurns(sessionId),
-            memorySnippets = memorySnippets,
-            taskType = taskType,
-            deviceState = deviceState,
-            promptCharBudget = minOf(contextBudget * 4, promptCharBudget),
-        )
-        val prompt = renderedPrompt.prompt
-        val prefixCacheKey = buildPrefixCacheKey(
-            modelId = modelId,
-            taskType = taskType,
-            prompt = prompt,
-            maxTokens = maxTokens,
-        )
-        val responseCacheKey = buildResponseCacheKey(
-            modelId = modelId,
-            taskType = taskType,
-            prompt = prompt,
-            maxTokens = maxTokens,
-        )
-        requirePolicyEvent(
-            eventType = "inference.generate",
-            failureMessage = "Policy module rejected inference event type.",
-        )
-        val startedMs = System.currentTimeMillis()
-
-        responseCache.get(responseCacheKey)?.let { cachedText ->
-            if (cachedText.isNotBlank()) {
-                emitCachedTokens(cachedText, onToken)
-                val firstTokenLatencyMs = 1L
-                val totalLatency = (System.currentTimeMillis() - startedMs).coerceAtLeast(1L)
-                requirePolicyEvent(
-                    eventType = "observability.record_runtime_metrics",
-                    failureMessage = "Policy module rejected diagnostics metric event type.",
-                )
-                observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
-                observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
-                observabilityModule.recordLatencyMetric("inference.profile", performanceConfig.profile.ordinal.toDouble())
-                observabilityModule.recordLatencyMetric(
-                    "inference.gpu_mode",
-                    if (performanceConfig.gpuEnabled && performanceConfig.gpuLayers > 0) 1.0 else 0.0,
-                )
-                observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
-                conversationModule.appendAssistantTurn(sessionId, cachedText)
-                return ChatResponse(
-                    sessionId = sessionId,
-                    modelId = modelId,
-                    text = cachedText,
-                    firstTokenLatencyMs = firstTokenLatencyMs,
-                    totalLatencyMs = totalLatency,
-                    requestId = requestId,
-                    finishReason = "cached",
-                )
-            }
-        }
-
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
-        nativeInference?.setRuntimeGenerationConfig(
-            RuntimeGenerationConfig(
-                nThreads = performanceConfig.nThreads,
-                nThreadsBatch = performanceConfig.nThreadsBatch,
-                nBatch = performanceConfig.nBatch,
-                nUbatch = performanceConfig.nUbatch,
-                gpuEnabled = performanceConfig.gpuEnabled,
-                gpuLayers = performanceConfig.gpuLayers,
-            ),
-        )
-
-        check(inferenceModule.loadModel(modelId)) {
-            "Failed to load runtime model: $modelId"
-        }
-
-        val cachePolicy = resolveNativeCachePolicy()
-        var firstTokenLatencyMs = -1L
-        var finishReason = "completed"
-        var responseText = ""
-        var executionResult: InferenceExecutionResult? = null
-        val timeoutGuard = GenerationTimeoutGuard(
-            timeoutMs = requestTimeoutMs,
-            onTimeout = {
-                if (runtimeConfig.streamContractV2Enabled) {
-                    cancelGenerationByRequest(requestId)
-                } else {
-                    cancelGeneration(sessionId)
-                }
-            },
-        )
-        try {
-            executionResult = inferenceExecutor.execute(
-                sessionId = sessionId.value,
+        return sendMessageUseCase.execute(
+            SendMessageUseCase.Request(
+                sessionId = sessionId,
+                userText = userText,
+                taskType = taskType,
+                deviceState = deviceState,
+                maxTokens = maxTokens,
+                keepModelLoaded = keepModelLoaded,
+                onToken = onToken,
+                requestTimeoutMs = requestTimeoutMs,
                 requestId = requestId,
-                request = InferenceRequest(prompt = prompt, maxTokens = maxTokens),
-                cacheKey = prefixCacheKey,
-                cachePolicy = cachePolicy,
-                stopSequences = renderedPrompt.stopSequences,
-                onToken = { token ->
-                    if (timeoutGuard.timedOut()) {
-                        return@execute
-                    }
-                    if (firstTokenLatencyMs < 0) {
-                        firstTokenLatencyMs = System.currentTimeMillis() - startedMs
-                    }
-                    onToken(token)
-                },
-            )
-            finishReason = executionResult.finishReason
-            responseText = executionResult.text.trim()
-            if (timeoutGuard.timedOut()) {
-                throw RuntimeGenerationTimeoutException(requestTimeoutMs)
-            }
-        } catch (error: Throwable) {
-            if (timeoutGuard.timedOut()) {
-                throw RuntimeGenerationTimeoutException(requestTimeoutMs)
-            }
-            throw error
-        } finally {
-            timeoutGuard.finish()
-            if (!keepModelLoaded || !residencyPolicy.keepLoadedWhileAppForeground) {
-                idleUnloadGuard.unloadNow()
-            } else {
-                idleUnloadGuard.schedule(residencyPolicy.idleUnloadTtlMs)
-            }
-        }
-        if (timeoutGuard.timedOut()) {
-            throw RuntimeGenerationTimeoutException(requestTimeoutMs)
-        }
-        check(responseText.isNotBlank()) { "Runtime returned no tokens." }
-        if (firstTokenLatencyMs < 0) {
-            firstTokenLatencyMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(1L)
-        }
-        val totalLatency = System.currentTimeMillis() - startedMs
-        val prefillMs = executionResult?.prefillMs ?: firstTokenLatencyMs
-        val decodeMs = executionResult?.decodeMs ?: (totalLatency - prefillMs).coerceAtLeast(0L)
-        val tokenCount = executionResult?.tokenCount ?: 0
-        val tokensPerSec = executionResult?.tokensPerSec
-            ?: if (tokenCount > 0 && decodeMs > 0) {
-                tokenCount.toDouble() / (decodeMs.toDouble() / 1000.0)
-            } else {
-                0.0
-            }
-        responseCache.put(responseCacheKey, responseText)
-        requirePolicyEvent(
-            eventType = "observability.record_runtime_metrics",
-            failureMessage = "Policy module rejected diagnostics metric event type.",
-        )
-        observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
-        observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
-        observabilityModule.recordLatencyMetric("inference.prefill_ms", prefillMs.toDouble())
-        observabilityModule.recordLatencyMetric("inference.decode_ms", decodeMs.toDouble())
-        observabilityModule.recordLatencyMetric("inference.tokens_per_sec", tokensPerSec)
-        observabilityModule.recordLatencyMetric("inference.profile", performanceConfig.profile.ordinal.toDouble())
-        observabilityModule.recordLatencyMetric(
-            "inference.gpu_mode",
-            if (performanceConfig.gpuEnabled && performanceConfig.gpuLayers > 0) 1.0 else 0.0,
-        )
-        observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
-        conversationModule.appendAssistantTurn(sessionId, responseText)
-
-        return ChatResponse(
-            sessionId = sessionId,
-            modelId = modelId,
-            text = responseText,
-            firstTokenLatencyMs = firstTokenLatencyMs,
-            totalLatencyMs = totalLatency,
-            requestId = requestId,
-            finishReason = finishReason,
+                performanceConfig = performanceConfig,
+                residencyPolicy = residencyPolicy,
+                routingMode = routingMode,
+            ),
         )
     }
 
     override fun runTool(toolName: String, jsonArgs: String): String {
-        if (!policyModule.enforceDataBoundary("tool.execute")) {
-            return "Tool error: Policy module rejected tool event type."
-        }
-        val result = toolLoopCoordinator.executeToolCall(toolName = toolName, jsonArgs = jsonArgs)
-        if (result.success) {
-            return result.content
-        }
-        if (result.content.startsWith("TOOL_VALIDATION_ERROR:")) {
-            return result.content
-        }
-        return "Tool error: ${result.content}"
+        return runToolDetailed(toolName = toolName, jsonArgs = jsonArgs).toLegacyString()
+    }
+
+    override fun runToolDetailed(toolName: String, jsonArgs: String): ToolExecutionResult {
+        return toolExecutionUseCase.execute(toolName = toolName, jsonArgs = jsonArgs)
     }
 
     override fun analyzeImage(
         imagePath: String,
         prompt: String,
     ): String {
-        return analyzeImage(
+        return legacyImageResponse(
+            analyzeImageDetailed(
+                imagePath = imagePath,
+                prompt = prompt,
+                deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            ),
+        )
+    }
+
+    override fun analyzeImageDetailed(
+        imagePath: String,
+        prompt: String,
+    ): ImageAnalysisResult {
+        return analyzeImageDetailed(
             imagePath = imagePath,
             prompt = prompt,
             deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
@@ -316,52 +188,42 @@ class RuntimeOrchestrator(
         prompt: String,
         deviceState: DeviceState,
     ): String {
-        requirePolicyEvent(
-            eventType = "routing.image_model_select",
-            failureMessage = "Policy module rejected image routing event type.",
+        return legacyImageResponse(
+            analyzeImageDetailed(
+                imagePath = imagePath,
+                prompt = prompt,
+                deviceState = deviceState,
+            ),
         )
-        val modelId = selectRunnableModelId(taskType = "image", deviceState = deviceState)
-        check(artifactVerifier.manager().setActiveModel(modelId)) {
-            "Model artifact not registered for image runtime model: $modelId"
-        }
-        artifactVerifier.verifyArtifactOrThrow(modelId)
-        check(inferenceModule.loadModel(modelId)) {
-            "Failed to load runtime model for image analysis: $modelId"
-        }
+    }
 
-        val startedMs = System.currentTimeMillis()
-        val imageResult = try {
-            requirePolicyEvent(
-                eventType = "inference.image_analyze",
-                failureMessage = "Policy module rejected image analysis event type.",
-            )
-            imageInputModule.analyzeImage(
-                com.pocketagent.inference.ImageRequest(
-                    imagePath = imagePath,
-                    prompt = prompt,
-                    maxTokens = 128,
-                ),
-            )
-        } finally {
-            inferenceModule.unloadModel()
-        }
-
-        val totalLatency = System.currentTimeMillis() - startedMs
-        requirePolicyEvent(
-            eventType = "observability.record_runtime_metrics",
-            failureMessage = "Policy module rejected diagnostics metric event type.",
+    fun analyzeImageDetailed(
+        imagePath: String,
+        prompt: String,
+        deviceState: DeviceState,
+    ): ImageAnalysisResult {
+        return imageAnalyzeUseCase.execute(
+            imagePath = imagePath,
+            prompt = prompt,
+            deviceState = deviceState,
         )
-        observabilityModule.recordLatencyMetric("inference.image.total_ms", totalLatency.toDouble())
-        observabilityModule.recordThermalSnapshot(deviceState.thermalLevel)
-        return imageResult
+    }
+
+    private fun legacyImageResponse(result: ImageAnalysisResult): String {
+        return when (result) {
+            is ImageAnalysisResult.Success -> result.content
+            is ImageAnalysisResult.Failure -> {
+                val failure = result.failure
+                if (failure is ImageFailure.PolicyDenied || (failure is ImageFailure.Runtime && failure.code == "image_runtime_error")) {
+                    throw IllegalStateException(failure.technicalDetail ?: failure.userMessage)
+                }
+                result.toLegacyString()
+            }
+        }
     }
 
     override fun exportDiagnostics(): String {
-        requirePolicyEvent(
-            eventType = "observability.export",
-            failureMessage = "Policy module rejected diagnostics export event type.",
-        )
-        return diagnosticsRedactor.redact(observabilityModule.exportLocalDiagnostics())
+        return diagnosticsUseCase.export()
     }
 
     override fun setRoutingMode(mode: RoutingMode) {
@@ -371,70 +233,7 @@ class RuntimeOrchestrator(
     override fun getRoutingMode(): RoutingMode = routingMode
 
     override fun runStartupChecks(): List<String> {
-        val checks = mutableListOf<String>()
-        val manifestIssues = artifactVerifier.manager().validateManifest()
-        if (manifestIssues.isNotEmpty()) {
-            checks.add(
-                "Artifact manifest invalid: ${manifestIssues.joinToString("; ") { "${it.modelId}@${it.version}:${it.code}" }}. " +
-                    "Set ${RuntimeConfig.QWEN_0_8B_SHA256_ENV} and ${RuntimeConfig.QWEN_2B_SHA256_ENV} with SHA-256 values before Stage-2 closure runs.",
-            )
-            return checks
-        }
-
-        val requiredModels = listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
-        requiredModels.forEach { modelId ->
-            if (!artifactVerifier.manager().setActiveModel(modelId)) {
-                checks.add("Artifact manifest missing required model registration: $modelId.")
-                return@forEach
-            }
-            interactionPlanner.ensureTemplateAvailable(modelId)?.let { templateError ->
-                checks.add(templateError)
-                return@forEach
-            }
-            val verification = artifactVerifier.verifyArtifactForModel(modelId)
-            if (!verification.passed) {
-                checks.add("Artifact verification failed for $modelId: ${artifactVerifier.artifactVerificationFailureMessage(verification)}")
-            }
-        }
-        if (checks.isNotEmpty()) {
-            return checks
-        }
-
-        val runtimeBackend = runtimeBackend()
-        if (runtimeConfig.requireNativeRuntimeForStartupChecks &&
-            runtimeBackend != null &&
-            runtimeBackend != RuntimeBackend.NATIVE_JNI.name
-        ) {
-            checks.add(
-                "Runtime backend is $runtimeBackend. " +
-                    "Native JNI runtime is required for closure-path startup checks. " +
-                    "Set ${RuntimeConfig.REQUIRE_NATIVE_RUNTIME_STARTUP_ENV}=0 only for local scaffolding lanes.",
-            )
-            return checks
-        }
-
-        val available = inferenceModule.listAvailableModels().toSet()
-        val missing = requiredModels.filterNot { available.contains(it) }
-        if (missing.size == requiredModels.size) {
-            checks.add("Missing runtime model(s): ${missing.joinToString(", ")}.")
-        } else {
-            val startupProbeModel = preferredModelOrder(available).firstOrNull()
-            if (startupProbeModel == null || !inferenceModule.loadModel(startupProbeModel)) {
-                checks.add("Failed to load startup runtime model: ${startupProbeModel ?: "none"}.")
-            }
-            if (missing.isNotEmpty()) {
-                checks.add("Optional runtime model unavailable: ${missing.joinToString(", ")}.")
-            }
-        }
-        if (!policyModule.enforceDataBoundary("inference.startup_check")) {
-            checks.add("Policy module rejected startup event type.")
-        }
-        checks.addAll(networkPolicyClient.startupChecks())
-        val networkProbe = networkPolicyClient.enforce("runtime.offline_probe")
-        if (networkProbe.allowed) {
-            checks.add("Network policy wiring invalid: offline-only mode unexpectedly allowed runtime.offline_probe.")
-        }
-        return checks
+        return startupChecksUseCase.run()
     }
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
@@ -465,108 +264,8 @@ class RuntimeOrchestrator(
         return (inferenceModule as? LlamaCppInferenceModule)?.runtimeBackend()
     }
 
-    private fun resolveNativeCachePolicy(): CachePolicy {
-        if (!runtimeConfig.prefixCacheEnabled) {
-            return CachePolicy.OFF
-        }
-        return if (runtimeConfig.prefixCacheStrict) {
-            CachePolicy.PREFIX_KV_REUSE_STRICT
-        } else {
-            CachePolicy.PREFIX_KV_REUSE
-        }
-    }
-
-    private fun buildPrefixCacheKey(
-        modelId: String,
-        taskType: String,
-        prompt: String,
-        maxTokens: Int,
-    ): String {
-        val normalizedPrefix = prompt
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(MAX_PREFIX_CACHE_KEY_PROMPT_CHARS)
-        val keyMaterial = buildList {
-            add(CACHE_KEY_VERSION)
-            add(modelId)
-            add(runtimeConfig.runtimeCompatibilityTag)
-            add(taskType)
-            add(runtimeConfig.artifactSha256ByModelId[modelId].orEmpty())
-            add(runtimeConfig.artifactProvenanceSignatureByModelId[modelId].orEmpty())
-            add("max_tokens=$maxTokens")
-            add("decode_profile=$DECODE_PROFILE_STABLE")
-            add(normalizedPrefix)
-        }.joinToString("|")
-        return sha256Hex(keyMaterial)
-    }
-
-    private fun buildResponseCacheKey(
-        modelId: String,
-        taskType: String,
-        prompt: String,
-        maxTokens: Int,
-    ): String {
-        val keyMaterial = buildList {
-            add(CACHE_KEY_VERSION)
-            add(modelId)
-            add(runtimeConfig.runtimeCompatibilityTag)
-            add(taskType)
-            add(runtimeConfig.artifactSha256ByModelId[modelId].orEmpty())
-            add(runtimeConfig.artifactProvenanceSignatureByModelId[modelId].orEmpty())
-            add("max_tokens=$maxTokens")
-            add("decode_profile=$DECODE_PROFILE_STABLE")
-            add(prompt)
-        }.joinToString("|")
-        return sha256Hex(keyMaterial)
-    }
-
-    private fun sha256Hex(value: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray())
-        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-    }
-
-    private fun emitCachedTokens(text: String, onToken: (String) -> Unit) {
-        text.split(Regex("\\s+"))
-            .filter { it.isNotBlank() }
-            .forEach { token -> onToken("$token ") }
-    }
-
-    private fun requirePolicyEvent(eventType: String, failureMessage: String) {
-        check(policyModule.enforceDataBoundary(eventType)) { failureMessage }
-    }
-
-    private fun selectModelId(taskType: String, deviceState: DeviceState): String {
-        return when (routingMode) {
-            RoutingMode.AUTO -> routingModule.selectModel(taskType, deviceState)
-            RoutingMode.QWEN_0_8B -> ModelCatalog.QWEN_3_5_0_8B_Q4
-            RoutingMode.QWEN_2B -> ModelCatalog.QWEN_3_5_2B_Q4
-        }
-    }
-
-    private fun selectRunnableModelId(taskType: String, deviceState: DeviceState): String {
-        val preferredModelId = selectModelId(taskType = taskType, deviceState = deviceState)
-        val availableModels = inferenceModule.listAvailableModels().toSet()
-        if (availableModels.isEmpty() || availableModels.contains(preferredModelId)) {
-            return preferredModelId
-        }
-        return preferredModelOrder(availableModels).firstOrNull() ?: preferredModelId
-    }
-
-    private fun preferredModelOrder(availableModels: Set<String>): List<String> {
-        return buildList {
-            add(ModelCatalog.QWEN_3_5_0_8B_Q4)
-            add(ModelCatalog.QWEN_3_5_2B_Q4)
-            addAll(availableModels.sorted())
-        }.distinct().filter { availableModels.contains(it) }
-    }
-
     companion object {
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
-        private const val CACHE_KEY_VERSION = "v1"
-        private const val DECODE_PROFILE_STABLE = "sampler:greedy"
-        private const val MAX_PREFIX_CACHE_KEY_PROMPT_CHARS: Int = 1024
-        private const val MAX_PROMPT_CHARS_SHORT: Int = 1024
-        private const val MAX_PROMPT_CHARS_LONG: Int = 2048
     }
 }
 
@@ -619,7 +318,7 @@ private class IdleModelUnloadGuard(
     }
 }
 
-private class GenerationTimeoutGuard(
+internal class GenerationTimeoutGuard(
     timeoutMs: Long,
     onTimeout: () -> Unit,
 ) {

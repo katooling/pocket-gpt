@@ -15,11 +15,10 @@ import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -35,9 +34,8 @@ class ModelDownloadManager(
 
     init {
         scope.launch {
-            while (isActive) {
-                _downloads.value = ModelDownloadTaskStateStore.list(appContext)
-                delay(750L)
+            workManager.getWorkInfosByTagFlow(ModelDownloadWorker.WORK_TAG).collectLatest { infos ->
+                syncFromWorkInfos(infos)
             }
         }
     }
@@ -54,12 +52,7 @@ class ModelDownloadManager(
 
         val storage = provisioningStore.storageSummary()
         if (version.fileSizeBytes > 0L && storage.freeBytes < version.fileSizeBytes) {
-            return upsertSyntheticFailure(
-                modelId = version.modelId,
-                version = version.version,
-                reason = DownloadFailureReason.INSUFFICIENT_STORAGE,
-                message = "Not enough free storage for model download.",
-            )
+            throw IllegalStateException("INSUFFICIENT_STORAGE: Not enough free storage for model download.")
         }
 
         val taskId = "dl-${UUID.randomUUID()}"
@@ -137,39 +130,120 @@ class ModelDownloadManager(
         _downloads.value = ModelDownloadTaskStateStore.list(appContext)
     }
 
+    fun cancelDownload(taskId: String) {
+        val state = ModelDownloadTaskStateStore.get(appContext, taskId) ?: return
+        workManager.cancelUniqueWork(uniqueWorkName(taskId))
+        cleanupPartial(taskId)
+        ModelDownloadTaskStateStore.upsert(
+            appContext,
+            state.copy(
+                status = DownloadTaskStatus.CANCELLED,
+                failureReason = DownloadFailureReason.CANCELLED,
+                updatedAtEpochMs = System.currentTimeMillis(),
+                message = "Cancelled",
+            ),
+        )
+        _downloads.value = ModelDownloadTaskStateStore.list(appContext)
+    }
+
     fun refresh() {
         _downloads.value = ModelDownloadTaskStateStore.list(appContext)
     }
 
     fun syncFromWorkManagerState() {
         scope.launch {
-            val states = ModelDownloadTaskStateStore.list(appContext).associateBy { it.taskId }.toMutableMap()
-            val infos = withContext(Dispatchers.IO) {
+            val infosResult = withContext(Dispatchers.IO) {
                 runCatching {
                     workManager.getWorkInfosByTag(ModelDownloadWorker.WORK_TAG).get()
-                }.getOrDefault(emptyList())
-            }
-            infos.forEach { info ->
-                val taskId = info.progress.getString(ModelDownloadWorker.KEY_TASK_ID)
-                    ?: info.outputData.getString(ModelDownloadWorker.KEY_TASK_ID)
-                    ?: return@forEach
-                val existing = states[taskId] ?: return@forEach
-                val status = when (info.state) {
-                    WorkInfo.State.ENQUEUED -> DownloadTaskStatus.QUEUED
-                    WorkInfo.State.RUNNING -> DownloadTaskStatus.DOWNLOADING
-                    WorkInfo.State.SUCCEEDED -> DownloadTaskStatus.COMPLETED
-                    WorkInfo.State.CANCELLED -> DownloadTaskStatus.CANCELLED
-                    WorkInfo.State.FAILED -> DownloadTaskStatus.FAILED
-                    WorkInfo.State.BLOCKED -> existing.status
                 }
-                states[taskId] = existing.copy(
-                    status = if (existing.status == DownloadTaskStatus.INSTALLED_INACTIVE) existing.status else status,
-                    updatedAtEpochMs = System.currentTimeMillis(),
-                )
             }
-            states.values.forEach { ModelDownloadTaskStateStore.upsert(appContext, it) }
+            infosResult
+                .onSuccess { infos -> syncFromWorkInfos(infos) }
+                .onFailure { error -> annotateSyncFailure(error) }
+        }
+    }
+
+    private fun annotateSyncFailure(error: Throwable) {
+        val now = System.currentTimeMillis()
+        val warning = "Sync warning: WorkManager state unavailable (${error.message ?: "query_failed"}). Keeping last known progress."
+        var changed = false
+        ModelDownloadTaskStateStore.list(appContext).forEach { state ->
+            if (state.terminal) {
+                return@forEach
+            }
+            val nextMessage = when {
+                state.message.isNullOrBlank() -> warning
+                state.message.contains("Sync warning:", ignoreCase = true) -> state.message
+                else -> "${state.message} | $warning"
+            }
+            if (nextMessage != state.message) {
+                ModelDownloadTaskStateStore.upsert(
+                    appContext,
+                    state.copy(
+                        updatedAtEpochMs = now,
+                        message = nextMessage,
+                    ),
+                )
+                changed = true
+            }
+        }
+        if (changed) {
             refresh()
         }
+    }
+
+    private fun syncFromWorkInfos(infos: List<WorkInfo>) {
+        val now = System.currentTimeMillis()
+        val states = ModelDownloadTaskStateStore.list(appContext).associateBy { it.taskId }.toMutableMap()
+        val seenTaskIds = mutableSetOf<String>()
+        infos.forEach { info ->
+            val taskId = info.progress.getString(ModelDownloadWorker.KEY_TASK_ID)
+                ?: info.outputData.getString(ModelDownloadWorker.KEY_TASK_ID)
+                ?: return@forEach
+            val existing = states[taskId] ?: return@forEach
+            seenTaskIds += taskId
+            val status = when (info.state) {
+                WorkInfo.State.ENQUEUED -> DownloadTaskStatus.QUEUED
+                WorkInfo.State.RUNNING -> DownloadTaskStatus.DOWNLOADING
+                WorkInfo.State.SUCCEEDED -> DownloadTaskStatus.COMPLETED
+                WorkInfo.State.CANCELLED -> {
+                    if (existing.status == DownloadTaskStatus.PAUSED) {
+                        DownloadTaskStatus.PAUSED
+                    } else {
+                        DownloadTaskStatus.CANCELLED
+                    }
+                }
+                WorkInfo.State.FAILED -> DownloadTaskStatus.FAILED
+                WorkInfo.State.BLOCKED -> existing.status
+            }
+            states[taskId] = existing.copy(
+                status = if (existing.status == DownloadTaskStatus.INSTALLED_INACTIVE) existing.status else status,
+                updatedAtEpochMs = now,
+            )
+        }
+        states.values.forEach { existing ->
+            if (existing.taskId in seenTaskIds) {
+                return@forEach
+            }
+            if (
+                existing.status == DownloadTaskStatus.QUEUED ||
+                existing.status == DownloadTaskStatus.DOWNLOADING ||
+                existing.status == DownloadTaskStatus.VERIFYING
+            ) {
+                val staleMs = now - existing.updatedAtEpochMs
+                if (staleMs < ORPHANED_ACTIVE_TASK_STALE_MS) {
+                    return@forEach
+                }
+                states[existing.taskId] = existing.copy(
+                    status = DownloadTaskStatus.FAILED,
+                    failureReason = DownloadFailureReason.UNKNOWN,
+                    updatedAtEpochMs = now,
+                    message = "Download interrupted. Retry or cancel.",
+                )
+            }
+        }
+        states.values.forEach { ModelDownloadTaskStateStore.upsert(appContext, it) }
+        refresh()
     }
 
     private fun launchWork(task: DownloadTaskState) {
@@ -185,44 +259,16 @@ class ModelDownloadManager(
         workManager.enqueueUniqueWork(uniqueWorkName(task.taskId), ExistingWorkPolicy.REPLACE, request)
     }
 
-    private fun upsertSyntheticFailure(
-        modelId: String,
-        version: String,
-        reason: DownloadFailureReason = DownloadFailureReason.UNKNOWN,
-        message: String,
-    ): String {
-        val taskId = "dl-${UUID.randomUUID()}"
-        ModelDownloadTaskStateStore.upsert(
-            appContext,
-            DownloadTaskState(
-                taskId = taskId,
-                modelId = modelId,
-                version = version,
-                downloadUrl = "",
-                expectedSha256 = "",
-                provenanceIssuer = "",
-                provenanceSignature = "",
-                verificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
-                runtimeCompatibility = provisioningStore.expectedRuntimeCompatibilityTag(),
-                processingStage = DownloadProcessingStage.DOWNLOADING,
-                status = DownloadTaskStatus.FAILED,
-                progressBytes = 0L,
-                totalBytes = 0L,
-                updatedAtEpochMs = System.currentTimeMillis(),
-                failureReason = reason,
-                message = message,
-            ),
-        )
-        _downloads.value = ModelDownloadTaskStateStore.list(appContext)
-        return taskId
-    }
-
     private fun cleanupPartial(taskId: String) {
-        val dir = File(appContext.filesDir, ModelDownloadWorker.DOWNLOAD_DIR)
+        val dir = provisioningStore.managedDownloadWorkspaceDirectory()
         File(dir, "$taskId.part").takeIf { it.exists() }?.delete()
     }
 
     private fun uniqueWorkName(taskId: String): String = "model-download-$taskId"
+
+    companion object {
+        private const val ORPHANED_ACTIVE_TASK_STALE_MS = 2 * 60 * 1000L
+    }
 }
 
 private fun DownloadTaskState.toWorkerData(): Data {

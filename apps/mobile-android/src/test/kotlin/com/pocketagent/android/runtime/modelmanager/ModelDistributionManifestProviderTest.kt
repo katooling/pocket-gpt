@@ -93,6 +93,52 @@ class ModelDistributionManifestProviderTest {
         assertEquals("", version.provenanceSignature)
         assertEquals(null, manifest.lastError)
     }
+
+    @Test
+    fun `load manifest deduplicates repeated model-version entries`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "",
+            bundledManifestLoader = { manifestWithDuplicateEntriesJson() },
+        )
+
+        val manifest = provider.loadManifest()
+
+        assertEquals(ManifestSource.BUNDLED, manifest.source)
+        assertEquals(1, manifest.models.size)
+        val model = manifest.models.single()
+        assertEquals("qwen3.5-0.8b-q4", model.modelId)
+        assertEquals(1, model.versions.size)
+        assertTrue(manifest.lastError?.contains("duplicate") == true)
+    }
+
+    @Test
+    fun `bundled catalog unavailable returns deterministic error code`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "",
+            bundledManifestLoader = null,
+        )
+
+        val manifest = provider.loadManifest()
+
+        assertTrue(manifest.models.isEmpty())
+        assertTrue(manifest.lastError?.startsWith("MODEL_MANIFEST_BUNDLED_UNAVAILABLE:") == true)
+    }
+
+    @Test
+    fun `remote refresh warning returns deterministic error code`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "https://example.test/catalog.json",
+            bundledManifestLoader = { bundledManifestJson() },
+            remoteManifestLoader = { error("network down") },
+        )
+
+        val manifest = provider.loadManifest()
+
+        assertTrue(manifest.lastError?.contains("MODEL_MANIFEST_REMOTE_FETCH_FAILED:") == true)
+    }
 }
 
 private fun bundledManifestJson(): String {
@@ -217,6 +263,41 @@ private fun manifestWithoutProvenanceJson(): String {
                 {
                   "version": "q4_0",
                   "downloadUrl": "https://example.test/qwen-0.8b-q4_0.gguf",
+                  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithDuplicateEntriesJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "qwen3.5-0.8b-q4",
+              "displayName": "Qwen 3.5 0.8B (Q4)",
+              "versions": [
+                {
+                  "version": "q4_0",
+                  "downloadUrl": "https://example.test/dup-a.gguf",
+                  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                }
+              ]
+            },
+            {
+              "modelId": "qwen3.5-0.8b-q4",
+              "displayName": "Qwen 3.5 0.8B Duplicate Name",
+              "versions": [
+                {
+                  "version": "q4_0",
+                  "downloadUrl": "https://example.test/dup-b.gguf",
                   "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                   "runtimeCompatibility": "android-arm64-v8a",
                   "fileSizeBytes": 1234

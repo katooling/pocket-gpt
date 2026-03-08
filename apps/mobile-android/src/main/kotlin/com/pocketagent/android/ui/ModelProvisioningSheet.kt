@@ -28,9 +28,9 @@ import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ManifestSource
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
-import com.pocketagent.inference.ModelCatalog
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 
 @Composable
 internal fun ModelProvisioningSheet(
@@ -39,21 +39,23 @@ internal fun ModelProvisioningSheet(
     downloads: List<DownloadTaskState>,
     isImporting: Boolean,
     statusMessage: String?,
+    defaultGetReadyModelId: String?,
     onImportModel: (String) -> Unit,
     onDownloadVersion: (ModelDistributionVersion) -> Unit,
     onPauseDownload: (String) -> Unit,
     onResumeDownload: (String) -> Unit,
     onRetryDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
     onActivateVersion: (String, String) -> Unit,
     onRemoveVersion: (String, String) -> Unit,
     onRefreshManifest: () -> Unit,
     onRefreshRuntime: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val defaultModelVersion = manifest.models
-        .firstOrNull { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
-        ?.versions
-        ?.firstOrNull()
+    val defaultModelVersion = resolveDefaultGetReadyVersion(
+        manifest = manifest,
+        defaultModelId = defaultGetReadyModelId,
+    )
 
     LazyColumn(
         modifier = Modifier
@@ -74,6 +76,35 @@ internal fun ModelProvisioningSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        if (snapshot.recoverableCorruptions.isNotEmpty()) {
+            item {
+                Card {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.ui_model_recovery_title),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        snapshot.recoverableCorruptions.forEach { signal ->
+                            Text(
+                                text = "${signal.message} (${signal.code})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        OutlinedButton(onClick = onRefreshRuntime) {
+                            Text(stringResource(id = R.string.ui_refresh_runtime_checks))
+                        }
+                    }
+                }
+            }
         }
         if (snapshot.readiness != ProvisioningReadiness.READY) {
             item {
@@ -111,8 +142,10 @@ internal fun ModelProvisioningSheet(
                                 Text(stringResource(id = R.string.ui_model_get_ready_download_default))
                             }
                             OutlinedButton(
-                                onClick = { onImportModel(ModelCatalog.QWEN_3_5_0_8B_Q4) },
-                                enabled = !isImporting,
+                                onClick = {
+                                    defaultGetReadyModelId?.let { modelId -> onImportModel(modelId) }
+                                },
+                                enabled = !isImporting && !defaultGetReadyModelId.isNullOrBlank(),
                             ) {
                                 Text(stringResource(id = R.string.ui_model_get_ready_import_default))
                             }
@@ -214,7 +247,9 @@ internal fun ModelProvisioningSheet(
             }
         }
 
-        val versions = manifest.models.flatMap { it.versions }
+        val versions = manifest.models
+            .flatMap { it.versions }
+            .distinctBy { version -> "${version.modelId}:${version.version}" }
         if (versions.isEmpty()) {
             item {
                 Text(
@@ -246,7 +281,10 @@ internal fun ModelProvisioningSheet(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = stringResource(id = R.string.ui_model_download_expected_size, version.fileSizeBytes),
+                        text = stringResource(
+                            id = R.string.ui_model_download_expected_size,
+                            version.fileSizeBytes.formatAsGiB(),
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -289,6 +327,11 @@ internal fun ModelProvisioningSheet(
                         if (active != null && active.status == DownloadTaskStatus.PAUSED) {
                             OutlinedButton(onClick = { onResumeDownload(active.taskId) }) {
                                 Text(stringResource(id = R.string.ui_model_download_resume))
+                            }
+                        }
+                        if (active != null) {
+                            OutlinedButton(onClick = { onCancelDownload(active.taskId) }) {
+                                Text(stringResource(id = R.string.ui_cancel_button))
                             }
                         }
                         if (latest != null && latest.status == DownloadTaskStatus.FAILED) {
@@ -469,6 +512,7 @@ internal fun DownloadTaskState.readableStateName(): String {
                 DownloadProcessingStage.DOWNLOADING -> "Failed during download"
                 DownloadProcessingStage.VERIFYING -> "Failed during verification"
                 DownloadProcessingStage.INSTALLING -> "Failed during install"
+                DownloadProcessingStage.CORRUPT -> "Failed due to corrupt task metadata"
             }
         }
         DownloadTaskStatus.COMPLETED -> "Completed"
@@ -489,3 +533,14 @@ private fun Long.formatAsTimestamp(): String {
         DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(this))
     }.getOrElse { toString() }
 }
+
+internal fun Long.formatAsGiB(): String {
+    val gib = if (this <= 0L) {
+        0.0
+    } else {
+        this.toDouble() / BYTES_PER_GIB
+    }
+    return String.format(Locale.US, "%.2f GB", gib)
+}
+
+private const val BYTES_PER_GIB: Double = 1024.0 * 1024.0 * 1024.0

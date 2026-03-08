@@ -2,7 +2,7 @@
   "models": [
     {
       "modelId": "qwen3.5-0.8b-q4",
-      "displayName": "Qwen 3.5 0.8B (Q4)",
+      "displayName": "Qwen 3.5 0.8B",
       "versions": [
         {
           "version": "q4_0",
@@ -12,12 +12,21 @@
           "provenanceSignature": "444406ddd926550c724ec18d5120a9d40ded44908a063b0e66e9a7e5464c652c",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 507154688
+        },
+        {
+          "version": "ud_iq2_xxs",
+          "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-UD-IQ2_XXS.gguf",
+          "expectedSha256": "a369165c8ec45a92d55cbad98b5377e2c32ca8dfc824c899d9d05b33b6b53e54",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "a369165c8ec45a92d55cbad98b5377e2c32ca8dfc824c899d9d05b33b6b53e54",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 338227456
         }
       ]
     },
     {
       "modelId": "qwen3.5-2b-q4",
-      "displayName": "Qwen 3.5 2B (Q4)",
+      "displayName": "Qwen 3.5 2B",
       "versions": [
         {
           "version": "q4_0",
@@ -27,6 +36,45 @@
           "provenanceSignature": "cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 1214873856
+        },
+        {
+          "version": "ud_iq2_xxs",
+          "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-UD-IQ2_XXS.gguf",
+          "expectedSha256": "43aedbd2b03a3c2cc39f49ccf74fcd3c394ed0b2a1ede8a30ee652ee9cfc27ef",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "43aedbd2b03a3c2cc39f49ccf74fcd3c394ed0b2a1ede8a30ee652ee9cfc27ef",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 768270592
+        }
+      ]
+    },
+    {
+      "modelId": "smollm2-360m-instruct-q4_k_m",
+      "displayName": "SmolLM2 360M Instruct (Q4_K_M)",
+      "versions": [
+        {
+          "version": "q4_k_m",
+          "downloadUrl": "https://huggingface.co/unsloth/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf",
+          "expectedSha256": "16c7f1667fea34bacad196a57b548effcb37614db4ab5677a20c8c7b823b9e63",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "16c7f1667fea34bacad196a57b548effcb37614db4ab5677a20c8c7b823b9e63",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 270590560
+        }
+      ]
+    },
+    {
+      "modelId": "smollm2-135m-instruct-q4_k_m",
+      "displayName": "SmolLM2 135M Instruct (Q4_K_M)",
+      "versions": [
+        {
+          "version": "q4_k_m",
+          "downloadUrl": "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf",
+          "expectedSha256": "ed5fa30c487b282ec156c29062f1222e5c20875a944ac98289dbd242e947f747",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "ed5fa30c487b282ec156c29062f1222e5c20875a944ac98289dbd242e947f747",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 105454144
         }
       ]
     }

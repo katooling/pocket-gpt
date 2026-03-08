@@ -28,26 +28,41 @@ import com.pocketagent.runtime.RuntimeOrchestrator
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolModule
 
+private fun defaultInferenceModule(): InferenceModule {
+    val fallbackRequested = System.getenv(NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV)
+        ?.trim()
+        ?.lowercase()
+        ?.let { raw -> raw in setOf("1", "true", "yes") }
+        ?: false
+    val fallbackEnabled = BuildConfig.DEBUG && fallbackRequested
+    return LlamaCppInferenceModule(
+        runtimeBridge = NativeJniLlamaCppBridge(
+            fallbackEnabled = fallbackEnabled,
+        ),
+    )
+}
+
 class AndroidMvpContainer(
     private val conversationModule: ConversationModule = InMemoryConversationModule(),
-    private val inferenceModule: InferenceModule = LlamaCppInferenceModule(),
+    private val inferenceModule: InferenceModule = defaultInferenceModule(),
     private val routingModule: RoutingModule = AdaptiveRoutingPolicy(),
     private val policyModule: PolicyModule = DefaultPolicyModule(offlineOnly = true),
     private val observabilityModule: ObservabilityModule = InMemoryObservabilityModule(),
     private val toolModule: ToolModule = SafeLocalToolRuntime(),
     private val memoryModule: MemoryModule = FileBackedMemoryModule.ephemeralRuntimeModule(),
-    private val artifactPayloadByModelId: Map<String, ByteArray> = RuntimeConfig.fromEnvironment().artifactPayloadByModelId,
-    private val artifactFilePathByModelId: Map<String, String> = RuntimeConfig.fromEnvironment().artifactFilePathByModelId,
-    private val artifactSha256ByModelId: Map<String, String> = RuntimeConfig.fromEnvironment().artifactSha256ByModelId,
-    private val artifactProvenanceIssuerByModelId: Map<String, String> = RuntimeConfig.fromEnvironment().artifactProvenanceIssuerByModelId,
-    private val artifactProvenanceSignatureByModelId: Map<String, String> = RuntimeConfig.fromEnvironment().artifactProvenanceSignatureByModelId,
-    private val runtimeCompatibilityTag: String = RuntimeConfig.fromEnvironment().runtimeCompatibilityTag,
-    private val requireNativeRuntimeForStartupChecks: Boolean = RuntimeConfig.fromEnvironment().requireNativeRuntimeForStartupChecks,
-    private val prefixCacheEnabled: Boolean = RuntimeConfig.fromEnvironment().prefixCacheEnabled,
-    private val prefixCacheStrict: Boolean = RuntimeConfig.fromEnvironment().prefixCacheStrict,
-    private val responseCacheTtlSec: Long = RuntimeConfig.fromEnvironment().responseCacheTtlSec,
-    private val responseCacheMaxEntries: Int = RuntimeConfig.fromEnvironment().responseCacheMaxEntries,
-    private val streamContractV2Enabled: Boolean = RuntimeConfig.fromEnvironment().streamContractV2Enabled,
+    private val runtimeEnvConfig: RuntimeConfig = RuntimeConfig.fromEnvironment(),
+    private val artifactPayloadByModelId: Map<String, ByteArray> = runtimeEnvConfig.artifactPayloadByModelId,
+    private val artifactFilePathByModelId: Map<String, String> = runtimeEnvConfig.artifactFilePathByModelId,
+    private val artifactSha256ByModelId: Map<String, String> = runtimeEnvConfig.artifactSha256ByModelId,
+    private val artifactProvenanceIssuerByModelId: Map<String, String> = runtimeEnvConfig.artifactProvenanceIssuerByModelId,
+    private val artifactProvenanceSignatureByModelId: Map<String, String> = runtimeEnvConfig.artifactProvenanceSignatureByModelId,
+    private val runtimeCompatibilityTag: String = runtimeEnvConfig.runtimeCompatibilityTag,
+    private val requireNativeRuntimeForStartupChecks: Boolean = runtimeEnvConfig.requireNativeRuntimeForStartupChecks,
+    private val prefixCacheEnabled: Boolean = runtimeEnvConfig.prefixCacheEnabled,
+    private val prefixCacheStrict: Boolean = runtimeEnvConfig.prefixCacheStrict,
+    private val responseCacheTtlSec: Long = runtimeEnvConfig.responseCacheTtlSec,
+    private val responseCacheMaxEntries: Int = runtimeEnvConfig.responseCacheMaxEntries,
+    private val streamContractV2Enabled: Boolean = runtimeEnvConfig.streamContractV2Enabled,
     private val networkPolicyClient: PolicyAwareNetworkClient = PolicyAwareNetworkClient(policyModule),
 ) {
     private val runtimeConfig = RuntimeConfig(
@@ -165,12 +180,11 @@ class AndroidMvpContainer(
     fun runtimeBackend(): RuntimeBackend? = orchestrator.runtimeBackendEnum()
 
     companion object {
-        const val QWEN_0_8B_SHA256_ENV: String = RuntimeConfig.QWEN_0_8B_SHA256_ENV
-        const val QWEN_2B_SHA256_ENV: String = RuntimeConfig.QWEN_2B_SHA256_ENV
-        const val QWEN_0_8B_SIDELOAD_PATH_ENV: String = RuntimeConfig.QWEN_0_8B_SIDELOAD_PATH_ENV
-        const val QWEN_2B_SIDELOAD_PATH_ENV: String = RuntimeConfig.QWEN_2B_SIDELOAD_PATH_ENV
-        const val QWEN_0_8B_PROVENANCE_SIG_ENV: String = RuntimeConfig.QWEN_0_8B_PROVENANCE_SIG_ENV
-        const val QWEN_2B_PROVENANCE_SIG_ENV: String = RuntimeConfig.QWEN_2B_PROVENANCE_SIG_ENV
+        const val MODEL_ENV_PREFIX: String = RuntimeConfig.MODEL_ENV_PREFIX
+        const val MODEL_SIDELOAD_PATH_ENV_SUFFIX: String = RuntimeConfig.MODEL_SIDELOAD_PATH_ENV_SUFFIX
+        const val MODEL_SHA256_ENV_SUFFIX: String = RuntimeConfig.MODEL_SHA256_ENV_SUFFIX
+        const val MODEL_PROVENANCE_SIGNATURE_ENV_SUFFIX: String = RuntimeConfig.MODEL_PROVENANCE_SIGNATURE_ENV_SUFFIX
+        const val MODEL_PROVENANCE_ISSUER_ENV_SUFFIX: String = RuntimeConfig.MODEL_PROVENANCE_ISSUER_ENV_SUFFIX
         const val MODEL_PROVENANCE_ISSUER_ENV: String = RuntimeConfig.MODEL_PROVENANCE_ISSUER_ENV
         const val MODEL_RUNTIME_COMPATIBILITY_ENV: String = RuntimeConfig.MODEL_RUNTIME_COMPATIBILITY_ENV
         const val REQUIRE_NATIVE_RUNTIME_STARTUP_ENV: String = RuntimeConfig.REQUIRE_NATIVE_RUNTIME_STARTUP_ENV
@@ -180,6 +194,14 @@ class AndroidMvpContainer(
         const val RESPONSE_CACHE_MAX_ENTRIES_ENV: String = RuntimeConfig.RESPONSE_CACHE_MAX_ENTRIES_ENV
         const val STREAM_CONTRACT_V2_ENV: String = RuntimeConfig.STREAM_CONTRACT_V2_ENV
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
+
+        fun sideLoadPathEnvName(modelId: String): String = RuntimeConfig.sideLoadPathEnvName(modelId)
+
+        fun sha256EnvName(modelId: String): String = RuntimeConfig.sha256EnvName(modelId)
+
+        fun provenanceSignatureEnvName(modelId: String): String = RuntimeConfig.provenanceSignatureEnvName(modelId)
+
+        fun provenanceIssuerEnvName(modelId: String): String = RuntimeConfig.provenanceIssuerEnvName(modelId)
 
         fun baselineModels(): List<String> = ModelCatalog.baselineModels()
 

@@ -56,7 +56,8 @@ enum class DownloadTaskStatus {
 }
 
 enum class DownloadVerificationPolicy {
-    INTEGRITY_ONLY;
+    INTEGRITY_ONLY,
+    UNKNOWN;
 
     val enforcesProvenance: Boolean
         get() = false
@@ -66,6 +67,7 @@ enum class DownloadProcessingStage {
     DOWNLOADING,
     VERIFYING,
     INSTALLING,
+    CORRUPT,
 }
 
 enum class DownloadFailureReason {

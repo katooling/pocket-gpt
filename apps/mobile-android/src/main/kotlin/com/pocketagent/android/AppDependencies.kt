@@ -11,14 +11,19 @@ import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifestPro
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelDownloadManager
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
+import com.pocketagent.core.ConversationModule
+import com.pocketagent.core.InMemoryConversationModule
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.DefaultMvpRuntimeFacade
-import com.pocketagent.runtime.DefaultRuntimeContainer
+import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.RuntimeCompositionRoot
 import com.pocketagent.runtime.StreamUserMessageRequest
+import com.pocketagent.runtime.ToolExecutionResult
+import com.pocketagent.memory.FileBackedMemoryModule
+import com.pocketagent.memory.MemoryModule
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.Flow
 
@@ -27,7 +32,14 @@ object AppRuntimeDependencies {
     private var runtimeProvisioningStore: AndroidRuntimeProvisioningStore? = null
     private var modelDownloadManager: ModelDownloadManager? = null
     private var modelManifestProvider: ModelDistributionManifestProvider? = null
-    private val hotSwappableRuntimeFacade = HotSwappableRuntimeFacade(DefaultMvpRuntimeFacade())
+    private var sharedConversationModule: ConversationModule? = null
+    private var sharedMemoryModule: MemoryModule? = null
+    private val hotSwappableRuntimeFacade = HotSwappableRuntimeFacade(
+        RuntimeCompositionRoot.createFacade(
+            conversationModule = getOrCreateConversationModule(),
+            memoryModule = getOrCreateMemoryModule(),
+        ),
+    )
     private val productionRuntimeFacadeFactory: () -> MvpRuntimeFacade = { hotSwappableRuntimeFacade }
 
     @Volatile
@@ -45,8 +57,10 @@ object AppRuntimeDependencies {
             val store = runtimeProvisioningStore
                 ?: AndroidRuntimeProvisioningStore(context.applicationContext).also { runtimeProvisioningStore = it }
             hotSwappableRuntimeFacade.replace(
-                DefaultMvpRuntimeFacade(
-                    container = DefaultRuntimeContainer(runtimeConfig = store.runtimeConfig()),
+                RuntimeCompositionRoot.createFacade(
+                    runtimeConfig = store.runtimeConfig(),
+                    conversationModule = getOrCreateConversationModule(),
+                    memoryModule = getOrCreateMemoryModule(),
                 ),
             )
         }
@@ -142,6 +156,10 @@ object AppRuntimeDependencies {
         getOrCreateDownloadManager(context).retryDownload(taskId)
     }
 
+    fun cancelDownload(context: Context, taskId: String) {
+        getOrCreateDownloadManager(context).cancelDownload(taskId)
+    }
+
     fun observeDownloads(context: Context): StateFlow<List<DownloadTaskState>> {
         return getOrCreateDownloadManager(context).observeDownloads()
     }
@@ -162,6 +180,18 @@ object AppRuntimeDependencies {
                 modelDownloadManager = manager
                 manager.syncFromWorkManagerState()
             }
+        }
+    }
+
+    private fun getOrCreateConversationModule(): ConversationModule {
+        return synchronized(lock) {
+            sharedConversationModule ?: InMemoryConversationModule().also { sharedConversationModule = it }
+        }
+    }
+
+    private fun getOrCreateMemoryModule(): MemoryModule {
+        return synchronized(lock) {
+            sharedMemoryModule ?: FileBackedMemoryModule.defaultRuntimeModule().also { sharedMemoryModule = it }
         }
     }
 }
@@ -188,7 +218,15 @@ private class HotSwappableRuntimeFacade(
 
     override fun runTool(toolName: String, jsonArgs: String): String = delegate.runTool(toolName, jsonArgs)
 
+    override fun runToolDetailed(toolName: String, jsonArgs: String): ToolExecutionResult {
+        return delegate.runToolDetailed(toolName = toolName, jsonArgs = jsonArgs)
+    }
+
     override fun analyzeImage(imagePath: String, prompt: String): String = delegate.analyzeImage(imagePath, prompt)
+
+    override fun analyzeImageDetailed(imagePath: String, prompt: String): ImageAnalysisResult {
+        return delegate.analyzeImageDetailed(imagePath = imagePath, prompt = prompt)
+    }
 
     override fun exportDiagnostics(): String = delegate.exportDiagnostics()
 

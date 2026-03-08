@@ -256,6 +256,8 @@ class SafeLocalToolRuntime(
         return ToolResult(
             success = false,
             content = "TOOL_VALIDATION_ERROR:${code.name}:$detail",
+            validationErrorCode = code.name,
+            validationErrorDetail = detail,
         )
     }
 

@@ -43,6 +43,7 @@ class InferenceExecutorTest {
         )
         assertFalse(executor.cancelByRequest("req"))
         assertFalse(executor.cancelBySession("session"))
+        assertEquals("STREAM_CONTRACT_V2_DISABLED", executor.cancelByRequestDetailed("req").code)
     }
 }
 

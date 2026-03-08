@@ -4,6 +4,7 @@ import com.pocketagent.android.runtime.modelmanager.StorageSummary
 import com.pocketagent.inference.ModelCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class RuntimeProvisioningSnapshotTest {
     @Test
@@ -53,11 +54,45 @@ class RuntimeProvisioningSnapshotTest {
         assertEquals(emptySet(), snapshot.missingRequiredModelIds)
     }
 
+    @Test
+    fun `missing local file is treated as not provisioned`() {
+        val snapshot = RuntimeProvisioningSnapshot(
+            models = listOf(
+                state(modelId = ModelCatalog.QWEN_3_5_0_8B_Q4, activeVersion = "q4_0", localFileMissing = true),
+                state(modelId = ModelCatalog.QWEN_3_5_2B_Q4, activeVersion = "q4_0"),
+            ),
+            storageSummary = emptyStorage(),
+            requiredModelIds = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4),
+        )
+
+        assertEquals(ProvisioningReadiness.DEGRADED, snapshot.readiness)
+        assertEquals(setOf(ModelCatalog.QWEN_3_5_0_8B_Q4), snapshot.missingRequiredModelIds)
+    }
+
+    @Test
+    fun `recoverable corruption flag is true when snapshot has diagnostics`() {
+        val snapshot = RuntimeProvisioningSnapshot(
+            models = listOf(state(modelId = ModelCatalog.QWEN_3_5_0_8B_Q4, activeVersion = null, absolutePath = null, sha = null)),
+            storageSummary = emptyStorage(),
+            requiredModelIds = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4),
+            recoverableCorruptions = listOf(
+                ProvisioningRecoverySignal(
+                    code = "PROVISIONING_VERSIONS_JSON_CORRUPT",
+                    message = "Stored model metadata was corrupted.",
+                    technicalDetail = "model=qwen",
+                ),
+            ),
+        )
+
+        assertTrue(snapshot.hasRecoverableCorruption)
+    }
+
     private fun state(
         modelId: String,
         activeVersion: String?,
         absolutePath: String? = "/tmp/$modelId.gguf",
         sha: String? = "sha-$modelId",
+        localFileMissing: Boolean = false,
     ): ProvisionedModelState {
         return ProvisionedModelState(
             modelId = modelId,
@@ -68,6 +103,7 @@ class RuntimeProvisioningSnapshotTest {
             importedAtEpochMs = null,
             activeVersion = activeVersion,
             installedVersions = emptyList(),
+            localFileMissing = localFileMissing,
         )
     }
 

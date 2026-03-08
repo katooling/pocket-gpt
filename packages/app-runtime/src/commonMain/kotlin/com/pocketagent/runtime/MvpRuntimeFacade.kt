@@ -1,9 +1,11 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.core.ChatResponse
+import com.pocketagent.core.ConversationModule
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
+import com.pocketagent.core.InMemoryConversationModule
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
@@ -74,7 +76,13 @@ interface MvpRuntimeFacade {
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean = false
     fun runTool(toolName: String, jsonArgs: String): String
+    fun runToolDetailed(toolName: String, jsonArgs: String): ToolExecutionResult {
+        return ToolExecutionResult.fromLegacy(runTool(toolName, jsonArgs))
+    }
     fun analyzeImage(imagePath: String, prompt: String): String
+    fun analyzeImageDetailed(imagePath: String, prompt: String): ImageAnalysisResult {
+        return ImageAnalysisResult.fromLegacy(analyzeImage(imagePath, prompt))
+    }
     fun exportDiagnostics(): String
     fun setRoutingMode(mode: RoutingMode)
     fun getRoutingMode(): RoutingMode
@@ -103,7 +111,13 @@ interface RuntimeContainer {
     fun cancelGeneration(sessionId: SessionId): Boolean = false
     fun cancelGenerationByRequest(requestId: String): Boolean = false
     fun runTool(toolName: String, jsonArgs: String): String
+    fun runToolDetailed(toolName: String, jsonArgs: String): ToolExecutionResult {
+        return ToolExecutionResult.fromLegacy(runTool(toolName, jsonArgs))
+    }
     fun analyzeImage(imagePath: String, prompt: String): String
+    fun analyzeImageDetailed(imagePath: String, prompt: String): ImageAnalysisResult {
+        return ImageAnalysisResult.fromLegacy(analyzeImage(imagePath, prompt))
+    }
     fun exportDiagnostics(): String
     fun setRoutingMode(mode: RoutingMode)
     fun getRoutingMode(): RoutingMode
@@ -227,8 +241,16 @@ class DefaultMvpRuntimeFacade(
 
     override fun runTool(toolName: String, jsonArgs: String): String = container.runTool(toolName, jsonArgs)
 
+    override fun runToolDetailed(toolName: String, jsonArgs: String): ToolExecutionResult {
+        return container.runToolDetailed(toolName = toolName, jsonArgs = jsonArgs)
+    }
+
     override fun analyzeImage(imagePath: String, prompt: String): String {
         return container.analyzeImage(imagePath = imagePath, prompt = prompt)
+    }
+
+    override fun analyzeImageDetailed(imagePath: String, prompt: String): ImageAnalysisResult {
+        return container.analyzeImageDetailed(imagePath = imagePath, prompt = prompt)
     }
 
     override fun exportDiagnostics(): String = container.exportDiagnostics()
@@ -254,8 +276,10 @@ class DefaultMvpRuntimeFacade(
 
 class DefaultRuntimeContainer(
     runtimeConfig: RuntimeConfig = RuntimeConfig.fromEnvironment(),
+    conversationModule: ConversationModule = InMemoryConversationModule(),
     memoryModule: MemoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
     private val orchestrator: RuntimeOrchestrator = RuntimeOrchestrator(
+        conversationModule = conversationModule,
         memoryModule = memoryModule,
         runtimeConfig = runtimeConfig,
     ),
@@ -296,8 +320,16 @@ class DefaultRuntimeContainer(
 
     override fun runTool(toolName: String, jsonArgs: String): String = orchestrator.runTool(toolName, jsonArgs)
 
+    override fun runToolDetailed(toolName: String, jsonArgs: String): ToolExecutionResult {
+        return orchestrator.runToolDetailed(toolName = toolName, jsonArgs = jsonArgs)
+    }
+
     override fun analyzeImage(imagePath: String, prompt: String): String {
         return orchestrator.analyzeImage(imagePath = imagePath, prompt = prompt)
+    }
+
+    override fun analyzeImageDetailed(imagePath: String, prompt: String): ImageAnalysisResult {
+        return orchestrator.analyzeImageDetailed(imagePath = imagePath, prompt = prompt)
     }
 
     override fun exportDiagnostics(): String = orchestrator.exportDiagnostics()

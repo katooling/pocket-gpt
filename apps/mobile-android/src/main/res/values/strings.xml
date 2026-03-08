@@ -15,7 +15,9 @@
     <string name="ui_runtime_error_title">Runtime status</string>
     <string name="ui_runtime_error_with_code">%1$s (%2$s)</string>
     <string name="ui_model_setup_hint">Models may be missing, inactive, or failed verification. Use model setup, then refresh runtime checks.</string>
+    <string name="ui_native_runtime_missing_hint">This build is missing the native runtime engine. Install a full app build, then reopen and refresh runtime checks.</string>
     <string name="ui_runtime_timeout_hint">Generation exceeded the response SLA and was cancelled. Retry, then switch to a lighter model if this repeats.</string>
+    <string name="ui_runtime_backend_fallback_debug_warning">Debug fallback runtime is active (ADB). Native JNI runtime is unavailable, so behavior may differ from production.</string>
     <string name="ui_open_model_setup">Open model setup</string>
     <string name="ui_fix_model_setup">Fix model setup</string>
     <string name="ui_get_ready">Get ready</string>
@@ -58,6 +60,7 @@
     <string name="ui_model_provisioning_subtitle_v2">Choose one path: import local files now, or download verified versions. Chat unlocks when at least one verified active model passes startup checks.</string>
     <string name="ui_model_required_models_section">Required models</string>
     <string name="ui_model_get_ready_title">Get chat ready</string>
+    <string name="ui_model_recovery_title">Model metadata needs recovery</string>
     <string name="ui_model_get_ready_blocked_body">No active verified model is available yet. Start with the lightweight default model, or import a local GGUF file.</string>
     <string name="ui_model_get_ready_degraded_body">Chat is available, but optional models are missing. Add more models for better coverage and routing.</string>
     <string name="ui_model_get_ready_download_default">Download default model</string>
@@ -94,7 +97,9 @@
     <string name="ui_model_download_paused">Download paused.</string>
     <string name="ui_model_download_resumed">Download resumed.</string>
     <string name="ui_model_download_retried">Download retry queued.</string>
+    <string name="ui_model_download_cancelled">Download cancelled and temporary files cleaned up.</string>
     <string name="ui_model_download_enqueued">Download queued for %1$s (%2$s). Task: %3$s</string>
+    <string name="ui_model_download_start_failed">Could not start download for %1$s (%2$s): %3$s</string>
     <string name="ui_model_download_verified_active">Downloaded %1$s (%2$s): verified and active.</string>
     <string name="ui_model_download_verified_inactive">Downloaded %1$s (%2$s): verified, activation pending.</string>
     <string name="ui_model_download_failed_checksum">Download failed for %1$s (%2$s): checksum mismatch. Re-download from a trusted source.</string>
@@ -106,7 +111,7 @@
     <string name="ui_model_download_failed_cancelled">Download cancelled for %1$s (%2$s).</string>
     <string name="ui_model_download_failed_unknown">Download failed for %1$s (%2$s). Review technical details and retry.</string>
     <string name="ui_model_download_version_label">%1$s • %2$s</string>
-    <string name="ui_model_download_expected_size">Expected size: %1$d bytes</string>
+    <string name="ui_model_download_expected_size">Expected size: %1$s</string>
     <string name="ui_model_download_state">State: %1$s (%2$d%%)</string>
     <string name="ui_model_installed_version_row">%1$s • version %2$s</string>
     <string name="ui_model_installed_active">Verified and active</string>

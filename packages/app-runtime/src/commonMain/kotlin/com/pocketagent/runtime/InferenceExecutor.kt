@@ -136,16 +136,53 @@ class InferenceExecutor(
     }
 
     fun cancelByRequest(requestId: String): Boolean {
+        return cancelByRequestDetailed(requestId).cancelled
+    }
+
+    fun cancelByRequestDetailed(requestId: String): CancellationResult {
         if (!runtimeConfig.streamContractV2Enabled) {
-            return false
+            return CancellationResult(
+                cancelled = false,
+                code = "STREAM_CONTRACT_V2_DISABLED",
+                detail = "requestId=$requestId",
+            )
         }
-        val active = activeByRequestId[requestId] ?: return false
-        return (inferenceModule as? LlamaCppInferenceModule)?.cancelGeneration(active.requestId) ?: false
+        val active = activeByRequestId[requestId]
+            ?: return CancellationResult(
+                cancelled = false,
+                code = "REQUEST_NOT_ACTIVE",
+                detail = "requestId=$requestId",
+            )
+        val native = inferenceModule as? LlamaCppInferenceModule
+            ?: return CancellationResult(
+                cancelled = false,
+                code = "RUNTIME_NOT_NATIVE_BRIDGE",
+                detail = "requestId=$requestId",
+            )
+        val cancelled = native.cancelGeneration(active.requestId)
+        if (cancelled) {
+            return CancellationResult(cancelled = true, code = "CANCELLED")
+        }
+        val bridgeError = native.lastBridgeError()
+        return CancellationResult(
+            cancelled = false,
+            code = bridgeError?.code ?: "CANCEL_REJECTED",
+            detail = bridgeError?.detail ?: "requestId=${active.requestId}",
+        )
     }
 
     fun cancelBySession(sessionId: String): Boolean {
-        val active = activeBySessionId[sessionId] ?: return false
-        return (inferenceModule as? LlamaCppInferenceModule)?.cancelGeneration(active.requestId) ?: false
+        return cancelBySessionDetailed(sessionId).cancelled
+    }
+
+    fun cancelBySessionDetailed(sessionId: String): CancellationResult {
+        val active = activeBySessionId[sessionId]
+            ?: return CancellationResult(
+                cancelled = false,
+                code = "SESSION_NOT_ACTIVE",
+                detail = "sessionId=$sessionId",
+            )
+        return cancelByRequestDetailed(active.requestId)
     }
 }
 
@@ -159,6 +196,12 @@ data class InferenceExecutionResult(
     val prefillMs: Long?,
     val decodeMs: Long?,
     val tokensPerSec: Double?,
+)
+
+data class CancellationResult(
+    val cancelled: Boolean,
+    val code: String,
+    val detail: String? = null,
 )
 
 private data class ActiveGenerationState(

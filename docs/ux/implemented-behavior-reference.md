@@ -1,6 +1,6 @@
 # Implemented UX Behavior Reference
 
-Last updated: 2026-03-06  
+Last updated: 2026-03-08  
 Owner: Product + Android
 
 ## Purpose
@@ -60,7 +60,7 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
 
 ## Simple-First First Session Contract
 
-1. First-session state machine is explicit:
+1. First-session state machine remains explicit for telemetry/readiness:
    - `Onboarding`
    - `GetReady`
    - `ReadyToChat`
@@ -68,8 +68,8 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - `FollowUpDone`
    - `AdvancedUnlocked`
 2. `Get ready` is the primary blocked-state CTA and defaults to `0.8B` download path.
-3. `Tools` and `Advanced` entry points remain hidden until the follow-up response is complete.
-4. After unlock, app shows an explicit transition cue and reveals advanced/tool entry points.
+3. `Tools` and `Advanced` entry points are available by default (no follow-up unlock gate).
+4. Follow-up completion still emits deterministic first-session telemetry events and cue state.
 5. Stage + unlock flags are persisted so app restart does not regress first-session progress.
 
 ## Runtime Telemetry Labels in UI
@@ -111,9 +111,10 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - storage summary
 2. Import path remains available in all builds and writes versioned model records.
 3. Download path is available in the primary app build and supports queue/pause/resume/retry.
-4. Download completion result is `verified, activation pending` (no auto-activation).
-5. Installed versions can be manually activated; active version deletion is blocked.
-6. Runtime unlock is only confirmed after activation + refresh startup checks.
+4. Active downloads can be cancelled from the model setup sheet; cancellation also cleans temporary files.
+5. Download completion result is `verified, activation pending` (no auto-activation).
+6. Installed versions can be manually activated; active version deletion is blocked.
+7. Runtime unlock is only confirmed after activation + refresh startup checks.
 
 ## State Transition Feedback
 

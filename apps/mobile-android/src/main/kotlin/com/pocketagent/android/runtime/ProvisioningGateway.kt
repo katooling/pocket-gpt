@@ -1,0 +1,160 @@
+package com.pocketagent.android.runtime
+
+import android.net.Uri
+import com.pocketagent.android.AppRuntimeDependencies
+import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
+import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
+import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
+import kotlinx.coroutines.flow.StateFlow
+
+interface ProvisioningGateway {
+    fun currentSnapshot(): RuntimeProvisioningSnapshot
+    fun observeDownloads(): StateFlow<List<DownloadTaskState>>
+    suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult
+    suspend fun loadModelDistributionManifest(): ModelDistributionManifest
+    fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor>
+    fun setActiveVersion(modelId: String, version: String): Boolean
+    fun removeVersion(modelId: String, version: String): Boolean
+    fun enqueueDownload(version: ModelDistributionVersion): String
+    fun pauseDownload(taskId: String)
+    fun resumeDownload(taskId: String)
+    fun retryDownload(taskId: String)
+    fun cancelDownload(taskId: String)
+}
+
+class DefaultProvisioningGateway(
+    private val dependencies: ProvisioningDependencyAccess,
+) : ProvisioningGateway {
+    constructor(appContext: android.content.Context) : this(
+        dependencies = AppProvisioningDependencyAccess(appContext.applicationContext),
+    )
+
+    override fun currentSnapshot(): RuntimeProvisioningSnapshot {
+        return dependencies.currentProvisioningSnapshot()
+    }
+
+    override fun observeDownloads(): StateFlow<List<DownloadTaskState>> {
+        return dependencies.observeDownloads()
+    }
+
+    override suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult {
+        return dependencies.importModelFromUri(
+            modelId = modelId,
+            sourceUri = sourceUri,
+        )
+    }
+
+    override suspend fun loadModelDistributionManifest(): ModelDistributionManifest {
+        return dependencies.loadModelDistributionManifest()
+    }
+
+    override fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor> {
+        return dependencies.listInstalledVersions(modelId = modelId)
+    }
+
+    override fun setActiveVersion(modelId: String, version: String): Boolean {
+        return dependencies.setActiveVersion(modelId = modelId, version = version)
+    }
+
+    override fun removeVersion(modelId: String, version: String): Boolean {
+        return dependencies.removeVersion(modelId = modelId, version = version)
+    }
+
+    override fun enqueueDownload(version: ModelDistributionVersion): String {
+        return dependencies.enqueueDownload(version = version)
+    }
+
+    override fun pauseDownload(taskId: String) {
+        dependencies.pauseDownload(taskId)
+    }
+
+    override fun resumeDownload(taskId: String) {
+        dependencies.resumeDownload(taskId)
+    }
+
+    override fun retryDownload(taskId: String) {
+        dependencies.retryDownload(taskId)
+    }
+
+    override fun cancelDownload(taskId: String) {
+        dependencies.cancelDownload(taskId)
+    }
+}
+
+interface ProvisioningDependencyAccess {
+    fun currentProvisioningSnapshot(): RuntimeProvisioningSnapshot
+    fun observeDownloads(): StateFlow<List<DownloadTaskState>>
+    suspend fun importModelFromUri(
+        modelId: String,
+        sourceUri: Uri,
+    ): RuntimeModelImportResult
+    suspend fun loadModelDistributionManifest(): ModelDistributionManifest
+    fun listInstalledVersions(
+        modelId: String,
+    ): List<ModelVersionDescriptor>
+    fun setActiveVersion(modelId: String, version: String): Boolean
+    fun removeVersion(modelId: String, version: String): Boolean
+    fun enqueueDownload(version: ModelDistributionVersion): String
+    fun pauseDownload(taskId: String)
+    fun resumeDownload(taskId: String)
+    fun retryDownload(taskId: String)
+    fun cancelDownload(taskId: String)
+}
+
+class AppProvisioningDependencyAccess(
+    private val context: android.content.Context,
+) : ProvisioningDependencyAccess {
+    override fun currentProvisioningSnapshot(): RuntimeProvisioningSnapshot {
+        return AppRuntimeDependencies.currentProvisioningSnapshot(context)
+    }
+
+    override fun observeDownloads(): StateFlow<List<DownloadTaskState>> {
+        return AppRuntimeDependencies.observeDownloads(context)
+    }
+
+    override suspend fun importModelFromUri(
+        modelId: String,
+        sourceUri: Uri,
+    ): RuntimeModelImportResult {
+        return AppRuntimeDependencies.importModelFromUri(context = context, modelId = modelId, sourceUri = sourceUri)
+    }
+
+    override suspend fun loadModelDistributionManifest(): ModelDistributionManifest {
+        return AppRuntimeDependencies.loadModelDistributionManifest(context)
+    }
+
+    override fun listInstalledVersions(
+        modelId: String,
+    ): List<ModelVersionDescriptor> {
+        return AppRuntimeDependencies.listInstalledVersions(context = context, modelId = modelId)
+    }
+
+    override fun setActiveVersion(modelId: String, version: String): Boolean {
+        return AppRuntimeDependencies.setActiveVersion(context = context, modelId = modelId, version = version)
+    }
+
+    override fun removeVersion(modelId: String, version: String): Boolean {
+        return AppRuntimeDependencies.removeVersion(context = context, modelId = modelId, version = version)
+    }
+
+    override fun enqueueDownload(version: ModelDistributionVersion): String {
+        return AppRuntimeDependencies.enqueueDownload(context = context, version = version)
+    }
+
+    override fun pauseDownload(taskId: String) {
+        AppRuntimeDependencies.pauseDownload(context, taskId)
+    }
+
+    override fun resumeDownload(taskId: String) {
+        AppRuntimeDependencies.resumeDownload(context, taskId)
+    }
+
+    override fun retryDownload(taskId: String) {
+        AppRuntimeDependencies.retryDownload(context, taskId)
+    }
+
+    override fun cancelDownload(taskId: String) {
+        AppRuntimeDependencies.cancelDownload(context, taskId)
+    }
+}

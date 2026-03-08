@@ -26,17 +26,15 @@ class NativeStage2BenchmarkInstrumentationTest {
             "Skipping Stage-2 native benchmark instrumentation test. Set stage2_enable_benchmark=true to run benchmark suite.",
             parseBooleanArg(args, ARG_ENABLE_BENCHMARK, defaultValue = false),
         )
+        val modelId = (args.getString(ARG_MODEL_ID) ?: ModelCatalog.QWEN_3_5_0_8B_Q4).trim()
+        require(modelId in SUPPORTED_MODELS) { "Unsupported model id: $modelId" }
         assumeTrue(
             "Skipping Stage-2 native benchmark instrumentation test. Missing model path arguments.",
-            hasRequiredModelPaths(args),
+            hasRequiredModelPaths(args, modelId),
         )
         val scenario = (args.getString(ARG_SCENARIO) ?: "A").trim().uppercase()
         require(scenario in setOf("A", "B")) { "Unsupported scenario: $scenario" }
-        val modelId = (args.getString(ARG_MODEL_ID) ?: ModelCatalog.QWEN_3_5_0_8B_Q4).trim()
-        require(modelId in SUPPORTED_MODELS) { "Unsupported model id: $modelId" }
-
-        val modelPath0_8b = requireArgument(args, ARG_MODEL_PATH_0_8B)
-        val modelPath2b = requireArgument(args, ARG_MODEL_PATH_2B)
+        val modelPath = requireModelPathForBenchmark(args, modelId)
         val prefixCacheEnabled = parseBooleanArg(args, ARG_PREFIX_CACHE_ENABLED, defaultValue = true)
         val prefixCacheStrict = parseBooleanArg(args, ARG_PREFIX_CACHE_STRICT, defaultValue = false)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
@@ -51,8 +49,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         )
 
         val container = buildContainer(
-            modelPath0_8b = modelPath0_8b,
-            modelPath2b = modelPath2b,
+            modelPathsById = mapOf(modelId to modelPath),
             prefixCacheEnabled = prefixCacheEnabled,
             prefixCacheStrict = prefixCacheStrict,
         )
@@ -95,16 +92,14 @@ class NativeStage2BenchmarkInstrumentationTest {
             "Skipping Stage-2 native benchmark instrumentation sweep. Set stage2_enable_benchmark=true to run benchmark suite.",
             parseBooleanArg(args, ARG_ENABLE_BENCHMARK, defaultValue = false),
         )
-        assumeTrue(
-            "Skipping Stage-2 native benchmark instrumentation sweep. Missing model path arguments.",
-            hasRequiredModelPaths(args),
-        )
-        val scenarios = parseScenarios(args.getString(ARG_SCENARIOS))
         val modelId = (args.getString(ARG_MODEL_ID) ?: ModelCatalog.QWEN_3_5_0_8B_Q4).trim()
         require(modelId in SUPPORTED_MODELS) { "Unsupported model id: $modelId" }
-
-        val modelPath0_8b = requireArgument(args, ARG_MODEL_PATH_0_8B)
-        val modelPath2b = requireArgument(args, ARG_MODEL_PATH_2B)
+        assumeTrue(
+            "Skipping Stage-2 native benchmark instrumentation sweep. Missing model path arguments.",
+            hasRequiredModelPaths(args, modelId),
+        )
+        val scenarios = parseScenarios(args.getString(ARG_SCENARIOS))
+        val modelPath = requireModelPathForBenchmark(args, modelId)
         val prefixCacheEnabled = parseBooleanArg(args, ARG_PREFIX_CACHE_ENABLED, defaultValue = true)
         val prefixCacheStrict = parseBooleanArg(args, ARG_PREFIX_CACHE_STRICT, defaultValue = false)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
@@ -124,8 +119,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         )
 
         val container = buildContainer(
-            modelPath0_8b = modelPath0_8b,
-            modelPath2b = modelPath2b,
+            modelPathsById = mapOf(modelId to modelPath),
             prefixCacheEnabled = prefixCacheEnabled,
             prefixCacheStrict = prefixCacheStrict,
         )
@@ -251,6 +245,8 @@ class NativeStage2BenchmarkInstrumentationTest {
         container.setRoutingMode(
             when (modelId) {
                 ModelCatalog.QWEN_3_5_2B_Q4 -> RoutingMode.QWEN_2B
+                ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M -> RoutingMode.SMOLLM2_360M
+                ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M -> RoutingMode.SMOLLM2_135M
                 else -> RoutingMode.QWEN_0_8B
             },
         )
@@ -283,39 +279,23 @@ class NativeStage2BenchmarkInstrumentationTest {
     }
 
     private fun buildContainer(
-        modelPath0_8b: String,
-        modelPath2b: String,
+        modelPathsById: Map<String, String>,
         prefixCacheEnabled: Boolean,
         prefixCacheStrict: Boolean,
     ): AndroidMvpContainer {
-        val pathMap = mapOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4 to modelPath0_8b,
-            ModelCatalog.QWEN_3_5_2B_Q4 to modelPath2b,
-        )
-        val shaByModel = mapOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4 to sha256HexFromFile(File(modelPath0_8b)),
-            ModelCatalog.QWEN_3_5_2B_Q4 to sha256HexFromFile(File(modelPath2b)),
-        )
-        val issuerByModel = mapOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
-            ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
-        )
-        val signatureByModel = mapOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature(
-                issuer = issuerByModel.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
-                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
-                payloadSha = shaByModel.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
-            ),
-            ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature(
-                issuer = issuerByModel.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
-                modelId = ModelCatalog.QWEN_3_5_2B_Q4,
-                payloadSha = shaByModel.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
-            ),
-        )
-        val payloadByModel = mapOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4 to "sideload:$modelPath0_8b".encodeToByteArray(),
-            ModelCatalog.QWEN_3_5_2B_Q4 to "sideload:$modelPath2b".encodeToByteArray(),
-        )
+        val pathMap = modelPathsById
+        val shaByModel = pathMap.mapValues { (_, modelPath) -> sha256HexFromFile(File(modelPath)) }
+        val issuerByModel = pathMap.mapValues { "internal-release" }
+        val signatureByModel = pathMap.mapValues { (modelId, _) ->
+            provenanceSignature(
+                issuer = issuerByModel.getValue(modelId),
+                modelId = modelId,
+                payloadSha = shaByModel.getValue(modelId),
+            )
+        }
+        val payloadByModel = pathMap.mapValues { (_, modelPath) ->
+            "sideload:$modelPath".encodeToByteArray()
+        }
 
         return AndroidMvpContainer(
             artifactPayloadByModelId = payloadByModel,
@@ -420,21 +400,50 @@ class NativeStage2BenchmarkInstrumentationTest {
 
     private fun medianInt(values: List<Int>): Int = values.sorted()[values.size / 2]
 
-    private fun requireArgument(args: android.os.Bundle, key: String): String {
+    private fun requireModelPathForBenchmark(args: android.os.Bundle, modelId: String): String {
+        val key = argumentKeyForModel(modelId)
         val value = args.getString(key)?.trim().orEmpty()
         require(value.isNotEmpty()) { "Missing instrumentation argument: $key" }
-        val file = File(value)
-        require(file.exists() && file.isFile) { "Model path does not exist: $value" }
-        return file.absolutePath
+        val resolved = resolveModelPath(value)
+        require(resolved != null) { "Model path does not exist: $value" }
+        return resolved
     }
 
-    private fun hasRequiredModelPaths(args: android.os.Bundle): Boolean {
-        val path0 = args.getString(ARG_MODEL_PATH_0_8B)?.trim().orEmpty()
-        val path2 = args.getString(ARG_MODEL_PATH_2B)?.trim().orEmpty()
-        if (path0.isEmpty() || path2.isEmpty()) {
+    private fun hasRequiredModelPaths(args: android.os.Bundle, modelId: String): Boolean {
+        val key = argumentKeyForModel(modelId)
+        val value = args.getString(key)?.trim().orEmpty()
+        if (value.isEmpty()) {
             return false
         }
-        return File(path0).exists() && File(path2).exists()
+        return resolveModelPath(value) != null
+    }
+
+    private fun argumentKeyForModel(modelId: String): String {
+        return when (modelId) {
+            ModelCatalog.QWEN_3_5_0_8B_Q4 -> ARG_MODEL_PATH_0_8B
+            ModelCatalog.QWEN_3_5_2B_Q4 -> ARG_MODEL_PATH_2B
+            ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M -> ARG_MODEL_PATH_SMOL_360M
+            ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M -> ARG_MODEL_PATH_SMOL_135M
+            else -> ARG_MODEL_PATH_0_8B
+        }
+    }
+
+    private fun resolveModelPath(value: String): String? {
+        val normalized = value.trim()
+        if (normalized.isEmpty()) {
+            return null
+        }
+        val candidates = listOf(
+            normalized,
+            normalized.replace("/Android/media/", "/Download/"),
+            normalized.replace("/storage/emulated/0/Android/media/", "/storage/emulated/0/Download/"),
+            normalized.replace("/sdcard/Android/media/", "/sdcard/Download/"),
+        )
+        return candidates
+            .asSequence()
+            .map { candidate -> File(candidate) }
+            .firstOrNull { file -> file.exists() && file.isFile }
+            ?.absolutePath
     }
 
     private fun sha256HexFromFile(file: File): String {
@@ -467,6 +476,8 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val ARG_MODEL_ID = "stage2_model_id"
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
+        private const val ARG_MODEL_PATH_SMOL_360M = "stage2_model_smol_360m_path"
+        private const val ARG_MODEL_PATH_SMOL_135M = "stage2_model_smol_135m_path"
         private const val ARG_RUNS = "stage2_runs"
         private const val ARG_MAX_TOKENS = "stage2_max_tokens"
         private const val ARG_MAX_TOKENS_A = "stage2_max_tokens_a"
@@ -484,6 +495,8 @@ class NativeStage2BenchmarkInstrumentationTest {
         private val SUPPORTED_MODELS = setOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4,
             ModelCatalog.QWEN_3_5_2B_Q4,
+            ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
+            ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
         )
     }
 }

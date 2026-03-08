@@ -1,6 +1,6 @@
 # Feature Catalog and Feasibility Bands
 
-Last updated: 2026-03-06
+Last updated: 2026-03-08
 
 This catalog lists current and possible features based on known technical constraints (mobile RAM/thermal limits, model/runtime maturity, and privacy requirements).
 
@@ -11,11 +11,11 @@ This catalog lists current and possible features based on known technical constr
 | Offline text chat | core assistant utility | first-token latency, memory/OOM | Implemented | Implemented (WP-11 gate complete with device evidence) |
 | In-app model provisioning + readiness recovery | enables normal-user runtime setup without shell commands | file import UX, artifact verification strictness | Implemented (WP-12 policy reused in app path) | Implemented (`Advanced` -> `Open model setup`, import + refresh checks) |
 | Streaming responses | perceived speed and UX quality | runtime callback reliability | Implemented | Implemented (instrumented + Maestro flows validated) |
-| Model routing (`0.8B`/`2B`) | battery and thermal control | device-state signal quality | Implemented | Implemented (advanced controls + routing override validated) |
+| Model routing (`0.8B`/`2B` + optional fast-tier) | battery and thermal control | device-state signal quality | Implemented | Implemented (advanced controls + routing override validated) |
 | Runtime performance profiles (`BATTERY`/`BALANCED`/`FAST`) | explicit speed vs battery control with deterministic runtime presets | profile tuning must not break timeout/recovery UX | Implemented (`PerformanceRuntimeConfig` contract) | Implemented (advanced controls profile selector + persisted restore) |
 | GPU acceleration toggle (capability-gated) | allows supported devices to opt into faster decode path | Vulkan backend packaging + runtime capability detection on device | Implemented | Implemented (toggle disabled when unsupported, persisted when supported) |
 | Runtime telemetry readout labels | faster triage for regressions and support | label correctness and user-facing clarity | Implemented | Implemented (first-token/total/prefill/decode/decode-rate in advanced details) |
-| Simple-first first-session lane | improves first-run clarity and reduces setup/control overload | must keep deterministic unlock + no dead-end recovery | Implemented | Implemented (`Get ready` default 0.8B path, advanced/tools unlock after answer + follow-up) |
+| Simple-first first-session lane | improves first-run clarity and reduces setup/control overload | must keep deterministic recovery + no dead-end setup path | Implemented | Implemented (`Get ready` default 0.8B path, advanced/tools available by default) |
 | Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented (WP-05 closed) | Implemented (UI action + success/failure paths validated) |
 | Memory v1 | continuity across sessions | retrieval quality + retention policy | Implemented (file-backed + pruning) | Implemented (session restore/switch continuity validated) |
 | Single-image Q&A | multimodal differentiation | image path latency and correctness | Implemented (WP-06 closed) | Implemented (image attach success/failure UX validated) |

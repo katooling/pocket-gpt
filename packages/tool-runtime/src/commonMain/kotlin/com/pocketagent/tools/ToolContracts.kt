@@ -8,6 +8,8 @@ data class ToolCall(
 data class ToolResult(
     val success: Boolean,
     val content: String,
+    val validationErrorCode: String? = null,
+    val validationErrorDetail: String? = null,
 )
 
 interface ToolModule {
