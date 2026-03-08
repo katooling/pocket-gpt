@@ -630,9 +630,10 @@ class ChatViewModel(
     }
 
     fun setRoutingMode(mode: RoutingMode) {
-        runtimeFacade.setRoutingMode(mode)
+        val effectiveMode = coerceSupportedRoutingMode(mode)
+        runtimeFacade.setRoutingMode(effectiveMode)
         _uiState.update { state ->
-            state.copy(runtime = state.runtime.copy(routingMode = mode))
+            state.copy(runtime = state.runtime.copy(routingMode = effectiveMode))
         }
         persistState()
     }

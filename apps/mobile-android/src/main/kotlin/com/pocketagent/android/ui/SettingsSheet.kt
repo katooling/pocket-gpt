@@ -144,7 +144,7 @@ internal fun AdvancedSettingsSheet(
         HorizontalDivider()
         Text(stringResource(id = R.string.ui_model_selection_title), style = MaterialTheme.typography.labelLarge)
 
-        RoutingMode.entries.forEach { mode ->
+        supportedRoutingModes().forEach { mode ->
             val routingDescription = stringResource(id = R.string.a11y_routing_mode, mode.name)
             Row(
                 modifier = Modifier

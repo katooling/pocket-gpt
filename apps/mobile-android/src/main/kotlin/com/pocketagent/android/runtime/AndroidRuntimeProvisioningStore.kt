@@ -2,7 +2,6 @@ package com.pocketagent.android.runtime
 
 import android.content.Context
 import android.net.Uri
-import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.runtime.modelmanager.ModelDownloadWorker
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
@@ -91,11 +90,7 @@ class AndroidRuntimeProvisioningStore(
     private val modelLocks: MutableMap<String, Any> = mutableMapOf()
     private val migrationCorruptionSignals: MutableList<ProvisioningRecoverySignal> = mutableListOf()
     private val baselineModelIdSet = BASELINE_MODEL_SPECS.mapTo(linkedSetOf()) { it.modelId }
-    private val runtimeProfile: ModelRuntimeProfile = if (BuildConfig.DEBUG) {
-        ModelRuntimeProfile.DEV_FAST
-    } else {
-        ModelRuntimeProfile.PROD
-    }
+    private val runtimeProfile: ModelRuntimeProfile = ModelRuntimeProfile.PROD
     private val startupCandidateModelIds: Set<String> = ModelRegistry.default()
         .startupPolicy(profile = runtimeProfile)
         .candidateModelIds
@@ -1278,9 +1273,19 @@ class AndroidRuntimeProvisioningStore(
         private const val METADATA_SUFFIX = ".meta.json"
         private val MIGRATION_LOCK = Any()
 
-        private val BASELINE_MODEL_SPECS = listOf(
-            ModelSpec(
-                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+        private data class LegacySpecOverride(
+            val displayName: String,
+            val fileName: String,
+            val prefTag: String,
+            val pathKey: String,
+            val shaKey: String,
+            val issuerKey: String,
+            val signatureKey: String,
+            val importedAtKey: String,
+        )
+
+        private val LEGACY_BASELINE_OVERRIDES: Map<String, LegacySpecOverride> = mapOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4 to LegacySpecOverride(
                 displayName = "Qwen 3.5 0.8B (Q4)",
                 fileName = "qwen3.5-0.8b-q4.gguf",
                 prefTag = "0_8b",
@@ -1290,8 +1295,7 @@ class AndroidRuntimeProvisioningStore(
                 signatureKey = "model_0_8b_signature",
                 importedAtKey = "model_0_8b_imported_at",
             ),
-            ModelSpec(
-                modelId = ModelCatalog.QWEN_3_5_2B_Q4,
+            ModelCatalog.QWEN_3_5_2B_Q4 to LegacySpecOverride(
                 displayName = "Qwen 3.5 2B (Q4)",
                 fileName = "qwen3.5-2b-q4.gguf",
                 prefTag = "2b",
@@ -1302,6 +1306,51 @@ class AndroidRuntimeProvisioningStore(
                 importedAtKey = "model_2b_imported_at",
             ),
         )
+
+        private val BASELINE_MODEL_SPECS: List<ModelSpec> = ModelCatalog.modelDescriptors()
+            .asSequence()
+            .filter { descriptor -> descriptor.bridgeSupported || descriptor.startupCandidate }
+            .map { descriptor ->
+                val modelId = descriptor.modelId
+                val legacy = LEGACY_BASELINE_OVERRIDES[modelId]
+                if (legacy != null) {
+                    return@map ModelSpec(
+                        modelId = modelId,
+                        displayName = legacy.displayName,
+                        fileName = legacy.fileName,
+                        prefTag = legacy.prefTag,
+                        pathKey = legacy.pathKey,
+                        shaKey = legacy.shaKey,
+                        issuerKey = legacy.issuerKey,
+                        signatureKey = legacy.signatureKey,
+                        importedAtKey = legacy.importedAtKey,
+                    )
+                }
+                val derivedPrefTag = "cat_${descriptor.envKeyToken.lowercase(Locale.US)}"
+                val displayName = descriptor.modelId
+                val fileName = "${descriptor.modelId}.gguf"
+                ModelSpec(
+                    modelId = modelId,
+                    displayName = displayName,
+                    fileName = fileName,
+                    prefTag = derivedPrefTag,
+                    pathKey = "legacy_path_$derivedPrefTag",
+                    shaKey = "legacy_sha_$derivedPrefTag",
+                    issuerKey = "legacy_issuer_$derivedPrefTag",
+                    signatureKey = "legacy_signature_$derivedPrefTag",
+                    importedAtKey = "legacy_imported_at_$derivedPrefTag",
+                )
+            }
+            .sortedBy { spec -> spec.modelId }
+            .toList()
+
+        internal fun baselineModelIdsForTesting(): Set<String> {
+            return BASELINE_MODEL_SPECS.mapTo(linkedSetOf()) { spec -> spec.modelId }
+        }
+
+        internal fun legacyPathKeyForTesting(modelId: String): String? {
+            return BASELINE_MODEL_SPECS.firstOrNull { spec -> spec.modelId == modelId }?.pathKey
+        }
     }
 }
 

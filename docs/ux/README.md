@@ -1,6 +1,6 @@
 # UX Documentation
 
-Last updated: 2026-03-06
+Last updated: 2026-03-08
 Owner: Product + Design + Android
 
 This section defines user-facing behavior contracts for MVP and release readiness.

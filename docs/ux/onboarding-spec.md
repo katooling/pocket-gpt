@@ -1,6 +1,6 @@
 # Onboarding Specification (UX-ONBOARD-01)
 
-Last updated: 2026-03-04
+Last updated: 2026-03-08
 Owner: Android + Product
 Lifecycle: Implemented (MVP v1)
 
@@ -8,7 +8,12 @@ Lifecycle: Implemented (MVP v1)
 
 Explain privacy guarantees, capability surface, and runtime readiness in the first 30 seconds.
 
-Simple-first contract: onboarding hands users into a reduced first-session lane where advanced/tool controls remain hidden until the user completes first response + follow-up response.
+## Current Simple-First Contract
+
+1. Onboarding introduces users to privacy, capabilities, and readiness checks.
+2. `Tools` and `Advanced` entry points are visible by default (not follow-up gated).
+3. First-session telemetry still tracks progression (`simple_first_entered`, `get_ready_started`, first answer/follow-up events).
+4. `Get ready` remains the primary blocked-state CTA when runtime is not ready.
 
 ## Flow
 
@@ -27,12 +32,13 @@ Simple-first contract: onboarding hands users into a reduced first-session lane 
 
 ## Persistence
 
-- Onboarding state is persisted in session persistence (`onboardingCompleted`).
-- Returning users should not see onboarding unless state is reset.
+1. Onboarding completion is persisted (`onboardingCompleted`).
+2. Returning users do not see onboarding unless state is reset.
+3. First-session stage and telemetry events are persisted with chat/session state.
 
 ## UX Guardrails
 
-1. Onboarding should never block core app rendering.
-2. Onboarding text must avoid unsupported feature claims.
-3. Any privacy wording must align with `docs/security/privacy-model.md`.
-4. Runtime-readiness guidance must reference the in-app recovery path (`Advanced` -> `Open model setup`).
+1. Onboarding never blocks core app render.
+2. Privacy wording must stay aligned with `docs/security/privacy-model.md`.
+3. Runtime-readiness guidance must reference in-app recovery (`Advanced` -> `Open model setup`).
+4. Onboarding copy must not imply hidden cloud dependency for core flows.

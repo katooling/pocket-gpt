@@ -2,6 +2,7 @@ package com.pocketagent.android.ui.controllers
 
 import com.pocketagent.android.runtime.RuntimeGateway
 import com.pocketagent.android.ui.addTelemetryEventIfMissing
+import com.pocketagent.android.ui.coerceSupportedRoutingMode
 import com.pocketagent.android.ui.clearError
 import com.pocketagent.android.ui.withUiError
 import com.pocketagent.android.ui.state.ChatSessionUiModel
@@ -44,6 +45,8 @@ class ChatStartupFlow(
         val runtimeBackend = runtimeGateway.runtimeBackend()
 
         val restoredRoutingMode = RoutingMode.valueOf(persisted.routingMode)
+        val effectiveRoutingMode = coerceSupportedRoutingMode(restoredRoutingMode)
+        val routingModeAdjusted = restoredRoutingMode != effectiveRoutingMode
         val restoredPerformanceProfile = RuntimePerformanceProfile.valueOf(persisted.performanceProfile)
         val restoredFirstSessionStage = FirstSessionStage.valueOf(persisted.firstSessionStage)
         val restoredAdvancedUnlocked = true
@@ -54,11 +57,11 @@ class ChatStartupFlow(
         }
         val gpuSupported = runtimeGateway.supportsGpuOffload()
         val restoredGpuEnabled = persisted.gpuAccelerationEnabled && gpuSupported
-        runtimeGateway.setRoutingMode(restoredRoutingMode)
+        runtimeGateway.setRoutingMode(effectiveRoutingMode)
 
         val bootstrapRuntimeState = if (loadError == null) {
             RuntimeUiState(
-                routingMode = restoredRoutingMode,
+                routingMode = effectiveRoutingMode,
                 performanceProfile = restoredPerformanceProfile,
                 gpuAccelerationEnabled = restoredGpuEnabled,
                 gpuAccelerationSupported = gpuSupported,
@@ -69,7 +72,7 @@ class ChatStartupFlow(
             ).clearError()
         } else {
             RuntimeUiState(
-                routingMode = restoredRoutingMode,
+                routingMode = effectiveRoutingMode,
                 performanceProfile = restoredPerformanceProfile,
                 gpuAccelerationEnabled = restoredGpuEnabled,
                 gpuAccelerationSupported = gpuSupported,
@@ -139,7 +142,7 @@ class ChatStartupFlow(
                 firstSessionTelemetryEvents = persisted.firstSessionTelemetryEvents,
             ),
             shouldRunStartupProbe = loadedState.shouldRunStartupProbe,
-            shouldPersist = false,
+            shouldPersist = routingModeAdjusted,
         )
     }
 

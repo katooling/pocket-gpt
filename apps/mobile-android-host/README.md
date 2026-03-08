@@ -9,4 +9,4 @@ Use:
 ./gradlew --no-daemon :apps:mobile-android-host:test
 ```
 
-This module compiles the shared runtime/container sources from `apps/mobile-android/src/main/kotlin` and excludes Android UI entrypoints.
+This module runs runtime scaffolding from `packages/app-runtime` + `packages/native-bridge` without Android UI dependencies.

@@ -11,15 +11,15 @@ import kotlin.test.assertNull
 
 class ModelPolicyTest {
     @Test
-    fun `runtime profile resolves to dev fast for debug builds`() {
-        assertEquals(ModelRuntimeProfile.DEV_FAST, resolveModelRuntimeProfile(isDebugBuild = true))
+    fun `runtime profile resolves to production for app builds`() {
+        assertEquals(ModelRuntimeProfile.PROD, resolveModelRuntimeProfile(isDebugBuild = true))
         assertEquals(ModelRuntimeProfile.PROD, resolveModelRuntimeProfile(isDebugBuild = false))
     }
 
     @Test
     fun `default get ready model id follows build profile`() {
         assertEquals(
-            ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
+            ModelCatalog.QWEN_3_5_0_8B_Q4,
             resolveDefaultGetReadyModelId(isDebugBuild = true),
         )
         assertEquals(
