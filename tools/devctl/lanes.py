@@ -1893,23 +1893,27 @@ def _run_send_capture_stage(
                 "      visible: \"PocketAgent\"",
                 "    commands:",
                 "      - tapOn: \"PocketAgent\"",
-                *ready_wait_lines,
                 "- runFlow:",
                 "    when:",
-                "      visible: \"Advanced\"",
+                "      visible: \"Get ready\"",
                 "    commands:",
-                "      - tapOn: \"Advanced\"",
-                "      - runFlow:",
-                "          when:",
-                "            visible: \"Routing mode QWEN_0_8B\"",
-                "          commands:",
-                "            - tapOn: \"Routing mode QWEN_0_8B\"",
-                "      - runFlow:",
-                "          when:",
-                "            visible: \"QWEN_0_8B\"",
-                "          commands:",
-                "            - tapOn: \"QWEN_0_8B\"",
+                "      - tapOn: \"Get ready\"",
+                "- runFlow:",
+                "    when:",
+                "      visible: \"Model provisioning\"",
+                "    commands:",
                 "      - back",
+                "- runFlow:",
+                "    when:",
+                "      visible: \"Runtime: Error\"",
+                "    commands:",
+                "      - tapOn: \"Refresh runtime checks\"",
+                "- runFlow:",
+                "    when:",
+                "      visible: \"Refresh runtime checks\"",
+                "    commands:",
+                "      - tapOn: \"Refresh runtime checks\"",
+                *ready_wait_lines,
                 *runtime_clean_assert_lines,
                 "- takeScreenshot: \"send-kickoff-02-ready\"",
                 "- tapOn: \"Message\"",
@@ -2735,7 +2739,7 @@ def _write_report(path: Path, text: str) -> None:
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
 
 
-def lane_test(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_test_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     default_profile = context.configs.test_profiles.defaults.default_profile
     raw_mode = raw_args[0] if raw_args else default_profile
     if len(raw_args) > 1:
@@ -2808,7 +2812,7 @@ def lane_test(raw_args: Sequence[str], context: RuntimeContext) -> None:
     context.run(gradle_command, check=True, env=resolved_env)
 
 
-def lane_android_instrumented(raw_args: Sequence[str], context: RuntimeContext, strict: bool = True) -> None:
+def _lane_android_instrumented_impl(raw_args: Sequence[str], context: RuntimeContext, strict: bool = True) -> None:
     if raw_args:
         raise DevctlError("CONFIG_ERROR", "Usage: devctl lane android-instrumented")
 
@@ -2907,7 +2911,7 @@ def _run_maestro_flow(
     )
 
 
-def lane_maestro(raw_args: Sequence[str], context: RuntimeContext, strict: bool = True) -> None:
+def _lane_maestro_impl(raw_args: Sequence[str], context: RuntimeContext, strict: bool = True) -> None:
     if raw_args:
         raise DevctlError("CONFIG_ERROR", "Usage: devctl lane maestro")
 
@@ -2963,7 +2967,7 @@ def lane_maestro(raw_args: Sequence[str], context: RuntimeContext, strict: bool 
         _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
 
 
-def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_screenshot_pack_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     args = _parse_screenshot_pack_args(raw_args)
     maestro_bin = shutil.which("maestro")
     if maestro_bin is None:
@@ -3146,7 +3150,7 @@ def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> No
         print_step(f"Screenshot inventory markdown: {report_md_path}")
 
 
-def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_journey_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     lane_cfg = context.configs.lanes.lanes.journey
     args = _parse_journey_args(
         raw_args,
@@ -3313,19 +3317,19 @@ def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
         print_step(f"Journey report: {report_path}")
 
 
-def lane_fast_smoke(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_fast_smoke_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     lane_journey(["--mode", "fast-smoke", "--steps", "instrumentation,send-capture", *list(raw_args)], context)
 
 
-def lane_valid_output(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_valid_output_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     lane_journey(["--mode", "valid-output", *list(raw_args)], context)
 
 
-def lane_strict_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_strict_journey_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     lane_journey(["--mode", "strict", *list(raw_args)], context)
 
 
-def lane_device(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_device_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     lane_cfg = context.configs.lanes.lanes.device
 
     parsed = parse_device_lane_args(raw_args, lane_cfg.default_scenario_command)
@@ -3424,7 +3428,7 @@ def _parse_stage2_args(raw_args: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(list(raw_args))
 
 
-def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_stage2_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     args = _parse_stage2_args(raw_args)
     lane_cfg = context.configs.lanes.lanes.stage2
     stage2_cfg = context.configs.stage2
@@ -3597,7 +3601,7 @@ def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
     print_step(f"Summary JSON: {summary_path}")
 
 
-def lane_nightly_hardware(raw_args: Sequence[str], context: RuntimeContext) -> None:
+def _lane_nightly_hardware_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     if raw_args:
         raise DevctlError("CONFIG_ERROR", "Usage: devctl lane nightly-hardware")
 
@@ -3612,6 +3616,72 @@ def lane_nightly_hardware(raw_args: Sequence[str], context: RuntimeContext) -> N
 
     print_step("Authorized device detected. Running nightly hardware smoke lane.")
     lane_device(["1", "nightly-hardware-smoke"], context)
+
+
+def lane_test(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import shared as shared_lane
+
+    shared_lane.run_test(raw_args, context)
+
+
+def lane_android_instrumented(raw_args: Sequence[str], context: RuntimeContext, strict: bool = True) -> None:
+    from tools.devctl.lanes_modules import android as android_lane
+
+    android_lane.run_android_instrumented(raw_args, context, strict=strict)
+
+
+def lane_maestro(raw_args: Sequence[str], context: RuntimeContext, strict: bool = True) -> None:
+    from tools.devctl.lanes_modules import maestro as maestro_lane
+
+    maestro_lane.run_maestro(raw_args, context, strict=strict)
+
+
+def lane_screenshot_pack(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import screenshot_pack as screenshot_pack_lane
+
+    screenshot_pack_lane.run_screenshot_pack(raw_args, context)
+
+
+def lane_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import journey as journey_lane
+
+    journey_lane.run_journey(raw_args, context)
+
+
+def lane_fast_smoke(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import journey as journey_lane
+
+    journey_lane.run_fast_smoke(raw_args, context)
+
+
+def lane_valid_output(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import journey as journey_lane
+
+    journey_lane.run_valid_output(raw_args, context)
+
+
+def lane_strict_journey(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import journey as journey_lane
+
+    journey_lane.run_strict_journey(raw_args, context)
+
+
+def lane_device(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import android as android_lane
+
+    android_lane.run_device(raw_args, context)
+
+
+def lane_stage2(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import stage2 as stage2_lane
+
+    stage2_lane.run_stage2(raw_args, context)
+
+
+def lane_nightly_hardware(raw_args: Sequence[str], context: RuntimeContext) -> None:
+    from tools.devctl.lanes_modules import stage2 as stage2_lane
+
+    stage2_lane.run_nightly_hardware(raw_args, context)
 
 
 def dispatch_lane(lane_name: str, lane_args: Sequence[str], context: RuntimeContext) -> None:

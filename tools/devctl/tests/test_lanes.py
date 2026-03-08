@@ -106,6 +106,27 @@ class LanesTest(unittest.TestCase):
         self.assertIn("android-instrumented", lanes)
         self.assertTrue(include_android)
 
+    def test_changed_file_selection_includes_android_unit_for_app_runtime_boundary_files(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=lambda *_a, **_k: None)
+        changed_paths = [
+            "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/RuntimeGateway.kt",
+            "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/StartupProbeController.kt",
+            "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/contracts/ChatContracts.kt",
+            "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ModelProvisioningViewModel.kt",
+            "apps/mobile-android/src/main/kotlin/com/pocketagent/android/AppDependencies.kt",
+            "apps/mobile-android/src/main/kotlin/com/pocketagent/android/MainActivity.kt",
+        ]
+        for changed_path in changed_paths:
+            with self.subTest(changed_path=changed_path):
+                tasks, lanes, include_android = _select_gradle_tasks_for_changed_files(
+                    [changed_path],
+                    context,
+                )
+                self.assertIn(":apps:mobile-android:testDebugUnitTest", tasks)
+                self.assertIn("android-instrumented", lanes)
+                self.assertTrue(include_android)
+
     def test_stage2_parser_supports_profiles_and_resume(self) -> None:
         parsed = _parse_stage2_args(
             [
