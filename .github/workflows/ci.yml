@@ -312,7 +312,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           target: google_apis
-          emulator-boot-timeout: 1800
+          emulator-boot-timeout: 900
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
@@ -328,7 +328,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           target: google_apis
-          emulator-boot-timeout: 1800
+          emulator-boot-timeout: 900
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
@@ -403,7 +403,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           target: google_apis
-          emulator-boot-timeout: 1800
+          emulator-boot-timeout: 900
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
@@ -419,7 +419,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           target: google_apis
-          emulator-boot-timeout: 1800
+          emulator-boot-timeout: 900
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
