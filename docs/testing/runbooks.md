@@ -28,6 +28,47 @@ python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
 ```
 
+## Runbook: Local Lifecycle E2E (First-Run Download -> Chat)
+
+```bash
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
+adb install -r "${APK_PATH}"
+maestro --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" test tests/maestro/scenario-first-run-download-chat.yaml
+```
+
+## Runbook: High-Risk PR Verification
+
+Use when PR carries `risk:e2e-lifecycle`, `risk:runtime`, `risk:provisioning`, or touches high-risk runtime/provisioning/chat paths.
+
+```bash
+bash scripts/dev/test.sh merge
+python3 tools/devctl/main.py lane android-instrumented
+python3 tools/devctl/main.py lane maestro
+maestro --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" test tests/maestro/scenario-first-run-download-chat.yaml
+```
+
+## Runbook: Main-Push Blocking Lifecycle Check (CI Equivalent)
+
+```bash
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
+adb install -r "${APK_PATH}"
+maestro --format junit --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" test tests/maestro/scenario-first-run-download-chat.yaml > tmp/lifecycle-e2e-first-run-local.xml
+```
+
+## Runbook: Cloud Regression Fan-Out (Supplemental)
+
+```bash
+set -a
+source .env
+set +a
+: "${MAESTRO_CLOUD_API_KEY:?Set MAESTRO_CLOUD_API_KEY in .env}"
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
+maestro cloud --android-api-level 34 --app-file "${APK_PATH}" --flows tests/maestro/ --format junit --output tmp/maestro-cloud-regression.xml
+```
+
 ## Runbook: Send/Runtime Journey Validation
 
 ```bash

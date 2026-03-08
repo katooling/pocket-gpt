@@ -219,6 +219,30 @@ Important:
 2. It does not run `devctl` device health checks, real-runtime provisioning preflight, per-device lock handling, or local benchmark artifact/logcat capture contracts.
 3. Keep `devctl lane maestro` and `devctl lane journey` as promotion/closure gates.
 
+## Hybrid Reliability Gate Policy (CI + Main)
+
+Contract summary:
+
+1. Required CI lifecycle check name: `lifecycle-e2e-first-run`.
+2. For pull requests, lifecycle runs when risk labels or high-risk paths are detected.
+3. For every push to `main`, lifecycle runs and blocks on failure.
+4. Runtime risk labels:
+   - `risk:e2e-lifecycle`
+   - `risk:runtime`
+   - `risk:provisioning`
+5. Lifecycle flow under gate: `tests/maestro/scenario-first-run-download-chat.yaml`.
+6. Gate includes one clean-state retry with first-failure artifacts retained.
+
+Local command to mirror the lifecycle gate quickly:
+
+```bash
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
+adb install -r "${APK_PATH}"
+maestro --format junit --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" \
+  test tests/maestro/scenario-first-run-download-chat.yaml > tmp/lifecycle-e2e-first-run-local.xml
+```
+
 ## Governance Commands
 
 Wrappers remain callable, but all governance logic runs via `devctl governance`.

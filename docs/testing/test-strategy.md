@@ -20,13 +20,34 @@ Last updated: 2026-03-08
 
 | Core Flow | Minimum Automated Coverage | Lane/Evidence Expectation | Owner |
 |---|---|---|---|
-| Startup/readiness | Runtime startup checks + ViewModel mapping tests | `android-instrumented` smoke | Eng + QA |
-| Send/streaming | stream event reducer + timeout/cancel tests | `journey` send-capture evidence | Eng + QA |
+| Startup/readiness | Runtime startup checks + ViewModel mapping tests | `android-instrumented` smoke + lifecycle E2E gate | Eng + QA |
+| Send/streaming | stream event reducer + timeout/cancel tests | `journey` send-capture evidence + lifecycle E2E gate | Eng + QA |
 | Session continuity | persistence/session tests | weekly regression matrix evidence | Eng + QA |
 | Image attach | runtime/image contract tests | maestro scenario coverage | Eng + QA |
 | Tool safety contracts | tool-runtime schema tests + typed tool result mapping | local-tool evidence in QA matrix/usability packet | Eng + QA + Security |
 | Privacy controls and redaction | diagnostics redaction tests + privacy UI checks | privacy claim-parity ticket evidence | Eng + QA + Security |
-| Model setup recovery | provisioning/viewmodel tests | recovery evidence in WP-13 packet | Eng + QA + Product |
+| Model setup recovery | provisioning/viewmodel tests | first-run lifecycle E2E + recovery evidence in WP-13 packet | Eng + QA + Product |
+
+## Environment Decision Matrix
+
+| Environment | Strengths | Limits | Best Use |
+|---|---|---|---|
+| Local host/unit lanes | fastest turnaround; lowest setup cost; easy debug cycle | cannot validate full Android UI/runtime behavior | per-save iteration, contract and reducer tests |
+| Local Android device (`devctl`) | production-like behavior, richest diagnostics (`journey-report.json`, local screenshots/logcat), deterministic preflight contracts | limited parallelism; depends on attached hardware state | root-cause debugging, release/promotion confidence, runtime closure |
+| CI emulator lanes | deterministic and repeatable required checks; easy branch protection integration | slower than local loop; emulator fidelity limits | required PR/main gates and broad baseline confidence |
+| Maestro Cloud (supplemental) | hosted fan-out; parallel suite expansion; shared cloud reports | queue/network variance; not a replacement for local preflight contracts | nightly/regression expansion, cross-config supplemental coverage |
+
+## Value-Per-Minute Cadence
+
+| When | Primary Commands | Target Runtime | Decision Value |
+|---|---|---|---|
+| Per-save | `bash scripts/dev/test.sh fast` | 2-8 min | catches common logic regressions early |
+| Pre-push | `bash scripts/dev/test.sh merge` | 10-25 min | validates merge-equivalent safety net |
+| Runtime/UI change local check | `python3 tools/devctl/main.py lane android-instrumented` + `python3 tools/devctl/main.py lane maestro` | 10-35 min | validates on-device runtime/UI wiring |
+| PR high-risk gate | CI `lifecycle-e2e-first-run` | 10-35 min | blocks critical lifecycle regressions before merge |
+| Every `main` push | CI `lifecycle-e2e-first-run` (required) | 10-35 min | protects your direct-to-main development path |
+| Nightly | emulator matrix + Maestro smoke + first-run lifecycle + optional cloud-first-run | 45-180 min | catches drift/flakes across wider configs |
+| Weekly release rehearsal | stage-2/hardware closure lanes + evidence packet | half-day | final production-like launch confidence |
 
 ## Lane Policy
 
@@ -38,23 +59,38 @@ Last updated: 2026-03-08
 6. `python3 tools/devctl/main.py lane screenshot-pack` for UI screenshot contract.
 7. Stage-2 runtime closure lanes remain physical-device signoff lanes.
 
-## Release Gates
+## Risk-Based Lifecycle Gate Policy
 
-Required for promotion decisions:
-
-1. Unit/module and required Android lanes pass.
-2. No unresolved high-severity runtime or UX regressions.
-3. Send timeout/cancel recovery contract remains deterministic (`UI-RUNTIME-001`).
-4. Screenshot inventory check has zero required-id misses for UI-touching changes.
-5. Launch gate matrix rows map to current evidence links and privacy-safe claims.
+1. Required CI job name: `lifecycle-e2e-first-run`.
+2. PRs run this gate when either:
+   - PR label is one of `risk:e2e-lifecycle`, `risk:runtime`, `risk:provisioning`, or
+   - high-risk paths change (mobile runtime/provisioning/download/chat and shared app-runtime/native-bridge paths).
+3. Every push to `main` runs `lifecycle-e2e-first-run` and blocks on failure.
+4. Lifecycle gate executes `tests/maestro/scenario-first-run-download-chat.yaml`.
+5. Gate allows one bounded clean-state retry; first-failure artifacts are preserved for triage.
 
 ## CI Baseline
 
 Primary workflow: `.github/workflows/ci.yml`
 
-1. Hosted required checks: `unit-and-host-tests`, `android-lint`, `native-build-package-check`, `android-instrumented-smoke` (path-filtered where configured).
+1. Hosted required checks: `unit-and-host-tests`, `android-lint`, `native-build-package-check`, `android-instrumented-smoke`, `lifecycle-e2e-first-run` (risk-conditional on PRs, always-on for `main`).
 2. Governance checks run docs drift/health/accuracy and governance self-tests.
-3. Nightly workflows provide additional emulator and Maestro smoke coverage; hardware closures remain separate.
+3. Nightly workflows provide emulator matrix coverage and Maestro supplemental coverage (including first-run lifecycle); cloud first-run runs when API key is configured.
+4. Required checks for branch protection should include `lifecycle-e2e-first-run`.
+
+## Engineering Principles (Applied)
+
+1. Layered pyramid: most tests stay at unit/contract level; E2E guards only core lifecycle risk.
+2. Risk-based E2E: expensive flows run when risk is high or branch is critical (`main`).
+3. Flake containment: bounded retry is explicit, artifacts retained, and failures are visible.
+4. Deterministic evidence: release/promotion decisions rely on reproducible artifacts, not ad-hoc re-runs.
+
+## Lessons Learned (Repo-Specific)
+
+1. Local `devctl` lanes are the fastest path to root cause because they bundle preflight checks, provisioning sanity, structured runtime snapshots, screenshots, and logcat in one run.
+2. CI emulators are the best place for deterministic required checks that protect `main` and enforce contracts consistently.
+3. Cloud runs are most useful for supplemental fan-out and hosted reports, not as the only release gate.
+4. First-run lifecycle failures can be environment-sensitive; preserving first-attempt artifacts is essential even when retry passes.
 
 ## Automation Boundary
 
@@ -72,6 +108,6 @@ Human-required checkpoints:
 
 ## Evidence Rules
 
-1. Raw artifacts stay under `scripts/benchmarks/runs/...`.
+1. Raw artifacts stay under `scripts/benchmarks/runs/...` or uploaded CI artifacts.
 2. Human-readable notes stay under `docs/operations/evidence/...`.
 3. Keep active notes only; prune superseded notes not referenced by active roadmap/PRD/ticket artifacts.
