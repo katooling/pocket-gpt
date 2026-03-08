@@ -1,5 +1,12 @@
 package com.pocketagent.android.ui
 
+import com.pocketagent.android.BuildConfig
+import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.ui.controllers.ChatStreamCoordinator
+import com.pocketagent.android.ui.controllers.ChatPersistenceCoordinator
+import com.pocketagent.android.ui.controllers.ChatSendController
+import com.pocketagent.android.ui.controllers.StartupProbeController
+import com.pocketagent.android.ui.controllers.StartupReadinessCoordinator
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -18,8 +25,8 @@ import com.pocketagent.android.ui.state.PersistedInteractionPart
 import com.pocketagent.android.ui.state.PersistedToolCall
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
+import com.pocketagent.android.ui.state.SessionStateLoadResult
 import com.pocketagent.android.ui.state.StartupProbeState
-import com.pocketagent.android.ui.state.StreamReducerState
 import com.pocketagent.android.ui.state.StreamStateReducer
 import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.android.ui.state.UiError
@@ -28,12 +35,9 @@ import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
-import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.ModelResidencyPolicy
 import com.pocketagent.runtime.PerformanceRuntimeConfig
-import com.pocketagent.runtime.RuntimeGenerationTimeoutException
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamUserMessageRequest
 import java.time.Instant
@@ -41,21 +45,24 @@ import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runInterruptible
-import kotlinx.coroutines.withTimeout
 
 class ChatViewModel(
-    private val runtimeFacade: MvpRuntimeFacade,
+    private val runtimeFacade: RuntimeGateway,
     private val sessionPersistence: SessionPersistence,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val runtimeGenerationTimeoutMs: Long = 0L,
     private val runtimeStartupProbeTimeoutMs: Long = DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS,
+    private val sendController: ChatSendController = ChatSendController(runtimeFacade, ioDispatcher),
+    private val streamCoordinator: ChatStreamCoordinator = ChatStreamCoordinator(),
+    private val startupProbeController: StartupProbeController = StartupProbeController(),
+    private val startupReadinessCoordinator: StartupReadinessCoordinator = StartupReadinessCoordinator(
+        runtimeProfile = resolveModelRuntimeProfile(isDebugBuild = BuildConfig.DEBUG),
+    ),
+    private val persistenceCoordinator: ChatPersistenceCoordinator = ChatPersistenceCoordinator(sessionPersistence),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState = _uiState.asStateFlow()
@@ -174,8 +181,6 @@ class ChatViewModel(
             var lastStreamingUiUpdateAtMs = 0L
             val sendStartedAtMs = System.currentTimeMillis()
             val streamReducer = StreamStateReducer(requestTimeoutMs = requestTimeoutMs)
-            val streamReducerLock = Any()
-            var streamState = StreamReducerState.initial(requestId = requestId)
 
             fun flushPendingStreamingText(force: Boolean = false, triggerToken: String? = null) {
                 val text = pendingStreamingText?.trim().orEmpty()
@@ -254,18 +259,6 @@ class ChatViewModel(
                 persistState()
             }
 
-            fun reduce(block: (StreamReducerState) -> StreamReducerState): Pair<StreamTerminalState?, StreamReducerState> {
-                synchronized(streamReducerLock) {
-                    val previous = streamState.terminal
-                    streamState = block(streamState)
-                    return previous to streamState
-                }
-            }
-
-            fun hasTerminal(): Boolean = synchronized(streamReducerLock) { streamState.terminal != null }
-
-            fun streamFirstTokenMs(): Long? = synchronized(streamReducerLock) { streamState.firstTokenMs }
-
             fun finalizeFromTerminal(terminal: StreamTerminalState) {
                 if (terminal.uiError != null) {
                     finalizeWithRuntimeError(
@@ -326,15 +319,56 @@ class ChatViewModel(
                 maybeAdvanceAfterAssistantResponse()
             }
 
-            val elapsedTicker = launch {
-                while (!hasTerminal()) {
-                    val elapsed = (System.currentTimeMillis() - sendStartedAtMs).coerceAtLeast(0L)
-                    val slowState = when {
-                        streamFirstTokenMs() != null -> null
-                        elapsed >= NO_FIRST_TOKEN_STALL_MS -> "Still working on this device. You can keep waiting, or tap Cancel to stop."
-                        elapsed >= NO_FIRST_TOKEN_WARN_MS -> "Loading model and prefill can take longer on older phones. You can keep waiting or cancel."
-                        else -> null
+            streamCoordinator.collectStream(
+                runtimeGateway = runtimeFacade,
+                request = StreamUserMessageRequest(
+                    sessionId = SessionId(activeSession.id),
+                    requestId = requestId,
+                    userText = prompt,
+                    taskType = resolveTaskType(prompt),
+                    maxTokens = resolveMaxTokens(prompt, performanceConfig),
+                    deviceState = DEFAULT_DEVICE_STATE,
+                    requestTimeoutMs = requestTimeoutMs,
+                    performanceConfig = performanceConfig,
+                    residencyPolicy = ModelResidencyPolicy(
+                        keepLoadedWhileAppForeground = true,
+                        idleUnloadTtlMs = IDLE_MODEL_UNLOAD_TTL_MS,
+                        warmupOnStartup = true,
+                    ),
+                ),
+                requestTimeoutMs = requestTimeoutMs,
+                streamReducer = streamReducer,
+                sendStartedAtMs = sendStartedAtMs,
+                onEvent = { event, nextState ->
+                    when (event) {
+                        is ChatStreamEvent.Started -> {
+                            _uiState.update { state ->
+                                state.copy(
+                                    runtime = state.runtime.copy(
+                                        modelStatusDetail = "Prefill...",
+                                    ),
+                                )
+                            }
+                        }
+
+                        is ChatStreamEvent.TokenDelta -> {
+                            pendingStreamingText = nextState.accumulatedText
+                            flushPendingStreamingText(triggerToken = event.token)
+                            _uiState.update { state ->
+                                state.copy(
+                                    runtime = state.runtime.copy(
+                                        modelStatusDetail = "Generating...",
+                                    ),
+                                )
+                            }
+                        }
+
+                        is ChatStreamEvent.Completed -> Unit
+                        is ChatStreamEvent.Cancelled -> Unit
+                        is ChatStreamEvent.Failed -> Unit
                     }
+                },
+                onElapsed = { elapsed, slowState ->
                     _uiState.update { state ->
                         state.copy(
                             runtime = state.runtime.copy(
@@ -343,106 +377,14 @@ class ChatViewModel(
                             ),
                         )
                     }
-                    delay(SEND_ELAPSED_UPDATE_INTERVAL_MS)
-                }
-            }
-
-            val terminalWatchdog = launch {
-                delay(requestTimeoutMs + SEND_TERMINAL_WATCHDOG_GRACE_MS)
-                val (previousTerminal, nextState) = reduce { state ->
-                    streamReducer.onWatchdogTimeout(state)
-                }
-                if (previousTerminal != null || nextState.terminal == null) return@launch
-                elapsedTicker.cancel()
-                flushPendingStreamingText(force = true)
-                runtimeFacade.cancelGenerationByRequest(requestId)
-                finalizeFromTerminal(nextState.terminal!!)
-            }
-
-            runCatching {
-                withTimeout(requestTimeoutMs) {
-                    runtimeFacade.streamUserMessage(
-                        StreamUserMessageRequest(
-                            sessionId = SessionId(activeSession.id),
-                            requestId = requestId,
-                            userText = prompt,
-                            taskType = resolveTaskType(prompt),
-                            maxTokens = resolveMaxTokens(prompt, performanceConfig),
-                            deviceState = DEFAULT_DEVICE_STATE,
-                            requestTimeoutMs = requestTimeoutMs,
-                            performanceConfig = performanceConfig,
-                            residencyPolicy = ModelResidencyPolicy(
-                                keepLoadedWhileAppForeground = true,
-                                idleUnloadTtlMs = IDLE_MODEL_UNLOAD_TTL_MS,
-                                warmupOnStartup = true,
-                            ),
-                        ),
-                    ).collect { event ->
-                        if (event.requestId != requestId || hasTerminal()) {
-                            return@collect
-                        }
-                        val elapsed = (System.currentTimeMillis() - sendStartedAtMs).coerceAtLeast(0L)
-                        val (previousTerminal, nextState) = reduce { state ->
-                            streamReducer.onEvent(state = state, event = event, elapsedMs = elapsed)
-                        }
-                        if (previousTerminal != null) return@collect
-                        when (event) {
-                            is ChatStreamEvent.Started -> {
-                                _uiState.update { state ->
-                                    state.copy(
-                                        runtime = state.runtime.copy(
-                                            modelStatusDetail = "Prefill...",
-                                        ),
-                                    )
-                                }
-                            }
-
-                            is ChatStreamEvent.TokenDelta -> {
-                                pendingStreamingText = nextState.accumulatedText
-                                flushPendingStreamingText(triggerToken = event.token)
-                                _uiState.update { state ->
-                                    state.copy(
-                                        runtime = state.runtime.copy(
-                                            modelStatusDetail = "Generating...",
-                                        ),
-                                    )
-                                }
-                            }
-
-                            is ChatStreamEvent.Completed -> {
-                                // Terminal transition is handled below by reducer-derived state.
-                            }
-
-                            is ChatStreamEvent.Cancelled -> {
-                                // Terminal transition is handled below by reducer-derived state.
-                            }
-
-                            is ChatStreamEvent.Failed -> {
-                                // Terminal transition is handled below by reducer-derived state.
-                            }
-                        }
-                        nextState.terminal?.let { terminal ->
-                            terminalWatchdog.cancel()
-                            elapsedTicker.cancel()
-                            flushPendingStreamingText(force = true)
-                            finalizeFromTerminal(terminal)
-                        }
-                    }
-                }
-            }.onFailure { error ->
-                val (previousTerminal, nextState) = reduce { state ->
-                    streamReducer.onFailure(state = state, error = error)
-                }
-                if (previousTerminal != null || nextState.terminal == null) return@onFailure
-                terminalWatchdog.cancel()
-                elapsedTicker.cancel()
-                flushPendingStreamingText(force = true)
-                val generationTimedOut = error is TimeoutCancellationException || error is RuntimeGenerationTimeoutException
-                if (generationTimedOut) {
-                    runtimeFacade.cancelGenerationByRequest(requestId)
-                }
-                finalizeFromTerminal(nextState.terminal!!)
-            }
+                },
+                onBeforeTerminal = {
+                    flushPendingStreamingText(force = true)
+                },
+                onTerminal = { terminal ->
+                    finalizeFromTerminal(terminal)
+                },
+            )
             activeSendRequestId = null
         }
     }
@@ -547,7 +489,7 @@ class ChatViewModel(
 
         viewModelScope.launch(ioDispatcher) {
             runCatching {
-                runtimeFacade.analyzeImage(imagePath = imagePath, prompt = "Describe this image.")
+                sendController.analyzeImage(imagePath = imagePath, prompt = "Describe this image.")
             }.onSuccess { result ->
                 val mappedError = UiErrorMapper.fromImageResult(result)
                 if (mappedError != null) {
@@ -567,9 +509,15 @@ class ChatViewModel(
                     persistState()
                     return@onSuccess
                 }
+                val responseText = when (result) {
+                    is com.pocketagent.runtime.ImageAnalysisResult.Success -> result.content
+                    is com.pocketagent.runtime.ImageAnalysisResult.Failure -> {
+                        result.failure.technicalDetail ?: result.failure.userMessage
+                    }
+                }
                 val assistant = createMessage(
                     role = MessageRole.ASSISTANT,
-                    content = result,
+                    content = responseText,
                     kind = MessageKind.IMAGE,
                 )
                 updateActiveSession(activeSession.id) { session ->
@@ -635,69 +583,11 @@ class ChatViewModel(
         }
         persistState()
 
-        viewModelScope.launch(ioDispatcher) {
-            runCatching { runtimeFacade.runTool(toolName = toolName, jsonArgs = jsonArgs) }
-                .onSuccess { toolOutput ->
-                    val mappedError = UiErrorMapper.fromToolResult(toolOutput)
-                    if (mappedError != null) {
-                        appendSystemMessage(
-                            sessionId = activeSession.id,
-                            content = formatUserFacingError(mappedError),
-                        )
-                        _uiState.update { state ->
-                            state.copy(
-                                composer = state.composer.copy(isSending = false),
-                                runtime = state.runtime.copy(
-                                    modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                                    modelStatusDetail = mappedError.userMessage,
-                                ).withUiError(mappedError),
-                            )
-                        }
-                        persistState()
-                        return@onSuccess
-                    }
-                    val response = createMessage(
-                        role = MessageRole.ASSISTANT,
-                        content = toolOutput,
-                        kind = MessageKind.TOOL,
-                        toolName = toolName,
-                    )
-                    updateActiveSession(activeSession.id) { session ->
-                        session.copy(
-                            messages = session.messages + response,
-                            updatedAtEpochMs = System.currentTimeMillis(),
-                        )
-                    }
-                    _uiState.update { state ->
-                        state.copy(
-                            composer = state.composer.copy(isSending = false),
-                            runtime = state.runtime.copy(
-                                runtimeBackend = runtimeFacade.runtimeBackend(),
-                                modelRuntimeStatus = ModelRuntimeStatus.READY,
-                                modelStatusDetail = "Local tool completed",
-                            ).clearError(),
-                        )
-                    }
-                    persistState()
-                }
-                .onFailure { error ->
-                    val uiError = UiErrorMapper.runtimeFailure(error.message ?: "Tool request failed.")
-                    appendSystemMessage(
-                        sessionId = activeSession.id,
-                        content = formatUserFacingError(uiError),
-                    )
-                    _uiState.update { state ->
-                        state.copy(
-                            composer = state.composer.copy(isSending = false),
-                            runtime = state.runtime.copy(
-                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                                modelStatusDetail = uiError.userMessage,
-                            ).withUiError(uiError),
-                        )
-                    }
-                    persistState()
-                }
-        }
+        executeToolCommand(
+            sessionId = activeSession.id,
+            toolName = toolName,
+            jsonArgs = jsonArgs,
+        )
     }
 
     fun exportDiagnostics() {
@@ -787,10 +677,6 @@ class ChatViewModel(
     }
 
     fun setAdvancedSheetOpen(isOpen: Boolean) {
-        val state = _uiState.value
-        if (isOpen && !state.advancedUnlocked) {
-            return
-        }
         _uiState.update {
             it.copy(
                 isAdvancedSheetOpen = isOpen,
@@ -801,9 +687,6 @@ class ChatViewModel(
     }
 
     fun setToolDialogOpen(isOpen: Boolean) {
-        if (isOpen && !_uiState.value.advancedUnlocked) {
-            return
-        }
         _uiState.update { it.copy(isToolDialogOpen = isOpen) }
     }
 
@@ -902,16 +785,19 @@ class ChatViewModel(
 
     private fun bootstrapState() {
         val runtimeBackend = runtimeFacade.runtimeBackend()
-        val persisted = sessionPersistence.loadState()
-        val restoredRoutingMode = runCatching { RoutingMode.valueOf(persisted.routingMode) }
-            .getOrDefault(runtimeFacade.getRoutingMode())
-        val restoredPerformanceProfile = runCatching { RuntimePerformanceProfile.valueOf(persisted.performanceProfile) }
-            .getOrDefault(RuntimePerformanceProfile.BALANCED)
-        val restoredFirstSessionStage = runCatching { FirstSessionStage.valueOf(persisted.firstSessionStage) }
-            .getOrDefault(FirstSessionStage.ONBOARDING)
-        val restoredAdvancedUnlocked = persisted.advancedUnlocked || restoredFirstSessionStage == FirstSessionStage.ADVANCED_UNLOCKED
+        val persistedResult = persistenceCoordinator.loadStateResult()
+        val persisted = when (persistedResult) {
+            is SessionStateLoadResult.Success -> persistedResult.state
+            is SessionStateLoadResult.RecoverableCorruption -> persistedResult.resetState
+            is SessionStateLoadResult.FatalCorruption -> PersistedChatState()
+        }
+        val loadError = sessionStateLoadError(persistedResult)
+        val shouldRunStartupProbe = loadError == null
+        val restoredRoutingMode = RoutingMode.valueOf(persisted.routingMode)
+        val restoredPerformanceProfile = RuntimePerformanceProfile.valueOf(persisted.performanceProfile)
+        val restoredFirstSessionStage = FirstSessionStage.valueOf(persisted.firstSessionStage)
+        val restoredAdvancedUnlocked = true
         val initialFirstSessionStage = when {
-            restoredAdvancedUnlocked -> FirstSessionStage.ADVANCED_UNLOCKED
             !persisted.onboardingCompleted -> FirstSessionStage.ONBOARDING
             restoredFirstSessionStage == FirstSessionStage.ONBOARDING -> FirstSessionStage.GET_READY
             else -> restoredFirstSessionStage
@@ -919,6 +805,30 @@ class ChatViewModel(
         val gpuSupported = runtimeFacade.supportsGpuOffload()
         val restoredGpuEnabled = persisted.gpuAccelerationEnabled && gpuSupported
         runtimeFacade.setRoutingMode(restoredRoutingMode)
+        val bootstrapRuntimeState = if (loadError == null) {
+            RuntimeUiState(
+                routingMode = restoredRoutingMode,
+                performanceProfile = restoredPerformanceProfile,
+                gpuAccelerationEnabled = restoredGpuEnabled,
+                gpuAccelerationSupported = gpuSupported,
+                runtimeBackend = runtimeBackend,
+                startupProbeState = StartupProbeState.RUNNING,
+                modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+                modelStatusDetail = "Warming model and running startup checks...",
+            ).clearError()
+        } else {
+            RuntimeUiState(
+                routingMode = restoredRoutingMode,
+                performanceProfile = restoredPerformanceProfile,
+                gpuAccelerationEnabled = restoredGpuEnabled,
+                gpuAccelerationSupported = gpuSupported,
+                runtimeBackend = runtimeBackend,
+                startupProbeState = StartupProbeState.BLOCKED,
+                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                modelStatusDetail = loadError.userMessage,
+                startupChecks = listOf(loadError.technicalDetail ?: loadError.userMessage),
+            ).withUiError(loadError)
+        }
 
         val restoredSessions = persisted.sessions.map { session ->
             val turns = session.messages
@@ -948,16 +858,7 @@ class ChatViewModel(
                     ),
                 ),
                 activeSessionId = newSessionId,
-                runtime = RuntimeUiState(
-                    routingMode = restoredRoutingMode,
-                    performanceProfile = restoredPerformanceProfile,
-                    gpuAccelerationEnabled = restoredGpuEnabled,
-                    gpuAccelerationSupported = gpuSupported,
-                    runtimeBackend = runtimeBackend,
-                    startupProbeState = StartupProbeState.RUNNING,
-                    modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                    modelStatusDetail = "Warming model and running startup checks...",
-                ).clearError(),
+                runtime = bootstrapRuntimeState,
                 showOnboarding = !persisted.onboardingCompleted,
                 firstSessionStage = initialFirstSessionStage,
                 advancedUnlocked = restoredAdvancedUnlocked,
@@ -967,7 +868,9 @@ class ChatViewModel(
             )
             ensureSimpleFirstEnteredTelemetryIfNeeded()
             persistState()
-            launchStartupProbe()
+            if (shouldRunStartupProbe) {
+                launchStartupProbe()
+            }
             return
         }
 
@@ -978,16 +881,7 @@ class ChatViewModel(
         _uiState.value = ChatUiState(
             sessions = restoredSessions,
             activeSessionId = activeSessionId,
-            runtime = RuntimeUiState(
-                routingMode = restoredRoutingMode,
-                performanceProfile = restoredPerformanceProfile,
-                gpuAccelerationEnabled = restoredGpuEnabled,
-                gpuAccelerationSupported = gpuSupported,
-                runtimeBackend = runtimeBackend,
-                startupProbeState = StartupProbeState.RUNNING,
-                modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                modelStatusDetail = "Warming model and running startup checks...",
-            ).clearError(),
+            runtime = bootstrapRuntimeState,
             showOnboarding = !persisted.onboardingCompleted,
             firstSessionStage = initialFirstSessionStage,
             advancedUnlocked = restoredAdvancedUnlocked,
@@ -996,7 +890,9 @@ class ChatViewModel(
             firstSessionTelemetryEvents = persisted.firstSessionTelemetryEvents,
         )
         ensureSimpleFirstEnteredTelemetryIfNeeded()
-        launchStartupProbe()
+        if (shouldRunStartupProbe) {
+            launchStartupProbe()
+        }
     }
 
     private fun launchStartupProbe(statusDetailOverride: String? = null) {
@@ -1011,62 +907,37 @@ class ChatViewModel(
                     ).clearError(),
                 )
             }
-            val startupChecks = try {
-                withTimeout(runtimeStartupProbeTimeoutMs) {
-                    runInterruptible(ioDispatcher) { runtimeFacade.runStartupChecks() }
-                }
-            } catch (_: TimeoutCancellationException) {
-                val timeoutSeconds = (runtimeStartupProbeTimeoutMs / 1000L).coerceAtLeast(1L)
-                listOf("Startup checks timed out after ${timeoutSeconds}s.")
+            val startupChecks = if (!BuildConfig.NATIVE_RUNTIME_LIBRARY_PACKAGED) {
+                listOf(MISSING_NATIVE_RUNTIME_BUILD_CHECK)
+            } else {
+                startupProbeController.runStartupChecks(
+                    runtimeGateway = runtimeFacade,
+                    ioDispatcher = ioDispatcher,
+                    timeoutMs = runtimeStartupProbeTimeoutMs,
+                )
             }
-            val timeoutOnlyFailure = isStartupTimeoutOnlyFailure(startupChecks)
-            val optionalModelOnlyFailure = isOptionalModelOnlyStartupFailure(startupChecks)
             val gpuSupported = runtimeFacade.supportsGpuOffload()
-            val startupError = if (timeoutOnlyFailure || optionalModelOnlyFailure) {
-                null
-            } else {
-                UiErrorMapper.startupFailure(startupChecks)
-            }
-            val startupModelStatus = when {
-                startupChecks.isEmpty() -> ModelRuntimeStatus.READY
-                timeoutOnlyFailure -> ModelRuntimeStatus.LOADING
-                optionalModelOnlyFailure -> ModelRuntimeStatus.READY
-                else -> resolveModelStatusFromStartupChecks(startupChecks)
-            }
             val runtimeBackend = runtimeFacade.runtimeBackend()
-            val nextProbeState = when {
-                startupChecks.isEmpty() -> StartupProbeState.READY
-                timeoutOnlyFailure || optionalModelOnlyFailure -> StartupProbeState.DEGRADED
-                else -> StartupProbeState.BLOCKED
-            }
-            val startupWarnings = if (timeoutOnlyFailure || optionalModelOnlyFailure) {
-                startupChecks
-            } else {
-                emptyList()
-            }
+            val readinessDecision = startupReadinessCoordinator.decide(
+                startupChecks = startupChecks,
+                runtimeBackend = runtimeBackend,
+                statusDetailOverride = statusDetailOverride,
+            )
             _uiState.update { state ->
                 val nextRuntime = state.runtime.copy(
                     runtimeBackend = runtimeBackend,
                     gpuAccelerationSupported = gpuSupported,
                     gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled && gpuSupported,
-                    startupProbeState = nextProbeState,
-                    modelRuntimeStatus = startupModelStatus,
-                    modelStatusDetail = if (startupChecks.isEmpty()) {
-                        statusDetailOverride ?: readyStatusDetail(runtimeBackend)
-                    } else if (timeoutOnlyFailure) {
-                        "Startup checks exceeded the probe window. Chat is still available; first output may take longer on older devices."
-                    } else if (optionalModelOnlyFailure) {
-                        optionalModelStatusDetail(startupChecks)
-                    } else {
-                        startupChecks.firstOrNull() ?: "Runtime startup checks failed."
-                    },
+                    startupProbeState = readinessDecision.startupProbeState,
+                    modelRuntimeStatus = readinessDecision.modelRuntimeStatus,
+                    modelStatusDetail = readinessDecision.modelStatusDetail,
                     startupChecks = startupChecks,
-                    startupWarnings = startupWarnings,
-                ).withUiError(startupError)
-                val sendAllowed = nextProbeState == StartupProbeState.READY || nextProbeState == StartupProbeState.DEGRADED
-                val blocked = nextProbeState == StartupProbeState.BLOCKED
+                    startupWarnings = readinessDecision.startupWarnings,
+                ).withUiError(readinessDecision.startupError)
+                val sendAllowed = readinessDecision.startupProbeState == StartupProbeState.READY
+                val blocked = readinessDecision.startupProbeState == StartupProbeState.BLOCKED ||
+                    readinessDecision.startupProbeState == StartupProbeState.BLOCKED_TIMEOUT
                 val nextStage = when {
-                    state.advancedUnlocked -> FirstSessionStage.ADVANCED_UNLOCKED
                     state.showOnboarding -> FirstSessionStage.ONBOARDING
                     state.firstAnswerCompleted -> state.firstSessionStage
                     sendAllowed -> FirstSessionStage.READY_TO_CHAT
@@ -1207,7 +1078,7 @@ class ChatViewModel(
 
     private fun persistState() {
         val state = _uiState.value
-        sessionPersistence.saveState(
+        persistenceCoordinator.saveState(
             PersistedChatState(
                 sessions = state.sessions.map { session ->
                     session.copy(
@@ -1228,9 +1099,13 @@ class ChatViewModel(
         )
     }
 
-    private fun executeToolIntent(sessionId: String, toolIntent: ToolIntent) {
+    private fun executeToolCommand(
+        sessionId: String,
+        toolName: String,
+        jsonArgs: String,
+    ) {
         viewModelScope.launch(ioDispatcher) {
-            runCatching { runtimeFacade.runTool(toolName = toolIntent.name, jsonArgs = toolIntent.jsonArgs) }
+            runCatching { sendController.runTool(toolName = toolName, jsonArgs = jsonArgs) }
                 .onSuccess { toolOutput ->
                     val mappedError = UiErrorMapper.fromToolResult(toolOutput)
                     if (mappedError != null) {
@@ -1252,9 +1127,14 @@ class ChatViewModel(
                     }
                     val response = createMessage(
                         role = MessageRole.ASSISTANT,
-                        content = toolOutput,
+                        content = when (toolOutput) {
+                            is com.pocketagent.runtime.ToolExecutionResult.Success -> toolOutput.content
+                            is com.pocketagent.runtime.ToolExecutionResult.Failure -> {
+                                toolOutput.failure.technicalDetail ?: toolOutput.failure.userMessage
+                            }
+                        },
                         kind = MessageKind.TOOL,
-                        toolName = toolIntent.name,
+                        toolName = toolName,
                     )
                     updateActiveSession(sessionId) { session ->
                         session.copy(
@@ -1292,6 +1172,14 @@ class ChatViewModel(
                     persistState()
                 }
         }
+    }
+
+    private fun executeToolIntent(sessionId: String, toolIntent: ToolIntent) {
+        executeToolCommand(
+            sessionId = sessionId,
+            toolName = toolIntent.name,
+            jsonArgs = toolIntent.jsonArgs,
+        )
     }
 
     private fun parseToolIntent(prompt: String): ToolIntent? {
@@ -1335,24 +1223,6 @@ class ChatViewModel(
             .replace("\"", "\\\"")
     }
 
-    private fun resolveModelStatusFromStartupChecks(startupChecks: List<String>): ModelRuntimeStatus {
-        if (startupChecks.isEmpty()) {
-            return ModelRuntimeStatus.READY
-        }
-        val startupSummary = startupChecks.joinToString(" ").lowercase()
-        if (startupSummary.contains("optional runtime model unavailable")) {
-            return ModelRuntimeStatus.READY
-        }
-        return if (
-            startupSummary.contains("missing runtime model") ||
-            startupSummary.contains("artifact verification failed")
-        ) {
-            ModelRuntimeStatus.NOT_READY
-        } else {
-            ModelRuntimeStatus.ERROR
-        }
-    }
-
     private fun resolveTaskType(prompt: String): String {
         return if (prompt.length >= LONG_PROMPT_LENGTH) "long_text" else "short_text"
     }
@@ -1372,44 +1242,7 @@ class ChatViewModel(
     }
 
     private fun isRuntimeReadyForSend(runtime: RuntimeUiState): Boolean {
-        return isRuntimeReady(runtime) || runtime.startupProbeState == StartupProbeState.DEGRADED
-    }
-
-    private fun isStartupTimeoutOnlyFailure(startupChecks: List<String>): Boolean {
-        if (startupChecks.isEmpty()) {
-            return false
-        }
-        return startupChecks.all { check ->
-            val normalized = check.lowercase()
-            normalized.contains("startup checks timed out") || normalized.contains("timed out")
-        }
-    }
-
-    private fun isOptionalModelOnlyStartupFailure(startupChecks: List<String>): Boolean {
-        if (startupChecks.isEmpty()) {
-            return false
-        }
-        return startupChecks.all { check ->
-            check.lowercase().contains("optional runtime model unavailable")
-        }
-    }
-
-    private fun optionalModelStatusDetail(startupChecks: List<String>): String {
-        val missing = startupChecks
-            .filter { it.lowercase().contains("optional runtime model unavailable") }
-            .flatMap { check ->
-                check.substringAfter(":", missingDelimiterValue = "")
-                    .split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-            }
-            .toSet()
-        val readyCount = (BASELINE_RUNTIME_MODELS.size - missing.size).coerceAtLeast(1)
-        return if (missing.isEmpty()) {
-            "Runtime ready. Optional models are still being provisioned."
-        } else {
-            "$readyCount model ready, ${missing.size} optional model unavailable (${missing.joinToString(", ")})."
-        }
+        return isRuntimeReady(runtime)
     }
 
     private fun resolveRequestTimeoutMs(performanceConfig: PerformanceRuntimeConfig): Long {
@@ -1451,6 +1284,22 @@ class ChatViewModel(
         }
         return UiErrorMapper.startupFailure(checks)
             ?: UiErrorMapper.runtimeFailure(runtime.modelStatusDetail ?: "Runtime is not ready yet.")
+    }
+
+    private fun sessionStateLoadError(loadResult: SessionStateLoadResult): UiError? {
+        return when (loadResult) {
+            is SessionStateLoadResult.Success -> null
+            is SessionStateLoadResult.RecoverableCorruption -> UiError(
+                code = UI_SESSION_STATE_CORRUPTION_CODE,
+                userMessage = "Saved chat state was corrupted and reset. Refresh runtime checks to continue.",
+                technicalDetail = loadResult.technicalDetail,
+            )
+            is SessionStateLoadResult.FatalCorruption -> UiError(
+                code = UI_SESSION_STATE_FATAL_CODE,
+                userMessage = "Saved chat state could not be loaded. Refresh runtime checks and retry.",
+                technicalDetail = loadResult.technicalDetail,
+            )
+        }
     }
 
     private fun readyStatusDetail(runtimeBackend: String?): String {
@@ -1525,7 +1374,7 @@ class ChatViewModel(
 
     private fun maybeAdvanceAfterAssistantResponse() {
         val snapshot = _uiState.value
-        if (snapshot.advancedUnlocked || snapshot.showOnboarding) {
+        if (snapshot.showOnboarding) {
             return
         }
         if (!snapshot.firstAnswerCompleted) {
@@ -1534,7 +1383,9 @@ class ChatViewModel(
         }
         if (!snapshot.followUpCompleted) {
             onFollowUpCompleted()
-            onAdvancedUnlocked()
+            if (!snapshot.advancedUnlocked) {
+                onAdvancedUnlocked()
+            }
         }
     }
 
@@ -1570,6 +1421,11 @@ class ChatViewModel(
     private fun newMessageId(prefix: String): String = "$prefix-${UUID.randomUUID()}"
 
     companion object {
+        private const val UI_SESSION_STATE_CORRUPTION_CODE = "UI-SESSION-001"
+        private const val UI_SESSION_STATE_FATAL_CODE = "UI-SESSION-002"
+        private const val MISSING_NATIVE_RUNTIME_BUILD_CHECK =
+            "Build is missing native runtime library (libpocket_llama.so). " +
+                "Install an app build that packages native runtime."
         private const val TITLE_MAX_CHARS = 42
         private const val LONG_PROMPT_LENGTH = 160
         private const val SHORT_PROMPT_MAX_TOKENS = 32
@@ -1578,20 +1434,12 @@ class ChatViewModel(
         private const val DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS = 30_000L
         private const val IDLE_MODEL_UNLOAD_TTL_MS = 10 * 60 * 1000L
         private const val STREAM_UI_UPDATE_MIN_INTERVAL_MS = 80L
-        private const val SEND_TERMINAL_WATCHDOG_GRACE_MS = 1_500L
-        private const val SEND_ELAPSED_UPDATE_INTERVAL_MS = 1_000L
-        private const val NO_FIRST_TOKEN_WARN_MS = 90_000L
-        private const val NO_FIRST_TOKEN_STALL_MS = 300_000L
         private const val TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED = "simple_first_entered"
         private const val TELEMETRY_EVENT_GET_READY_STARTED = "get_ready_started"
         private const val TELEMETRY_EVENT_GET_READY_COMPLETED = "get_ready_completed"
         private const val TELEMETRY_EVENT_FIRST_ANSWER_COMPLETED = "first_answer_completed"
         private const val TELEMETRY_EVENT_FOLLOW_UP_COMPLETED = "follow_up_completed"
         private const val TELEMETRY_EVENT_ADVANCED_UNLOCKED = "advanced_unlocked"
-        private val BASELINE_RUNTIME_MODELS = setOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4,
-            ModelCatalog.QWEN_3_5_2B_Q4,
-        )
         private val DEFAULT_DEVICE_STATE = DeviceState(
             batteryPercent = 85,
             thermalLevel = 3,
@@ -1642,7 +1490,7 @@ private fun formatUserFacingError(error: UiError): String {
 }
 
 class ChatViewModelFactory(
-    private val runtimeFacade: MvpRuntimeFacade,
+    private val runtimeFacade: RuntimeGateway,
     private val sessionPersistence: SessionPersistence,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")

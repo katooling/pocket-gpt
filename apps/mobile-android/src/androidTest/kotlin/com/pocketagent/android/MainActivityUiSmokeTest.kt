@@ -71,6 +71,7 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithTag("composer_input").assertIsDisplayed()
         composeRule.onNodeWithTag("send_button").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Sessions").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Advanced").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Privacy").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Attach image").assertIsDisplayed()
         composeRule.captureScreenshotIfEnabled("ui-04-chat-ready-empty")
@@ -195,15 +196,15 @@ class MainActivityUiSmokeTest {
     }
 
     @Test
-    fun advancedUnlockCueAppearsAfterFollowUp() {
+    fun advancedControlsAreVisibleWithoutFollowUp() {
         composeRule.dismissOnboardingIfVisible()
         composeRule.waitForRuntimeReady()
-        composeRule.sendPrompt("unlock step one")
-        composeRule.sendPrompt("unlock step two")
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithTag("advanced_unlock_cue").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.captureScreenshotIfEnabled("ui-11-advanced-unlock-cue")
+        composeRule.onNodeWithTag("advanced_sheet_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("tool_dialog_button").assertIsDisplayed()
+        assertFalse(
+            composeRule.onAllNodesWithTag("advanced_unlock_cue").fetchSemanticsNodes().isNotEmpty(),
+        )
+        composeRule.captureScreenshotIfEnabled("ui-11-advanced-default-available")
     }
 
     @Test
@@ -260,8 +261,6 @@ class MainActivityUiSmokeTest {
     private fun AndroidComposeTestRule<*, *>.unlockAdvancedControls() {
         dismissOnboardingIfVisible()
         waitForRuntimeReady()
-        sendPrompt("unlock step one")
-        sendPrompt("unlock step two")
         waitUntil(timeoutMillis = 10_000) {
             onAllNodesWithTag("advanced_sheet_button").fetchSemanticsNodes().isNotEmpty() &&
                 onAllNodesWithTag("tool_dialog_button").fetchSemanticsNodes().isNotEmpty()
@@ -435,6 +434,8 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
                         RoutingMode.AUTO -> "auto"
                         RoutingMode.QWEN_0_8B -> "qwen-0.8b"
                         RoutingMode.QWEN_2B -> "qwen-2b"
+                        RoutingMode.SMOLLM2_360M -> "smollm2-360m"
+                        RoutingMode.SMOLLM2_135M -> "smollm2-135m"
                     },
                     text = "runtime response for ${request.userText}",
                     firstTokenLatencyMs = 42,

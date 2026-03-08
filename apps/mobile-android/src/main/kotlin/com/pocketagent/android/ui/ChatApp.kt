@@ -43,12 +43,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.R
-import com.pocketagent.android.AppRuntimeDependencies
 import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
-import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.StartupProbeState
@@ -58,48 +57,44 @@ import kotlinx.coroutines.launch
 @Composable
 fun PocketAgentApp(
     viewModel: ChatViewModel,
+    provisioningViewModel: ModelProvisioningViewModel,
 ) {
     val state by viewModel.uiState.collectAsState()
+    val provisioningState by provisioningViewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val downloads by AppRuntimeDependencies.observeDownloads(context).collectAsState()
+    val downloads = provisioningState.downloads
+    val provisioningSnapshot = provisioningState.snapshot ?: return
+    val modelDistributionManifest = provisioningState.manifest
+    val modelImportInProgress = provisioningState.isImporting
+    val modelProvisioningStatus = provisioningState.statusMessage
     val drawerState = rememberDrawerState(
         initialValue = if (state.isSessionDrawerOpen) DrawerValue.Open else DrawerValue.Closed,
     )
-    val runtimeReadyForSend = state.runtime.startupProbeState == StartupProbeState.READY ||
-        state.runtime.startupProbeState == StartupProbeState.DEGRADED
+    val runtimeReadyForSend = state.runtime.startupProbeState == StartupProbeState.READY &&
+        state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
     val runtimeReadyForModelActions = state.runtime.startupProbeState == StartupProbeState.READY &&
         state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
     val scope = rememberCoroutineScope()
     var modelSheetOpen by remember { mutableStateOf(false) }
     var selectedModelIdForImport by remember { mutableStateOf<String?>(null) }
-    var modelImportInProgress by remember { mutableStateOf(false) }
-    var modelProvisioningStatus by remember { mutableStateOf<String?>(null) }
     var pendingGetReadyActivation by remember { mutableStateOf<Pair<String, String>?>(null) }
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
-    var modelDistributionManifest by remember { mutableStateOf(ModelDistributionManifest(models = emptyList())) }
-    var provisioningSnapshot by remember {
-        mutableStateOf(AppRuntimeDependencies.currentProvisioningSnapshot(context))
-    }
+    val defaultGetReadyModelId = remember { resolveDefaultGetReadyModelId(isDebugBuild = BuildConfig.DEBUG) }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { viewModel.attachImage(it.toString()) }
     }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         val modelId = selectedModelIdForImport ?: return@rememberLauncherForActivityResult
         if (uri == null) {
-            modelProvisioningStatus = context.getString(R.string.ui_model_import_cancelled)
+            provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_import_cancelled))
             return@rememberLauncherForActivityResult
         }
         scope.launch {
-            modelImportInProgress = true
-            modelProvisioningStatus = context.getString(R.string.ui_model_import_in_progress)
-            runCatching {
-                AppRuntimeDependencies.importModelFromUri(
-                    context = context,
-                    modelId = modelId,
-                    sourceUri = uri,
-                )
-            }.onSuccess { result ->
-                provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+            provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_import_in_progress))
+            provisioningViewModel.importModelFromUri(
+                modelId = modelId,
+                sourceUri = uri,
+            ).onSuccess { result ->
                 val statusMessage = if (result.isActive) {
                     context.getString(
                         R.string.ui_model_import_success_active,
@@ -116,26 +111,27 @@ fun PocketAgentApp(
                 viewModel.refreshRuntimeReadiness(
                     statusDetailOverride = statusMessage,
                 )
-                modelProvisioningStatus = statusMessage
+                provisioningViewModel.setStatusMessage(statusMessage)
             }.onFailure { error ->
-                modelProvisioningStatus = context.getString(
-                    R.string.ui_model_import_failure,
-                    error.message ?: "Unknown import error",
+                provisioningViewModel.setStatusMessage(
+                    context.getString(
+                        R.string.ui_model_import_failure,
+                        error.message ?: "Unknown import error",
+                    ),
                 )
             }
-            modelImportInProgress = false
         }
     }
 
     LaunchedEffect(downloads) {
-        provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+        provisioningViewModel.refreshSnapshot()
         val transitioned = downloads.firstOrNull { task ->
             val previous = previousDownloadStatuses[task.taskId]
             previous != null && previous != task.status
         }
         val transitionFeedback = transitioned?.provisioningFeedback(context)
         transitionFeedback?.let { feedback ->
-            modelProvisioningStatus = feedback
+            provisioningViewModel.setStatusMessage(feedback)
         }
         if (
             transitioned?.status == DownloadTaskStatus.COMPLETED ||
@@ -147,17 +143,17 @@ fun PocketAgentApp(
                 transitioned.modelId == pendingActivation.first &&
                 transitioned.version == pendingActivation.second
             ) {
-                val activated = AppRuntimeDependencies.setActiveVersion(
-                    context = context,
+                val activated = provisioningViewModel.setActiveVersion(
                     modelId = transitioned.modelId,
                     version = transitioned.version,
                 )
-                provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
                 if (activated) {
-                    modelProvisioningStatus = context.getString(
-                        R.string.ui_model_version_activated,
-                        transitioned.modelId,
-                        transitioned.version,
+                    provisioningViewModel.setStatusMessage(
+                        context.getString(
+                            R.string.ui_model_version_activated,
+                            transitioned.modelId,
+                            transitioned.version,
+                        ),
                     )
                 }
                 pendingGetReadyActivation = null
@@ -178,8 +174,8 @@ fun PocketAgentApp(
         if (!modelSheetOpen) {
             return@LaunchedEffect
         }
-        provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
-        modelDistributionManifest = AppRuntimeDependencies.loadModelDistributionManifest(context)
+        provisioningViewModel.refreshSnapshot()
+        provisioningViewModel.refreshManifest()
     }
 
     LaunchedEffect(state.isSessionDrawerOpen) {
@@ -227,25 +223,23 @@ fun PocketAgentApp(
                         }
                     },
                     actions = {
-                        if (state.advancedUnlocked) {
-                            IconButton(
-                                modifier = Modifier.testTag("tool_dialog_button"),
-                                onClick = { viewModel.setToolDialogOpen(true) },
-                            ) {
-                                Icon(
-                                    Icons.Default.Build,
-                                    contentDescription = stringResource(id = R.string.a11y_tool_actions_open),
-                                )
-                            }
-                            IconButton(
-                                modifier = Modifier.testTag("advanced_sheet_button"),
-                                onClick = { viewModel.setAdvancedSheetOpen(true) },
-                            ) {
-                                Icon(
-                                    Icons.Default.Settings,
-                                    contentDescription = stringResource(id = R.string.a11y_advanced_controls_open),
-                                )
-                            }
+                        IconButton(
+                            modifier = Modifier.testTag("tool_dialog_button"),
+                            onClick = { viewModel.setToolDialogOpen(true) },
+                        ) {
+                            Icon(
+                                Icons.Default.Build,
+                                contentDescription = stringResource(id = R.string.a11y_tool_actions_open),
+                            )
+                        }
+                        IconButton(
+                            modifier = Modifier.testTag("advanced_sheet_button"),
+                            onClick = { viewModel.setAdvancedSheetOpen(true) },
+                        ) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = stringResource(id = R.string.a11y_advanced_controls_open),
+                            )
                         }
                         IconButton(
                             modifier = Modifier.testTag("privacy_sheet_button"),
@@ -278,36 +272,36 @@ fun PocketAgentApp(
                 onGetReadyTapped = {
                     scope.launch {
                         viewModel.onGetReadyTapped()
-                        modelProvisioningStatus = context.getString(R.string.ui_get_ready_started_status)
-                        modelDistributionManifest = AppRuntimeDependencies.loadModelDistributionManifest(context)
-                        val defaultVersion = modelDistributionManifest.models
-                            .firstOrNull { it.modelId == com.pocketagent.inference.ModelCatalog.QWEN_3_5_0_8B_Q4 }
-                            ?.versions
-                            ?.firstOrNull()
+                        provisioningViewModel.setStatusMessage(context.getString(R.string.ui_get_ready_started_status))
+                        provisioningViewModel.refreshManifest()
+                        val manifest = provisioningViewModel.uiState.value.manifest
+                        val defaultVersion = resolveDefaultGetReadyVersion(
+                            manifest = manifest,
+                            defaultModelId = defaultGetReadyModelId,
+                        )
                         if (defaultVersion == null) {
-                            modelProvisioningStatus = context.getString(R.string.ui_model_downloads_manifest_empty)
+                            provisioningViewModel.setStatusMessage(
+                                context.getString(R.string.ui_model_downloads_manifest_empty),
+                            )
                             modelSheetOpen = true
                             return@launch
                         }
 
-                        val existingVersion = AppRuntimeDependencies.listInstalledVersions(
-                            context = context,
+                        val existingVersion = provisioningViewModel.listInstalledVersions(
                             modelId = defaultVersion.modelId,
                         ).firstOrNull { it.version == defaultVersion.version }
 
                         if (existingVersion != null) {
-                            AppRuntimeDependencies.setActiveVersion(
-                                context = context,
+                            provisioningViewModel.setActiveVersion(
                                 modelId = defaultVersion.modelId,
                                 version = defaultVersion.version,
                             )
-                            provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
                             val activatedMessage = context.getString(
                                 R.string.ui_model_version_activated,
                                 defaultVersion.modelId,
                                 defaultVersion.version,
                             )
-                            modelProvisioningStatus = activatedMessage
+                            provisioningViewModel.setStatusMessage(activatedMessage)
                             viewModel.refreshRuntimeReadiness(statusDetailOverride = activatedMessage)
                             return@launch
                         }
@@ -316,20 +310,23 @@ fun PocketAgentApp(
                         startModelDownload(
                             context = context,
                             version = defaultVersion,
-                            onStatus = { modelProvisioningStatus = it },
+                            enqueueDownload = provisioningViewModel::enqueueDownload,
+                            onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
                         )
                         modelSheetOpen = true
                     }
                 },
                 onOpenModelSetup = {
-                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    provisioningViewModel.refreshSnapshot()
                     modelSheetOpen = true
                 },
                 onOpenAdvanced = { viewModel.setAdvancedSheetOpen(true) },
                 onRefreshRuntimeChecks = {
                     viewModel.refreshRuntimeReadiness()
-                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
-                    modelProvisioningStatus = context.getString(R.string.ui_model_refresh_runtime_feedback)
+                    provisioningViewModel.refreshSnapshot()
+                    provisioningViewModel.setStatusMessage(
+                        context.getString(R.string.ui_model_refresh_runtime_feedback),
+                    )
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -368,7 +365,7 @@ fun PocketAgentApp(
                 onGpuAccelerationEnabledChanged = viewModel::setGpuAccelerationEnabled,
                 onExportDiagnostics = viewModel::exportDiagnostics,
                 onOpenModelSetup = {
-                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    provisioningViewModel.refreshSnapshot()
                     modelSheetOpen = true
                 },
             )
@@ -387,6 +384,7 @@ fun PocketAgentApp(
                 downloads = downloads,
                 isImporting = modelImportInProgress,
                 statusMessage = modelProvisioningStatus,
+                defaultGetReadyModelId = defaultGetReadyModelId,
                 onImportModel = { modelId ->
                     selectedModelIdForImport = modelId
                     modelPicker.launch(arrayOf("*/*"))
@@ -395,24 +393,28 @@ fun PocketAgentApp(
                     startModelDownload(
                         context = context,
                         version = version,
-                        onStatus = { modelProvisioningStatus = it },
+                        enqueueDownload = provisioningViewModel::enqueueDownload,
+                        onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
                     )
                 },
                 onPauseDownload = { taskId ->
-                    AppRuntimeDependencies.pauseDownload(context, taskId)
-                    modelProvisioningStatus = context.getString(R.string.ui_model_download_paused)
+                    provisioningViewModel.pauseDownload(taskId)
+                    provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_download_paused))
                 },
                 onResumeDownload = { taskId ->
-                    AppRuntimeDependencies.resumeDownload(context, taskId)
-                    modelProvisioningStatus = context.getString(R.string.ui_model_download_resumed)
+                    provisioningViewModel.resumeDownload(taskId)
+                    provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_download_resumed))
                 },
                 onRetryDownload = { taskId ->
-                    AppRuntimeDependencies.retryDownload(context, taskId)
-                    modelProvisioningStatus = context.getString(R.string.ui_model_download_retried)
+                    provisioningViewModel.retryDownload(taskId)
+                    provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_download_retried))
+                },
+                onCancelDownload = { taskId ->
+                    provisioningViewModel.cancelDownload(taskId)
+                    provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_download_cancelled))
                 },
                 onActivateVersion = { modelId, version ->
-                    val activated = AppRuntimeDependencies.setActiveVersion(context, modelId, version)
-                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
+                    val activated = provisioningViewModel.setActiveVersion(modelId, version)
                     if (activated) {
                         viewModel.refreshRuntimeReadiness(
                             statusDetailOverride = context.getString(
@@ -421,40 +423,50 @@ fun PocketAgentApp(
                                 version,
                             ),
                         )
-                        modelProvisioningStatus = context.getString(
-                            R.string.ui_model_version_activated,
-                            modelId,
-                            version,
+                        provisioningViewModel.setStatusMessage(
+                            context.getString(
+                                R.string.ui_model_version_activated,
+                                modelId,
+                                version,
+                            ),
                         )
                     } else {
-                        modelProvisioningStatus = context.getString(
-                            R.string.ui_model_version_activation_failed,
+                        provisioningViewModel.setStatusMessage(
+                            context.getString(
+                                R.string.ui_model_version_activation_failed,
+                            ),
                         )
                     }
                 },
                 onRemoveVersion = { modelId, version ->
-                    val removed = AppRuntimeDependencies.removeVersion(context, modelId, version)
-                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
-                    modelProvisioningStatus = if (removed) {
-                        context.getString(R.string.ui_model_version_removed, modelId, version)
-                    } else {
-                        context.getString(R.string.ui_model_version_remove_blocked)
-                    }
+                    val removed = provisioningViewModel.removeVersion(modelId, version)
+                    provisioningViewModel.setStatusMessage(
+                        if (removed) {
+                            context.getString(R.string.ui_model_version_removed, modelId, version)
+                        } else {
+                            context.getString(R.string.ui_model_version_remove_blocked)
+                        },
+                    )
                 },
                 onRefreshManifest = {
                     scope.launch {
-                        modelDistributionManifest = AppRuntimeDependencies.loadModelDistributionManifest(context)
-                        modelProvisioningStatus = if (modelDistributionManifest.models.isEmpty()) {
-                            context.getString(R.string.ui_model_downloads_manifest_empty)
-                        } else {
-                            context.getString(R.string.ui_model_refresh_manifest_success)
-                        }
+                        provisioningViewModel.refreshManifest()
+                        val manifest = provisioningViewModel.uiState.value.manifest
+                        provisioningViewModel.setStatusMessage(
+                            if (manifest.models.isEmpty()) {
+                                context.getString(R.string.ui_model_downloads_manifest_empty)
+                            } else {
+                                context.getString(R.string.ui_model_refresh_manifest_success)
+                            },
+                        )
                     }
                 },
                 onRefreshRuntime = {
                     viewModel.refreshRuntimeReadiness()
-                    provisioningSnapshot = AppRuntimeDependencies.currentProvisioningSnapshot(context)
-                    modelProvisioningStatus = context.getString(R.string.ui_model_refresh_runtime_feedback)
+                    provisioningViewModel.refreshSnapshot()
+                    provisioningViewModel.setStatusMessage(
+                        context.getString(R.string.ui_model_refresh_runtime_feedback),
+                    )
                 },
                 onClose = { modelSheetOpen = false },
             )
@@ -474,17 +486,30 @@ fun PocketAgentApp(
 private fun startModelDownload(
     context: android.content.Context,
     version: ModelDistributionVersion,
+    enqueueDownload: (ModelDistributionVersion) -> String,
     onStatus: (String) -> Unit,
 ) {
-    val taskId = AppRuntimeDependencies.enqueueDownload(context, version)
-    onStatus(
-        context.getString(
-            R.string.ui_model_download_enqueued,
-            version.modelId,
-            version.version,
-            taskId,
-        ),
-    )
+    runCatching { enqueueDownload(version) }
+        .onSuccess { taskId ->
+            onStatus(
+                context.getString(
+                    R.string.ui_model_download_enqueued,
+                    version.modelId,
+                    version.version,
+                    taskId,
+                ),
+            )
+        }
+        .onFailure { error ->
+            onStatus(
+                context.getString(
+                    R.string.ui_model_download_start_failed,
+                    version.modelId,
+                    version.version,
+                    error.message ?: "unknown error",
+                ),
+            )
+        }
 }
 
 private fun DownloadTaskState.provisioningFeedback(context: android.content.Context): String? {

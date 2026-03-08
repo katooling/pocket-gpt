@@ -3,6 +3,7 @@ package com.pocketagent.android.ui.state
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -77,7 +78,7 @@ class SessionPersistenceCodecTest {
         assertEquals("AUTO", decoded.routingMode)
         assertFalse(decoded.onboardingCompleted)
         assertEquals(FirstSessionStage.ONBOARDING.name, decoded.firstSessionStage)
-        assertFalse(decoded.advancedUnlocked)
+        assertTrue(decoded.advancedUnlocked)
     }
 
     @Test
@@ -149,5 +150,85 @@ class SessionPersistenceCodecTest {
         assertEquals("USER", interaction?.role)
         assertEquals("tc-1", interaction?.toolCallId)
         assertEquals("calculator", interaction?.toolCalls?.singleOrNull()?.name)
+    }
+
+    @Test
+    fun `decode fails fast for invalid enum values`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PersistedChatStateCodec.decode(
+                """
+                {
+                  "sessions": [
+                    {
+                      "id": "s1",
+                      "messages": [
+                        {
+                          "id": "m1",
+                          "role": "NOT_A_ROLE",
+                          "kind": "TEXT"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `decode fails fast for invalid typed fields`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PersistedChatStateCodec.decode(
+                """
+                {
+                  "onboardingCompleted": "sometimes",
+                  "sessions": []
+                }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `decode fails fast for invalid routing mode`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PersistedChatStateCodec.decode(
+                """
+                {
+                  "routingMode": "BAD_MODE",
+                  "sessions": []
+                }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `decode fails fast for invalid performance profile`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PersistedChatStateCodec.decode(
+                """
+                {
+                  "performanceProfile": "TURBO_MAX",
+                  "sessions": []
+                }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `decode fails fast for invalid first-session stage`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PersistedChatStateCodec.decode(
+                """
+                {
+                  "firstSessionStage": "DONE_FOREVER",
+                  "sessions": []
+                }
+                """.trimIndent(),
+            )
+        }
     }
 }

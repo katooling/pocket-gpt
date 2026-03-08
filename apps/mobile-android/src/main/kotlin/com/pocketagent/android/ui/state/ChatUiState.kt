@@ -101,6 +101,7 @@ enum class StartupProbeState {
     RUNNING,
     READY,
     DEGRADED,
+    BLOCKED_TIMEOUT,
     BLOCKED,
 }
 
@@ -130,7 +131,7 @@ data class ChatUiState(
     val showOnboarding: Boolean = false,
     val onboardingPage: Int = 0,
     val firstSessionStage: FirstSessionStage = FirstSessionStage.ONBOARDING,
-    val advancedUnlocked: Boolean = false,
+    val advancedUnlocked: Boolean = true,
     val firstAnswerCompleted: Boolean = false,
     val followUpCompleted: Boolean = false,
     val showAdvancedUnlockCue: Boolean = false,

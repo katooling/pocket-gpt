@@ -1,5 +1,7 @@
 package com.pocketagent.android.ui
 
+import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.ui.controllers.StartupProbeController
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.android.ui.state.ChatSessionUiModel
@@ -9,14 +11,19 @@ import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.SessionPersistence
+import com.pocketagent.android.ui.state.SessionStateLoadResult
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.ImageAnalysisResult
+import com.pocketagent.runtime.ImageFailure
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamUserMessageRequest
+import com.pocketagent.runtime.ToolExecutionResult
+import com.pocketagent.runtime.ToolFailure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -114,7 +121,24 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `simple-first progress unlocks advanced controls after answer plus follow-up`() = runTest(dispatcher) {
+    fun `advanced controls are available on first launch`() = runTest(dispatcher) {
+        val viewModel = ChatViewModel(
+            runtimeFacade = RecordingRuntimeFacade(),
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.advancedUnlocked)
+        viewModel.setAdvancedSheetOpen(true)
+        viewModel.setToolDialogOpen(true)
+
+        assertTrue(viewModel.uiState.value.isAdvancedSheetOpen)
+        assertTrue(viewModel.uiState.value.isToolDialogOpen)
+    }
+
+    @Test
+    fun `simple-first progress still advances milestones when advanced controls are already available`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade()
         val viewModel = ChatViewModel(
             runtimeFacade = runtime,
@@ -125,14 +149,14 @@ class ChatViewModelTest {
 
         viewModel.completeOnboarding()
         advanceUntilIdle()
-        assertFalse(viewModel.uiState.value.advancedUnlocked)
+        assertTrue(viewModel.uiState.value.advancedUnlocked)
 
         viewModel.onComposerChanged("first question")
         viewModel.sendMessage()
         advanceUntilIdle()
         assertTrue(viewModel.uiState.value.firstAnswerCompleted)
         assertFalse(viewModel.uiState.value.followUpCompleted)
-        assertFalse(viewModel.uiState.value.advancedUnlocked)
+        assertTrue(viewModel.uiState.value.advancedUnlocked)
         assertEquals(FirstSessionStage.FIRST_ANSWER_DONE, viewModel.uiState.value.firstSessionStage)
 
         viewModel.onComposerChanged("follow up question")
@@ -141,8 +165,8 @@ class ChatViewModelTest {
         assertTrue(viewModel.uiState.value.firstAnswerCompleted)
         assertTrue(viewModel.uiState.value.followUpCompleted)
         assertTrue(viewModel.uiState.value.advancedUnlocked)
-        assertEquals(FirstSessionStage.ADVANCED_UNLOCKED, viewModel.uiState.value.firstSessionStage)
-        assertTrue(viewModel.uiState.value.firstSessionTelemetryEvents.any { it.eventName == "advanced_unlocked" })
+        assertEquals(FirstSessionStage.FOLLOW_UP_DONE, viewModel.uiState.value.firstSessionStage)
+        assertFalse(viewModel.uiState.value.firstSessionTelemetryEvents.any { it.eventName == "advanced_unlocked" })
     }
 
     @Test
@@ -229,6 +253,27 @@ class ChatViewModelTest {
         assertEquals(1, runtime.restoredTurns.size)
         assertEquals("persisted-1", runtime.restoredTurns.first().first.value)
         assertEquals(2, runtime.restoredTurns.first().second.size)
+    }
+
+    @Test
+    fun `recoverable persisted state corruption is surfaced with deterministic ui code`() = runTest(dispatcher) {
+        val viewModel = ChatViewModel(
+            runtimeFacade = RecordingRuntimeFacade(),
+            sessionPersistence = CorruptLoadPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        val initialRuntimeState = viewModel.uiState.value.runtime
+        assertEquals("UI-SESSION-001", initialRuntimeState.lastErrorCode)
+        assertEquals(com.pocketagent.android.ui.state.StartupProbeState.BLOCKED, initialRuntimeState.startupProbeState)
+
+        viewModel.refreshRuntimeReadiness()
+        advanceUntilIdle()
+
+        val recoveredRuntimeState = viewModel.uiState.value.runtime
+        assertEquals(com.pocketagent.android.ui.state.StartupProbeState.READY, recoveredRuntimeState.startupProbeState)
+        assertEquals(null, recoveredRuntimeState.lastErrorCode)
     }
 
     @Test
@@ -386,7 +431,7 @@ class ChatViewModelTest {
     @Test
     fun `send message timeout maps to deterministic runtime error`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade(
-            streamDelayMs = 100L,
+            streamTerminal = StreamTerminal.CANCELLED_TIMEOUT,
         )
         val viewModel = ChatViewModel(
             runtimeFacade = runtime,
@@ -405,7 +450,6 @@ class ChatViewModelTest {
         assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("timed out") })
         assertEquals("UI-RUNTIME-001", viewModel.uiState.value.runtime.lastErrorCode)
         assertFalse(viewModel.uiState.value.composer.isSending)
-        assertTrue(runtime.cancelledRequestIds.isNotEmpty())
     }
 
     @Test
@@ -469,56 +513,81 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `startup probe timeout maps to degraded startup state without blocking error`() = runTest(dispatcher) {
-        val runtime = RecordingRuntimeFacade(
-            startupDelayMs = 200L,
-        )
+    fun `startup probe timeout maps to blocked timeout startup state`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val startupProbeController = TimeoutStartupProbeController()
         val viewModel = ChatViewModel(
             runtimeFacade = runtime,
             sessionPersistence = RecordingPersistence(),
-            ioDispatcher = Dispatchers.IO,
+            ioDispatcher = dispatcher,
             runtimeStartupProbeTimeoutMs = 50L,
+            startupProbeController = startupProbeController,
         )
-
-        Thread.sleep(250L)
+        advanceUntilIdle()
 
         val runtimeState = viewModel.uiState.value.runtime
-        assertEquals(null, runtimeState.lastErrorCode)
-        assertEquals(null, runtimeState.lastErrorUserMessage)
+        assertEquals("UI-STARTUP-001", runtimeState.lastErrorCode)
         assertEquals(
-            "Startup checks exceeded the probe window. Chat is still available; first output may take longer on older devices.",
+            "Startup checks timed out. Runtime readiness is unknown; refresh checks before sending.",
             runtimeState.modelStatusDetail,
         )
-        assertEquals(com.pocketagent.android.ui.state.ModelRuntimeStatus.LOADING, runtimeState.modelRuntimeStatus)
-        assertTrue(runtimeState.startupWarnings.any { it.contains("timed out", ignoreCase = true) })
-        assertEquals(com.pocketagent.android.ui.state.StartupProbeState.DEGRADED, runtimeState.startupProbeState)
+        assertEquals(com.pocketagent.android.ui.state.ModelRuntimeStatus.NOT_READY, runtimeState.modelRuntimeStatus)
+        assertTrue(runtimeState.startupChecks.any { it.contains("timed out", ignoreCase = true) })
+        assertEquals(com.pocketagent.android.ui.state.StartupProbeState.BLOCKED_TIMEOUT, runtimeState.startupProbeState)
     }
 
     @Test
-    fun `startup probe timeout remains send-allowed in degraded mode`() = runTest(dispatcher) {
+    fun `startup probe timeout blocks send path`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade(
-            startupDelayMs = 200L,
             streamTerminal = StreamTerminal.COMPLETED,
         )
+        val startupProbeController = TimeoutStartupProbeController()
         val viewModel = ChatViewModel(
             runtimeFacade = runtime,
             sessionPersistence = RecordingPersistence(),
-            ioDispatcher = Dispatchers.IO,
+            ioDispatcher = dispatcher,
             runtimeStartupProbeTimeoutMs = 50L,
             runtimeGenerationTimeoutMs = 500L,
+            startupProbeController = startupProbeController,
         )
-        Thread.sleep(250L)
+        advanceUntilIdle()
 
         viewModel.onComposerChanged("hello degraded mode")
         viewModel.sendMessage()
-        Thread.sleep(120L)
+        advanceUntilIdle()
 
         val active = viewModel.uiState.value.activeSession!!
-        assertTrue(active.messages.any { it.role == MessageRole.USER && it.content == "hello degraded mode" })
+        assertFalse(active.messages.any { it.role == MessageRole.USER && it.content == "hello degraded mode" })
+        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-STARTUP-001") })
     }
 
     @Test
-    fun `optional model warning maps to degraded ready state without startup error`() = runTest(dispatcher) {
+    fun `startup timeout does not enter stream flow`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            streamTerminal = StreamTerminal.COMPLETED,
+            streamDelayMs = 100L,
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+            runtimeStartupProbeTimeoutMs = 50L,
+            runtimeGenerationTimeoutMs = 500L,
+            startupProbeController = TimeoutStartupProbeController(),
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("hello virtual time")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val active = viewModel.uiState.value.activeSession!!
+        assertFalse(active.messages.any { it.role == MessageRole.USER && it.content == "hello virtual time" })
+        assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-STARTUP-001") })
+    }
+
+    @Test
+    fun `optional model warning maps to ready state with warning and no startup error`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade(
             startupChecks = listOf("Optional runtime model unavailable: qwen3.5-2b-q4."),
         )
@@ -530,9 +599,10 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         val runtimeState = viewModel.uiState.value.runtime
-        assertEquals(com.pocketagent.android.ui.state.StartupProbeState.DEGRADED, runtimeState.startupProbeState)
+        assertEquals(com.pocketagent.android.ui.state.StartupProbeState.READY, runtimeState.startupProbeState)
         assertEquals(com.pocketagent.android.ui.state.ModelRuntimeStatus.READY, runtimeState.modelRuntimeStatus)
         assertEquals(null, runtimeState.lastErrorCode)
+        assertEquals(1, runtimeState.startupWarnings.size)
         assertTrue(runtimeState.modelStatusDetail?.contains("model ready") == true)
     }
 
@@ -686,16 +756,34 @@ private class RecordingPersistence(
     }
 }
 
+private class CorruptLoadPersistence : SessionPersistence {
+    private var persisted = PersistedChatState()
+
+    override fun loadState(): PersistedChatState = persisted
+
+    override fun loadStateResult(): SessionStateLoadResult {
+        return SessionStateLoadResult.RecoverableCorruption(
+            resetState = PersistedChatState(),
+            code = "CHAT_STATE_CORRUPT_JSON",
+            userMessage = "Saved chat state was corrupted and reset.",
+            technicalDetail = "code=CHAT_STATE_CORRUPT_JSON;backup=chat-state-1;error=parse",
+        )
+    }
+
+    override fun saveState(state: PersistedChatState) {
+        persisted = state
+    }
+}
+
 private class RecordingRuntimeFacade(
     private val failImage: Boolean = false,
     private val returnImageValidationError: Boolean = false,
     private val startupChecks: List<String> = emptyList(),
-    private val startupDelayMs: Long = 0L,
     private val streamTokens: List<String> = listOf("stream ", "token "),
     private val streamDelayMs: Long = 0L,
     private val streamTerminal: StreamTerminal = StreamTerminal.COMPLETED,
     private val runtimeBackend: String? = null,
-) : MvpRuntimeFacade {
+) : RuntimeGateway {
     private var sessionCounter = 0
     private var routingMode: RoutingMode = RoutingMode.AUTO
     var failTool: Boolean = false
@@ -792,24 +880,36 @@ private class RecordingRuntimeFacade(
         return true
     }
 
-    override fun runTool(toolName: String, jsonArgs: String): String {
+    override fun runTool(toolName: String, jsonArgs: String): ToolExecutionResult {
         if (returnToolValidationError) {
-            return "TOOL_VALIDATION_ERROR:INVALID_FIELD_VALUE:Field 'expression' has disallowed characters."
+            return ToolExecutionResult.Failure(
+                ToolFailure.Validation(
+                    code = "invalid_field_value",
+                    userMessage = "That tool request was rejected for safety.",
+                    technicalDetail = "Field 'expression' has disallowed characters.",
+                ),
+            )
         }
         if (failTool) {
             error("simulated tool failure")
         }
-        return "tool:$toolName"
+        return ToolExecutionResult.Success("tool:$toolName")
     }
 
-    override fun analyzeImage(imagePath: String, prompt: String): String {
+    override fun analyzeImage(imagePath: String, prompt: String): ImageAnalysisResult {
         if (returnImageValidationError) {
-            return "IMAGE_VALIDATION_ERROR:UNSUPPORTED_EXTENSION:extension 'tiff' is not supported"
+            return ImageAnalysisResult.Failure(
+                ImageFailure.Validation(
+                    code = "unsupported_extension",
+                    userMessage = "That image could not be processed. Use a supported file and try again.",
+                    technicalDetail = "extension 'tiff' is not supported",
+                ),
+            )
         }
         if (failImage) {
             error("simulated image failure")
         }
-        return "image:$imagePath"
+        return ImageAnalysisResult.Success("image:$imagePath")
     }
 
     override fun exportDiagnostics(): String = "diag=ok"
@@ -820,12 +920,7 @@ private class RecordingRuntimeFacade(
 
     override fun getRoutingMode(): RoutingMode = routingMode
 
-    override fun runStartupChecks(): List<String> {
-        if (startupDelayMs > 0L) {
-            Thread.sleep(startupDelayMs)
-        }
-        return startupChecks
-    }
+    override fun runStartupChecks(): List<String> = startupChecks
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         restoredTurns += sessionId to turns
@@ -834,6 +929,8 @@ private class RecordingRuntimeFacade(
     override fun deleteSession(sessionId: SessionId): Boolean = true
 
     override fun runtimeBackend(): String? = runtimeBackend
+
+    override fun supportsGpuOffload(): Boolean = false
 }
 
 private enum class StreamTerminal {
@@ -841,4 +938,15 @@ private enum class StreamTerminal {
     CANCELLED_TIMEOUT,
     CANCELLED_MANUAL,
     FAILED,
+}
+
+private class TimeoutStartupProbeController : StartupProbeController() {
+    override suspend fun runStartupChecks(
+        runtimeGateway: RuntimeGateway,
+        ioDispatcher: CoroutineDispatcher,
+        timeoutMs: Long,
+    ): List<String> {
+        val timeoutSeconds = (timeoutMs / 1000L).coerceAtLeast(1L)
+        return listOf("Startup checks timed out after ${timeoutSeconds}s.")
+    }
 }

@@ -1,6 +1,8 @@
 package com.pocketagent.android.ui.state
 
 import android.content.Context
+import com.pocketagent.core.RoutingMode
+import com.pocketagent.runtime.RuntimePerformanceProfile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -20,15 +22,34 @@ data class PersistedChatState(
     val gpuAccelerationEnabled: Boolean = false,
     val onboardingCompleted: Boolean = false,
     val firstSessionStage: String = FirstSessionStage.ONBOARDING.name,
-    val advancedUnlocked: Boolean = false,
+    val advancedUnlocked: Boolean = true,
     val firstAnswerCompleted: Boolean = false,
     val followUpCompleted: Boolean = false,
     val firstSessionTelemetryEvents: List<FirstSessionTelemetryEvent> = emptyList(),
 )
 
+sealed interface SessionStateLoadResult {
+    data class Success(val state: PersistedChatState) : SessionStateLoadResult
+
+    data class RecoverableCorruption(
+        val resetState: PersistedChatState,
+        val code: String,
+        val userMessage: String,
+        val technicalDetail: String,
+    ) : SessionStateLoadResult
+
+    data class FatalCorruption(
+        val code: String,
+        val userMessage: String,
+        val technicalDetail: String,
+    ) : SessionStateLoadResult
+}
+
 interface SessionPersistence {
     fun loadState(): PersistedChatState
+    fun loadStateResult(): SessionStateLoadResult = SessionStateLoadResult.Success(loadState())
     fun saveState(state: PersistedChatState)
+    fun clearState() {}
 }
 
 class AndroidSessionPersistence(
@@ -37,17 +58,60 @@ class AndroidSessionPersistence(
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     override fun loadState(): PersistedChatState {
-        val raw = prefs.getString(KEY_STATE, null) ?: return PersistedChatState()
-        return runCatching { PersistedChatStateCodec.decode(raw) }.getOrElse { PersistedChatState() }
+        return when (val result = loadStateResult()) {
+            is SessionStateLoadResult.Success -> result.state
+            is SessionStateLoadResult.RecoverableCorruption -> result.resetState
+            is SessionStateLoadResult.FatalCorruption -> PersistedChatState()
+        }
+    }
+
+    override fun loadStateResult(): SessionStateLoadResult {
+        val raw = prefs.getString(KEY_STATE, null) ?: return SessionStateLoadResult.Success(PersistedChatState())
+        return runCatching { PersistedChatStateCodec.decode(raw) }
+            .fold(
+                onSuccess = { decoded ->
+                    SessionStateLoadResult.Success(decoded)
+                },
+                onFailure = { error ->
+                    val backupToken = backupCorruptState(raw = raw, error = error)
+                    clearState()
+                    SessionStateLoadResult.RecoverableCorruption(
+                        resetState = PersistedChatState(),
+                        code = CHAT_STATE_CORRUPTION_CODE,
+                        userMessage = "Saved chat state was corrupted and reset.",
+                        technicalDetail = "code=$CHAT_STATE_CORRUPTION_CODE;backup=$backupToken;error=${error.message ?: "decode_failed"}",
+                    )
+                },
+            )
     }
 
     override fun saveState(state: PersistedChatState) {
         prefs.edit().putString(KEY_STATE, PersistedChatStateCodec.encode(state)).apply()
     }
 
+    override fun clearState() {
+        prefs.edit().remove(KEY_STATE).apply()
+    }
+
+    private fun backupCorruptState(raw: String, error: Throwable): String {
+        val token = "chat-state-${System.currentTimeMillis()}"
+        prefs.edit()
+            .putString(KEY_CORRUPT_BACKUP_PAYLOAD, raw)
+            .putString(KEY_CORRUPT_BACKUP_TOKEN, token)
+            .putLong(KEY_CORRUPT_BACKUP_SAVED_AT_EPOCH_MS, System.currentTimeMillis())
+            .putString(KEY_CORRUPT_BACKUP_ERROR, error.message ?: error::class.java.simpleName)
+            .apply()
+        return token
+    }
+
     private companion object {
         const val PREFS_NAME = "pocketagent_chat_state"
         const val KEY_STATE = "chat_state_v2"
+        const val KEY_CORRUPT_BACKUP_PAYLOAD = "chat_state_corrupt_backup_payload"
+        const val KEY_CORRUPT_BACKUP_TOKEN = "chat_state_corrupt_backup_token"
+        const val KEY_CORRUPT_BACKUP_SAVED_AT_EPOCH_MS = "chat_state_corrupt_backup_saved_at"
+        const val KEY_CORRUPT_BACKUP_ERROR = "chat_state_corrupt_backup_error"
+        const val CHAT_STATE_CORRUPTION_CODE = "CHAT_STATE_CORRUPT_JSON"
     }
 }
 
@@ -65,12 +129,12 @@ internal object PersistedChatStateCodec {
         return PersistedChatState(
             sessions = sessions,
             activeSessionId = root.stringOrNull("activeSessionId"),
-            routingMode = root.stringOrDefault("routingMode", "AUTO"),
-            performanceProfile = root.stringOrDefault("performanceProfile", "BALANCED"),
+            routingMode = parseRoutingModeName(root.stringOrDefault("routingMode", RoutingMode.AUTO.name)),
+            performanceProfile = parsePerformanceProfileName(root.stringOrDefault("performanceProfile", RuntimePerformanceProfile.BALANCED.name)),
             gpuAccelerationEnabled = root.booleanOrDefault("gpuAccelerationEnabled", false),
             onboardingCompleted = root.booleanOrDefault("onboardingCompleted", false),
-            firstSessionStage = root.stringOrDefault("firstSessionStage", FirstSessionStage.ONBOARDING.name),
-            advancedUnlocked = root.booleanOrDefault("advancedUnlocked", false),
+            firstSessionStage = parseFirstSessionStageName(root.stringOrDefault("firstSessionStage", FirstSessionStage.ONBOARDING.name)),
+            advancedUnlocked = root.booleanOrDefault("advancedUnlocked", true),
             firstAnswerCompleted = root.booleanOrDefault("firstAnswerCompleted", false),
             followUpCompleted = root.booleanOrDefault("followUpCompleted", false),
             firstSessionTelemetryEvents = parseFirstSessionTelemetryEvents(root["firstSessionTelemetryEvents"]),
@@ -286,11 +350,31 @@ internal object PersistedChatStateCodec {
     }
 
     private fun parseRole(raw: String): MessageRole {
-        return runCatching { MessageRole.valueOf(raw) }.getOrDefault(MessageRole.SYSTEM)
+        return runCatching { MessageRole.valueOf(raw) }
+            .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_ROLE:$raw") }
     }
 
     private fun parseKind(raw: String): MessageKind {
-        return runCatching { MessageKind.valueOf(raw) }.getOrDefault(MessageKind.TEXT)
+        return runCatching { MessageKind.valueOf(raw) }
+            .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_KIND:$raw") }
+    }
+
+    private fun parseRoutingModeName(raw: String): String {
+        return runCatching { RoutingMode.valueOf(raw) }
+            .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_ROUTING_MODE:$raw") }
+            .name
+    }
+
+    private fun parsePerformanceProfileName(raw: String): String {
+        return runCatching { RuntimePerformanceProfile.valueOf(raw) }
+            .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_PERFORMANCE_PROFILE:$raw") }
+            .name
+    }
+
+    private fun parseFirstSessionStageName(raw: String): String {
+        return runCatching { FirstSessionStage.valueOf(raw) }
+            .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_FIRST_SESSION_STAGE:$raw") }
+            .name
     }
 }
 
@@ -308,10 +392,15 @@ private fun JsonObject.stringOrDefault(key: String, default: String): String {
 
 private fun JsonObject.longOrDefault(key: String, default: Long): Long {
     val value = this[key] ?: return default
-    return runCatching { value.jsonPrimitive.content.toLong() }.getOrDefault(default)
+    val raw = runCatching { value.jsonPrimitive.content }.getOrNull()
+        ?: throw IllegalArgumentException("CHAT_STATE_INVALID_LONG:$key")
+    return raw.toLongOrNull() ?: throw IllegalArgumentException("CHAT_STATE_INVALID_LONG:$key")
 }
 
 private fun JsonObject.booleanOrDefault(key: String, default: Boolean): Boolean {
     val value = this[key] ?: return default
-    return runCatching { value.jsonPrimitive.content.toBooleanStrict() }.getOrDefault(default)
+    val raw = runCatching { value.jsonPrimitive.content }.getOrNull()
+        ?: throw IllegalArgumentException("CHAT_STATE_INVALID_BOOLEAN:$key")
+    return runCatching { raw.toBooleanStrict() }
+        .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_BOOLEAN:$key") }
 }

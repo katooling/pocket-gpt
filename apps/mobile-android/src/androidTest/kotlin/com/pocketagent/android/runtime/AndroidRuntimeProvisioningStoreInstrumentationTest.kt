@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -102,7 +103,7 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
 
     @Test
     fun removeInactiveManagedVersionDeletesOrphanedManagedFile() {
-        val managedDir = File(appContext.filesDir, "runtime-models").apply { mkdirs() }
+        val managedDir = store.managedModelDirectory().apply { mkdirs() }
         val oldManaged = writeTempFile(
             dir = managedDir,
             fileName = "managed-old.gguf",
@@ -145,6 +146,66 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
         assertTrue(newManaged.exists())
     }
 
+    @Test
+    fun persistedManagedModelsAreDiscoveredAfterPreferencesReset() = runBlocking {
+        val source = writeTempFile(
+            dir = appContext.cacheDir,
+            fileName = "persisted-discovery-source.gguf",
+            content = "persisted-model-content",
+        )
+        val sourceUri = android.net.Uri.fromFile(source)
+
+        val imported = store.importModel(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            sourceUri = sourceUri,
+            version = "persisted-v1",
+        )
+        assertTrue(File(imported.absolutePath).exists())
+
+        appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit().clear().commit()
+        val recoveredStore = AndroidRuntimeProvisioningStore(appContext)
+        val recoveredSnapshot = recoveredStore.snapshot()
+        val recoveredModel = recoveredSnapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+
+        assertTrue("Expected persisted model to be rediscovered after metadata reset.", recoveredModel.isProvisioned)
+        assertTrue(
+            "Expected recovered installed versions to include the imported version.",
+            recoveredModel.installedVersions.any { it.version == "persisted-v1" },
+        )
+        assertEquals("persisted-v1", recoveredModel.activeVersion)
+    }
+
+    @Test
+    fun persistedDynamicManagedModelsAreDiscoveredAfterPreferencesReset() = runBlocking {
+        val source = writeTempFile(
+            dir = appContext.cacheDir,
+            fileName = "persisted-dynamic-discovery-source.gguf",
+            content = "persisted-dynamic-model-content",
+        )
+        val sourceUri = android.net.Uri.fromFile(source)
+        val modelId = ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M
+
+        val imported = store.importModel(
+            modelId = modelId,
+            sourceUri = sourceUri,
+            version = "persisted-dynamic-v1",
+        )
+        assertTrue(File(imported.absolutePath).exists())
+
+        appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit().clear().commit()
+        val recoveredStore = AndroidRuntimeProvisioningStore(appContext)
+        val recoveredSnapshot = recoveredStore.snapshot()
+        val recoveredModel = recoveredSnapshot.models.firstOrNull { it.modelId == modelId }
+
+        assertNotNull("Expected recovered snapshot to include dynamic model id.", recoveredModel)
+        assertTrue("Expected dynamic persisted model to be rediscovered after metadata reset.", recoveredModel!!.isProvisioned)
+        assertTrue(
+            "Expected recovered dynamic installed versions to include the imported version.",
+            recoveredModel.installedVersions.any { it.version == "persisted-dynamic-v1" },
+        )
+        assertEquals("persisted-dynamic-v1", recoveredModel.activeVersion)
+    }
+
     private fun writeTempFile(dir: File, fileName: String, content: String): File {
         dir.mkdirs()
         return File(dir, fileName).apply { writeText(content) }
@@ -153,7 +214,13 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
     private fun resetProvisioningStorage() {
         appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit().clear().commit()
         File(appContext.filesDir, "runtime-models").deleteRecursively()
-        File(appContext.filesDir, "model-downloads").deleteRecursively()
+        File(appContext.filesDir, "runtime-model-downloads").deleteRecursively()
+        appContext.externalMediaDirs
+            .filterNotNull()
+            .forEach { mediaDir ->
+                File(mediaDir, "models").deleteRecursively()
+                File(mediaDir, "runtime-model-downloads").deleteRecursively()
+            }
     }
 
     private fun sha256Hex(file: File): String {
