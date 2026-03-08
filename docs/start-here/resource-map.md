@@ -6,6 +6,7 @@ Use this map to jump directly to the correct source.
 
 - Current release plan: `docs/roadmap/current-release-plan.md`
 - Active board and ownership: `docs/operations/execution-board.md`
+- Documentation sync audit log: `docs/start-here/documentation-sync-audit-2026-03-08.md`
 - Role responsibilities: `docs/operations/role-playbooks/`
 - Active ticket specs: `docs/operations/tickets/`
 

@@ -1,30 +1,22 @@
 # tool-runtime
 
-Local tool execution contracts and safety model.
+Local tool execution contracts and deterministic safety behavior.
 
-## Initial Tool Set
+## Tool Surface
 
 - calculator
+- date/time
 - notes lookup
 - local search
-- reminder scheduling
-- date/time
+- reminder create
 
-## Rules
+## Safety Contract
 
-- strict schema validation before execution
-- no arbitrary shell execution
-- policy gate checks for any external access
+1. Allowlist-only tool registry.
+2. Schema validation before execution.
+3. Deterministic rejection/error mapping for invalid payloads.
+4. No arbitrary shell execution path.
 
-## Implemented MVP Scaffolding
+## Primary Implementation
 
-- `SafeLocalToolRuntime` with allowlisted tools:
-  - calculator
-  - date_time
-  - notes_lookup
-  - local_search
-  - reminder_create
-  - schema-driven JSON argument validation per tool
-  - deterministic validation error contract:
-    - `TOOL_VALIDATION_ERROR:<ERROR_CODE>:<DETAIL>`
-  - strict unknown-field rejection and denylist checks for adversarial fragments
+- `SafeLocalToolRuntime`

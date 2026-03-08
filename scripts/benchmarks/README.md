@@ -1,34 +1,33 @@
-# Benchmark Harness (Phase 0)
+# Benchmark Harness
 
-This folder contains scripts/templates to run and record feasibility spikes.
+Source of truth for benchmark command syntax and lane policy:
 
-## Files
+- `scripts/dev/README.md`
+- `docs/testing/test-strategy.md`
+- `docs/testing/android-dx-and-test-playbook.md`
 
-- `result-template.csv`: manual metric capture template
-- `aggregate.py`: aggregates CSV results and computes summary by model/runtime/device class
-- `evaluate_thresholds.py`: validates CSV schema and compares scenario medians against MVP thresholds
-- `stage-scenarios-template.csv`: template for Scenario A/B/C threshold evaluation
+## Purpose
 
-## Usage
+This directory contains benchmark utilities used by stage-2 and journey evidence workflows.
 
-1. Copy `result-template.csv` to a new run file per test session.
-2. Fill one row per scenario execution.
-3. Run:
+## Key Files
 
-```bash
-python3 scripts/benchmarks/aggregate.py scripts/benchmarks/result-template.csv
-```
+- `validate_stage2_runtime_evidence.py`: validates required stage-2 runtime artifact contract.
+- `evaluate_thresholds.py`: threshold/schema validation utilities.
+- `aggregate.py`: CSV aggregation helper.
+- template fixtures (`result-template.csv`, `stage-scenarios-template.csv`, `mock-run.csv`).
 
-4. Paste summary output into `docs/feasibility/spike-results.md`.
+## Artifact Contract
 
-5. Evaluate stage thresholds:
+Stage-2 raw artifacts are written under:
 
-```bash
-python3 scripts/benchmarks/evaluate_thresholds.py scripts/benchmarks/stage-scenarios-template.csv
-```
+- `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/...`
 
-Required columns for threshold evaluation:
+Human-readable evidence belongs under:
 
-- `scenario`
-- `first_token_ms`
-- `decode_tps`
+- `docs/operations/evidence/...`
+
+## Usage Policy
+
+1. Run benchmark lanes via `bash scripts/dev/bench.sh ...`.
+2. Use utilities in this folder for validation/post-processing, not as a replacement for lane orchestration.

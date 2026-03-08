@@ -1,82 +1,43 @@
 # Tech Stack Decision
 
+Last updated: 2026-03-08
+
 ## Decision Summary
 
-1. Baseline inference for feasibility and MVP: `llama.cpp` + GGUF quantized models
-2. iOS optimization track (post-baseline): Core ML + Metal
-3. Android optimization track (post-baseline): LiteRT/NNAPI evaluation
-4. Shared app-domain architecture: Kotlin Multiplatform + native UI (`SwiftUI`, `Jetpack Compose`)
-5. Local storage baseline: shared file-backed persistence (+ lightweight vector retrieval abstraction)
-6. Tool execution: strict JSON schema validation + local sandbox only
+1. Baseline runtime: `llama.cpp` via native JNI bridge on Android.
+2. Packaging/runtime optimization: optional Vulkan GPU offload in packaged runtime when device/backend support exists.
+3. Shared architecture: Kotlin packages + Compose Android app shell.
+4. Runtime orchestration: `packages/app-runtime` composition/use-case layer.
+5. Tool execution: strict local allowlist + schema validation.
+6. Storage: local persistence for sessions/memory/model metadata.
 
 ## Why This Stack
 
-### Baseline Reliability
+1. Delivers local-first behavior now with production runtime path (`NATIVE_JNI`) and deterministic fallback labeling.
+2. Keeps platform-specific performance controls available (profile + GPU capability gating) without changing product contracts.
+3. Preserves testability through package boundaries and host/JVM lanes.
 
-`llama.cpp` is the fastest cross-platform path to proven local inference and allows early feasibility measurements before deeper platform-specific optimization.
+## Alternatives and Current Position
 
-### Product Fit
-
-Local-first privacy claims require deterministic local execution and local storage defaults.
-
-### Risk Control
-
-Platform-specific acceleration is deferred to optimization tracks so MVP does not block on conversion/kernel instability.
-
-## Alternatives Considered
-
-### Core ML-first from day one
-
-Pros:
-
-- high iOS performance and energy efficiency
-
-Cons:
-
-- conversion and operator compatibility risk
-- no Android path reuse
-
-Decision: not day-1 baseline; keep as optimization track.
-
-### LiteRT-first from day one
-
-Pros:
-
-- Android-optimized path potential
-
-Cons:
-
-- conversion complexity and OEM fragmentation risk
-
-Decision: evaluate after baseline parity exists.
-
-### Flutter-first UI
-
-Pros:
-
-- single UI codebase
-
-Cons:
-
-- performance and native integration tradeoffs for runtime-heavy app
-
-Decision: prefer KMP shared domain with native UI.
+1. Core ML iOS runtime remains a future parity track; not part of current shipped Android path.
+2. LiteRT/NNAPI-first approach is no longer the active Android baseline; current baseline is JNI + `llama.cpp`.
+3. Hosted/cloud inference default path remains out of scope for MVP claims.
 
 ## Non-Negotiables
 
-1. Offline-first behavior must work without cloud dependency.
-2. No arbitrary code execution from model output.
-3. Any network call must be explicit and policy-gated.
-4. Benchmarks drive routing defaults, not assumptions.
+1. Core user flows must run without cloud dependency.
+2. Privacy claims must match enforceable policy/runtime behavior.
+3. Tool execution must remain bounded and deterministic.
+4. Runtime startup/send failures must surface deterministic, recoverable UX states.
 
-## Implementation Maturity (As Of 2026-03-03)
+## Maturity Snapshot (As Of 2026-03-08)
 
-| Area | Decision | Current Maturity |
+| Area | Decision | Maturity |
 |---|---|---|
-| Baseline inference | `llama.cpp` + GGUF | Planned; scaffold currently uses smoke adapter |
-| iOS optimization | Core ML + Metal | Planned; no active implementation yet |
-| Android optimization | LiteRT/NNAPI | Planned; no active implementation yet |
-| Shared architecture | KMP shared domain + native UI | Partial; Kotlin/JVM modular scaffolding in place |
-| Local storage | Shared file-backed baseline | Implemented; in-memory path remains available for scaffold/test use |
-| Tool execution | strict schema validation + local sandbox | Partial; allowlist and lightweight validation implemented |
-| Voice (STT/TTS) | offline-preferred, policy-gated | Planned; post-MVP design and benchmark phase |
+| Android baseline runtime | `llama.cpp` + JNI bridge | Implemented |
+| Android GPU path | Vulkan offload (capability-gated) | Implemented (device/backend dependent) |
+| Runtime orchestration layer | `packages/app-runtime` use-case composition | Implemented |
+| Tool runtime safety | schema-validated allowlist | Implemented |
+| Memory persistence | local persisted module + retrieval | Implemented |
+| iOS runtime parity | Core ML + Metal track | Planned |
+| Voice layer (STT/TTS) | offline-first, policy-gated | Planned |

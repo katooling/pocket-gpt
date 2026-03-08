@@ -21,6 +21,7 @@ All other docs should point to these for command/process details.
 
 - `start-here/new-joiner.md`
 - `start-here/resource-map.md`
+- `start-here/documentation-sync-audit-2026-03-08.md`
 - `roadmap/current-release-plan.md`
 - `operations/execution-board.md`
 - `operations/tickets/`

@@ -1,20 +1,23 @@
 # core-domain
 
-Shared domain contracts for conversation/session behavior.
+Shared product/domain contracts for sessions, routing mode, policy, and observability.
 
-## Initial Contracts
+## Key Contracts
 
-- session lifecycle API
-- prompt context assembly API
-- turn/event model
+- `ConversationModule`
+- `PolicyModule`
+- `ObservabilityModule`
+- session/turn primitives (`SessionId`, `Turn`)
+- routing selectors (`RoutingMode`)
 
-## Rules
-
-- no runtime-specific code in this package
-- no direct persistence implementation in this package
-
-## Implemented MVP Scaffolding
+## Current Implementations
 
 - `InMemoryConversationModule`
 - `DefaultPolicyModule`
 - `InMemoryObservabilityModule`
+
+## Boundary Rules
+
+1. No runtime-backend implementation details in this package.
+2. No Android/UI dependencies.
+3. No direct cross-package persistence format coupling.

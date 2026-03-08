@@ -1,35 +1,27 @@
 # inference-adapters
 
-Runtime abstraction and adapter contracts.
+Inference and routing interfaces used by runtime orchestration.
 
-## Adapters
+## Scope
 
-- baseline adapter: `llama.cpp`
-- iOS optimization adapter: Core ML
-- Android optimization adapter: LiteRT/NNAPI
+- model catalog descriptors
+- model artifact lifecycle contracts
+- routing policy interfaces
+- inference request/response contracts
+- device-state inputs for routing decisions
 
-## Initial Contracts
+## Current Runtime Path
 
-- model registry contract
-- load/unload lifecycle contract
-- token streaming generation contract
-- routing policy interface
+Primary Android runtime implementation is provided via `packages/native-bridge` (`LlamaCppInferenceModule` + JNI bridge).
 
-## Implemented MVP Scaffolding
+## Key Components
 
-- `SmokeInferenceModule`: legacy stage-1 streaming smoke adapter retained in test sources only
-- `ModelArtifactManager`: stage-2 artifact lifecycle support:
-  - multi-version manifest structure (`buildManifest`)
-  - deterministic active model/version selection (`setActiveModel`, `setActiveModelVersion`)
-  - checksum verification result semantics (`verifyChecksumResult`)
-  - CI-safe artifact validation hook (`validateManifest`)
-- `AdaptiveRoutingPolicy`: stage-3 battery/thermal/device-aware selection
-- `SmokeImageInputModule`: stage-5 image path adapter retained in test sources with deterministic contract behavior:
-  - validation error contract (`IMAGE_VALIDATION_ERROR:<code>:<detail>`)
-  - normalized success contract (`IMAGE_ANALYSIS(v=1,extension=...,max_tokens=...): ...`)
-  - extension allowlist + prompt/path validation guards
+- `ModelCatalog`
+- `ModelArtifactManager`
+- `AdaptiveRoutingPolicy`
+- `ImageInputModule` contracts
 
-Android runtime bridge wiring is implemented in `packages/native-bridge` with:
+## Notes
 
-- `NativeJniLlamaCppBridge`
-- `LlamaCppInferenceModule`
+1. This package defines interfaces/contracts; backend-specific bridge behavior lives in `packages/native-bridge`.
+2. Routing/model selection behavior is consumed by `packages/app-runtime` orchestration use cases.
