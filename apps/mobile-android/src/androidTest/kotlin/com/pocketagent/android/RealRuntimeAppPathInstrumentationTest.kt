@@ -2,6 +2,7 @@ package com.pocketagent.android
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
@@ -104,6 +105,127 @@ class RealRuntimeAppPathInstrumentationTest {
         assertEquals(ModelCatalog.QWEN_3_5_0_8B_Q4, response?.modelId)
     }
 
+    @Test
+    fun appPathExplicitSmolRoutingProducesSmolResponse() = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(
+            "Skipping SmolLM app-path lane. Set stage2_enable_app_path_test=true for RC app-path validation.",
+            parseBooleanArg(args, ARG_ENABLE_APP_PATH_TEST, defaultValue = false),
+        )
+        val modelPath0_8bRaw = args.getString(ARG_MODEL_PATH_0_8B)?.trim().orEmpty()
+        assumeTrue(
+            "Skipping SmolLM app-path lane. Provide a 0.8B model path via instrumentation arguments.",
+            modelPath0_8bRaw.isNotEmpty(),
+        )
+        val smol360Raw = args.getString(ARG_MODEL_PATH_SMOL_360M)?.trim().orEmpty()
+        val smol135Raw = args.getString(ARG_MODEL_PATH_SMOL_135M)?.trim().orEmpty()
+        assumeTrue(
+            "Skipping SmolLM app-path lane. Provide at least one SmolLM model path via instrumentation arguments.",
+            smol360Raw.isNotEmpty() || smol135Raw.isNotEmpty(),
+        )
+        val smolTarget = when {
+            smol360Raw.isNotEmpty() -> SmolTarget(
+                modelId = ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
+                modelPath = requireFile(smol360Raw),
+                routingMode = RoutingMode.SMOLLM2_360M,
+            )
+            else -> SmolTarget(
+                modelId = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                modelPath = requireFile(smol135Raw),
+                routingMode = RoutingMode.SMOLLM2_135M,
+            )
+        }
+        val modelPath0_8b = requireFile(modelPath0_8bRaw)
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+
+        AppRuntimeDependencies.resetRuntimeFacadeFactoryForTests()
+        val seeded0 = seedAndActivateModel(
+            appContext = appContext,
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            absolutePath = modelPath0_8b,
+        )
+        val seededSmol = seedAndActivateModel(
+            appContext = appContext,
+            modelId = smolTarget.modelId,
+            absolutePath = smolTarget.modelPath,
+        )
+
+        val snapshot = AppRuntimeDependencies.currentProvisioningSnapshot(appContext)
+        val state0 = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+        val stateSmol = snapshot.models.first { it.modelId == smolTarget.modelId }
+        assertEquals(seeded0.version, state0.activeVersion)
+        assertEquals(seededSmol.version, stateSmol.activeVersion)
+        assertEquals(normalizePath(modelPath0_8b), normalizePath(state0.absolutePath.orEmpty()))
+        assertEquals(normalizePath(smolTarget.modelPath), normalizePath(stateSmol.absolutePath.orEmpty()))
+        AppRuntimeDependencies.installProductionRuntime(appContext)
+
+        val facade = AppRuntimeDependencies.runtimeFacadeFactory()
+        val startupChecks = facade.runStartupChecks()
+        assertTrue(
+            "SmolLM app-path startup checks contain a backend-unavailable failure: ${startupChecks.joinToString()}",
+            startupChecks.none { check ->
+                val normalized = check.lowercase()
+                normalized.contains("runtime backend is unavailable") ||
+                    normalized.contains("runtime backend is adb_fallback")
+            },
+        )
+        assertEquals("NATIVE_JNI", facade.runtimeBackend())
+
+        val sessionId = facade.createSession()
+        facade.setRoutingMode(smolTarget.routingMode)
+        var completed: ChatStreamEvent.Completed? = null
+        facade.streamUserMessage(
+            StreamUserMessageRequest(
+                sessionId = sessionId,
+                userText = "Reply with one short sentence proving explicit SmolLM routing is active.",
+                taskType = "short_text",
+                deviceState = DeviceState(batteryPercent = 83, thermalLevel = 3, ramClassGb = 8),
+                maxTokens = 32,
+                requestTimeoutMs = 300_000L,
+            ),
+        ).collect { event ->
+            if (event is ChatStreamEvent.Completed) {
+                completed = event
+            }
+        }
+
+        val response = completed?.response
+        assertNotNull("Expected completed SmolLM chat response from real runtime lane.", response)
+        assertTrue(response?.text?.isNotBlank() == true)
+        assertEquals(
+            "Expected explicit SmolLM routing to execute the requested SmolLM model, not fallback.",
+            smolTarget.modelId,
+            response?.modelId,
+        )
+    }
+
+    private suspend fun seedAndActivateModel(
+        appContext: android.content.Context,
+        modelId: String,
+        absolutePath: String,
+    ): RuntimeModelImportResult {
+        val seeded = AppRuntimeDependencies.seedModelFromAbsolutePath(
+            context = appContext,
+            modelId = modelId,
+            absolutePath = absolutePath,
+        )
+        assertTrue(
+            "Failed to activate seeded $modelId version ${seeded.version}.",
+            AppRuntimeDependencies.setActiveVersion(
+                context = appContext,
+                modelId = modelId,
+                version = seeded.version,
+            ),
+        )
+        return seeded
+    }
+
+    private data class SmolTarget(
+        val modelId: String,
+        val modelPath: String,
+        val routingMode: RoutingMode,
+    )
+
     private fun requireFile(value: String): String {
         val resolved = resolveModelPath(value)
         require(resolved != null) { "Model path does not exist: $value" }
@@ -152,5 +274,7 @@ class RealRuntimeAppPathInstrumentationTest {
         private const val ARG_ENABLE_APP_PATH_TEST = "stage2_enable_app_path_test"
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
+        private const val ARG_MODEL_PATH_SMOL_360M = "stage2_model_smol_360m_path"
+        private const val ARG_MODEL_PATH_SMOL_135M = "stage2_model_smol_135m_path"
     }
 }
