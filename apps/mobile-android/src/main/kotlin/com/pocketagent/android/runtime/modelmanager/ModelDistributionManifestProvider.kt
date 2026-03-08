@@ -160,7 +160,9 @@ class ModelDistributionManifestProvider(
             }
         }
         val models = byModelId.entries.mapNotNull { (modelId, accumulator) ->
-            val versions = accumulator.versionsByVersion.values.sortedByDescending { it.version }
+            val versions = accumulator.versionsByVersion.values.sortedWith { left, right ->
+                compareVersionDescending(left.version, right.version)
+            }
             if (versions.isEmpty()) {
                 warnings += "Dropped model '$modelId': no valid versions."
                 null
@@ -208,7 +210,9 @@ class ModelDistributionManifestProvider(
                 ModelDistributionModel(
                     modelId = modelId,
                     displayName = displayName,
-                    versions = versionByKey.values.sortedByDescending { it.version },
+                    versions = versionByKey.values.sortedWith { left, right ->
+                        compareVersionDescending(left.version, right.version)
+                    },
                 )
             }
         }
@@ -276,10 +280,61 @@ class ModelDistributionManifestProvider(
         return visible.joinToString(separator = " | ") + suffix
     }
 
+    private fun compareVersionDescending(left: String, right: String): Int {
+        return compareVersionAscending(right, left)
+    }
+
+    private fun compareVersionAscending(left: String, right: String): Int {
+        val leftTokens = tokenizeVersion(left)
+        val rightTokens = tokenizeVersion(right)
+        val sharedSize = minOf(leftTokens.size, rightTokens.size)
+        for (index in 0 until sharedSize) {
+            val tokenCompare = compareVersionToken(leftTokens[index], rightTokens[index])
+            if (tokenCompare != 0) {
+                return tokenCompare
+            }
+        }
+        if (leftTokens.size != rightTokens.size) {
+            return leftTokens.size.compareTo(rightTokens.size)
+        }
+        val caseInsensitive = left.compareTo(right, ignoreCase = true)
+        if (caseInsensitive != 0) {
+            return caseInsensitive
+        }
+        return left.compareTo(right)
+    }
+
+    private fun tokenizeVersion(version: String): List<String> {
+        val tokens = VERSION_TOKEN_REGEX.findAll(version).map { match -> match.value }.toList()
+        return if (tokens.isEmpty()) listOf(version) else tokens
+    }
+
+    private fun compareVersionToken(left: String, right: String): Int {
+        val leftNumeric = left.all { it.isDigit() }
+        val rightNumeric = right.all { it.isDigit() }
+        if (leftNumeric && rightNumeric) {
+            return compareNumericToken(left, right)
+        }
+        if (leftNumeric != rightNumeric) {
+            return if (leftNumeric) 1 else -1
+        }
+        return left.compareTo(right, ignoreCase = true)
+    }
+
+    private fun compareNumericToken(left: String, right: String): Int {
+        val normalizedLeft = left.trimStart('0').ifEmpty { "0" }
+        val normalizedRight = right.trimStart('0').ifEmpty { "0" }
+        if (normalizedLeft.length != normalizedRight.length) {
+            return normalizedLeft.length.compareTo(normalizedRight.length)
+        }
+        return normalizedLeft.compareTo(normalizedRight)
+    }
+
     companion object {
         private const val DEFAULT_BUNDLED_MANIFEST_ASSET = "model-distribution-catalog.json"
         private const val MAX_WARNING_MESSAGES = 6
         private val SHA256_HEX_REGEX = Regex("^[a-fA-F0-9]{64}$")
+        private val VERSION_TOKEN_REGEX = Regex("[A-Za-z]+|\\d+")
 
         private fun fetchRemoteManifest(endpoint: String): String {
             val connection = URL(endpoint).openConnection() as HttpURLConnection

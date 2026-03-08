@@ -22,6 +22,7 @@ This index is the canonical evidence inventory after hard-prune.
 - Full active set retained for UX-quality closure, usability packet support, and runtime/user-journey closure evidence.
 - Includes 2026-03-08 manual capture prune summary and GPU observation distillation.
 - Includes 2026-03-08 engineering closure note for session ID safety, provenance strict policy wiring, and chat-flow refactor.
+- Includes 2026-03-08 engineering follow-up for Android telemetry device state, semantic version ordering, process stream deadlock hardening, and runtime payload loading.
 
 ## WP-12 Retained (Production-Claim Critical)
 

@@ -5,6 +5,7 @@ import com.pocketagent.android.runtime.RuntimeGateway
 import com.pocketagent.android.ui.controllers.ChatPersistenceFlow
 import com.pocketagent.android.ui.controllers.ChatStreamCoordinator
 import com.pocketagent.android.ui.controllers.ChatPersistenceCoordinator
+import com.pocketagent.android.ui.controllers.DeviceStateProvider
 import com.pocketagent.android.ui.controllers.ChatSendFlow
 import com.pocketagent.android.ui.controllers.ChatSendController
 import com.pocketagent.android.ui.controllers.ChatStartupFlow
@@ -60,6 +61,7 @@ class ChatViewModel(
         runtimeProfile = resolveModelRuntimeProfile(isDebugBuild = BuildConfig.DEBUG),
     ),
     private val persistenceCoordinator: ChatPersistenceCoordinator = ChatPersistenceCoordinator(sessionPersistence),
+    private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
     private val persistenceFlow: ChatPersistenceFlow = ChatPersistenceFlow(persistenceCoordinator),
     private val startupFlow: ChatStartupFlow = ChatStartupFlow(
         runtimeGateway = runtimeFacade,
@@ -71,6 +73,7 @@ class ChatViewModel(
     ),
     private val sendFlow: ChatSendFlow = ChatSendFlow(
         runtimeGenerationTimeoutMs = runtimeGenerationTimeoutMs,
+        deviceStateProvider = deviceStateProvider,
     ),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -1182,11 +1185,16 @@ private fun formatUserFacingError(error: UiError): String {
 class ChatViewModelFactory(
     private val runtimeFacade: RuntimeGateway,
     private val sessionPersistence: SessionPersistence,
+    private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
-            return ChatViewModel(runtimeFacade, sessionPersistence) as T
+            return ChatViewModel(
+                runtimeFacade = runtimeFacade,
+                sessionPersistence = sessionPersistence,
+                deviceStateProvider = deviceStateProvider,
+            ) as T
         }
         throw IllegalArgumentException("Unsupported ViewModel class: ${modelClass.name}")
     }

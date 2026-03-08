@@ -15,6 +15,7 @@ import com.pocketagent.android.ui.ModelProvisioningViewModel
 import com.pocketagent.android.ui.ModelProvisioningViewModelFactory
 import com.pocketagent.android.ui.PocketAgentApp
 import com.pocketagent.android.ui.PocketAgentTheme
+import com.pocketagent.android.ui.controllers.AndroidTelemetryDeviceStateProvider
 import com.pocketagent.android.ui.state.AndroidSessionPersistence
 
 class MainActivity : ComponentActivity() {
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
         ChatViewModelFactory(
             runtimeFacade = runtimeGateway,
             sessionPersistence = AndroidSessionPersistence(applicationContext),
+            deviceStateProvider = AndroidTelemetryDeviceStateProvider(applicationContext),
         )
     }
 

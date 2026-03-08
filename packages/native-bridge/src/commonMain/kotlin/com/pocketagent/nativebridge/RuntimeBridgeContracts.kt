@@ -1,6 +1,7 @@
 package com.pocketagent.nativebridge
 
 import java.io.ByteArrayOutputStream
+import kotlin.concurrent.thread
 
 enum class RuntimeBackend {
     NATIVE_JNI,
@@ -107,9 +108,15 @@ internal class ProcessCommandRunner : CommandRunner {
             val process = ProcessBuilder(command).start()
             val stdoutBytes = ByteArrayOutputStream()
             val stderrBytes = ByteArrayOutputStream()
-            process.inputStream.copyTo(stdoutBytes)
-            process.errorStream.copyTo(stderrBytes)
+            val stdoutDrain = thread(name = "process-command-runner-stdout", start = true) {
+                process.inputStream.use { input -> input.copyTo(stdoutBytes) }
+            }
+            val stderrDrain = thread(name = "process-command-runner-stderr", start = true) {
+                process.errorStream.use { error -> error.copyTo(stderrBytes) }
+            }
             val exitCode = process.waitFor()
+            stdoutDrain.join()
+            stderrDrain.join()
             CommandResult(
                 exitCode = exitCode,
                 stdout = stdoutBytes.toString(Charsets.UTF_8.name()),

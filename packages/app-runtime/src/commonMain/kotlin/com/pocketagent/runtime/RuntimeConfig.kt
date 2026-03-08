@@ -44,6 +44,7 @@ data class RuntimeConfig(
         private const val DEFAULT_PREFIX_CACHE_STRICT: Boolean = false
         private const val DEFAULT_RESPONSE_CACHE_TTL_SEC: Long = 0L
         private const val DEFAULT_RESPONSE_CACHE_MAX_ENTRIES: Int = 0
+        private const val MAX_IN_MEMORY_PAYLOAD_BYTES: Long = Int.MAX_VALUE.toLong() - 8L
 
         fun fromEnvironment(
             environment: Map<String, String> = System.getenv(),
@@ -235,7 +236,11 @@ data class RuntimeConfig(
             if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
                 return null
             }
-            return null
+            val fileSize = runCatching { Files.size(filePath) }.getOrNull() ?: return null
+            if (fileSize > MAX_IN_MEMORY_PAYLOAD_BYTES) {
+                return null
+            }
+            return runCatching { Files.readAllBytes(filePath) }.getOrNull()
         }
 
         private fun resolveSha(envValue: String?, payload: ByteArray?, sideLoadPath: String?): String {

@@ -43,6 +43,35 @@ class ModelDistributionManifestProviderTest {
     }
 
     @Test
+    fun `load manifest sorts numeric version tokens semantically`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "",
+            bundledManifestLoader = { manifestWithMixedSemanticVersionsJson() },
+        )
+
+        val manifest = provider.loadManifest()
+
+        val versions = manifest.models.single().versions.map { it.version }
+        assertEquals(listOf("q4_10", "q4_9", "q4_2"), versions)
+    }
+
+    @Test
+    fun `merge manifest keeps semantic version ordering after overlay`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "https://example.test/catalog.json",
+            bundledManifestLoader = { manifestWithBundledVersionOrderingJson() },
+            remoteManifestLoader = { manifestWithRemoteVersionOrderingJson() },
+        )
+
+        val manifest = provider.loadManifest()
+
+        val versions = manifest.models.single().versions.map { it.version }
+        assertEquals(listOf("q4_10", "q4_2"), versions)
+    }
+
+    @Test
     fun `load manifest keeps bundled catalog and warning when remote refresh fails`() = runTest {
         val provider = ModelDistributionManifestProvider(
             context = null,
@@ -379,6 +408,86 @@ private fun manifestWithInvalidVerificationPolicyJson(): String {
                   "provenanceIssuer": "internal",
                   "provenanceSignature": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                   "verificationPolicy": "STRICT_UNKNOWN",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithMixedSemanticVersionsJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "qwen3.5-0.8b-q4",
+              "displayName": "Qwen 3.5 0.8B (Q4)",
+              "versions": [
+                {
+                  "version": "q4_2",
+                  "downloadUrl": "https://example.test/q4_2.gguf",
+                  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                },
+                {
+                  "version": "q4_10",
+                  "downloadUrl": "https://example.test/q4_10.gguf",
+                  "expectedSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                },
+                {
+                  "version": "q4_9",
+                  "downloadUrl": "https://example.test/q4_9.gguf",
+                  "expectedSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithBundledVersionOrderingJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "qwen3.5-0.8b-q4",
+              "displayName": "Qwen 3.5 0.8B (Q4)",
+              "versions": [
+                {
+                  "version": "q4_2",
+                  "downloadUrl": "https://example.test/q4_2.gguf",
+                  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 1234
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithRemoteVersionOrderingJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "qwen3.5-0.8b-q4",
+              "displayName": "Qwen 3.5 0.8B (Q4)",
+              "versions": [
+                {
+                  "version": "q4_10",
+                  "downloadUrl": "https://example.test/q4_10.gguf",
+                  "expectedSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                   "runtimeCompatibility": "android-arm64-v8a",
                   "fileSizeBytes": 1234
                 }

@@ -1,6 +1,8 @@
 package com.pocketagent.android.ui
 
 import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.ui.controllers.ChatSendFlow
+import com.pocketagent.android.ui.controllers.DeviceStateProvider
 import com.pocketagent.android.ui.controllers.StartupProbeController
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.RoutingMode
@@ -14,6 +16,7 @@ import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.SessionStateLoadResult
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
+import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.ImageFailure
@@ -207,6 +210,33 @@ class ChatViewModelTest {
 
         // bootstrap + send start + completed persist path should stay bounded.
         assertTrue(persistence.savedStates.size <= 6)
+    }
+
+    @Test
+    fun `send flow uses injected device telemetry provider for routing request`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val expectedDeviceState = DeviceState(
+            batteryPercent = 22,
+            thermalLevel = 7,
+            ramClassGb = 6,
+        )
+        val sendFlow = ChatSendFlow(
+            runtimeGenerationTimeoutMs = 0L,
+            deviceStateProvider = DeviceStateProvider { expectedDeviceState },
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+            sendFlow = sendFlow,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("telemetry check")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        assertEquals(expectedDeviceState, runtime.lastStreamRequest?.deviceState)
     }
 
     @Test

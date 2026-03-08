@@ -2,9 +2,12 @@ package com.pocketagent.runtime
 
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.ModelRuntimeProfile
+import java.nio.file.Files
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertContentEquals
+import kotlin.test.assertNull
 
 class RuntimeConfigEnvironmentTest {
     @Test
@@ -58,6 +61,38 @@ class RuntimeConfigEnvironmentTest {
             sha256Hex("$modelIssuer|$modelId|$payloadSha|v1".encodeToByteArray()),
             config.artifactProvenanceSignatureByModelId.getValue(modelId),
         )
+    }
+
+    @Test
+    fun `fromEnvironment loads sideload payload bytes when file exists`() {
+        val modelId = ModelCatalog.QWEN_3_5_0_8B_Q4
+        val tempFile = Files.createTempFile("runtime-config-test-", ".gguf")
+        val payload = "tiny-test-payload".encodeToByteArray()
+        Files.write(tempFile, payload)
+        try {
+            val config = RuntimeConfig.fromEnvironment(
+                environment = mapOf(
+                    RuntimeConfig.sideLoadPathEnvName(modelId) to tempFile.toString(),
+                ),
+            )
+
+            assertContentEquals(payload, config.artifactPayloadByModelId.getValue(modelId))
+            assertEquals(sha256Hex(payload), config.artifactSha256ByModelId.getValue(modelId))
+        } finally {
+            Files.deleteIfExists(tempFile)
+        }
+    }
+
+    @Test
+    fun `fromEnvironment ignores sideload payload for missing file`() {
+        val modelId = ModelCatalog.QWEN_3_5_0_8B_Q4
+        val config = RuntimeConfig.fromEnvironment(
+            environment = mapOf(
+                RuntimeConfig.sideLoadPathEnvName(modelId) to "/tmp/path-that-does-not-exist-for-runtime-config.gguf",
+            ),
+        )
+
+        assertNull(config.artifactPayloadByModelId[modelId])
     }
 }
 

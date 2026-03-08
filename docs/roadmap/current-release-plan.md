@@ -28,6 +28,7 @@ Ship a usable privacy-first Android MVP under soft-gate pilot policy with comple
 2. Keep lane reliability stable for `android-instrumented`, `maestro`, and `journey`.
 3. Ensure runtime timeout/cancel and send-capture contracts remain deterministic.
 4. 2026-03-08 update: session-ID collision hardening, provenance strict-mode wiring, and chat-flow split landed with unit-test validation.
+5. 2026-03-08 update: device telemetry routing input, semantic version ordering, stream drain deadlock fix, and runtime payload loading landed with cross-module test validation.
 
 ### Phase 2: Close usability and operations gaps
 
