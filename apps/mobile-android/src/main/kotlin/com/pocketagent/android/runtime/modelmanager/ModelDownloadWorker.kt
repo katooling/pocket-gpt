@@ -7,12 +7,14 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
+import com.pocketagent.android.runtime.RuntimeBootstrapper
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -208,6 +210,14 @@ class ModelDownloadWorker(
                 fileSizeBytes = destinationFile.length().coerceAtLeast(0L),
                 makeActive = verificationPolicy.enforcesProvenance,
             )
+            runCatching {
+                RuntimeBootstrapper.installProductionRuntime(appContext)
+            }.onFailure { error ->
+                Log.w(
+                    LOG_TAG,
+                    "Runtime refresh failed after installing $modelId@$version: ${error.message}",
+                )
+            }
 
             updateState(
                 taskId = taskId,
@@ -504,6 +514,7 @@ class ModelDownloadWorker(
     }
 
     companion object {
+        private const val LOG_TAG = "ModelDownloadWorker"
         internal const val WORK_TAG = "model-download"
         internal const val DOWNLOAD_DIR = "runtime-model-downloads"
         internal const val KEY_TASK_ID = "task_id"

@@ -49,7 +49,15 @@ data class PersistedToolCall(
     val id: String,
     val name: String,
     val argumentsJson: String,
+    val status: PersistedToolCallStatus = PersistedToolCallStatus.PENDING,
 )
+
+enum class PersistedToolCallStatus {
+    PENDING,
+    RUNNING,
+    COMPLETED,
+    FAILED,
+}
 
 data class ChatSessionUiModel(
     val id: String,

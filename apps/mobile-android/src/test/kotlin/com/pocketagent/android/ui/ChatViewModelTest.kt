@@ -18,20 +18,27 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.ChatStreamDelta
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.ImageFailure
+import com.pocketagent.runtime.InteractionContentPart
+import com.pocketagent.runtime.InteractionMessage
+import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.RuntimePerformanceProfile
+import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.runtime.ToolFailure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -82,28 +89,24 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `natural language calculator prompt executes local tool path`() = runTest(dispatcher) {
+    fun `explicit tool command executes local tool path`() = runTest(dispatcher) {
         val persistence = RecordingPersistence()
         val runtime = RecordingRuntimeFacade()
-        val sendFlow = ChatSendFlow(
-            runtimeGenerationTimeoutMs = 0L,
-            deviceStateProvider = DeviceStateProvider.DEFAULT,
-            legacyToolIntentParserEnabled = true,
-        )
         val viewModel = ChatViewModel(
             runtimeFacade = runtime,
             sessionPersistence = persistence,
             ioDispatcher = dispatcher,
-            sendFlow = sendFlow,
         )
         advanceUntilIdle()
 
-        viewModel.onComposerChanged("calculate 4*9")
-        viewModel.sendMessage()
+        viewModel.runTool(
+            toolName = "calculator",
+            jsonArgs = """{"expression":"4*9"}""",
+        )
         advanceUntilIdle()
 
         val messages = viewModel.uiState.value.activeSession!!.messages
-        assertTrue(messages.any { it.role == MessageRole.USER && it.content == "calculate 4*9" })
+        assertTrue(messages.any { it.role == MessageRole.USER && it.content.contains("Run tool: calculator") })
         assertTrue(messages.any { it.role == MessageRole.ASSISTANT && it.toolName == "calculator" })
         assertTrue(messages.any { it.role == MessageRole.TOOL && it.toolName == "calculator" && it.content.contains("tool:calculator") })
     }
@@ -785,6 +788,99 @@ class ChatViewModelTest {
         assertEquals(null, runtimeState.lastErrorCode)
         assertEquals("verified and active", runtimeState.modelStatusDetail)
     }
+
+    @Test
+    fun `startup probe unexpected exception maps to blocked runtime state without crash`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+            startupProbeController = ThrowingOnSecondStartupProbeController(),
+        )
+        advanceUntilIdle()
+
+        viewModel.refreshRuntimeReadiness()
+        advanceUntilIdle()
+
+        val runtimeState = viewModel.uiState.value.runtime
+        assertEquals("UI-STARTUP-001", runtimeState.lastErrorCode)
+        assertTrue(runtimeState.startupChecks.any { it.contains("failed unexpectedly") })
+    }
+
+    @Test
+    fun `startup probe latest refresh wins when earlier probe ignores cancellation`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+            startupProbeController = NonCooperativeStartupProbeController(),
+        )
+        advanceUntilIdle()
+
+        viewModel.refreshRuntimeReadiness(statusDetailOverride = "stale status")
+        advanceTimeBy(10L)
+        viewModel.refreshRuntimeReadiness(statusDetailOverride = "latest status")
+        advanceUntilIdle()
+
+        val runtimeState = viewModel.uiState.value.runtime
+        assertEquals(null, runtimeState.lastErrorCode)
+        assertEquals("latest status", runtimeState.modelStatusDetail)
+    }
+
+    @Test
+    fun `duplicate readiness refresh requests with same detail are coalesced`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
+        val startupProbeController = CountingStartupProbeController()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+            startupProbeController = startupProbeController,
+        )
+        advanceUntilIdle()
+        val baselineCalls = startupProbeController.callCount
+
+        viewModel.refreshRuntimeReadiness(statusDetailOverride = "same detail")
+        viewModel.refreshRuntimeReadiness(statusDetailOverride = "same detail")
+        advanceUntilIdle()
+
+        assertEquals(baselineCalls + 1, startupProbeController.callCount)
+    }
+
+    @Test
+    fun `duplicate settings updates do not persist or re-dispatch runtime calls`() = runTest(dispatcher) {
+        val persistence = RecordingPersistence()
+        val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = persistence,
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        val baselineSaves = persistence.savedStates.size
+        val baselineRoutingCalls = runtime.routingModeSetCalls
+
+        viewModel.setRoutingMode(RoutingMode.AUTO)
+        viewModel.setPerformanceProfile(RuntimePerformanceProfile.BALANCED)
+        viewModel.setGpuAccelerationEnabled(false)
+        advanceUntilIdle()
+
+        val afterFirstPassSaves = persistence.savedStates.size
+        val afterFirstRoutingCalls = runtime.routingModeSetCalls
+        assertEquals(baselineSaves + 1, afterFirstPassSaves)
+        assertEquals(baselineRoutingCalls, afterFirstRoutingCalls)
+
+        viewModel.setRoutingMode(RoutingMode.AUTO)
+        viewModel.setPerformanceProfile(RuntimePerformanceProfile.BALANCED)
+        viewModel.setGpuAccelerationEnabled(false)
+        advanceUntilIdle()
+
+        assertEquals(afterFirstPassSaves, persistence.savedStates.size)
+        assertEquals(afterFirstRoutingCalls, runtime.routingModeSetCalls)
+    }
 }
 
 private class RecordingPersistence(
@@ -833,17 +929,39 @@ private class RecordingRuntimeFacade(
     private var routingMode: RoutingMode = RoutingMode.AUTO
     var failTool: Boolean = false
     var returnToolValidationError: Boolean = false
+    var routingModeSetCalls: Int = 0
     val restoredTurns = mutableListOf<Pair<SessionId, List<Turn>>>()
     val cancelledSessions = mutableListOf<SessionId>()
     val cancelledRequestIds = mutableListOf<String>()
-    var lastStreamRequest: StreamUserMessageRequest? = null
+    var lastStreamRequest: StreamChatRequestV2? = null
 
     override fun createSession(): SessionId {
         sessionCounter += 1
         return SessionId("session-$sessionCounter")
     }
 
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = flow {
+    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
+        return streamChat(
+            StreamChatRequestV2(
+                sessionId = request.sessionId,
+                requestId = request.requestId,
+                messages = listOf(
+                    InteractionMessage(
+                        role = InteractionRole.USER,
+                        parts = listOf(InteractionContentPart.Text(request.userText)),
+                    ),
+                ),
+                taskType = request.taskType,
+                deviceState = request.deviceState,
+                maxTokens = request.maxTokens,
+                requestTimeoutMs = request.requestTimeoutMs,
+                performanceConfig = request.performanceConfig,
+                residencyPolicy = request.residencyPolicy,
+            ),
+        )
+    }
+
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = flow {
         lastStreamRequest = request
         emit(
             ChatStreamEvent.Started(
@@ -858,13 +976,23 @@ private class RecordingRuntimeFacade(
         streamTokens.forEach { token ->
             builder.append(token)
             emit(
-                ChatStreamEvent.TokenDelta(
+                ChatStreamEvent.Delta(
                     requestId = request.requestId,
-                    token = token,
-                    accumulatedText = builder.toString().trim(),
+                    delta = ChatStreamDelta.TextDelta(token),
+                    accumulatedText = builder.toString(),
                 ),
             )
         }
+        val latestUser = request.messages
+            .asReversed()
+            .firstOrNull { message -> message.role == InteractionRole.USER }
+            ?.parts
+            ?.joinToString(separator = "\n") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                }
+            }
+            .orEmpty()
         when (streamTerminal) {
             StreamTerminal.COMPLETED -> emit(
                 ChatStreamEvent.Completed(
@@ -872,7 +1000,7 @@ private class RecordingRuntimeFacade(
                     response = ChatResponse(
                         sessionId = request.sessionId,
                         modelId = "auto",
-                        text = "response for ${request.userText}",
+                        text = "response for $latestUser",
                         firstTokenLatencyMs = 25,
                         totalLatencyMs = 75,
                     ),
@@ -961,6 +1089,7 @@ private class RecordingRuntimeFacade(
 
     override fun setRoutingMode(mode: RoutingMode) {
         routingMode = mode
+        routingModeSetCalls += 1
     }
 
     override fun getRoutingMode(): RoutingMode = routingMode
@@ -993,5 +1122,58 @@ private class TimeoutStartupProbeController : StartupProbeController() {
     ): List<String> {
         val timeoutSeconds = (timeoutMs / 1000L).coerceAtLeast(1L)
         return listOf("Startup checks timed out after ${timeoutSeconds}s.")
+    }
+}
+
+private class ThrowingOnSecondStartupProbeController : StartupProbeController() {
+    private var calls: Int = 0
+
+    override suspend fun runStartupChecks(
+        runtimeGateway: RuntimeGateway,
+        ioDispatcher: CoroutineDispatcher,
+        timeoutMs: Long,
+    ): List<String> {
+        calls += 1
+        if (calls == 1) {
+            return emptyList()
+        }
+        error("startup probe exploded")
+    }
+}
+
+private class NonCooperativeStartupProbeController : StartupProbeController() {
+    private var calls: Int = 0
+
+    override suspend fun runStartupChecks(
+        runtimeGateway: RuntimeGateway,
+        ioDispatcher: CoroutineDispatcher,
+        timeoutMs: Long,
+    ): List<String> {
+        calls += 1
+        return when (calls) {
+            1 -> emptyList()
+            2 -> {
+                try {
+                    delay(50L)
+                } catch (_: CancellationException) {
+                    // Simulate a non-cooperative startup check that ignores cancellation.
+                }
+                listOf("Missing runtime model(s): stale-check")
+            }
+            else -> emptyList()
+        }
+    }
+}
+
+private class CountingStartupProbeController : StartupProbeController() {
+    var callCount: Int = 0
+
+    override suspend fun runStartupChecks(
+        runtimeGateway: RuntimeGateway,
+        ioDispatcher: CoroutineDispatcher,
+        timeoutMs: Long,
+    ): List<String> {
+        callCount += 1
+        return emptyList()
     }
 }

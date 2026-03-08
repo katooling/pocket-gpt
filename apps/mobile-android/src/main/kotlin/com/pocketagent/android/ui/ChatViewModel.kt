@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui
 
+import android.util.Log
 import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.runtime.RuntimeGateway
 import com.pocketagent.android.ui.controllers.ChatPersistenceFlow
@@ -11,9 +12,9 @@ import com.pocketagent.android.ui.controllers.ChatSendController
 import com.pocketagent.android.ui.controllers.SendReducer
 import com.pocketagent.android.ui.controllers.ChatStartupFlow
 import com.pocketagent.android.ui.controllers.StartupProbeController
+import com.pocketagent.android.ui.controllers.StartupProbeOutcome
 import com.pocketagent.android.ui.controllers.StartupReadinessCoordinator
 import com.pocketagent.android.ui.controllers.TimelineProjector
-import com.pocketagent.android.ui.controllers.ToolIntent
 import com.pocketagent.android.ui.controllers.ToolLoopOutcome
 import com.pocketagent.android.ui.controllers.ToolLoopUseCase
 import androidx.lifecycle.ViewModel
@@ -31,6 +32,7 @@ import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedInteractionMessage
 import com.pocketagent.android.ui.state.PersistedInteractionPart
 import com.pocketagent.android.ui.state.PersistedToolCall
+import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.StartupProbeState
@@ -41,9 +43,11 @@ import com.pocketagent.android.ui.state.UiErrorMapper
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.ChatStreamDelta
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -88,6 +92,10 @@ class ChatViewModel(
     val uiState = _uiState.asStateFlow()
     private var startupProbeJob: Job? = null
     @Volatile
+    private var latestStartupProbeToken: Long = 0L
+    @Volatile
+    private var inFlightStartupProbeDetail: String? = null
+    @Volatile
     private var activeSendRequestId: String? = null
 
     init {
@@ -108,8 +116,7 @@ class ChatViewModel(
             return
         }
 
-        val toolIntent = sendFlow.parseToolIntent(prompt)
-        if (toolIntent == null && !sendFlow.isRuntimeReadyForSend(snapshot.runtime)) {
+        if (!sendFlow.isRuntimeReadyForSend(snapshot.runtime)) {
             val uiError = startupFlow.startupBlockError(snapshot.runtime)
             appendSystemMessage(
                 sessionId = activeSession.id,
@@ -153,37 +160,12 @@ class ChatViewModel(
                 composer = ComposerUiState(text = "", isSending = true),
                 runtime = sendReducer.onSendStarted(
                     runtime = state.runtime,
-                    toolDriven = toolIntent != null,
+                    toolDriven = false,
                 ),
             )
         }
         persistState()
         val sessionAfterUserMessage = _uiState.value.activeSession ?: return
-
-        if (toolIntent != null) {
-            val toolCallId = newToolCallId()
-            val assistantToolCall = createMessage(
-                role = MessageRole.ASSISTANT,
-                content = "",
-                kind = MessageKind.TOOL,
-                toolName = toolIntent.name,
-                toolArgsJson = toolIntent.jsonArgs,
-                toolCallId = toolCallId,
-            )
-            updateActiveSession(activeSession.id) { session ->
-                session.copy(
-                    messages = session.messages + assistantToolCall,
-                    updatedAtEpochMs = System.currentTimeMillis(),
-                )
-            }
-            persistState()
-            executeToolIntent(
-                sessionId = activeSession.id,
-                toolIntent = toolIntent,
-                toolCallId = toolCallId,
-            )
-            return
-        }
 
         val assistantMessageId = newMessageId(prefix = "assistant-stream")
         val requestId = newRequestId()
@@ -371,9 +353,18 @@ class ChatViewModel(
                 streamReducer = streamReducer,
                 sendStartedAtMs = sendStartedAtMs,
                 onEvent = { event, nextState ->
-                    if (event is ChatStreamEvent.TokenDelta) {
-                        pendingStreamingText = nextState.accumulatedText
-                        flushPendingStreamingText(triggerToken = event.token)
+                    when (event) {
+                        is ChatStreamEvent.TokenDelta -> {
+                            pendingStreamingText = nextState.accumulatedText
+                            flushPendingStreamingText(triggerToken = event.token)
+                        }
+                        is ChatStreamEvent.Delta -> when (val delta = event.delta) {
+                            is ChatStreamDelta.TextDelta -> {
+                                pendingStreamingText = nextState.accumulatedText
+                                flushPendingStreamingText(triggerToken = delta.text)
+                            }
+                        }
+                        else -> Unit
                     }
                     val detail = sendReducer.statusDetailForEvent(event)
                     if (!detail.isNullOrBlank()) {
@@ -590,6 +581,7 @@ class ChatViewModel(
             toolName = toolName,
             toolArgsJson = jsonArgs,
             toolCallId = toolCallId,
+            toolCallStatus = PersistedToolCallStatus.RUNNING,
         )
         updateActiveSession(activeSession.id) { session ->
             session.copy(
@@ -653,6 +645,9 @@ class ChatViewModel(
 
     fun setRoutingMode(mode: RoutingMode) {
         val effectiveMode = coerceSupportedRoutingMode(mode)
+        if (_uiState.value.runtime.routingMode == effectiveMode) {
+            return
+        }
         runtimeFacade.setRoutingMode(effectiveMode)
         _uiState.update { state ->
             state.copy(runtime = state.runtime.copy(routingMode = effectiveMode))
@@ -661,6 +656,9 @@ class ChatViewModel(
     }
 
     fun setPerformanceProfile(profile: RuntimePerformanceProfile) {
+        if (_uiState.value.runtime.performanceProfile == profile) {
+            return
+        }
         _uiState.update { state ->
             state.copy(
                 runtime = state.runtime.copy(
@@ -677,18 +675,25 @@ class ChatViewModel(
     }
 
     fun setGpuAccelerationEnabled(enabled: Boolean) {
+        val snapshot = _uiState.value.runtime
+        val supported = snapshot.gpuAccelerationSupported
+        val effective = enabled && supported
+        val detail = if (enabled && !supported) {
+            "GPU acceleration is unavailable on this build/device. Using CPU."
+        } else {
+            performanceProfileStatusDetail(
+                profile = snapshot.performanceProfile,
+                gpuEnabled = effective,
+                gpuSupported = supported,
+            )
+        }
+        if (
+            snapshot.gpuAccelerationEnabled == effective &&
+            snapshot.modelStatusDetail == detail
+        ) {
+            return
+        }
         _uiState.update { state ->
-            val supported = state.runtime.gpuAccelerationSupported
-            val effective = enabled && supported
-            val detail = if (enabled && !supported) {
-                "GPU acceleration is unavailable on this build/device. Using CPU."
-            } else {
-                performanceProfileStatusDetail(
-                    profile = state.runtime.performanceProfile,
-                    gpuEnabled = effective,
-                    gpuSupported = supported,
-                )
-            }
             state.copy(
                 runtime = state.runtime.copy(
                     gpuAccelerationEnabled = effective,
@@ -704,6 +709,9 @@ class ChatViewModel(
     }
 
     fun setAdvancedSheetOpen(isOpen: Boolean) {
+        if (_uiState.value.isAdvancedSheetOpen == isOpen) {
+            return
+        }
         _uiState.update {
             it.copy(
                 isAdvancedSheetOpen = isOpen,
@@ -824,12 +832,82 @@ class ChatViewModel(
     }
 
     private fun launchStartupProbe(statusDetailOverride: String? = null) {
+        val normalizedDetail = statusDetailOverride?.trim()?.takeIf { it.isNotEmpty() }
+        if (startupProbeJob?.isActive == true && inFlightStartupProbeDetail == normalizedDetail) {
+            logStartupProbe("coalesced", latestStartupProbeToken, normalizedDetail)
+            return
+        }
+        val probeToken = nextStartupProbeToken(normalizedDetail)
         startupProbeJob?.cancel()
         startupProbeJob = viewModelScope.launch(ioDispatcher) {
-            _uiState.update { state -> startupFlow.markProbeRunning(state) }
-            val outcome = startupFlow.evaluateStartup(statusDetailOverride = statusDetailOverride)
-            _uiState.update { state -> startupFlow.applyProbeOutcome(state, outcome) }
-            persistState()
+            logStartupProbe("started", probeToken, normalizedDetail)
+            try {
+                _uiState.update { state -> startupFlow.markProbeRunning(state) }
+                val outcome = try {
+                    startupFlow.evaluateStartup(statusDetailOverride = normalizedDetail)
+                } catch (error: Throwable) {
+                    if (error is CancellationException) {
+                        throw error
+                    }
+                    logStartupProbe("failed", probeToken, normalizedDetail, error)
+                    buildFallbackProbeOutcome(error)
+                }
+                if (!isLatestStartupProbe(probeToken)) {
+                    logStartupProbe("stale_discarded", probeToken, normalizedDetail)
+                    return@launch
+                }
+                _uiState.update { state -> startupFlow.applyProbeOutcome(state, outcome) }
+                persistState()
+                logStartupProbe("completed", probeToken, normalizedDetail)
+            } catch (cancelled: CancellationException) {
+                logStartupProbe("cancelled", probeToken, normalizedDetail)
+                throw cancelled
+            } finally {
+                if (isLatestStartupProbe(probeToken)) {
+                    inFlightStartupProbeDetail = null
+                }
+            }
+        }
+    }
+
+    private fun nextStartupProbeToken(statusDetailOverride: String?): Long {
+        val next = latestStartupProbeToken + 1L
+        latestStartupProbeToken = next
+        inFlightStartupProbeDetail = statusDetailOverride
+        return next
+    }
+
+    private fun isLatestStartupProbe(probeToken: Long): Boolean = latestStartupProbeToken == probeToken
+
+    private fun buildFallbackProbeOutcome(error: Throwable): StartupProbeOutcome {
+        val fallbackCheck = "Startup checks failed unexpectedly: ${error.message ?: error::class.simpleName.orEmpty()}"
+        val runtimeBackend = runtimeFacade.runtimeBackend()
+        val gpuSupported = runCatching { runtimeFacade.supportsGpuOffload() }.getOrDefault(false)
+        return StartupProbeOutcome(
+            startupChecks = listOf(fallbackCheck),
+            runtimeBackend = runtimeBackend,
+            gpuSupported = gpuSupported,
+            readinessDecision = startupReadinessCoordinator.decide(
+                startupChecks = listOf(fallbackCheck),
+                runtimeBackend = runtimeBackend,
+                statusDetailOverride = null,
+            ),
+        )
+    }
+
+    private fun logStartupProbe(
+        phase: String,
+        probeToken: Long,
+        statusDetailOverride: String?,
+        error: Throwable? = null,
+    ) {
+        val message = "STARTUP_PROBE|phase=$phase|token=$probeToken|detail=${statusDetailOverride.orEmpty()}"
+        runCatching {
+            if (error == null) {
+                Log.i(LOG_TAG, message)
+            } else {
+                Log.w(LOG_TAG, message, error)
+            }
         }
     }
 
@@ -958,6 +1036,11 @@ class ChatViewModel(
         viewModelScope.launch(ioDispatcher) {
             when (val outcome = toolLoopUseCase.execute(toolName = toolName, jsonArgs = jsonArgs)) {
                 is ToolLoopOutcome.Success -> {
+                    updateToolCallStatus(
+                        sessionId = sessionId,
+                        toolCallId = toolCallId,
+                        status = PersistedToolCallStatus.COMPLETED,
+                    )
                     val toolMessage = createMessage(
                         role = MessageRole.TOOL,
                         content = outcome.content,
@@ -984,6 +1067,11 @@ class ChatViewModel(
                     persistState()
                 }
                 is ToolLoopOutcome.Failure -> {
+                    updateToolCallStatus(
+                        sessionId = sessionId,
+                        toolCallId = toolCallId,
+                        status = PersistedToolCallStatus.FAILED,
+                    )
                     appendSystemMessage(
                         sessionId = sessionId,
                         content = formatUserFacingError(outcome.uiError),
@@ -1003,13 +1091,33 @@ class ChatViewModel(
         }
     }
 
-    private fun executeToolIntent(sessionId: String, toolIntent: ToolIntent, toolCallId: String) {
-        executeToolCommand(
-            sessionId = sessionId,
-            toolName = toolIntent.name,
-            jsonArgs = toolIntent.jsonArgs,
-            toolCallId = toolCallId,
-        )
+    private fun updateToolCallStatus(
+        sessionId: String,
+        toolCallId: String,
+        status: PersistedToolCallStatus,
+    ) {
+        updateActiveSession(sessionId) { session ->
+            session.copy(
+                messages = session.messages.map { message ->
+                    val interaction = message.interaction ?: return@map message
+                    if (interaction.toolCalls.none { toolCall -> toolCall.id == toolCallId }) {
+                        return@map message
+                    }
+                    message.copy(
+                        interaction = interaction.copy(
+                            toolCalls = interaction.toolCalls.map { toolCall ->
+                                if (toolCall.id == toolCallId) {
+                                    toolCall.copy(status = status)
+                                } else {
+                                    toolCall
+                                }
+                            },
+                        ),
+                    )
+                },
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+        }
     }
 
     private fun performanceProfileStatusDetail(
@@ -1043,6 +1151,7 @@ class ChatViewModel(
         toolName: String? = null,
         toolArgsJson: String? = null,
         toolCallId: String? = null,
+        toolCallStatus: PersistedToolCallStatus = PersistedToolCallStatus.PENDING,
         requestId: String? = null,
         finishReason: String? = null,
         terminalEventSeen: Boolean = false,
@@ -1058,6 +1167,7 @@ class ChatViewModel(
                     id = toolCallId ?: "toolcall-${UUID.randomUUID()}",
                     name = toolName,
                     argumentsJson = toolArgsJson,
+                    status = toolCallStatus,
                 ),
             )
         } else {
@@ -1074,6 +1184,7 @@ class ChatViewModel(
                     id = toolCallId ?: "toolcall-${UUID.randomUUID()}",
                     name = toolName,
                     argumentsJson = toolArgsJson,
+                    status = toolCallStatus,
                 ),
             )
         } else {
@@ -1164,6 +1275,7 @@ class ChatViewModel(
     private fun newMessageId(prefix: String): String = "$prefix-${UUID.randomUUID()}"
 
     companion object {
+        private const val LOG_TAG = "ChatViewModel"
         private const val TITLE_MAX_CHARS = 42
         private const val ONBOARDING_LAST_PAGE = 2
         private const val DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS = 30_000L

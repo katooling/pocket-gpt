@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -90,17 +92,17 @@ internal fun AdvancedSettingsSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onPerformanceProfileSelected(profile) }
-                    .semantics {
-                        role = Role.RadioButton
-                        selected = state.runtime.performanceProfile == profile
-                        contentDescription = profileDescription
-                    },
+                    .selectable(
+                        selected = state.runtime.performanceProfile == profile,
+                        onClick = { onPerformanceProfileSelected(profile) },
+                        role = Role.RadioButton,
+                    )
+                    .semantics { contentDescription = profileDescription },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(
                     selected = state.runtime.performanceProfile == profile,
-                    onClick = { onPerformanceProfileSelected(profile) },
+                    onClick = null,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(profile.name)
@@ -112,19 +114,18 @@ internal fun AdvancedSettingsSheet(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(enabled = state.runtime.gpuAccelerationSupported) {
-                    onGpuAccelerationEnabledChanged(!state.runtime.gpuAccelerationEnabled)
-                }
-                .semantics {
-                    role = Role.Switch
-                    selected = state.runtime.gpuAccelerationEnabled
-                },
+                .toggleable(
+                    value = state.runtime.gpuAccelerationEnabled,
+                    enabled = state.runtime.gpuAccelerationSupported,
+                    role = Role.Switch,
+                    onValueChange = { checked -> onGpuAccelerationEnabledChanged(checked) },
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.material3.Switch(
                 checked = state.runtime.gpuAccelerationEnabled,
                 enabled = state.runtime.gpuAccelerationSupported,
-                onCheckedChange = { checked -> onGpuAccelerationEnabledChanged(checked) },
+                onCheckedChange = null,
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
@@ -149,17 +150,17 @@ internal fun AdvancedSettingsSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onRoutingModeSelected(mode) }
-                    .semantics {
-                        role = Role.RadioButton
-                        selected = state.runtime.routingMode == mode
-                        contentDescription = routingDescription
-                    },
+                    .selectable(
+                        selected = state.runtime.routingMode == mode,
+                        onClick = { onRoutingModeSelected(mode) },
+                        role = Role.RadioButton,
+                    )
+                    .semantics { contentDescription = routingDescription },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(
                     selected = state.runtime.routingMode == mode,
-                    onClick = { onRoutingModeSelected(mode) },
+                    onClick = null,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(mode.name)

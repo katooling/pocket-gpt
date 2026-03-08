@@ -182,7 +182,7 @@ class AndroidMvpContainerTest {
         val checks = container.runStartupChecks()
 
         assertEquals(emptyList(), checks)
-        assertTrue(inference.loadCalls.contains(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertTrue(inference.loadCalls.isEmpty())
         assertEquals(0, inference.unloadCalls)
     }
 
@@ -210,7 +210,7 @@ class AndroidMvpContainerTest {
 
         assertTrue(checks.any { it.contains("Optional runtime model unavailable") })
         assertTrue(checks.none { it.contains("Missing runtime model(s):") })
-        assertTrue(inference.loadCalls.contains(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertTrue(inference.loadCalls.isEmpty())
     }
 
     @Test

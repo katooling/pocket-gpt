@@ -29,14 +29,14 @@ class DefaultMvpRuntimeFacadeTest {
         )
 
         val events = facade.streamUserMessage(request).toList()
-        val tokenEvents = events.filterIsInstance<ChatStreamEvent.TokenDelta>()
+        val tokenEvents = events.filterIsInstance<ChatStreamEvent.Delta>()
         val completed = events.filterIsInstance<ChatStreamEvent.Completed>().single()
         val phases = events.filterIsInstance<ChatStreamEvent.Phase>().map { phase -> phase.phase }.toSet()
 
         assertTrue(events.first() is ChatStreamEvent.Started)
         assertEquals(2, tokenEvents.size)
-        assertEquals("hello", tokenEvents[0].accumulatedText)
-        assertEquals("hello world", tokenEvents[1].accumulatedText)
+        assertEquals("hello ", tokenEvents[0].accumulatedText)
+        assertEquals("hello world ", tokenEvents[1].accumulatedText)
         assertEquals("response", completed.response.text)
         assertTrue(phases.contains(ChatStreamPhase.CHAT_START))
         assertTrue(phases.contains(ChatStreamPhase.MODEL_LOAD))
@@ -186,9 +186,9 @@ private class FakeRuntimeContainer : RuntimeContainer {
 
     override fun createSession(): SessionId = SessionId("session-1")
 
-    override fun sendUserMessage(
+    override fun sendChatMessages(
         sessionId: SessionId,
-        userText: String,
+        messages: List<InteractionMessage>,
         taskType: String,
         deviceState: DeviceState,
         maxTokens: Int,
@@ -196,11 +196,19 @@ private class FakeRuntimeContainer : RuntimeContainer {
         onToken: (String) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
+        previousResponseId: String?,
         performanceConfig: PerformanceRuntimeConfig,
         residencyPolicy: ModelResidencyPolicy,
     ): ChatResponse {
         sendError?.let { throw it }
-        lastUserText = userText
+        lastUserText = messages.lastOrNull { it.role == InteractionRole.USER }
+            ?.parts
+            ?.joinToString(separator = "\n") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                }
+            }
+            .orEmpty()
         lastMaxTokens = maxTokens
         onToken("hello ")
         onToken("world ")

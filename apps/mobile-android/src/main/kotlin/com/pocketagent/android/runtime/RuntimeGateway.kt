@@ -21,21 +21,16 @@ fun interface DeviceGpuOffloadSupport {
 
 interface RuntimeGateway {
     fun createSession(): SessionId
-    fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent>
-    fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
-        return streamUserMessage(
-            StreamUserMessageRequest(
+    fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
+        return streamChat(
+            StreamChatRequestV2(
                 sessionId = request.sessionId,
-                userText = request.messages
-                    .asReversed()
-                    .firstOrNull { message -> message.role == com.pocketagent.runtime.InteractionRole.USER }
-                    ?.parts
-                    ?.joinToString(separator = "\n") { part ->
-                        when (part) {
-                            is com.pocketagent.runtime.InteractionContentPart.Text -> part.text
-                        }
-                    }
-                    .orEmpty(),
+                messages = listOf(
+                    com.pocketagent.runtime.InteractionMessage(
+                        role = com.pocketagent.runtime.InteractionRole.USER,
+                        parts = listOf(com.pocketagent.runtime.InteractionContentPart.Text(request.userText)),
+                    ),
+                ),
                 taskType = request.taskType,
                 deviceState = request.deviceState,
                 maxTokens = request.maxTokens,
@@ -46,6 +41,7 @@ interface RuntimeGateway {
             ),
         )
     }
+    fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent>
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean
     fun runTool(toolName: String, jsonArgs: String): ToolExecutionResult

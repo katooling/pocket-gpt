@@ -5,11 +5,13 @@ import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.PersistedInteractionPart
 import com.pocketagent.android.ui.state.PersistedToolCall
+import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.core.Turn
 import com.pocketagent.runtime.InteractionContentPart
 import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.InteractionToolCall
+import com.pocketagent.runtime.InteractionToolCallStatus
 
 class TimelineProjector {
     fun toTranscript(session: ChatSessionUiModel): List<InteractionMessage> {
@@ -49,6 +51,7 @@ private fun MessageUiModel.toInteractionMessage(): InteractionMessage {
         emptyList()
     }
     return InteractionMessage(
+        id = id,
         role = role.toInteractionRole(),
         parts = parts,
         toolCalls = toolCalls,
@@ -66,7 +69,17 @@ private fun PersistedToolCall.toInteractionToolCall(): InteractionToolCall {
         id = id,
         name = name,
         argumentsJson = argumentsJson,
+        status = status.toInteractionStatus(),
     )
+}
+
+private fun PersistedToolCallStatus.toInteractionStatus(): InteractionToolCallStatus {
+    return when (this) {
+        PersistedToolCallStatus.PENDING -> InteractionToolCallStatus.PENDING
+        PersistedToolCallStatus.RUNNING -> InteractionToolCallStatus.RUNNING
+        PersistedToolCallStatus.COMPLETED -> InteractionToolCallStatus.COMPLETED
+        PersistedToolCallStatus.FAILED -> InteractionToolCallStatus.FAILED
+    }
 }
 
 private fun MessageRole.toInteractionRole(): InteractionRole {

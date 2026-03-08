@@ -63,6 +63,7 @@ import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
+import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 
 @Composable
@@ -460,8 +461,13 @@ private fun MessageList(
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
                             message.toolName != null -> {
+                                val toolStatus = message.interaction
+                                    ?.toolCalls
+                                    ?.firstOrNull()
+                                    ?.status
+                                val statusSuffix = toolStatus.toReadableSuffix()
                                 Text(
-                                    text = stringResource(id = R.string.ui_tool_message_label, message.toolName),
+                                    text = stringResource(id = R.string.ui_tool_message_label, message.toolName) + statusSuffix,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -496,6 +502,16 @@ private fun MessageList(
                 }
             }
         }
+    }
+}
+
+private fun PersistedToolCallStatus?.toReadableSuffix(): String {
+    return when (this) {
+        PersistedToolCallStatus.PENDING -> " (Pending)"
+        PersistedToolCallStatus.RUNNING -> " (Running)"
+        PersistedToolCallStatus.COMPLETED -> " (Completed)"
+        PersistedToolCallStatus.FAILED -> " (Failed)"
+        null -> ""
     }
 }
 

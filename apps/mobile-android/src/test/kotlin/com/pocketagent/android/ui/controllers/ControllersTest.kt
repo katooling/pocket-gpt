@@ -9,6 +9,7 @@ import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.ImageFailure
+import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.CoroutineDispatcher
@@ -68,6 +69,25 @@ class ControllersTest {
     }
 
     @Test
+    fun `startup probe controller converts unexpected startup exception into check message`() = runTest {
+        val runtime = RecordingRuntimeGateway(
+            startupBehavior = {
+                error("startup crash")
+            },
+        )
+        val controller = StartupProbeController()
+
+        val checks = controller.runStartupChecks(
+            runtimeGateway = runtime,
+            ioDispatcher = Dispatchers.IO,
+            timeoutMs = 1_000L,
+        )
+
+        assertEquals(1, checks.size)
+        assertTrue(checks.single().contains("failed unexpectedly"))
+    }
+
+    @Test
     fun `persistence coordinator delegates load and save`() {
         val persistence = RecordingSessionPersistence()
         val coordinator = ChatPersistenceCoordinator(sessionPersistence = persistence)
@@ -91,6 +111,8 @@ private class RecordingRuntimeGateway(
     override fun createSession(): SessionId = SessionId("session-1")
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = emptyFlow()
+
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = emptyFlow()
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = true
 

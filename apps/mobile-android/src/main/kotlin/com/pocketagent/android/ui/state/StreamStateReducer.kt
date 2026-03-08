@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui.state
 
 import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.ChatStreamDelta
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
 import kotlinx.coroutines.TimeoutCancellationException
 
@@ -51,6 +52,21 @@ class StreamStateReducer(
                     accumulatedText = event.accumulatedText,
                     firstTokenMs = firstToken,
                 )
+            }
+            is ChatStreamEvent.Delta -> {
+                when (event.delta) {
+                    is ChatStreamDelta.TextDelta -> {
+                        val firstToken = if (state.firstTokenMs == null && event.accumulatedText.isNotBlank()) {
+                            elapsedMs.coerceAtLeast(0L)
+                        } else {
+                            state.firstTokenMs
+                        }
+                        state.copy(
+                            accumulatedText = event.accumulatedText,
+                            firstTokenMs = firstToken,
+                        )
+                    }
+                }
             }
             is ChatStreamEvent.Completed -> {
                 state.copy(

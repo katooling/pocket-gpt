@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -27,7 +28,10 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.InteractionContentPart
+import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import java.io.File
 import java.io.FileInputStream
@@ -256,6 +260,42 @@ class MainActivityUiSmokeTest {
         }
     }
 
+    @Test
+    fun gpuToggleAndModelActivationStressDoesNotCrash() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val gpuToggleLabel = context.getString(R.string.ui_gpu_acceleration_toggle)
+        val openModelSetupLabel = context.getString(R.string.ui_open_model_setup)
+        val setActiveLabel = context.getString(R.string.ui_model_activate_version)
+        val refreshRuntimeLabel = context.getString(R.string.ui_refresh_runtime_checks)
+        val closeLabel = context.getString(R.string.ui_close)
+
+        composeRule.unlockAdvancedControls()
+        composeRule.onNodeWithTag("advanced_sheet_button").performClick()
+        composeRule.onNodeWithText("Advanced controls").assertIsDisplayed()
+        repeat(3) {
+            composeRule.onNodeWithText(gpuToggleLabel).performClick()
+            composeRule.onNodeWithText(gpuToggleLabel).performClick()
+        }
+        composeRule.onNodeWithText(openModelSetupLabel).performClick()
+        composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
+        if (composeRule.onAllNodesWithText(setActiveLabel).fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onAllNodesWithText(setActiveLabel).onFirst().performClick()
+        }
+        if (composeRule.onAllNodesWithText(refreshRuntimeLabel).fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onAllNodesWithText(refreshRuntimeLabel).onFirst().performClick()
+        }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("Runtime: Ready").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithTag("runtime_error_banner").fetchSemanticsNodes().isNotEmpty()
+        }
+        if (composeRule.onAllNodesWithText(closeLabel).fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onAllNodesWithText(closeLabel).onFirst().performClick()
+        }
+
+        composeRule.onNodeWithTag("composer_input").assertIsDisplayed()
+        composeRule.onNodeWithTag("send_button").assertIsDisplayed()
+    }
+
     private fun AndroidComposeTestRule<*, *>.waitForText(
         text: String,
         timeoutMillis: Long = 5_000,
@@ -461,6 +501,32 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
         )
     }
 
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+        val latestUserText = request.messages
+            .asReversed()
+            .firstOrNull { message -> message.role == InteractionRole.USER }
+            ?.parts
+            ?.joinToString(separator = "\n") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                }
+            }
+            .orEmpty()
+        return streamUserMessage(
+            StreamUserMessageRequest(
+                sessionId = request.sessionId,
+                userText = latestUserText,
+                taskType = request.taskType,
+                deviceState = request.deviceState,
+                maxTokens = request.maxTokens,
+                requestTimeoutMs = request.requestTimeoutMs,
+                requestId = request.requestId,
+                performanceConfig = request.performanceConfig,
+                residencyPolicy = request.residencyPolicy,
+            ),
+        )
+    }
+
     override fun runTool(toolName: String, jsonArgs: String): String {
         if (toolName == "reminder_create" && jsonArgs.contains("fail")) {
             throw IllegalStateException("Forced tool failure for screenshot validation.")
@@ -483,6 +549,8 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
     override fun getRoutingMode(): RoutingMode = mode
 
     override fun runStartupChecks(): List<String> = emptyList()
+
+    override fun supportsGpuOffload(): Boolean = true
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = true
 

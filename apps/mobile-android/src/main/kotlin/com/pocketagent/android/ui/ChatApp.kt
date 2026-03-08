@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui
 
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -78,6 +79,8 @@ fun PocketAgentApp(
     var modelSheetOpen by remember { mutableStateOf(false) }
     var selectedModelIdForImport by remember { mutableStateOf<String?>(null) }
     var pendingGetReadyActivation by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var lastDownloadTransitionRefreshKey by remember { mutableStateOf<String?>(null) }
+    var readinessRefreshSequence by remember { mutableStateOf(0L) }
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
     val defaultGetReadyModelId = remember { resolveDefaultGetReadyModelId(isDebugBuild = BuildConfig.DEBUG) }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -137,6 +140,8 @@ fun PocketAgentApp(
             transitioned?.status == DownloadTaskStatus.COMPLETED ||
             transitioned?.status == DownloadTaskStatus.INSTALLED_INACTIVE
         ) {
+            var refreshDetail = transitionFeedback
+            var refreshKey = transitioned.taskId + ":" + transitioned.status.name
             val pendingActivation = pendingGetReadyActivation
             if (
                 pendingActivation != null &&
@@ -148,17 +153,42 @@ fun PocketAgentApp(
                     version = transitioned.version,
                 )
                 if (activated) {
-                    provisioningViewModel.setStatusMessage(
-                        context.getString(
-                            R.string.ui_model_version_activated,
-                            transitioned.modelId,
-                            transitioned.version,
-                        ),
+                    val activationMessage = context.getString(
+                        R.string.ui_model_version_activated,
+                        transitioned.modelId,
+                        transitioned.version,
                     )
+                    provisioningViewModel.setStatusMessage(
+                        activationMessage,
+                    )
+                    refreshDetail = activationMessage
+                    refreshKey += ":activated"
+                    logProvisioningTransition(
+                        phase = "download_activation",
+                        eventId = transitioned.taskId,
+                        detail = "${transitioned.modelId}@${transitioned.version}",
+                    )
+                } else {
+                    refreshKey += ":activation_skipped"
                 }
                 pendingGetReadyActivation = null
             }
-            viewModel.refreshRuntimeReadiness(statusDetailOverride = transitionFeedback)
+            if (lastDownloadTransitionRefreshKey != refreshKey) {
+                readinessRefreshSequence += 1L
+                logProvisioningTransition(
+                    phase = "readiness_refresh",
+                    eventId = "refresh-${readinessRefreshSequence}",
+                    detail = "source=download_transition;task=${transitioned.taskId};status=${transitioned.status.name}",
+                )
+                viewModel.refreshRuntimeReadiness(statusDetailOverride = refreshDetail)
+                lastDownloadTransitionRefreshKey = refreshKey
+            } else {
+                logProvisioningTransition(
+                    phase = "readiness_refresh_coalesced",
+                    eventId = "refresh-${readinessRefreshSequence}",
+                    detail = "task=${transitioned.taskId};status=${transitioned.status.name}",
+                )
+            }
         }
         if (transitioned?.status == DownloadTaskStatus.FAILED && pendingGetReadyActivation != null) {
             pendingGetReadyActivation = null
@@ -416,6 +446,12 @@ fun PocketAgentApp(
                 onActivateVersion = { modelId, version ->
                     val activated = provisioningViewModel.setActiveVersion(modelId, version)
                     if (activated) {
+                        readinessRefreshSequence += 1L
+                        logProvisioningTransition(
+                            phase = "manual_activation",
+                            eventId = "refresh-${readinessRefreshSequence}",
+                            detail = "$modelId@$version",
+                        )
                         viewModel.refreshRuntimeReadiness(
                             statusDetailOverride = context.getString(
                                 R.string.ui_model_version_activated,
@@ -573,6 +609,16 @@ private fun DownloadTaskState.provisioningFeedback(context: android.content.Cont
             }
         }
         else -> null
+    }
+}
+
+private fun logProvisioningTransition(
+    phase: String,
+    eventId: String,
+    detail: String,
+) {
+    runCatching {
+        Log.i("PocketAgentApp", "MODEL_TRANSITION|phase=$phase|event_id=$eventId|detail=$detail")
     }
 }
 

@@ -67,7 +67,7 @@ class ChatStartupFlow(
                 runtimeBackend = runtimeBackend,
                 startupProbeState = StartupProbeState.RUNNING,
                 modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                modelStatusDetail = "Warming model and running startup checks...",
+                modelStatusDetail = STARTUP_PROBE_RUNNING_DETAIL,
             ).clearError()
         } else {
             RuntimeUiState(
@@ -142,7 +142,7 @@ class ChatStartupFlow(
             runtime = state.runtime.copy(
                 startupProbeState = StartupProbeState.RUNNING,
                 modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                modelStatusDetail = "Warming model and running startup checks...",
+                modelStatusDetail = STARTUP_PROBE_RUNNING_DETAIL,
             ).clearError(),
         )
     }
@@ -231,6 +231,7 @@ class ChatStartupFlow(
 
     private companion object {
         private const val TELEMETRY_EVENT_GET_READY_COMPLETED = "get_ready_completed"
+        private const val STARTUP_PROBE_RUNNING_DETAIL = "Running startup checks..."
         private const val MISSING_NATIVE_RUNTIME_BUILD_CHECK =
             "Build is missing native runtime library (libpocket_llama.so). " +
                 "Install an app build that packages native runtime."

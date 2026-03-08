@@ -169,6 +169,32 @@ private class RecordingMvpRuntimeFacade(
         )
     }
 
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+        val latestUserText = request.messages
+            .asReversed()
+            .firstOrNull { message -> message.role == InteractionRole.USER }
+            ?.parts
+            ?.joinToString(separator = "\n") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                }
+            }
+            .orEmpty()
+        return streamUserMessage(
+            StreamUserMessageRequest(
+                sessionId = request.sessionId,
+                userText = latestUserText,
+                taskType = request.taskType,
+                deviceState = request.deviceState,
+                maxTokens = request.maxTokens,
+                requestTimeoutMs = request.requestTimeoutMs,
+                requestId = request.requestId,
+                performanceConfig = request.performanceConfig,
+                residencyPolicy = request.residencyPolicy,
+            ),
+        )
+    }
+
     override fun cancelGeneration(sessionId: SessionId): Boolean = true
 
     override fun cancelGenerationByRequest(requestId: String): Boolean = true

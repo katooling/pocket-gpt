@@ -281,6 +281,7 @@ internal object PersistedChatStateCodec {
                                 put("id", JsonPrimitive(toolCall.id))
                                 put("name", JsonPrimitive(toolCall.name))
                                 put("argumentsJson", JsonPrimitive(toolCall.argumentsJson))
+                                put("status", JsonPrimitive(toolCall.status.name))
                             },
                         )
                     }
@@ -315,7 +316,13 @@ internal object PersistedChatStateCodec {
             val id = call.stringOrNull("id") ?: return@mapNotNull null
             val name = call.stringOrNull("name") ?: return@mapNotNull null
             val args = call.stringOrDefault("argumentsJson", "{}")
-            PersistedToolCall(id = id, name = name, argumentsJson = args)
+            val status = call.stringOrDefault("status", PersistedToolCallStatus.PENDING.name)
+            PersistedToolCall(
+                id = id,
+                name = name,
+                argumentsJson = args,
+                status = parseToolCallStatus(status),
+            )
         } ?: emptyList()
         val metadata = encoded["metadata"]?.asObjectOrNull()?.entries?.associate { entry ->
             val value = runCatching { entry.value.jsonPrimitive.content }.getOrDefault("")
@@ -376,6 +383,11 @@ internal object PersistedChatStateCodec {
             .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_FIRST_SESSION_STAGE:$raw") }
             .name
     }
+}
+
+private fun parseToolCallStatus(raw: String): PersistedToolCallStatus {
+    return runCatching { PersistedToolCallStatus.valueOf(raw.trim().uppercase()) }
+        .getOrElse { PersistedToolCallStatus.PENDING }
 }
 
 private fun JsonElement.asObjectOrNull(): JsonObject? = this as? JsonObject

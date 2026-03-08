@@ -2,6 +2,7 @@ package com.pocketagent.android
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
@@ -25,8 +26,11 @@ import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 object AppRuntimeDependencies {
     private val lock = Any()
@@ -197,59 +201,74 @@ object AppRuntimeDependencies {
     }
 }
 
-private class HotSwappableRuntimeFacade(
+internal class HotSwappableRuntimeFacade(
     initial: MvpRuntimeFacade,
 ) : MvpRuntimeFacade {
-    @Volatile
+    private val lock = ReentrantReadWriteLock()
     private var delegate: MvpRuntimeFacade = initial
+    private var replacementCounter: Long = 0L
 
     fun replace(newDelegate: MvpRuntimeFacade) {
-        delegate = newDelegate
+        lock.write {
+            delegate = newDelegate
+            replacementCounter += 1L
+            safeLogInfo("RUNTIME_SWAP|phase=replaced|counter=$replacementCounter")
+        }
     }
 
-    override fun createSession(): SessionId = delegate.createSession()
+    override fun createSession(): SessionId = withDelegate { it.createSession() }
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
-        return delegate.streamUserMessage(request)
+        return withDelegate { it.streamUserMessage(request) }
     }
 
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
-        return delegate.streamChat(request)
+        return withDelegate { it.streamChat(request) }
     }
 
-    override fun cancelGeneration(sessionId: SessionId): Boolean = delegate.cancelGeneration(sessionId)
+    override fun cancelGeneration(sessionId: SessionId): Boolean = withDelegate { it.cancelGeneration(sessionId) }
 
-    override fun cancelGenerationByRequest(requestId: String): Boolean = delegate.cancelGenerationByRequest(requestId)
+    override fun cancelGenerationByRequest(requestId: String): Boolean = withDelegate { it.cancelGenerationByRequest(requestId) }
 
-    override fun runTool(toolName: String, jsonArgs: String): String = delegate.runTool(toolName, jsonArgs)
+    override fun runTool(toolName: String, jsonArgs: String): String = withDelegate { it.runTool(toolName, jsonArgs) }
 
     override fun runToolDetailed(toolName: String, jsonArgs: String): ToolExecutionResult {
-        return delegate.runToolDetailed(toolName = toolName, jsonArgs = jsonArgs)
+        return withDelegate { it.runToolDetailed(toolName = toolName, jsonArgs = jsonArgs) }
     }
 
-    override fun analyzeImage(imagePath: String, prompt: String): String = delegate.analyzeImage(imagePath, prompt)
+    override fun analyzeImage(imagePath: String, prompt: String): String = withDelegate { it.analyzeImage(imagePath, prompt) }
 
     override fun analyzeImageDetailed(imagePath: String, prompt: String): ImageAnalysisResult {
-        return delegate.analyzeImageDetailed(imagePath = imagePath, prompt = prompt)
+        return withDelegate { it.analyzeImageDetailed(imagePath = imagePath, prompt = prompt) }
     }
 
-    override fun exportDiagnostics(): String = delegate.exportDiagnostics()
+    override fun exportDiagnostics(): String = withDelegate { it.exportDiagnostics() }
 
     override fun setRoutingMode(mode: RoutingMode) {
-        delegate.setRoutingMode(mode)
+        withDelegate { it.setRoutingMode(mode) }
     }
 
-    override fun getRoutingMode(): RoutingMode = delegate.getRoutingMode()
+    override fun getRoutingMode(): RoutingMode = withDelegate { it.getRoutingMode() }
 
-    override fun runStartupChecks(): List<String> = delegate.runStartupChecks()
+    override fun runStartupChecks(): List<String> = withDelegate { it.runStartupChecks() }
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
-        delegate.restoreSession(sessionId, turns)
+        withDelegate { it.restoreSession(sessionId, turns) }
     }
 
-    override fun deleteSession(sessionId: SessionId): Boolean = delegate.deleteSession(sessionId)
+    override fun deleteSession(sessionId: SessionId): Boolean = withDelegate { it.deleteSession(sessionId) }
 
-    override fun runtimeBackend(): String? = delegate.runtimeBackend()
+    override fun runtimeBackend(): String? = withDelegate { it.runtimeBackend() }
 
-    override fun supportsGpuOffload(): Boolean = delegate.supportsGpuOffload()
+    override fun supportsGpuOffload(): Boolean = withDelegate { it.supportsGpuOffload() }
+
+    private inline fun <T> withDelegate(block: (MvpRuntimeFacade) -> T): T {
+        return lock.read {
+            block(delegate)
+        }
+    }
+
+    private fun safeLogInfo(message: String) {
+        runCatching { Log.i("AppRuntimeDeps", message) }
+    }
 }

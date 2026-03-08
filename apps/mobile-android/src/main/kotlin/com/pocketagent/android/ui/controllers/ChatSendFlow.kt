@@ -9,13 +9,7 @@ import com.pocketagent.runtime.ModelResidencyPolicy
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.InteractionMessage
-
-data class ToolIntent(
-    val name: String,
-    val jsonArgs: String,
-)
 
 fun interface DeviceStateProvider {
     fun current(): DeviceState
@@ -34,46 +28,7 @@ fun interface DeviceStateProvider {
 class ChatSendFlow(
     private val runtimeGenerationTimeoutMs: Long,
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
-    private val legacyToolIntentParserEnabled: Boolean = false,
 ) {
-    fun parseToolIntent(prompt: String): ToolIntent? {
-        if (!legacyToolIntentParserEnabled) {
-            return null
-        }
-        val normalized = prompt.trim()
-        val lowercase = normalized.lowercase()
-        val calcPrefix = listOf("calculate ", "calc ", "what is ")
-            .firstOrNull { lowercase.startsWith(it) }
-        if (calcPrefix != null) {
-            val expression = normalized.drop(calcPrefix.length).trim()
-            if (expression.matches(Regex("[0-9+\\-*/().\\s]{1,64}")) && expression.any { it.isDigit() }) {
-                return ToolIntent(name = "calculator", jsonArgs = """{"expression":"$expression"}""")
-            }
-        }
-        if (lowercase == "time" || lowercase == "date" || lowercase.contains("what time")) {
-            return ToolIntent(name = "date_time", jsonArgs = "{}")
-        }
-        if (lowercase.startsWith("search ")) {
-            val query = normalized.drop("search ".length).trim()
-            if (query.isNotEmpty()) {
-                return ToolIntent(name = "local_search", jsonArgs = """{"query":"${escapeJson(query)}"}""")
-            }
-        }
-        if (lowercase.startsWith("find notes ")) {
-            val query = normalized.drop("find notes ".length).trim()
-            if (query.isNotEmpty()) {
-                return ToolIntent(name = "notes_lookup", jsonArgs = """{"query":"${escapeJson(query)}"}""")
-            }
-        }
-        if (lowercase.startsWith("remind me to ")) {
-            val title = normalized.drop("remind me to ".length).trim()
-            if (title.isNotEmpty()) {
-                return ToolIntent(name = "reminder_create", jsonArgs = """{"title":"${escapeJson(title)}"}""")
-            }
-        }
-        return null
-    }
-
     fun isRuntimeReadyForSend(runtime: RuntimeUiState): Boolean {
         return runtime.startupProbeState == StartupProbeState.READY &&
             runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
@@ -123,36 +78,6 @@ class ChatSendFlow(
                 warmupOnStartup = true,
             ),
         )
-    }
-
-    fun buildStreamRequest(
-        sessionId: String,
-        requestId: String,
-        prompt: String,
-        performanceConfig: PerformanceRuntimeConfig,
-        requestTimeoutMs: Long,
-    ): StreamUserMessageRequest {
-        return StreamUserMessageRequest(
-            sessionId = SessionId(sessionId),
-            requestId = requestId,
-            userText = prompt,
-            taskType = resolveTaskType(prompt),
-            maxTokens = resolveMaxTokens(prompt, performanceConfig),
-            deviceState = deviceStateProvider.current(),
-            requestTimeoutMs = requestTimeoutMs,
-            performanceConfig = performanceConfig,
-            residencyPolicy = ModelResidencyPolicy(
-                keepLoadedWhileAppForeground = true,
-                idleUnloadTtlMs = IDLE_MODEL_UNLOAD_TTL_MS,
-                warmupOnStartup = true,
-            ),
-        )
-    }
-
-    private fun escapeJson(value: String): String {
-        return value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
     }
 
     private fun resolveTaskType(prompt: String): String {
