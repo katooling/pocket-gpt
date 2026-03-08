@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -15,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -184,6 +186,17 @@ class MainActivityUiSmokeTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty(),
         )
+    }
+
+    @Test
+    fun modelSetupSheetCanScrollToBottomWithoutCrash() {
+        composeRule.unlockAdvancedControls()
+        composeRule.onNodeWithTag("advanced_sheet_button").performClick()
+        composeRule.onNodeWithText("Open model setup").performClick()
+        composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
+        composeRule.onNodeWithTag("model_provisioning_list")
+            .performScrollToNode(hasText("Close"))
+        composeRule.onNodeWithText("Close").assertIsDisplayed()
     }
 
     @Test
