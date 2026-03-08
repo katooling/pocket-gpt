@@ -298,10 +298,11 @@ jobs:
       - name: Run instrumentation smoke on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 33
           arch: x86_64
           profile: pixel_6
           target: google_apis
+          emulator-boot-timeout: 1800
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
@@ -351,10 +352,11 @@ jobs:
       - name: Run first-run lifecycle E2E with bounded retry
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 33
           arch: x86_64
           profile: pixel_6
           target: google_apis
+          emulator-boot-timeout: 1800
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
