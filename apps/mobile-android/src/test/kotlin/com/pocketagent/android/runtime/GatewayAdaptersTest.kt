@@ -120,29 +120,31 @@ class GatewayAdaptersTest {
     }
 
     @Test
-    fun `mvp runtime gateway disables gpu offload when device capability is false`() {
+    fun `mvp runtime gateway treats native runtime signal as authoritative for gpu offload`() {
         val facade = RecordingMvpRuntimeFacade()
         val gateway = MvpRuntimeGateway(
             facade = facade,
             deviceGpuOffloadSupport = DeviceGpuOffloadSupport { false },
         )
 
-        assertFalse(gateway.supportsGpuOffload())
+        assertTrue(gateway.supportsGpuOffload())
     }
 
     @Test
-    fun `mvp runtime gateway reports gpu offload when facade and device both support it`() {
-        val facade = RecordingMvpRuntimeFacade()
+    fun `mvp runtime gateway disables gpu offload when native runtime reports unsupported`() {
+        val facade = RecordingMvpRuntimeFacade(gpuSupported = false)
         val gateway = MvpRuntimeGateway(
             facade = facade,
             deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
         )
 
-        assertTrue(gateway.supportsGpuOffload())
+        assertFalse(gateway.supportsGpuOffload())
     }
 }
 
-private class RecordingMvpRuntimeFacade : MvpRuntimeFacade {
+private class RecordingMvpRuntimeFacade(
+    private val gpuSupported: Boolean = true,
+) : MvpRuntimeFacade {
     private var currentRoutingMode: RoutingMode = RoutingMode.AUTO
     var lastToolName: String? = null
     var lastImagePath: String? = null
@@ -201,7 +203,7 @@ private class RecordingMvpRuntimeFacade : MvpRuntimeFacade {
 
     override fun runtimeBackend(): String = "NATIVE_JNI"
 
-    override fun supportsGpuOffload(): Boolean = true
+    override fun supportsGpuOffload(): Boolean = gpuSupported
 }
 
 private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAccess {

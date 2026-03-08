@@ -105,6 +105,12 @@ class MvpRuntimeGateway(
     override fun runtimeBackend(): String? = facade.runtimeBackend()
 
     override fun supportsGpuOffload(): Boolean {
-        return deviceGpuOffloadSupport.isSupported() && facade.supportsGpuOffload()
+        val runtimeSupported = facade.supportsGpuOffload()
+        if (!runtimeSupported) {
+            return false
+        }
+        // Device feature probing is advisory only because it can false-negative on some OEM builds.
+        deviceGpuOffloadSupport.isSupported()
+        return true
     }
 }
