@@ -7,6 +7,7 @@ APP_ID="com.pocketagent.android"
 APP_TEST_ID="com.pocketagent.android.test"
 RISK_REASON="${1:-unknown}"
 ATTEMPT_TIMEOUT_SEC="${LIFECYCLE_E2E_ATTEMPT_TIMEOUT_SEC:-1200}"
+ADB_TIMEOUT_SEC="${LIFECYCLE_E2E_ADB_TIMEOUT_SEC:-120}"
 
 mkdir -p "${OUT_DIR}"
 
@@ -22,7 +23,10 @@ if [[ -z "${DEVICE_SERIAL}" ]]; then
   exit 1
 fi
 
-adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null
+if ! timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null; then
+  echo "Failed to install APK on ${DEVICE_SERIAL} within ${ADB_TIMEOUT_SEC}s." >&2
+  exit 1
+fi
 
 run_attempt() {
   local attempt="$1"
@@ -50,10 +54,13 @@ echo "::warning::First lifecycle E2E attempt failed; retrying once after clean-s
 printf "decision=%s\nreason=%s\nfirst_attempt_failed=%s\n" \
   "run" "${RISK_REASON}" "true" > "${OUT_DIR}/retry-summary.txt"
 
-adb -s "${DEVICE_SERIAL}" shell pm clear "${APP_ID}" >/dev/null || true
-adb -s "${DEVICE_SERIAL}" uninstall "${APP_ID}" >/dev/null || true
-adb -s "${DEVICE_SERIAL}" uninstall "${APP_TEST_ID}" >/dev/null || true
-adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null
+timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" shell pm clear "${APP_ID}" >/dev/null || true
+timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" uninstall "${APP_ID}" >/dev/null || true
+timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" uninstall "${APP_TEST_ID}" >/dev/null || true
+if ! timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null; then
+  echo "Failed to reinstall APK on ${DEVICE_SERIAL} within ${ADB_TIMEOUT_SEC}s." >&2
+  exit 1
+fi
 
 if run_attempt 2; then
   echo "final_attempt=2" >> "${OUT_DIR}/retry-summary.txt"
