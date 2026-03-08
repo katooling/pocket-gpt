@@ -4,7 +4,7 @@ import json
 import os
 import re
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.devctl.subprocess_utils import DevctlError, REPO_ROOT, run_subprocess
@@ -17,14 +17,13 @@ except ModuleNotFoundError:  # pragma: no cover - dependency guard is handled at
 CANONICAL_DOCS = [
     "scripts/dev/README.md",
     "docs/testing/test-strategy.md",
-    "docs/testing/android-dx-and-test-playbook.md",
+    "docs/testing/runbooks.md",
 ]
 
 NON_CANONICAL_DOCS = [
     "README.md",
     "docs/README.md",
     "docs/operations/README.md",
-    "docs/testing/just-cli-android-validation-plan.md",
 ]
 
 PR_REQUIRED_PATTERNS: list[tuple[str, str]] = [
@@ -45,6 +44,10 @@ PR_REQUIRED_PATTERNS: list[tuple[str, str]] = [
         "docs-health checkbox must be checked",
     ),
     (
+        r"- \[x\] I ran `python3 tools/devctl/main\.py governance docs-accuracy` and reviewed `build/devctl/docs-drift-report\.json`\.",
+        "docs-accuracy checkbox must be checked",
+    ),
+    (
         r"- \[x\] For UI-touching changes, I ran `python3 tools/devctl/main\.py lane screenshot-pack` and manually reviewed screenshots \(or documented why not needed\)\.",
         "screenshot workflow checkbox must be checked",
     ),
@@ -59,33 +62,83 @@ RUN_PATH_REGEX = r"scripts/benchmarks/runs/[^\s)`\"]+"
 MARKDOWN_LINK_REGEX = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 STATUS_LINE_REGEX = re.compile(r"^Status:\s*", re.MULTILINE)
 
-DOCS_HEALTH_REQUIRED_INDEX_MARKERS: dict[str, tuple[str, ...]] = {
-    "docs/README.md": ("start-here/new-joiner.md", "start-here/resource-map.md"),
-    "docs/operations/README.md": ("execution-board.md", "evidence/index.md", "tickets/"),
-    "docs/ux/README.md": ("implemented-behavior-reference.md", "model-management-flow.md"),
-}
+DOCS_GOVERNANCE_CONFIG_PATH = Path("config/devctl/docs-governance.json")
+DOCS_ACCURACY_MANIFEST_PATH = Path("docs/governance/docs-accuracy-manifest.json")
+DOCS_DRIFT_REPORT_PATH = Path("build/devctl/docs-drift-report.json")
+DOCS_DRIFT_REPORT_SCHEMA = "docs-drift-report-v1"
+DOCS_ACCURACY_MANIFEST_SCHEMA = "docs-accuracy-manifest-v1"
 
-DOCS_HEALTH_ALLOWED_EVIDENCE_WPS = {"wp-09", "wp-12", "wp-13"}
-DOCS_HEALTH_SUMMARY_REQUIRED_WPS = ("WP-01", "WP-02", "WP-03", "WP-04", "WP-05", "WP-06", "WP-07", "WP-08", "WP-11")
-DOCS_HEALTH_RETAINED_WP12_NOTES = {
-    "2026-03-04-eng-12-model-distribution-implementation.md",
-    "2026-03-04-eng-13-native-runtime-proof.md",
-    "2026-03-04-eng-17-network-policy-wiring.md",
-    "2026-03-04-prod-eng-12-model-distribution-decision.md",
-    "2026-03-04-qa-wp12-closeout.md",
-    "2026-03-05-eng-13-native-runtime-rerun.md",
-    "2026-03-05-qa-wp12-closeout-rerun.md",
+DEFAULT_DOCS_GOVERNANCE_CONFIG: dict[str, object] = {
+    "required_index_markers": {
+        "docs/README.md": [
+            "start-here/new-joiner.md",
+            "start-here/resource-map.md",
+            "start-here/source-of-truth-matrix.md",
+            "start-here/documentation-drift-register.md",
+        ],
+        "docs/operations/README.md": ["execution-board.md", "evidence/index.md", "tickets/"],
+        "docs/ux/README.md": ["implemented-behavior-reference.md", "model-management-flow.md"],
+        "docs/testing/README.md": ["test-strategy.md", "runbooks.md"],
+    },
+    "evidence_retention": {
+        "allowed_wp_dirs": ["wp-09", "wp-12", "wp-13"],
+        "summary_required_labels": ["WP-01", "WP-02", "WP-03", "WP-04", "WP-05", "WP-06", "WP-07", "WP-08", "WP-11"],
+        "retained_notes": {
+            "wp-12": [
+                "2026-03-04-eng-12-model-distribution-implementation.md",
+                "2026-03-04-eng-13-native-runtime-proof.md",
+                "2026-03-04-eng-17-network-policy-wiring.md",
+                "2026-03-04-prod-eng-12-model-distribution-decision.md",
+                "2026-03-04-qa-wp12-closeout.md",
+                "2026-03-05-eng-13-native-runtime-rerun.md",
+                "2026-03-05-qa-wp12-closeout-rerun.md",
+            ]
+        },
+    },
+    "screenshot_inventory": {
+        "inventory_path": "tests/ui-screenshots/inventory.yaml",
+        "inventory_schema": "ui-screenshot-inventory-v1",
+        "reference_dir": "tests/ui-screenshots/reference/sm-a515f-android13",
+        "report_glob": "scripts/benchmarks/runs/*/*/screenshot-pack/*/inventory-report.json",
+        "report_schema": "ui-screenshot-inventory-report-v2",
+        "report_max_age_days": 30,
+        "required_report_fields": [
+            "generated_at_utc",
+            "run_id",
+            "device_serial",
+            "missing_ids",
+            "entries",
+        ],
+    },
 }
-
-SCREENSHOT_INVENTORY_SCHEMA = "ui-screenshot-inventory-v1"
-SCREENSHOT_INVENTORY_PATH = Path("tests/ui-screenshots/inventory.yaml")
-SCREENSHOT_REFERENCE_DIR = Path("tests/ui-screenshots/reference/sm-a515f-android13")
 
 
 def _read_file(path: Path) -> str:
     if not path.exists() or not path.is_file():
         raise DevctlError("CONFIG_ERROR", f"File not found: {path}")
     return path.read_text(encoding="utf-8")
+
+
+def _load_json_file(path: Path) -> dict[str, object]:
+    if not path.exists():
+        raise DevctlError("CONFIG_ERROR", f"Missing JSON config: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise DevctlError("CONFIG_ERROR", f"Failed to parse JSON config {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise DevctlError("CONFIG_ERROR", f"Invalid JSON config root object: {path}")
+    return payload
+
+
+def _load_docs_governance_config(repo_root: Path) -> dict[str, object]:
+    path = repo_root / DOCS_GOVERNANCE_CONFIG_PATH
+    if not path.exists():
+        return DEFAULT_DOCS_GOVERNANCE_CONFIG
+    payload = _load_json_file(path)
+    merged = dict(DEFAULT_DOCS_GOVERNANCE_CONFIG)
+    merged.update(payload)
+    return merged
 
 
 def docs_drift_check(repo_root: Path = REPO_ROOT) -> None:
@@ -97,7 +150,7 @@ def docs_drift_check(repo_root: Path = REPO_ROOT) -> None:
             continue
 
         text = path.read_text(encoding="utf-8")
-        if "Source of truth" not in text:
+        if "Source of truth" not in text and "Source Of Truth" not in text:
             violations.append(f"Missing source-of-truth pointer in {rel}")
 
         if "```bash" in text and re.search(
@@ -111,7 +164,7 @@ def docs_drift_check(repo_root: Path = REPO_ROOT) -> None:
             violations.append(f"Missing canonical file: {rel}")
 
     if violations:
-        raise DevctlError("CONFIG_ERROR", "\n".join(violations))
+        raise DevctlError("CONFIG_ERROR", "\n".join(sorted(violations)))
 
     print("Docs drift check passed.")
 
@@ -209,13 +262,22 @@ def _docs_health_status_policy(repo_root: Path) -> list[str]:
     return violations
 
 
-def _docs_health_required_indexes(repo_root: Path) -> list[str]:
+def _docs_health_required_indexes(repo_root: Path, config: dict[str, object]) -> list[str]:
+    required_index_markers = config.get("required_index_markers")
+    if not isinstance(required_index_markers, dict):
+        return ["Invalid docs governance config: required_index_markers must be an object."]
+
     violations: list[str] = []
-    for rel_path, markers in DOCS_HEALTH_REQUIRED_INDEX_MARKERS.items():
-        path = repo_root / rel_path
+    for rel_path, markers in required_index_markers.items():
+        path = repo_root / str(rel_path)
         if not path.exists():
             violations.append(f"Missing required index file: {rel_path}")
             continue
+
+        if not isinstance(markers, list) or not all(isinstance(item, str) for item in markers):
+            violations.append(f"Invalid marker list for required index file: {rel_path}")
+            continue
+
         text = path.read_text(encoding="utf-8")
         for marker in markers:
             if marker not in text:
@@ -223,29 +285,59 @@ def _docs_health_required_indexes(repo_root: Path) -> list[str]:
     return violations
 
 
-def _docs_health_evidence_retention(repo_root: Path) -> list[str]:
+def _docs_health_evidence_retention(repo_root: Path, config: dict[str, object]) -> list[str]:
     evidence_root = repo_root / "docs/operations/evidence"
     violations: list[str] = []
     if not evidence_root.exists():
         return ["Missing docs/operations/evidence directory."]
+
+    retention = config.get("evidence_retention")
+    if not isinstance(retention, dict):
+        return ["Invalid docs governance config: evidence_retention must be an object."]
+
+    allowed_wp_dirs_raw = retention.get("allowed_wp_dirs", [])
+    summary_required_labels_raw = retention.get("summary_required_labels", [])
+    retained_notes_raw = retention.get("retained_notes", {})
+
+    if not isinstance(allowed_wp_dirs_raw, list) or not all(isinstance(item, str) for item in allowed_wp_dirs_raw):
+        violations.append("Invalid evidence_retention.allowed_wp_dirs in docs governance config.")
+        allowed_wp_dirs: set[str] = set()
+    else:
+        allowed_wp_dirs = set(allowed_wp_dirs_raw)
+
+    if not isinstance(summary_required_labels_raw, list) or not all(isinstance(item, str) for item in summary_required_labels_raw):
+        violations.append("Invalid evidence_retention.summary_required_labels in docs governance config.")
+        summary_required_labels: list[str] = []
+    else:
+        summary_required_labels = list(summary_required_labels_raw)
+
+    retained_notes: dict[str, set[str]] = {}
+    if isinstance(retained_notes_raw, dict):
+        for wp, notes in retained_notes_raw.items():
+            if isinstance(wp, str) and isinstance(notes, list) and all(isinstance(note, str) for note in notes):
+                retained_notes[wp] = set(notes)
+            else:
+                violations.append("Invalid evidence_retention.retained_notes entry in docs governance config.")
+    else:
+        violations.append("Invalid evidence_retention.retained_notes in docs governance config.")
 
     index_path = evidence_root / "index.md"
     if not index_path.exists():
         violations.append("Missing evidence summary index: docs/operations/evidence/index.md")
     else:
         index_text = index_path.read_text(encoding="utf-8")
-        for wp_label in DOCS_HEALTH_SUMMARY_REQUIRED_WPS:
-            if wp_label not in index_text:
-                violations.append(f"Evidence index missing summary for {wp_label}")
+        for label in summary_required_labels:
+            if label not in index_text:
+                violations.append(f"Evidence index missing summary for {label}")
 
     wp_dirs = [item for item in evidence_root.iterdir() if item.is_dir() and item.name.startswith("wp-")]
     for wp_dir in sorted(wp_dirs):
         markdown_files = sorted(wp_dir.glob("*.md"))
-        if wp_dir.name not in DOCS_HEALTH_ALLOWED_EVIDENCE_WPS and markdown_files:
+        if wp_dir.name not in allowed_wp_dirs and markdown_files:
             rel = wp_dir.relative_to(repo_root).as_posix()
             violations.append(f"Historical evidence markdown should be pruned from {rel}")
 
-    for wp in DOCS_HEALTH_ALLOWED_EVIDENCE_WPS:
+    for wp in sorted(allowed_wp_dirs):
         wp_dir = evidence_root / wp
         if not wp_dir.exists():
             violations.append(f"Missing active evidence directory: docs/operations/evidence/{wp}")
@@ -253,25 +345,26 @@ def _docs_health_evidence_retention(repo_root: Path) -> list[str]:
         if not list(wp_dir.glob("*.md")):
             violations.append(f"Active evidence directory has no markdown notes: docs/operations/evidence/{wp}")
 
-    wp12_dir = evidence_root / "wp-12"
-    if wp12_dir.exists():
-        wp12_notes = {path.name for path in wp12_dir.glob("*.md")}
-        missing = sorted(DOCS_HEALTH_RETAINED_WP12_NOTES - wp12_notes)
-        extra = sorted(wp12_notes - DOCS_HEALTH_RETAINED_WP12_NOTES)
-        for name in missing:
-            violations.append(f"Missing required retained WP-12 evidence note: docs/operations/evidence/wp-12/{name}")
-        for name in extra:
-            violations.append(f"Unexpected WP-12 evidence note after prune: docs/operations/evidence/wp-12/{name}")
+    for wp, expected_notes in retained_notes.items():
+        wp_dir = evidence_root / wp
+        if not wp_dir.exists():
+            violations.append(f"Missing retained evidence directory from policy: docs/operations/evidence/{wp}")
+            continue
+        actual_notes = {path.name for path in wp_dir.glob("*.md")}
+        missing = sorted(expected_notes - actual_notes)
+        for note in missing:
+            violations.append(f"Missing required retained evidence note: docs/operations/evidence/{wp}/{note}")
 
     return violations
 
 
 def docs_health_check(repo_root: Path = REPO_ROOT) -> None:
+    config = _load_docs_governance_config(repo_root)
     violations: list[str] = []
     violations.extend(_docs_health_broken_links(repo_root))
     violations.extend(_docs_health_status_policy(repo_root))
-    violations.extend(_docs_health_required_indexes(repo_root))
-    violations.extend(_docs_health_evidence_retention(repo_root))
+    violations.extend(_docs_health_required_indexes(repo_root, config))
+    violations.extend(_docs_health_evidence_retention(repo_root, config))
 
     if violations:
         raise DevctlError("CONFIG_ERROR", "\n".join(sorted(violations)))
@@ -279,13 +372,23 @@ def docs_health_check(repo_root: Path = REPO_ROOT) -> None:
     print("Docs health check passed.")
 
 
-def _load_screenshot_inventory_entries(repo_root: Path) -> list[tuple[str, str]]:
+def _load_screenshot_inventory_entries(repo_root: Path, config: dict[str, object]) -> tuple[list[tuple[str, str]], dict[str, object]]:
     if yaml is None:
         raise DevctlError(
             "ENVIRONMENT_ERROR",
             "PyYAML is required. Install dependencies with: python3 -m pip install -r tools/devctl/requirements.txt",
         )
-    inventory_path = repo_root / SCREENSHOT_INVENTORY_PATH
+
+    screenshot_cfg = config.get("screenshot_inventory")
+    if not isinstance(screenshot_cfg, dict):
+        raise DevctlError("CONFIG_ERROR", "Invalid docs governance config: screenshot_inventory must be an object.")
+
+    inventory_path_raw = screenshot_cfg.get("inventory_path")
+    inventory_schema = screenshot_cfg.get("inventory_schema")
+    if not isinstance(inventory_path_raw, str) or not isinstance(inventory_schema, str):
+        raise DevctlError("CONFIG_ERROR", "Invalid screenshot inventory config: inventory_path/inventory_schema are required strings.")
+
+    inventory_path = repo_root / Path(inventory_path_raw)
     if not inventory_path.exists():
         raise DevctlError("CONFIG_ERROR", f"Missing screenshot inventory file: {inventory_path}")
 
@@ -295,12 +398,12 @@ def _load_screenshot_inventory_entries(repo_root: Path) -> list[tuple[str, str]]
         raise DevctlError("CONFIG_ERROR", f"Failed to parse screenshot inventory {inventory_path}: {exc}") from exc
     if not isinstance(data, dict):
         raise DevctlError("CONFIG_ERROR", f"Invalid screenshot inventory root in {inventory_path}; expected object.")
-    if data.get("schema") != SCREENSHOT_INVENTORY_SCHEMA:
+    if data.get("schema") != inventory_schema:
         raise DevctlError(
             "CONFIG_ERROR",
-            f"Unsupported screenshot inventory schema in {inventory_path}. "
-            f"Expected '{SCREENSHOT_INVENTORY_SCHEMA}'.",
+            f"Unsupported screenshot inventory schema in {inventory_path}. Expected '{inventory_schema}'.",
         )
+
     screenshots = data.get("screenshots")
     if not isinstance(screenshots, list) or not screenshots:
         raise DevctlError("CONFIG_ERROR", f"Screenshot inventory must define a non-empty screenshots list: {inventory_path}")
@@ -333,40 +436,97 @@ def _load_screenshot_inventory_entries(repo_root: Path) -> list[tuple[str, str]]
         seen_ids.add(shot_id)
         seen_filenames.add(filename)
         entries.append((shot_id, filename))
-    return entries
+
+    return entries, screenshot_cfg
 
 
-def _latest_screenshot_inventory_report(repo_root: Path) -> Path | None:
-    reports_root = repo_root / "scripts/benchmarks/runs"
-    if not reports_root.exists():
-        return None
+def _latest_screenshot_inventory_report(repo_root: Path, report_glob: str) -> Path | None:
     reports = sorted(
-        reports_root.glob("*/*/screenshot-pack/*/inventory-report.json"),
+        repo_root.glob(report_glob),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
     return reports[0] if reports else None
 
 
+def _validate_iso8601_utc(value: str) -> bool:
+    raw = value.strip()
+    if not raw:
+        return False
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    return True
+
+
+def _payload_value_with_aliases(payload: dict[str, object], canonical: str) -> object | None:
+    alias_map: dict[str, tuple[str, ...]] = {
+        "generated_at_utc": ("generated_at_utc", "generated_at"),
+        "device_serial": ("device_serial", "serial"),
+        "run_id": ("run_id", "artifact_root"),
+        "schema": ("schema",),
+        "inventory_schema": ("inventory_schema",),
+        "inventory_digest": ("inventory_digest",),
+        "git_commit": ("git_commit",),
+        "missing_ids": ("missing_ids",),
+        "entries": ("entries",),
+    }
+    for key in alias_map.get(canonical, (canonical,)):
+        if key in payload:
+            return payload.get(key)
+    return None
+
+
 def screenshot_inventory_check(repo_root: Path = REPO_ROOT) -> None:
-    entries = _load_screenshot_inventory_entries(repo_root)
+    config = _load_docs_governance_config(repo_root)
+    entries, screenshot_cfg = _load_screenshot_inventory_entries(repo_root, config)
     violations: list[str] = []
 
-    reference_dir = repo_root / SCREENSHOT_REFERENCE_DIR
+    reference_dir_raw = screenshot_cfg.get("reference_dir")
+    report_glob = screenshot_cfg.get("report_glob")
+    report_schema = screenshot_cfg.get("report_schema")
+    report_max_age_days = screenshot_cfg.get("report_max_age_days")
+    required_report_fields = screenshot_cfg.get("required_report_fields")
+    inventory_schema = screenshot_cfg.get("inventory_schema")
+
+    if not isinstance(reference_dir_raw, str):
+        raise DevctlError("CONFIG_ERROR", "Invalid screenshot inventory config: reference_dir must be a string.")
+    if not isinstance(report_glob, str):
+        raise DevctlError("CONFIG_ERROR", "Invalid screenshot inventory config: report_glob must be a string.")
+    if not isinstance(report_schema, str):
+        raise DevctlError("CONFIG_ERROR", "Invalid screenshot inventory config: report_schema must be a string.")
+    if not isinstance(report_max_age_days, int) or report_max_age_days < 0:
+        raise DevctlError("CONFIG_ERROR", "Invalid screenshot inventory config: report_max_age_days must be a non-negative integer.")
+    if not isinstance(required_report_fields, list) or not all(isinstance(item, str) for item in required_report_fields):
+        raise DevctlError("CONFIG_ERROR", "Invalid screenshot inventory config: required_report_fields must be a string array.")
+    if not isinstance(inventory_schema, str):
+        raise DevctlError("CONFIG_ERROR", "Invalid screenshot inventory config: inventory_schema must be a string.")
+
+    reference_dir = repo_root / Path(reference_dir_raw)
     if not reference_dir.exists():
-        violations.append(f"Missing screenshot reference directory: {SCREENSHOT_REFERENCE_DIR.as_posix()}")
+        violations.append(f"Missing screenshot reference directory: {Path(reference_dir_raw).as_posix()}")
     else:
         for shot_id, filename in entries:
             if not (reference_dir / filename).exists():
-                violations.append(f"Missing screenshot reference for {shot_id}: {SCREENSHOT_REFERENCE_DIR.as_posix()}/{filename}")
+                violations.append(f"Missing screenshot reference for {shot_id}: {Path(reference_dir_raw).as_posix()}/{filename}")
         index_path = reference_dir / "index.md"
         if not index_path.exists():
-            violations.append(f"Missing screenshot reference gallery index: {SCREENSHOT_REFERENCE_DIR.as_posix()}/index.md")
+            violations.append(f"Missing screenshot reference gallery index: {Path(reference_dir_raw).as_posix()}/index.md")
 
-    latest_report_path = _latest_screenshot_inventory_report(repo_root)
+    latest_report_path = _latest_screenshot_inventory_report(repo_root, report_glob)
     if latest_report_path is None:
-        violations.append("No screenshot inventory report found under scripts/benchmarks/runs/*/*/screenshot-pack/*.")
+        violations.append(f"No screenshot inventory report found under {report_glob}.")
     else:
+        now = datetime.now(timezone.utc)
+        age_days = (now - datetime.fromtimestamp(latest_report_path.stat().st_mtime, tz=timezone.utc)).days
+        if age_days > report_max_age_days:
+            violations.append(
+                f"Latest screenshot inventory report is stale ({age_days} days old > {report_max_age_days}): {latest_report_path}"
+            )
+
         try:
             report_payload = json.loads(latest_report_path.read_text(encoding="utf-8"))
         except Exception as exc:
@@ -374,15 +534,61 @@ def screenshot_inventory_check(repo_root: Path = REPO_ROOT) -> None:
             report_payload = {}
 
         if isinstance(report_payload, dict):
-            missing_ids = report_payload.get("missing_ids")
+            for field in required_report_fields:
+                if _payload_value_with_aliases(report_payload, field) is None:
+                    violations.append(f"Latest screenshot inventory report missing required field '{field}': {latest_report_path}")
+
+            raw_schema = _payload_value_with_aliases(report_payload, "schema")
+            if raw_schema is not None and raw_schema != report_schema:
+                violations.append(
+                    f"Latest screenshot inventory report schema mismatch; expected '{report_schema}': {latest_report_path}"
+                )
+            raw_inventory_schema = _payload_value_with_aliases(report_payload, "inventory_schema")
+            if raw_inventory_schema is not None and raw_inventory_schema != inventory_schema:
+                violations.append(
+                    f"Latest screenshot inventory report inventory_schema mismatch; expected '{inventory_schema}': {latest_report_path}"
+                )
+
+            generated_at = str(_payload_value_with_aliases(report_payload, "generated_at_utc") or "").strip()
+            if not _validate_iso8601_utc(generated_at):
+                violations.append(f"Latest screenshot inventory report has invalid generated_at_utc: {latest_report_path}")
+            else:
+                parsed = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                days_old = (now - parsed).days
+                if days_old > report_max_age_days:
+                    violations.append(
+                        f"Latest screenshot inventory report generated_at_utc is stale ({days_old} days old > {report_max_age_days}): {latest_report_path}"
+                    )
+
+            git_commit = str(_payload_value_with_aliases(report_payload, "git_commit") or "").strip()
+            run_id = str(_payload_value_with_aliases(report_payload, "run_id") or "").strip()
+            device_serial = str(_payload_value_with_aliases(report_payload, "device_serial") or "").strip()
+            inventory_digest = str(_payload_value_with_aliases(report_payload, "inventory_digest") or "").strip()
+            if not run_id:
+                violations.append(f"Latest screenshot inventory report missing run_id value: {latest_report_path}")
+            if not device_serial:
+                violations.append(f"Latest screenshot inventory report missing device_serial value: {latest_report_path}")
+            if not git_commit and not str(report_payload.get("artifact_root", "")).strip():
+                violations.append(
+                    f"Latest screenshot inventory report missing provenance fields (git_commit/artifact_root): {latest_report_path}"
+                )
+            if not inventory_digest and not isinstance(report_payload.get("summary"), dict):
+                violations.append(
+                    f"Latest screenshot inventory report missing inventory identity fields (inventory_digest/summary): {latest_report_path}"
+                )
+
+            missing_ids = _payload_value_with_aliases(report_payload, "missing_ids")
             if not isinstance(missing_ids, list):
-                violations.append(f"Latest screenshot inventory report is missing list field 'missing_ids': {latest_report_path}")
+                violations.append(f"Latest screenshot inventory report field 'missing_ids' must be a list: {latest_report_path}")
             elif missing_ids:
                 violations.append(
                     "Latest screenshot inventory report has missing required IDs: "
                     f"{', '.join(str(item) for item in missing_ids)} ({latest_report_path})"
                 )
-            entry_rows = report_payload.get("entries")
+
+            entry_rows = _payload_value_with_aliases(report_payload, "entries")
             if isinstance(entry_rows, list):
                 status_by_id = {
                     str(row.get("id")): str(row.get("status"))
@@ -395,12 +601,171 @@ def screenshot_inventory_check(repo_root: Path = REPO_ROOT) -> None:
                             f"Latest screenshot report does not mark {shot_id} as PASS: {latest_report_path}"
                         )
             else:
-                violations.append(f"Latest screenshot inventory report is missing list field 'entries': {latest_report_path}")
+                violations.append(f"Latest screenshot inventory report field 'entries' must be a list: {latest_report_path}")
+        else:
+            violations.append(f"Latest screenshot inventory report root must be an object: {latest_report_path}")
 
     if violations:
         raise DevctlError("CONFIG_ERROR", "\n".join(sorted(violations)))
 
     print("Screenshot inventory check passed.")
+
+
+def _load_docs_accuracy_manifest(repo_root: Path) -> dict[str, object]:
+    manifest_path = repo_root / DOCS_ACCURACY_MANIFEST_PATH
+    payload = _load_json_file(manifest_path)
+    schema = payload.get("schema")
+    if schema != DOCS_ACCURACY_MANIFEST_SCHEMA:
+        raise DevctlError(
+            "CONFIG_ERROR",
+            f"Unsupported docs accuracy manifest schema in {manifest_path}. Expected '{DOCS_ACCURACY_MANIFEST_SCHEMA}'.",
+        )
+    features = payload.get("features")
+    if not isinstance(features, list) or not features:
+        raise DevctlError("CONFIG_ERROR", f"Docs accuracy manifest must define non-empty features array: {manifest_path}")
+    return payload
+
+
+def _glob_paths(repo_root: Path, pattern: str) -> list[Path]:
+    return sorted(path for path in repo_root.glob(pattern) if path.is_file())
+
+
+def _rule_text_match(paths: list[Path], needles: list[str]) -> tuple[bool, list[str]]:
+    unresolved: list[str] = []
+    if not paths:
+        return False, needles
+
+    contents = [path.read_text(encoding="utf-8") for path in paths]
+    for needle in needles:
+        if not any(needle in text for text in contents):
+            unresolved.append(needle)
+
+    return not unresolved, unresolved
+
+
+def _write_docs_drift_report(repo_root: Path, checks: list[dict[str, object]], violations: list[dict[str, str]]) -> Path:
+    report_path = repo_root / DOCS_DRIFT_REPORT_PATH
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": DOCS_DRIFT_REPORT_SCHEMA,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "status": "pass" if not violations else "fail",
+        "checks": checks,
+        "violations": violations,
+    }
+    report_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return report_path
+
+
+def docs_accuracy_check(repo_root: Path = REPO_ROOT) -> None:
+    manifest = _load_docs_accuracy_manifest(repo_root)
+    features = manifest.get("features")
+    assert isinstance(features, list)
+
+    violations: list[dict[str, str]] = []
+    feature_checks: list[dict[str, object]] = []
+
+    for raw_feature in features:
+        if not isinstance(raw_feature, dict):
+            raise DevctlError("CONFIG_ERROR", "Invalid docs accuracy feature entry; expected object.")
+        feature_id = str(raw_feature.get("id", "")).strip()
+        if not feature_id:
+            raise DevctlError("CONFIG_ERROR", "Invalid docs accuracy feature entry: missing id.")
+
+        feature_violations: list[dict[str, str]] = []
+
+        doc_rules = raw_feature.get("docs", [])
+        if not isinstance(doc_rules, list):
+            raise DevctlError("CONFIG_ERROR", f"Invalid docs rules for feature '{feature_id}'.")
+        for rule in doc_rules:
+            if not isinstance(rule, dict):
+                raise DevctlError("CONFIG_ERROR", f"Invalid docs rule for feature '{feature_id}'.")
+            rel_path = str(rule.get("path", "")).strip()
+            needles = rule.get("must_contain", [])
+            if not rel_path or not isinstance(needles, list) or not all(isinstance(item, str) for item in needles):
+                raise DevctlError("CONFIG_ERROR", f"Invalid docs rule shape for feature '{feature_id}'.")
+
+            target = repo_root / rel_path
+            if not target.exists():
+                feature_violations.append(
+                    {
+                        "feature_id": feature_id,
+                        "check": "doc_presence",
+                        "target": rel_path,
+                        "message": f"Missing doc file: {rel_path}",
+                    }
+                )
+                continue
+
+            text = target.read_text(encoding="utf-8")
+            for needle in needles:
+                if needle not in text:
+                    feature_violations.append(
+                        {
+                            "feature_id": feature_id,
+                            "check": "doc_marker",
+                            "target": rel_path,
+                            "message": f"Doc marker not found: '{needle}'",
+                        }
+                    )
+
+        code_rules = raw_feature.get("code", [])
+        if not isinstance(code_rules, list):
+            raise DevctlError("CONFIG_ERROR", f"Invalid code rules for feature '{feature_id}'.")
+        for rule in code_rules:
+            if not isinstance(rule, dict):
+                raise DevctlError("CONFIG_ERROR", f"Invalid code rule for feature '{feature_id}'.")
+            pattern = str(rule.get("glob", "")).strip()
+            needles = rule.get("must_contain", [])
+            if not pattern or not isinstance(needles, list) or not all(isinstance(item, str) for item in needles):
+                raise DevctlError("CONFIG_ERROR", f"Invalid code rule shape for feature '{feature_id}'.")
+
+            matched_paths = _glob_paths(repo_root, pattern)
+            if not matched_paths:
+                feature_violations.append(
+                    {
+                        "feature_id": feature_id,
+                        "check": "code_glob",
+                        "target": pattern,
+                        "message": f"Code glob matched no files: {pattern}",
+                    }
+                )
+                continue
+
+            matched, unresolved = _rule_text_match(matched_paths, needles)
+            if not matched:
+                for needle in unresolved:
+                    feature_violations.append(
+                        {
+                            "feature_id": feature_id,
+                            "check": "code_marker",
+                            "target": pattern,
+                            "message": f"Code marker not found: '{needle}'",
+                        }
+                    )
+
+        feature_checks.append(
+            {
+                "feature_id": feature_id,
+                "status": "PASS" if not feature_violations else "FAIL",
+                "violation_count": len(feature_violations),
+            }
+        )
+        violations.extend(feature_violations)
+
+    report_path = _write_docs_drift_report(
+        repo_root=repo_root,
+        checks=[{"name": "feature-doc-code", "status": "PASS" if not violations else "FAIL", "features": feature_checks}],
+        violations=violations,
+    )
+
+    if violations:
+        summary = [f"Docs accuracy check failed with {len(violations)} violation(s)."]
+        summary.extend(f"- [{row['feature_id']}] {row['check']}: {row['message']} ({row['target']})" for row in violations)
+        summary.append(f"Drift report: {report_path.relative_to(repo_root)}")
+        raise DevctlError("CONFIG_ERROR", "\n".join(summary))
+
+    print(f"Docs accuracy check passed. Drift report: {report_path.relative_to(repo_root)}")
 
 
 def evidence_check(evidence_file: str, repo_root: Path = REPO_ROOT) -> None:
@@ -565,6 +930,7 @@ def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
             "- [x] I used canonical orchestrator lanes (`python3 tools/devctl/main.py lane ...`) directly or via the `scripts/dev/*` wrappers.\n"
             "- [x] I updated docs affected by this change, or confirmed no docs changes are needed.\n"
             "- [x] I ran `python3 tools/devctl/main.py governance docs-health` and it passed.\n"
+            "- [x] I ran `python3 tools/devctl/main.py governance docs-accuracy` and reviewed `build/devctl/docs-drift-report.json`.\n"
             "- [x] For UI-touching changes, I ran `python3 tools/devctl/main.py lane screenshot-pack` and manually reviewed screenshots (or documented why not needed).\n"
             "- [x] If this is stage/work-package work, I added/updated evidence under `docs/operations/evidence/` and linked it below.\n\n"
             "Stage close: no\n\n"
@@ -592,6 +958,7 @@ def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
             "- [x] I used canonical orchestrator lanes (`python3 tools/devctl/main.py lane ...`) directly or via the `scripts/dev/*` wrappers.\n"
             "- [x] I updated docs affected by this change, or confirmed no docs changes are needed.\n"
             "- [x] I ran `python3 tools/devctl/main.py governance docs-health` and it passed.\n"
+            "- [x] I ran `python3 tools/devctl/main.py governance docs-accuracy` and reviewed `build/devctl/docs-drift-report.json`.\n"
             "- [x] For UI-touching changes, I ran `python3 tools/devctl/main.py lane screenshot-pack` and manually reviewed screenshots (or documented why not needed).\n"
             "- [x] If this is stage/work-package work, I added/updated evidence under `docs/operations/evidence/` and linked it below.\n\n"
             "Stage close: yes\n\n"

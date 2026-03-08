@@ -226,6 +226,7 @@ Wrappers remain callable, but all governance logic runs via `devctl governance`.
 ```bash
 python3 tools/devctl/main.py governance docs-drift
 python3 tools/devctl/main.py governance docs-health
+python3 tools/devctl/main.py governance docs-accuracy
 python3 tools/devctl/main.py governance screenshot-inventory-check
 python3 tools/devctl/main.py governance evidence-check docs/operations/evidence/wp-xx/YYYY-MM-DD-note.md
 python3 tools/devctl/main.py governance evidence-check-changed
@@ -233,3 +234,13 @@ python3 tools/devctl/main.py governance validate-pr-body /tmp/pr-body.md
 python3 tools/devctl/main.py governance stage-close-gate /tmp/pr-body.md
 python3 tools/devctl/main.py governance self-test
 ```
+
+## Docs Update Checklist
+
+For changes that affect user-visible behavior or runtime contracts:
+
+1. Update the canonical area owner file from `docs/start-here/source-of-truth-matrix.md`.
+2. Update `docs/start-here/documentation-drift-register.md` when a drift risk is opened or closed.
+3. Run:
+   - `python3 tools/devctl/main.py governance docs-health`
+   - `python3 tools/devctl/main.py governance docs-accuracy`

@@ -98,6 +98,9 @@ jobs:
       - name: Docs health guard
         run: python3 tools/devctl/main.py governance docs-health
 
+      - name: Docs accuracy guard
+        run: python3 tools/devctl/main.py governance docs-accuracy
+
       - name: Governance self-tests
         run: python3 tools/devctl/main.py governance self-test
 

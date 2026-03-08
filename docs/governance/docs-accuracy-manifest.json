@@ -1,0 +1,138 @@
+{
+  "schema": "docs-accuracy-manifest-v1",
+  "features": [
+    {
+      "id": "stream-v2-pipeline",
+      "description": "V2 stream contract with transcript projection and phase lifecycle",
+      "docs": [
+        {
+          "path": "docs/architecture/system-context.md",
+          "must_contain": [
+            "StreamChatRequestV2",
+            "TOKEN_STREAM",
+            "previousResponseId"
+          ]
+        },
+        {
+          "path": "docs/ux/implemented-behavior-reference.md",
+          "must_contain": [
+            "StreamChatRequestV2",
+            "CHAT_START",
+            "previousResponseId"
+          ]
+        }
+      ],
+      "code": [
+        {
+          "glob": "packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/MvpRuntimeFacade.kt",
+          "must_contain": [
+            "data class StreamChatRequestV2",
+            "enum class ChatStreamPhase",
+            "previousResponseId: String? = null"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/SendReducer.kt",
+          "must_contain": [
+            "ChatStreamPhase.CHAT_START",
+            "ChatStreamPhase.TOKEN_STREAM"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt",
+          "must_contain": [
+            "latestAssistantRequestId",
+            "buildStreamChatRequest",
+            "previousResponseId = previousResponseId"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tool-prompt-first",
+      "description": "Tool entry point is prompt-first; legacy parser is disabled by default",
+      "docs": [
+        {
+          "path": "docs/ux/implemented-behavior-reference.md",
+          "must_contain": [
+            "pre-fills composer text",
+            "legacyToolIntentParserEnabled = false"
+          ]
+        }
+      ],
+      "code": [
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ToolDialog.kt",
+          "must_contain": [
+            "onUsePrompt",
+            "calculate 4*9"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/ChatSendFlow.kt",
+          "must_contain": [
+            "legacyToolIntentParserEnabled: Boolean = false",
+            "if (!legacyToolIntentParserEnabled)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "privacy-claim-parity",
+      "description": "Privacy docs list implemented controls and explicitly mark non-implemented controls",
+      "docs": [
+        {
+          "path": "docs/security/privacy-model.md",
+          "must_contain": [
+            "User-Visible Controls (Implemented)",
+            "User-Visible Controls (Not Yet Implemented)",
+            "Do not publish these as available controls"
+          ]
+        }
+      ],
+      "code": [
+        {
+          "glob": "apps/mobile-android/src/main/res/values/strings.xml",
+          "must_contain": [
+            "ui_privacy_title",
+            "ui_privacy_item_1",
+            "ui_privacy_item_2",
+            "ui_privacy_item_3"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/SettingsSheet.kt",
+          "must_contain": [
+            "internal fun PrivacyInfoSheet"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "routing-mode-surface",
+      "description": "PRD routing list includes currently implemented routing modes",
+      "docs": [
+        {
+          "path": "docs/prd/phase-0-prd.md",
+          "must_contain": [
+            "QWEN_0_8B",
+            "QWEN_2B",
+            "SMOLLM2_360M",
+            "SMOLLM2_135M"
+          ]
+        }
+      ],
+      "code": [
+        {
+          "glob": "packages/core-domain/src/commonMain/kotlin/com/pocketagent/core/RoutingMode.kt",
+          "must_contain": [
+            "QWEN_0_8B",
+            "QWEN_2B",
+            "SMOLLM2_360M",
+            "SMOLLM2_135M"
+          ]
+        }
+      ]
+    }
+  ]
+}

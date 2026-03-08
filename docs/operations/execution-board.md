@@ -25,7 +25,7 @@ Engineering and quality excellence are mandatory.
 - Current release plan: `docs/roadmap/current-release-plan.md`
 - Active ticket specs: `docs/operations/tickets/`
 - Evidence inventory + retention: `docs/operations/evidence/index.md`
-- Command/process canon: `scripts/dev/README.md`, `docs/testing/test-strategy.md`, `docs/testing/android-dx-and-test-playbook.md`
+- Command/process canon: `scripts/dev/README.md`, `docs/testing/test-strategy.md`, `docs/testing/runbooks.md`
 
 ## Work Packages
 

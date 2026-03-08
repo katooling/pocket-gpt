@@ -1,5 +1,7 @@
 # Privacy and Security Model
 
+Last updated: 2026-03-08
+
 ## Privacy Promise
 
 PocketAgent is local-first by default:
@@ -12,7 +14,7 @@ PocketAgent is local-first by default:
 
 1. Sensitive user content: prompts, responses, notes, image text
 2. Operational metadata: latency, memory, thermal snapshots
-3. Policy state: permissions, retention choices, opt-in flags
+3. Policy/runtime state: startup checks, model readiness, offline-only policy state
 
 ## Data Flow Rules
 
@@ -31,49 +33,48 @@ PocketAgent is local-first by default:
 
 ### Controls
 
-1. Default deny network policy for assistant actions
+1. Default-deny network policy for assistant actions
 2. Strict tool schema validation and allowlisted tool set
-3. Retention policy enforcement jobs with auditable settings
-4. Privacy-safe logging (no raw prompt/response content in diagnostics by default)
+3. Local persistence boundaries with explicit file-backed runtime modules
+4. Diagnostics redaction for sensitive keys before export
 
 ## Security Controls
 
 1. Model artifact integrity checks (hash verification)
 2. Local encrypted storage where OS support is available
 3. Least-privilege permissions for file/media access
-4. Secure update channel for model/tool manifests
+4. Secure update channel for model manifests (when remote catalog is enabled)
 
-## User Controls
+## User-Visible Controls (Implemented)
 
-1. Offline mode toggle
-2. Per-tool enable/disable settings
-3. Data retention window selector
-4. Local data delete/reset action
+1. Privacy information sheet with implemented policy summary
+2. Model setup and runtime-refresh actions for readiness recovery
+3. Diagnostics export with redaction
+
+## User-Visible Controls (Not Yet Implemented)
+
+1. Per-tool enable/disable settings
+2. User retention-window selector
+3. Local data reset/delete action in-app
+
+Do not publish these as available controls until implementation and validation are complete.
 
 ## Compliance Posture (Foundational)
 
-1. Privacy claims map directly to implemented controls
-2. User consent required for any optional cloud path
-3. Documented data inventory and retention behavior
+1. Privacy claims map directly to implemented controls.
+2. User consent is required for any optional cloud path.
+3. Data inventory and retention behavior are documented and reviewed.
 
-## Implementation Coverage (As Of 2026-03-04)
+## Implementation Coverage (As Of 2026-03-08)
 
 | Control Area | Planned Guarantee | Current Coverage |
 |---|---|---|
-| Local inference default | No cloud-required inference path | Implemented (native JNI runtime proof complete; app-path runtime wiring uses local model provisioning + startup checks) |
-| Local data retention policy | explicit retention window + pruning | Implemented for MVP baseline (file-backed local persistence active on Android runtime path) |
+| Local inference default | No cloud-required inference path | Implemented (native JNI runtime + startup checks + local model provisioning) |
+| Local data retention policy | local persistence with bounded retention policy | Implemented for MVP baseline (file-backed local persistence active on Android runtime path) |
 | Tool safety | strict schema validation + allowlist | Implemented (schema validation + deterministic rejection contracts) |
-| Diagnostics privacy | no raw prompt/response by default | Implemented (runtime diagnostics redaction checks are landed and covered) |
+| Diagnostics privacy | no raw prompt/response by default | Implemented (redaction checks in runtime tests and UI export path) |
 | Network gating | explicit policy checks per action | Implemented (policy wiring integrated with Android platform enforcement checks) |
+| End-user retention controls | user can tune retention/reset in app UI | Not implemented |
 | Voice privacy (future STT/TTS) | equivalent controls to text/image paths | Planned (post-MVP) |
 
-Use `docs/roadmap/current-release-plan.md` as the source of truth for closure sequencing of these gaps.
-
-## Claim Parity Governance (As Of 2026-03-05)
-
-1. External publishable privacy claims must be backed by `Verified` rows in:
-   - `docs/operations/tickets/sec-02-privacy-claim-parity-audit.md`
-2. Claims with partial control parity remain internal-only until:
-   - control is implemented in-app,
-   - evidence is attached in operations packets,
-   - Product + Security mark parity as verified.
+Use `docs/operations/tickets/sec-02-privacy-claim-parity-audit.md` and `docs/roadmap/current-release-plan.md` as closure references.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.devctl import governance
@@ -16,15 +17,18 @@ class GovernanceTest(unittest.TestCase):
         (root / "docs/operations/evidence/wp-09").mkdir(parents=True, exist_ok=True)
         (root / "docs/operations/evidence/wp-12").mkdir(parents=True, exist_ok=True)
         (root / "docs/operations/evidence/wp-13").mkdir(parents=True, exist_ok=True)
+        (root / "docs/testing").mkdir(parents=True, exist_ok=True)
+        (root / "docs/ux").mkdir(parents=True, exist_ok=True)
+        (root / "docs/governance").mkdir(parents=True, exist_ok=True)
         (root / "scripts/dev").mkdir(parents=True, exist_ok=True)
         (root / "scripts/android").mkdir(parents=True, exist_ok=True)
         (root / "tests/maestro").mkdir(parents=True, exist_ok=True)
         (root / "apps/mobile-android").mkdir(parents=True, exist_ok=True)
         (root / "apps/mobile-android-host").mkdir(parents=True, exist_ok=True)
-        (root / "docs/ux").mkdir(parents=True, exist_ok=True)
+        (root / "config/devctl").mkdir(parents=True, exist_ok=True)
 
-        (root / "README.md").write_text("# Root\n", encoding="utf-8")
-        (root / "scripts/dev/README.md").write_text("# Dev\n", encoding="utf-8")
+        (root / "README.md").write_text("# Root\nSource of truth\n", encoding="utf-8")
+        (root / "scripts/dev/README.md").write_text("# Dev\nSource of truth\n", encoding="utf-8")
         (root / "scripts/android/README.md").write_text("# Android\n", encoding="utf-8")
         (root / "tests/maestro/README.md").write_text("# Maestro\n", encoding="utf-8")
         (root / "apps/mobile-android/README.md").write_text("# App\n", encoding="utf-8")
@@ -32,9 +36,21 @@ class GovernanceTest(unittest.TestCase):
 
         (root / "docs/start-here/new-joiner.md").write_text("# New Joiner\n", encoding="utf-8")
         (root / "docs/start-here/resource-map.md").write_text("# Resource Map\n", encoding="utf-8")
+        (root / "docs/start-here/source-of-truth-matrix.md").write_text("# Matrix\n", encoding="utf-8")
+        (root / "docs/start-here/documentation-drift-register.md").write_text("# Drift\n", encoding="utf-8")
+
+        (root / "docs/testing/test-strategy.md").write_text("# Strategy\n", encoding="utf-8")
+        (root / "docs/testing/runbooks.md").write_text("# Runbooks\n", encoding="utf-8")
 
         (root / "docs/README.md").write_text(
-            "- start-here/new-joiner.md\n- start-here/resource-map.md\n",
+            "\n".join(
+                [
+                    "- start-here/new-joiner.md",
+                    "- start-here/resource-map.md",
+                    "- start-here/source-of-truth-matrix.md",
+                    "- start-here/documentation-drift-register.md",
+                ]
+            ),
             encoding="utf-8",
         )
         (root / "docs/operations/README.md").write_text(
@@ -45,6 +61,11 @@ class GovernanceTest(unittest.TestCase):
             "- implemented-behavior-reference.md\n- model-management-flow.md\n",
             encoding="utf-8",
         )
+        (root / "docs/testing/README.md").write_text(
+            "- test-strategy.md\n- runbooks.md\n",
+            encoding="utf-8",
+        )
+
         (root / "docs/operations/execution-board.md").write_text("Status: In Progress\n", encoding="utf-8")
         (root / "docs/operations/tickets/ticket.md").write_text("Status: Ready\n", encoding="utf-8")
         (root / "docs/ux/implemented-behavior-reference.md").write_text("# Impl\n", encoding="utf-8")
@@ -57,8 +78,13 @@ class GovernanceTest(unittest.TestCase):
         (root / "docs/operations/evidence/wp-09/2026-03-04-note.md").write_text("# WP09\n", encoding="utf-8")
         (root / "docs/operations/evidence/wp-13/2026-03-05-note.md").write_text("# WP13\n", encoding="utf-8")
 
-        for note in governance.DOCS_HEALTH_RETAINED_WP12_NOTES:
-            (root / "docs/operations/evidence/wp-12" / note).write_text("# WP12\n", encoding="utf-8")
+        for note in governance.DEFAULT_DOCS_GOVERNANCE_CONFIG["evidence_retention"]["retained_notes"]["wp-12"]:  # type: ignore[index]
+            (root / "docs/operations/evidence/wp-12" / str(note)).write_text("# WP12\n", encoding="utf-8")
+
+        (root / "config/devctl/docs-governance.json").write_text(
+            json.dumps(governance.DEFAULT_DOCS_GOVERNANCE_CONFIG, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     def test_evidence_check_pass_and_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -113,7 +139,7 @@ class GovernanceTest(unittest.TestCase):
 
             (root / "scripts/dev/README.md").write_text("Source of truth", encoding="utf-8")
             (root / "docs/testing/test-strategy.md").write_text("Source of truth", encoding="utf-8")
-            (root / "docs/testing/android-dx-and-test-playbook.md").write_text("Source of truth", encoding="utf-8")
+            (root / "docs/testing/runbooks.md").write_text("Source of truth", encoding="utf-8")
             (root / "README.md").write_text("no marker", encoding="utf-8")
 
             with self.assertRaises(DevctlError) as raised:
@@ -148,7 +174,120 @@ class GovernanceTest(unittest.TestCase):
                 governance.docs_health_check(root)
             self.assertEqual("CONFIG_ERROR", raised.exception.code)
 
+    def _seed_docs_accuracy_repo(self, root: Path) -> None:
+        (root / "docs/architecture").mkdir(parents=True, exist_ok=True)
+        (root / "docs/ux").mkdir(parents=True, exist_ok=True)
+        (root / "docs/security").mkdir(parents=True, exist_ok=True)
+        (root / "docs/prd").mkdir(parents=True, exist_ok=True)
+        (root / "docs/governance").mkdir(parents=True, exist_ok=True)
+        (root / "packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime").mkdir(parents=True, exist_ok=True)
+        (root / "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers").mkdir(parents=True, exist_ok=True)
+        (root / "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui").mkdir(parents=True, exist_ok=True)
+        (root / "apps/mobile-android/src/main/res/values").mkdir(parents=True, exist_ok=True)
+        (root / "packages/core-domain/src/commonMain/kotlin/com/pocketagent/core").mkdir(parents=True, exist_ok=True)
+
+        (root / "docs/architecture/system-context.md").write_text("StreamChatRequestV2 TOKEN_STREAM previousResponseId\n", encoding="utf-8")
+        (root / "docs/ux/implemented-behavior-reference.md").write_text(
+            "StreamChatRequestV2 CHAT_START previousResponseId pre-fills composer text legacyToolIntentParserEnabled = false\n",
+            encoding="utf-8",
+        )
+        (root / "docs/security/privacy-model.md").write_text(
+            "User-Visible Controls (Implemented)\nUser-Visible Controls (Not Yet Implemented)\nDo not publish these as available controls\n",
+            encoding="utf-8",
+        )
+        (root / "docs/prd/phase-0-prd.md").write_text("QWEN_0_8B QWEN_2B SMOLLM2_360M SMOLLM2_135M\n", encoding="utf-8")
+
+        (root / "packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/MvpRuntimeFacade.kt").write_text(
+            "data class StreamChatRequestV2\nenum class ChatStreamPhase\npreviousResponseId: String? = null\n",
+            encoding="utf-8",
+        )
+        (root / "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/SendReducer.kt").write_text(
+            "ChatStreamPhase.CHAT_START\nChatStreamPhase.TOKEN_STREAM\n",
+            encoding="utf-8",
+        )
+        (root / "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt").write_text(
+            "latestAssistantRequestId\nbuildStreamChatRequest\npreviousResponseId = previousResponseId\n",
+            encoding="utf-8",
+        )
+        (root / "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ToolDialog.kt").write_text(
+            "onUsePrompt\ncalculate 4*9\n",
+            encoding="utf-8",
+        )
+        (root / "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/ChatSendFlow.kt").write_text(
+            "legacyToolIntentParserEnabled: Boolean = false\nif (!legacyToolIntentParserEnabled)\n",
+            encoding="utf-8",
+        )
+        (root / "apps/mobile-android/src/main/res/values/strings.xml").write_text(
+            "ui_privacy_title ui_privacy_item_1 ui_privacy_item_2 ui_privacy_item_3\n",
+            encoding="utf-8",
+        )
+        (root / "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/SettingsSheet.kt").write_text(
+            "internal fun PrivacyInfoSheet\n",
+            encoding="utf-8",
+        )
+        (root / "packages/core-domain/src/commonMain/kotlin/com/pocketagent/core/RoutingMode.kt").write_text(
+            "QWEN_0_8B\nQWEN_2B\nSMOLLM2_360M\nSMOLLM2_135M\n",
+            encoding="utf-8",
+        )
+
+        (root / "docs/governance/docs-accuracy-manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema": "docs-accuracy-manifest-v1",
+                    "features": [
+                        {
+                            "id": "feature-a",
+                            "docs": [
+                                {
+                                    "path": "docs/architecture/system-context.md",
+                                    "must_contain": ["StreamChatRequestV2"],
+                                }
+                            ],
+                            "code": [
+                                {
+                                    "glob": "packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/MvpRuntimeFacade.kt",
+                                    "must_contain": ["data class StreamChatRequestV2"],
+                                }
+                            ],
+                        }
+                    ],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def test_docs_accuracy_passes_and_writes_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_docs_accuracy_repo(root)
+            governance.docs_accuracy_check(root)
+            report = root / "build/devctl/docs-drift-report.json"
+            self.assertTrue(report.exists())
+            payload = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual("docs-drift-report-v1", payload["schema"])
+            self.assertEqual("pass", payload["status"])
+
+    def test_docs_accuracy_fails_on_missing_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_docs_accuracy_repo(root)
+            (root / "packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/MvpRuntimeFacade.kt").write_text(
+                "data class SomethingElse\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(DevctlError) as raised:
+                governance.docs_accuracy_check(root)
+            self.assertEqual("CONFIG_ERROR", raised.exception.code)
+
     def _seed_screenshot_inventory_repo(self, root: Path) -> None:
+        (root / "config/devctl").mkdir(parents=True, exist_ok=True)
+        (root / "config/devctl/docs-governance.json").write_text(
+            json.dumps(governance.DEFAULT_DOCS_GOVERNANCE_CONFIG, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
         inventory_dir = root / "tests/ui-screenshots"
         reference_dir = root / "tests/ui-screenshots/reference/sm-a515f-android13"
         inventory_dir.mkdir(parents=True, exist_ok=True)
@@ -177,9 +316,17 @@ class GovernanceTest(unittest.TestCase):
 
         report_dir = root / "scripts/benchmarks/runs/2026-03-06/SER123/screenshot-pack/20260306-010101"
         report_dir.mkdir(parents=True, exist_ok=True)
+        generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         (report_dir / "inventory-report.json").write_text(
             json.dumps(
                 {
+                    "schema": "ui-screenshot-inventory-report-v2",
+                    "generated_at_utc": generated_at,
+                    "inventory_schema": "ui-screenshot-inventory-v1",
+                    "inventory_digest": "sha256:abc",
+                    "git_commit": "abcdef1",
+                    "run_id": "20260306-010101",
+                    "device_serial": "SER123",
                     "missing_ids": [],
                     "entries": [
                         {"id": "ui-01-onboarding-page-1", "status": "PASS"},
@@ -203,9 +350,17 @@ class GovernanceTest(unittest.TestCase):
             self._seed_screenshot_inventory_repo(root)
             (root / "tests/ui-screenshots/reference/sm-a515f-android13/ui-02-onboarding-page-2.png").unlink()
             broken_report = root / "scripts/benchmarks/runs/2026-03-06/SER123/screenshot-pack/20260306-010101/inventory-report.json"
+            generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             broken_report.write_text(
                 json.dumps(
                     {
+                        "schema": "ui-screenshot-inventory-report-v2",
+                        "generated_at_utc": generated_at,
+                        "inventory_schema": "ui-screenshot-inventory-v1",
+                        "inventory_digest": "sha256:abc",
+                        "git_commit": "abcdef1",
+                        "run_id": "20260306-010101",
+                        "device_serial": "SER123",
                         "missing_ids": ["ui-02-onboarding-page-2"],
                         "entries": [
                             {"id": "ui-01-onboarding-page-1", "status": "PASS"},

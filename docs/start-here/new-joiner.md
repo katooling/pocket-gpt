@@ -6,7 +6,8 @@ Use this path to get productive in 10 minutes.
 
 1. Read `README.md`.
 2. Read `docs/start-here/resource-map.md`.
-3. Open `docs/operations/execution-board.md` for current priorities.
+3. Read `docs/start-here/source-of-truth-matrix.md`.
+4. Open `docs/operations/execution-board.md` for current priorities.
 
 ## 2) Verify your local environment
 
@@ -47,5 +48,6 @@ python3 tools/devctl/main.py governance screenshot-inventory-check
 3. Keep command/process details in canonical docs only:
    - `scripts/dev/README.md`
    - `docs/testing/test-strategy.md`
-   - `docs/testing/android-dx-and-test-playbook.md`
-4. Evidence notes live under `docs/operations/evidence/` and follow retention policy in `docs/operations/evidence/index.md`.
+   - `docs/testing/runbooks.md`
+4. Keep drift risks in `docs/start-here/documentation-drift-register.md`.
+5. Evidence notes live under `docs/operations/evidence/` and follow retention policy in `docs/operations/evidence/index.md`.

@@ -13,7 +13,7 @@ Execute week-01 UI regression matrix mapped to `UI-01..UI-10` and publish pass/f
 
 1. `docs/testing/wp-09-ui-regression-matrix.md`
 2. `docs/testing/test-strategy.md`
-3. `docs/testing/android-dx-and-test-playbook.md`
+3. `docs/testing/runbooks.md`
 4. `docs/operations/tickets/ux-13-stuck-send-timeout-recovery.md`
 
 ## Device Coverage

@@ -4,7 +4,7 @@ Source of truth for benchmark command syntax and lane policy:
 
 - `scripts/dev/README.md`
 - `docs/testing/test-strategy.md`
-- `docs/testing/android-dx-and-test-playbook.md`
+- `docs/testing/runbooks.md`
 
 ## Purpose
 

@@ -2,45 +2,35 @@
 
 Last updated: 2026-03-08
 
-This index is the canonical evidence inventory after hard-prune.
+This index is the canonical retained evidence inventory after prune.
 
 ## Retention Policy
 
-1. Full evidence retained for active packages: `WP-09`, `WP-13`.
-2. Production-claim-critical evidence retained for `WP-12` only.
-3. Historical packages are summarized here and their per-run notes are pruned from tree.
+1. Keep active evidence for `WP-09`, `WP-12`, and `WP-13`.
+2. Prune superseded notes not referenced by active roadmap/PRD/ticket/incident artifacts.
+3. Keep one concise note set per active issue stream; avoid duplicate narrative notes for the same closure.
 4. Full history remains recoverable via git.
 
-## Active Full Evidence Sets
+## Retained Evidence Sets
 
 ### WP-09 (`docs/operations/evidence/wp-09/`)
 
-- Full active set retained for distribution, QA rollout, UX feedback, and marketing operations evidence.
+- Retained notes support active QA rollout and UX evidence references.
+- Superseded draft/duplicate notes were pruned in this sync pass.
+
+### WP-12 (`docs/operations/evidence/wp-12/`)
+
+- Production-claim-critical runtime/privacy notes retained.
 
 ### WP-13 (`docs/operations/evidence/wp-13/`)
 
-- Full active set retained for UX-quality closure, usability packet support, and runtime/user-journey closure evidence.
-- Includes 2026-03-08 manual capture prune summary and GPU observation distillation.
-- Includes 2026-03-08 engineering closure note for session ID safety, provenance strict policy wiring, and chat-flow refactor.
-- Includes 2026-03-08 engineering follow-up for Android telemetry device state, semantic version ordering, process stream deadlock hardening, and runtime payload loading.
-- Includes 2026-03-08 QA rerun evidence after P0 parser hardening, including current provisioning preflight blocker signature.
-
-## WP-12 Retained (Production-Claim Critical)
-
-Directory: `docs/operations/evidence/wp-12/`
-
-- `2026-03-04-eng-12-model-distribution-implementation.md`
-- `2026-03-04-eng-13-native-runtime-proof.md`
-- `2026-03-04-eng-17-network-policy-wiring.md`
-- `2026-03-04-prod-eng-12-model-distribution-decision.md`
-- `2026-03-04-qa-wp12-closeout.md`
-- `2026-03-05-eng-13-native-runtime-rerun.md`
-- `2026-03-05-qa-wp12-closeout-rerun.md`
+- Retained notes support active UX-quality, runtime journey, and launch-gate references.
+- Superseded engineering intermediary notes were pruned where not referenced by active artifacts.
 
 ## Historical Summaries (Pruned)
 
-- `WP-01`: CI/bootstrap baseline completed; closure evidence archived by prune policy.
-- `WP-02`: first real Android runtime/device pass completed; detailed run notes pruned.
+- `WP-01`: CI/bootstrap baseline completed; detailed notes pruned.
+- `WP-02`: first real Android runtime/device pass completed; detailed notes pruned.
 - `WP-03`: artifact+benchmark reliability closure completed; detailed notes pruned.
 - `WP-04`: routing/policy/diagnostics hardening completed; detailed notes pruned.
 - `WP-05`: tool runtime safety closure completed; detailed notes pruned.

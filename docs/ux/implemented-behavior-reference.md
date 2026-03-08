@@ -7,17 +7,22 @@ Owner: Product + Android
 
 Capture implemented user-facing behavior that is easy to miss when reading only ticket summaries.
 
-## Tool Prompt UX
+## Tool UX (Current)
 
-1. `Tools` entry point presents natural-language prompt shortcuts (not direct hardcoded tool execution).
-2. User can edit any suggested prompt before sending.
-3. Tool schema/runtime failures map to deterministic user-facing codes (`UI-TOOL-SCHEMA-001`, `UI-RUNTIME-001`).
+1. `Tools` opens a prompt-shortcut dialog.
+2. Selecting a tool item pre-fills composer text and closes the dialog.
+3. Tool shortcuts do not directly dispatch `runTool` from the dialog.
+4. Legacy prompt parser exists in `ChatSendFlow`, but default is `legacyToolIntentParserEnabled = false`.
+5. Direct typed tool execution path (`runTool` + typed tool results) exists in ViewModel/controller code and test contracts, but is not currently bound to a primary user action.
 
 ## Privacy Sheet Behavior
 
 1. Top-bar privacy icon opens an in-app privacy explainer sheet.
-2. Sheet copy explicitly states local storage and offline-policy behavior.
-3. Diagnostics redaction is explained in user-visible copy and backed by runtime tests.
+2. Sheet copy currently states:
+   - chats/memory are local,
+   - offline-only policy gates runtime network actions,
+   - diagnostics export redacts sensitive keys.
+3. No in-sheet controls currently exist for per-tool toggles, retention window selection, or local reset/delete actions.
 
 ## Empty-State Prompt Cards
 
@@ -28,7 +33,7 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - reminder creation
 2. Tapping a card pre-fills the composer; user still confirms by tapping `Send`.
 
-## Runtime Status and Backend Semantics
+## Runtime Status and Stream Phase Semantics
 
 1. Runtime status values:
    - `Not ready`: model artifacts missing/invalid or startup checks failing
@@ -36,31 +41,42 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - `Ready`: runtime path healthy for current request flow
    - `Error`: runtime/startup failure that requires retry or recovery action
 2. Backend identity is shown as `Backend: <value>` (`NATIVE_JNI`, `ADB_FALLBACK`, `UNAVAILABLE`) for support triage.
-3. Runtime error banner includes deterministic code + user message.
-4. Error banner CTA hierarchy is fixed:
+3. Stream event phase labels map to UI detail copy:
+   - `CHAT_START` -> `Preparing request...`
+   - `MODEL_LOAD` -> `Loading model...`
+   - `PROMPT_PROCESSING` -> `Prefill...`
+   - `TOKEN_STREAM` -> `Generating...`
+   - `CHAT_END` -> `Finalizing...`
+   - `ERROR` -> `Runtime error`
+4. Runtime error banner includes deterministic code + user message.
+5. Error banner CTA hierarchy is fixed:
    - primary: `Fix model setup`
    - secondary: `Refresh runtime checks`
    - tertiary: `Show technical details`
 
+## Interaction Transcript Semantics
+
+1. Send path builds `StreamChatRequestV2` from projected timeline transcript.
+2. UI assigns request ids to streamed assistant placeholders.
+3. `previousResponseId` is inferred from latest assistant request id and attached to the stream request.
+4. Local runtime behavior remains transcript-first; `previousResponseId` is continuity metadata.
+
 ## Runtime Performance Profiles and GPU Toggle
 
 1. Advanced controls expose exactly three runtime performance profiles:
-   - `BATTERY`: longest timeout window, reduced decode pressure, conservative thread/batch defaults
-   - `BALANCED`: default profile for normal usage
-   - `FAST`: higher throughput preference with larger decode budget
+   - `BATTERY`
+   - `BALANCED`
+   - `FAST`
 2. Profile selection persists with session state restore and is reapplied on send actions.
 3. GPU acceleration toggle is visible in advanced controls:
    - enabled only when runtime/backend reports support
    - support signal is queried from native runtime capability (`llama_supports_gpu_offload`) after backend init
    - disabled state renders explicit unavailable copy
 4. Profile + GPU settings are applied through the app runtime contract and not by direct UI-only overrides.
-5. Native runtime emits deterministic GPU diagnostics for triage:
-   - `GPU_OFFLOAD|compiled_backend=<backend>|supported=<true|false>`
-   - `GPU_OFFLOAD|requested_layers=<n>|effective_layers=<n>`
 
-## Simple-First First Session Contract
+## First-Session Contract
 
-1. First-session state machine remains explicit for telemetry/readiness:
+1. First-session stage machine is still tracked for telemetry/readiness:
    - `Onboarding`
    - `GetReady`
    - `ReadyToChat`
@@ -68,9 +84,9 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - `FollowUpDone`
    - `AdvancedUnlocked`
 2. `Get ready` is the primary blocked-state CTA and defaults to `0.8B` download path.
-3. `Tools` and `Advanced` entry points are available by default (no follow-up unlock gate).
-4. Follow-up completion still emits deterministic first-session telemetry events and cue state.
-5. Stage + unlock flags are persisted so app restart does not regress first-session progress.
+3. Tools and Advanced entry points are available by default (no follow-up unlock gate).
+4. Follow-up completion emits first-session telemetry and cue state.
+5. Stage/unlock flags are persisted across app restarts.
 
 ## Runtime Telemetry Labels in UI
 
@@ -116,30 +132,8 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
 6. Installed versions can be manually activated; active version deletion is blocked.
 7. Runtime unlock is only confirmed after activation + refresh startup checks.
 
-## State Transition Feedback
-
-1. Import success feedback:
-   - `verified and active`
-   - `verified, activation pending`
-2. Refresh feedback:
-   - explicit message after runtime checks refresh
-3. Download feedback:
-   - terminal guidance for checksum/runtime compatibility/storage/network failure reasons
-   - provenance verification is enforced in strict mode (`STRICT`) and mismatches are hard-block failures before activation
-
 ## Manifest Outage Behavior
 
 1. If manifest fetch fails/returns no usable entries, setup UX keeps import path visible as primary recovery.
 2. Download state is treated as degraded; runtime remains usable if required active models are already verified.
-3. Recovery copy must include issue state plus next action (`import`, `retry manifest`, or `refresh runtime checks`).
-
-## Journey Send-Capture Evidence Semantics
-
-1. Journey lane includes deterministic send-capture fields:
-   - `phase`
-   - `elapsed_ms`
-   - `runtime_status`
-   - `backend`
-   - `active_model_id`
-   - `placeholder_visible`
-2. Passing send-capture requires `phase=completed` and `placeholder_visible=false` at SLA checkpoint.
+3. Recovery copy includes issue state plus next action (`import`, `retry manifest`, or `refresh runtime checks`).

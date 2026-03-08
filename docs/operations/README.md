@@ -9,11 +9,11 @@ This section is the cross-functional execution system.
 3. Open ticket specs under `tickets/`.
 4. Keep evidence under `evidence/` per retention policy in `evidence/index.md`.
 
-## Source of truth
+## Source Of Truth
 
 - Dev/test command contract: `scripts/dev/README.md`
 - Test strategy + release gates: `docs/testing/test-strategy.md`
-- Android device execution details: `docs/testing/android-dx-and-test-playbook.md`
+- Task runbooks: `docs/testing/runbooks.md`
 
 ## Status Contract
 

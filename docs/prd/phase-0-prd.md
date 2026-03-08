@@ -71,9 +71,9 @@ Required MVP UI capabilities:
 1. Chat timeline with user/assistant/system bubbles and streaming assistant updates.
 2. Composer with send action, disabled/loading states, and image attachment action.
 3. Session UX with create/switch/delete and persistence across app restarts.
-4. Tool UX with deterministic result rendering and clear safety-error feedback.
+4. Tool UX with prompt-first shortcuts in the dialog and clear safety/runtime error feedback contracts.
 5. Advanced controls sheet with:
-   - routing mode: `Auto`, `QWEN_0_8B`, `QWEN_2B`
+   - routing mode: `Auto`, `QWEN_0_8B`, `QWEN_2B`, `SMOLLM2_360M`, `SMOLLM2_135M` (availability depends on packaged model support)
    - runtime performance profile: `BATTERY`, `BALANCED`, `FAST`
    - GPU acceleration toggle (enabled only when supported on device/runtime path)
    - diagnostics export action
@@ -90,7 +90,7 @@ Required MVP UI capabilities:
 1. As a user, I can send a prompt and see streaming output in a chat bubble timeline.
 2. As a user, I can reopen the app and continue prior conversations.
 3. As a user, I can attach one image and get a contextual response in the same thread.
-4. As a user, I can run safe local tools and see deterministic tool results.
+4. As a user, I can launch tool prompt shortcuts from the `Tools` entry point and send them from the composer.
 5. As a power user, I can override model selection from an advanced sheet.
 6. As a privacy-sensitive user, I can export diagnostics without exposing sensitive content.
 7. As a user, if send stalls or exceeds timeout, I receive deterministic recovery guidance and can retry without losing context.

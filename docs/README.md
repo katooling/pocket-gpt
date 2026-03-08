@@ -1,27 +1,28 @@
 # PocketAgent Docs
 
-This directory contains product, architecture, operations, testing, and evidence docs.
+This directory contains product, architecture, operations, testing, governance, and evidence docs.
 
 ## Start Here
 
 1. `docs/start-here/new-joiner.md`
 2. `docs/start-here/resource-map.md`
+3. `docs/start-here/source-of-truth-matrix.md`
+4. `docs/start-here/documentation-drift-register.md`
 
-## Source of truth
+## Source Of Truth
 
-Testing and execution process docs are canonical in:
+- Command contract: `scripts/dev/README.md`
+- Test strategy/playbook: `docs/testing/test-strategy.md`
+- Doc/code drift governance: `docs/governance/README.md`
 
-- `scripts/dev/README.md`
-- `docs/testing/test-strategy.md`
-- `docs/testing/android-dx-and-test-playbook.md`
-
-All other docs should point to these for command/process details.
+All non-canonical docs should link back to these where process commands or policy are described.
 
 ## Primary Map
 
 - `start-here/new-joiner.md`
 - `start-here/resource-map.md`
-- `start-here/documentation-sync-audit-2026-03-08.md`
+- `start-here/source-of-truth-matrix.md`
+- `start-here/documentation-drift-register.md`
 - `roadmap/current-release-plan.md`
 - `operations/execution-board.md`
 - `operations/tickets/`
@@ -31,6 +32,7 @@ All other docs should point to these for command/process details.
 - `product/open-questions-log.md`
 - `ux/README.md`
 - `testing/README.md`
+- `governance/README.md`
 - `architecture/system-context.md`
 - `architecture/modular-monolith.md`
 - `architecture/tech-stack-decision.md`

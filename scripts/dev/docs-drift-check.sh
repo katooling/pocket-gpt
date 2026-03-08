@@ -6,3 +6,4 @@ cd "${REPO_ROOT}"
 
 python3 tools/devctl/main.py governance docs-drift
 python3 tools/devctl/main.py governance docs-health
+python3 tools/devctl/main.py governance docs-accuracy

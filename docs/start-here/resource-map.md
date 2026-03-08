@@ -1,14 +1,12 @@
 # Resource Map
 
-Use this map to jump directly to the correct source.
+Use this map to jump to the right source quickly.
 
-## Current release and execution
+## Start Here
 
-- Current release plan: `docs/roadmap/current-release-plan.md`
-- Active board and ownership: `docs/operations/execution-board.md`
-- Documentation sync audit log: `docs/start-here/documentation-sync-audit-2026-03-08.md`
-- Role responsibilities: `docs/operations/role-playbooks/`
-- Active ticket specs: `docs/operations/tickets/`
+- New joiner path: `docs/start-here/new-joiner.md`
+- Source-of-truth ownership: `docs/start-here/source-of-truth-matrix.md`
+- Documentation drift tracker: `docs/start-here/documentation-drift-register.md`
 
 ## Product and UX
 
@@ -19,9 +17,9 @@ Use this map to jump directly to the correct source.
 
 ## Testing and quality gates
 
-- Strategy and release gates: `docs/testing/test-strategy.md`
-- Android lane execution details: `docs/testing/android-dx-and-test-playbook.md`
-- Lane selection and profiles: `docs/testing/test-lane-profiles-and-selection.md`
+- Canonical test playbook + release gates: `docs/testing/test-strategy.md`
+- Task-focused runbooks: `docs/testing/runbooks.md`
+- Screenshot capture/manual review workflow: `docs/testing/screenshot-regression-workflow.md`
 - Canonical command contract: `scripts/dev/README.md`
 
 ## Architecture and modules
@@ -30,8 +28,17 @@ Use this map to jump directly to the correct source.
 - Modular monolith contracts: `docs/architecture/modular-monolith.md`
 - ADR history: `docs/architecture/adrs/`
 
-## Evidence and launch governance
+## Operations and launch governance
 
+- Current release plan: `docs/roadmap/current-release-plan.md`
+- Active board and ownership: `docs/operations/execution-board.md`
+- Ticket specs: `docs/operations/tickets/`
 - Evidence index and retention model: `docs/operations/evidence/index.md`
 - Privacy model and controls: `docs/security/privacy-model.md`
 - Risk register: `docs/security/risk-register.md`
+
+## Governance automation
+
+- Docs governance overview: `docs/governance/README.md`
+- Feature-doc-code accuracy contract: `docs/governance/docs-accuracy-manifest.json`
+- Governance config policy: `config/devctl/docs-governance.json`

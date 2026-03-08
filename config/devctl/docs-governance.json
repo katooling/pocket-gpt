@@ -1,0 +1,67 @@
+{
+  "required_index_markers": {
+    "docs/README.md": [
+      "start-here/new-joiner.md",
+      "start-here/resource-map.md",
+      "start-here/source-of-truth-matrix.md",
+      "start-here/documentation-drift-register.md"
+    ],
+    "docs/operations/README.md": [
+      "execution-board.md",
+      "evidence/index.md",
+      "tickets/"
+    ],
+    "docs/ux/README.md": [
+      "implemented-behavior-reference.md",
+      "model-management-flow.md"
+    ],
+    "docs/testing/README.md": [
+      "test-strategy.md",
+      "runbooks.md"
+    ]
+  },
+  "evidence_retention": {
+    "allowed_wp_dirs": [
+      "wp-09",
+      "wp-12",
+      "wp-13"
+    ],
+    "summary_required_labels": [
+      "WP-01",
+      "WP-02",
+      "WP-03",
+      "WP-04",
+      "WP-05",
+      "WP-06",
+      "WP-07",
+      "WP-08",
+      "WP-11"
+    ],
+    "retained_notes": {
+      "wp-12": [
+        "2026-03-04-eng-12-model-distribution-implementation.md",
+        "2026-03-04-eng-13-native-runtime-proof.md",
+        "2026-03-04-eng-17-network-policy-wiring.md",
+        "2026-03-04-prod-eng-12-model-distribution-decision.md",
+        "2026-03-04-qa-wp12-closeout.md",
+        "2026-03-05-eng-13-native-runtime-rerun.md",
+        "2026-03-05-qa-wp12-closeout-rerun.md"
+      ]
+    }
+  },
+  "screenshot_inventory": {
+    "inventory_path": "tests/ui-screenshots/inventory.yaml",
+    "inventory_schema": "ui-screenshot-inventory-v1",
+    "reference_dir": "tests/ui-screenshots/reference/sm-a515f-android13",
+    "report_glob": "scripts/benchmarks/runs/*/*/screenshot-pack/*/inventory-report.json",
+    "report_schema": "ui-screenshot-inventory-report-v2",
+    "report_max_age_days": 30,
+    "required_report_fields": [
+      "generated_at_utc",
+      "run_id",
+      "device_serial",
+      "missing_ids",
+      "entries"
+    ]
+  }
+}

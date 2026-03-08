@@ -25,6 +25,6 @@ Ship stable runtime, UX infrastructure, and lane behavior while preserving priva
 - `docs/operations/execution-board.md`
 - `docs/operations/tickets/eng-20-runtime-cancel-timeout-contract.md`
 - `docs/testing/test-strategy.md`
-- `docs/testing/android-dx-and-test-playbook.md`
-- `docs/testing/test-lane-profiles-and-selection.md`
+- `docs/testing/test-strategy.md`
+- `docs/testing/runbooks.md`
 - `scripts/dev/README.md`

@@ -26,5 +26,5 @@ Provide reproducible release evidence across runtime stability, UX quality, and 
 - `docs/operations/tickets/qa-13-send-capture-gate-operationalization.md`
 - `docs/operations/tickets/ux-13-stuck-send-timeout-recovery.md`
 - `docs/testing/test-strategy.md`
-- `docs/testing/android-dx-and-test-playbook.md`
+- `docs/testing/runbooks.md`
 - `docs/testing/wp-09-ui-regression-matrix.md`

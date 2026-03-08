@@ -18,7 +18,11 @@ PocketAgent is a local-first Android assistant that runs text, tool, and image w
 ```mermaid
 flowchart LR
 User --> AndroidUI
-AndroidUI --> AppRuntime
+AndroidUI --> ViewModel
+ViewModel --> StreamFlow
+ViewModel --> ToolLoop
+StreamFlow --> AppRuntime
+ToolLoop --> AppRuntime
 AppRuntime --> NativeBridge
 NativeBridge --> LlamaCpp
 AndroidUI --> LocalStorage
@@ -26,8 +30,28 @@ AndroidUI --> ModelManager
 AppRuntime --> ToolRuntime
 AppRuntime --> MemoryModule
 AndroidUI --> OSAPIs
-AndroidUI -.explicit_opt_in_only.-> RemoteModelCatalog
+AndroidUI -. explicit_opt_in_only .-> RemoteModelCatalog
 ```
+
+## Streaming Contract (Current)
+
+1. UI send path builds `StreamChatRequestV2` with projected interaction transcript.
+2. `previousResponseId` is populated from the latest assistant request id in the timeline and forwarded through runtime contracts.
+3. Runtime emits phase-typed events:
+   - `CHAT_START`
+   - `MODEL_LOAD`
+   - `PROMPT_PROCESSING`
+   - `TOKEN_STREAM`
+   - `CHAT_END`
+   - `ERROR`
+4. UI status copy is phase-driven (`Preparing request`, `Loading model`, `Prefill`, `Generating`, `Finalizing`, `Runtime error`).
+5. Terminal stream outcomes are explicit: `Completed`, `Cancelled`, `Failed`.
+
+## Interaction and Transcript Contract
+
+1. Timeline messages are projected to `InteractionMessage` (`role`, `parts`, optional `toolCalls`, optional `toolCallId`, metadata).
+2. The transcript path is first-class in app runtime and used as the source context for prompt rendering.
+3. `previousResponseId` continuity metadata is currently carried through interfaces; local inference behavior remains transcript-driven.
 
 ## Data and Trust Boundaries
 
