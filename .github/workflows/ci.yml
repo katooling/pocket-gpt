@@ -72,16 +72,20 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           PATH_RISK: ${{ needs.changes.outputs.lifecycle_high_risk_paths }}
-          EVENT_JSON_PATH: ${{ github.event_path }}
         run: |
           set -euo pipefail
           should_run=false
           label_risk=false
           reasons=()
+          event_json_path="${GITHUB_EVENT_PATH:-}"
 
           if [[ "${EVENT_NAME}" == "pull_request" ]]; then
-            if jq -e '.pull_request.labels[]?.name | select(. == "risk:e2e-lifecycle" or . == "risk:runtime" or . == "risk:provisioning")' "${EVENT_JSON_PATH}" >/dev/null; then
-              label_risk=true
+            if [[ -n "${event_json_path}" && -f "${event_json_path}" ]]; then
+              if jq -e '.pull_request.labels[]?.name | select(. == "risk:e2e-lifecycle" or . == "risk:runtime" or . == "risk:provisioning")' "${event_json_path}" >/dev/null; then
+                label_risk=true
+              fi
+            else
+              echo "::warning::GITHUB_EVENT_PATH is unavailable; skipping label risk detection."
             fi
           fi
 
