@@ -59,11 +59,35 @@ int32_t resolve_batch(jint requested_batch) {
 }
 
 bool gpu_offload_supported() {
-#if defined(GGML_USE_VULKAN) || defined(GGML_USE_OPENCL) || defined(GGML_USE_CUDA) || defined(GGML_USE_METAL)
-    return true;
+    return llama_supports_gpu_offload();
+}
+
+const char * compiled_gpu_backends() {
+#if defined(GGML_USE_VULKAN)
+    return "vulkan";
+#elif defined(GGML_USE_OPENCL)
+    return "opencl";
+#elif defined(GGML_USE_CUDA)
+    return "cuda";
+#elif defined(GGML_USE_METAL)
+    return "metal";
 #else
-    return false;
+    return "cpu-only";
 #endif
+}
+
+void log_gpu_support_once() {
+    static bool logged = false;
+    if (logged) {
+        return;
+    }
+    logged = true;
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "GPU_OFFLOAD|compiled_backend=%s|supported=%s",
+        compiled_gpu_backends(),
+        gpu_offload_supported() ? "true" : "false");
 }
 
 void log_error(const std::string & message) {
@@ -479,10 +503,17 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         return JNI_FALSE;
     }
 
+    log_gpu_support_once();
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = gpu_offload_supported()
         ? clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128)
         : 0;
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "GPU_OFFLOAD|requested_layers=%d|effective_layers=%d",
+        static_cast<int>(nGpuLayers),
+        static_cast<int>(model_params.n_gpu_layers));
     g_model = llama_model_load_from_file(model_path.c_str(), model_params);
     if (g_model == nullptr) {
         log_error("nativeLoadModel failed: llama_model_load_from_file returned null");
@@ -708,6 +739,7 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeSupportsGpuOffload(
     JNIEnv * /*env*/,
     jobject /*thiz*/) {
+    log_gpu_support_once();
     return gpu_offload_supported() ? JNI_TRUE : JNI_FALSE;
 }
 

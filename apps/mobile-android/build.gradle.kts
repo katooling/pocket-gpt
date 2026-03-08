@@ -7,8 +7,8 @@ plugins {
 fun String.isTruthyFlag(): Boolean = trim().lowercase() in setOf("1", "true", "yes")
 
 val nativeBuildEnabled = providers.gradleProperty("pocketgpt.enableNativeBuild")
+    .orElse("true")
     .map { it.isTruthyFlag() }
-    .orElse(false)
     .get()
 val modelManifestUrl = providers.gradleProperty("pocketgpt.modelManifestUrl")
     .orElse("")

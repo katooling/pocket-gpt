@@ -51,8 +51,12 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
 2. Profile selection persists with session state restore and is reapplied on send actions.
 3. GPU acceleration toggle is visible in advanced controls:
    - enabled only when runtime/backend reports support
+   - support signal is queried from native runtime capability (`llama_supports_gpu_offload`) after backend init
    - disabled state renders explicit unavailable copy
 4. Profile + GPU settings are applied through the app runtime contract and not by direct UI-only overrides.
+5. Native runtime emits deterministic GPU diagnostics for triage:
+   - `GPU_OFFLOAD|compiled_backend=<backend>|supported=<true|false>`
+   - `GPU_OFFLOAD|requested_layers=<n>|effective_layers=<n>`
 
 ## Simple-First First Session Contract
 
