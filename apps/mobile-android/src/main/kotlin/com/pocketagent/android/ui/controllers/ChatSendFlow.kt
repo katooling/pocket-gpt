@@ -8,7 +8,9 @@ import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ModelResidencyPolicy
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimePerformanceProfile
+import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
+import com.pocketagent.runtime.InteractionMessage
 
 data class ToolIntent(
     val name: String,
@@ -32,8 +34,12 @@ fun interface DeviceStateProvider {
 class ChatSendFlow(
     private val runtimeGenerationTimeoutMs: Long,
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
+    private val legacyToolIntentParserEnabled: Boolean = false,
 ) {
     fun parseToolIntent(prompt: String): ToolIntent? {
+        if (!legacyToolIntentParserEnabled) {
+            return null
+        }
         val normalized = prompt.trim()
         val lowercase = normalized.lowercase()
         val calcPrefix = listOf("calculate ", "calc ", "what is ")
@@ -89,6 +95,33 @@ class ChatSendFlow(
             profile = profile,
             availableCpuThreads = cpuThreads,
             gpuEnabled = gpuEnabled,
+        )
+    }
+
+    fun buildStreamChatRequest(
+        sessionId: String,
+        requestId: String,
+        messages: List<InteractionMessage>,
+        taskTypeHint: String,
+        performanceConfig: PerformanceRuntimeConfig,
+        requestTimeoutMs: Long,
+        previousResponseId: String? = null,
+    ): StreamChatRequestV2 {
+        return StreamChatRequestV2(
+            sessionId = SessionId(sessionId),
+            requestId = requestId,
+            messages = messages,
+            taskType = resolveTaskType(taskTypeHint),
+            maxTokens = resolveMaxTokens(taskTypeHint, performanceConfig),
+            deviceState = deviceStateProvider.current(),
+            requestTimeoutMs = requestTimeoutMs,
+            previousResponseId = previousResponseId,
+            performanceConfig = performanceConfig,
+            residencyPolicy = ModelResidencyPolicy(
+                keepLoadedWhileAppForeground = true,
+                idleUnloadTtlMs = IDLE_MODEL_UNLOAD_TTL_MS,
+                warmupOnStartup = true,
+            ),
         )
     }
 

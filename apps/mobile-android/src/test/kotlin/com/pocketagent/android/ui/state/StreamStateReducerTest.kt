@@ -60,4 +60,21 @@ class StreamStateReducerTest {
         assertEquals("timeout", terminal.finishReason)
         assertEquals("UI-RUNTIME-001", terminal.uiError?.code)
     }
+
+    @Test
+    fun `reducer tracks phase updates without creating terminal state`() {
+        val initial = StreamReducerState.initial(requestId = "req-1")
+        val afterPhase = reducer.onEvent(
+            state = initial,
+            event = ChatStreamEvent.Phase(
+                requestId = "req-1",
+                phase = com.pocketagent.runtime.ChatStreamPhase.PROMPT_PROCESSING,
+                detail = "prefill",
+            ),
+            elapsedMs = 10L,
+        )
+
+        assertEquals("prompt_processing", afterPhase.lastPhase)
+        assertEquals(null, afterPhase.terminal)
+    }
 }

@@ -8,10 +8,14 @@ import com.pocketagent.android.ui.controllers.ChatPersistenceCoordinator
 import com.pocketagent.android.ui.controllers.DeviceStateProvider
 import com.pocketagent.android.ui.controllers.ChatSendFlow
 import com.pocketagent.android.ui.controllers.ChatSendController
+import com.pocketagent.android.ui.controllers.SendReducer
 import com.pocketagent.android.ui.controllers.ChatStartupFlow
 import com.pocketagent.android.ui.controllers.StartupProbeController
 import com.pocketagent.android.ui.controllers.StartupReadinessCoordinator
+import com.pocketagent.android.ui.controllers.TimelineProjector
 import com.pocketagent.android.ui.controllers.ToolIntent
+import com.pocketagent.android.ui.controllers.ToolLoopOutcome
+import com.pocketagent.android.ui.controllers.ToolLoopUseCase
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -62,6 +66,7 @@ class ChatViewModel(
     ),
     private val persistenceCoordinator: ChatPersistenceCoordinator = ChatPersistenceCoordinator(sessionPersistence),
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
+    private val timelineProjector: TimelineProjector = TimelineProjector(),
     private val persistenceFlow: ChatPersistenceFlow = ChatPersistenceFlow(persistenceCoordinator),
     private val startupFlow: ChatStartupFlow = ChatStartupFlow(
         runtimeGateway = runtimeFacade,
@@ -70,11 +75,14 @@ class ChatViewModel(
         ioDispatcher = ioDispatcher,
         runtimeStartupProbeTimeoutMs = runtimeStartupProbeTimeoutMs,
         nativeRuntimeLibraryPackaged = BuildConfig.NATIVE_RUNTIME_LIBRARY_PACKAGED,
+        timelineProjector = timelineProjector,
     ),
     private val sendFlow: ChatSendFlow = ChatSendFlow(
         runtimeGenerationTimeoutMs = runtimeGenerationTimeoutMs,
         deviceStateProvider = deviceStateProvider,
     ),
+    private val sendReducer: SendReducer = SendReducer(),
+    private val toolLoopUseCase: ToolLoopUseCase = ToolLoopUseCase(sendController),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState = _uiState.asStateFlow()
@@ -129,9 +137,7 @@ class ChatViewModel(
         val userMessage = createMessage(
             role = MessageRole.USER,
             content = prompt,
-            kind = if (toolIntent != null) MessageKind.TOOL else MessageKind.TEXT,
-            toolName = toolIntent?.name,
-            toolArgsJson = toolIntent?.jsonArgs,
+            kind = MessageKind.TEXT,
         )
 
         updateActiveSession(activeSession.id) { session ->
@@ -145,25 +151,44 @@ class ChatViewModel(
         _uiState.update { state ->
             state.copy(
                 composer = ComposerUiState(text = "", isSending = true),
-                runtime = state.runtime
-                    .copy(
-                        modelRuntimeStatus = if (toolIntent == null) ModelRuntimeStatus.LOADING else state.runtime.modelRuntimeStatus,
-                        modelStatusDetail = if (toolIntent == null) "Loading model..." else state.runtime.modelStatusDetail,
-                        sendElapsedMs = if (toolIntent == null) 0L else state.runtime.sendElapsedMs,
-                        sendSlowState = if (toolIntent == null) null else state.runtime.sendSlowState,
-                    )
-                    .clearError(),
+                runtime = sendReducer.onSendStarted(
+                    runtime = state.runtime,
+                    toolDriven = toolIntent != null,
+                ),
             )
         }
         persistState()
+        val sessionAfterUserMessage = _uiState.value.activeSession ?: return
 
         if (toolIntent != null) {
-            executeToolIntent(sessionId = activeSession.id, toolIntent = toolIntent)
+            val toolCallId = newToolCallId()
+            val assistantToolCall = createMessage(
+                role = MessageRole.ASSISTANT,
+                content = "",
+                kind = MessageKind.TOOL,
+                toolName = toolIntent.name,
+                toolArgsJson = toolIntent.jsonArgs,
+                toolCallId = toolCallId,
+            )
+            updateActiveSession(activeSession.id) { session ->
+                session.copy(
+                    messages = session.messages + assistantToolCall,
+                    updatedAtEpochMs = System.currentTimeMillis(),
+                )
+            }
+            persistState()
+            executeToolIntent(
+                sessionId = activeSession.id,
+                toolIntent = toolIntent,
+                toolCallId = toolCallId,
+            )
             return
         }
 
         val assistantMessageId = newMessageId(prefix = "assistant-stream")
         val requestId = newRequestId()
+        val previousResponseId = timelineProjector.latestAssistantRequestId(sessionAfterUserMessage)
+        val transcriptMessages = timelineProjector.toTranscript(sessionAfterUserMessage)
         activeSendRequestId = requestId
         val assistantPlaceholder = MessageUiModel(
             id = assistantMessageId,
@@ -333,43 +358,32 @@ class ChatViewModel(
 
             streamCoordinator.collectStream(
                 runtimeGateway = runtimeFacade,
-                request = sendFlow.buildStreamRequest(
+                request = sendFlow.buildStreamChatRequest(
                     sessionId = activeSession.id,
                     requestId = requestId,
-                    prompt = prompt,
+                    messages = transcriptMessages,
+                    taskTypeHint = prompt,
                     performanceConfig = performanceConfig,
                     requestTimeoutMs = requestTimeoutMs,
+                    previousResponseId = previousResponseId,
                 ),
                 requestTimeoutMs = requestTimeoutMs,
                 streamReducer = streamReducer,
                 sendStartedAtMs = sendStartedAtMs,
                 onEvent = { event, nextState ->
-                    when (event) {
-                        is ChatStreamEvent.Started -> {
-                            _uiState.update { state ->
-                                state.copy(
-                                    runtime = state.runtime.copy(
-                                        modelStatusDetail = "Prefill...",
-                                    ),
-                                )
-                            }
+                    if (event is ChatStreamEvent.TokenDelta) {
+                        pendingStreamingText = nextState.accumulatedText
+                        flushPendingStreamingText(triggerToken = event.token)
+                    }
+                    val detail = sendReducer.statusDetailForEvent(event)
+                    if (!detail.isNullOrBlank()) {
+                        _uiState.update { state ->
+                            state.copy(
+                                runtime = state.runtime.copy(
+                                    modelStatusDetail = detail,
+                                ),
+                            )
                         }
-
-                        is ChatStreamEvent.TokenDelta -> {
-                            pendingStreamingText = nextState.accumulatedText
-                            flushPendingStreamingText(triggerToken = event.token)
-                            _uiState.update { state ->
-                                state.copy(
-                                    runtime = state.runtime.copy(
-                                        modelStatusDetail = "Generating...",
-                                    ),
-                                )
-                            }
-                        }
-
-                        is ChatStreamEvent.Completed -> Unit
-                        is ChatStreamEvent.Cancelled -> Unit
-                        is ChatStreamEvent.Failed -> Unit
                     }
                 },
                 onElapsed = { elapsed, slowState ->
@@ -566,13 +580,20 @@ class ChatViewModel(
         val request = createMessage(
             role = MessageRole.USER,
             content = "Run tool: $toolName",
+            kind = MessageKind.TEXT,
+        )
+        val toolCallId = newToolCallId()
+        val assistantToolCall = createMessage(
+            role = MessageRole.ASSISTANT,
+            content = "",
             kind = MessageKind.TOOL,
             toolName = toolName,
             toolArgsJson = jsonArgs,
+            toolCallId = toolCallId,
         )
         updateActiveSession(activeSession.id) { session ->
             session.copy(
-                messages = session.messages + request,
+                messages = session.messages + request + assistantToolCall,
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
         }
@@ -591,6 +612,7 @@ class ChatViewModel(
             sessionId = activeSession.id,
             toolName = toolName,
             jsonArgs = jsonArgs,
+            toolCallId = toolCallId,
         )
     }
 
@@ -931,42 +953,21 @@ class ChatViewModel(
         sessionId: String,
         toolName: String,
         jsonArgs: String,
+        toolCallId: String,
     ) {
         viewModelScope.launch(ioDispatcher) {
-            runCatching { sendController.runTool(toolName = toolName, jsonArgs = jsonArgs) }
-                .onSuccess { toolOutput ->
-                    val mappedError = UiErrorMapper.fromToolResult(toolOutput)
-                    if (mappedError != null) {
-                        appendSystemMessage(
-                            sessionId = sessionId,
-                            content = formatUserFacingError(mappedError),
-                        )
-                        _uiState.update { state ->
-                            state.copy(
-                                composer = state.composer.copy(isSending = false),
-                                runtime = state.runtime.copy(
-                                    modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                                    modelStatusDetail = mappedError.userMessage,
-                                ).withUiError(mappedError),
-                            )
-                        }
-                        persistState()
-                        return@onSuccess
-                    }
-                    val response = createMessage(
-                        role = MessageRole.ASSISTANT,
-                        content = when (toolOutput) {
-                            is com.pocketagent.runtime.ToolExecutionResult.Success -> toolOutput.content
-                            is com.pocketagent.runtime.ToolExecutionResult.Failure -> {
-                                toolOutput.failure.technicalDetail ?: toolOutput.failure.userMessage
-                            }
-                        },
+            when (val outcome = toolLoopUseCase.execute(toolName = toolName, jsonArgs = jsonArgs)) {
+                is ToolLoopOutcome.Success -> {
+                    val toolMessage = createMessage(
+                        role = MessageRole.TOOL,
+                        content = outcome.content,
                         kind = MessageKind.TOOL,
                         toolName = toolName,
+                        toolCallId = toolCallId,
                     )
                     updateActiveSession(sessionId) { session ->
                         session.copy(
-                            messages = session.messages + response,
+                            messages = session.messages + toolMessage,
                             updatedAtEpochMs = System.currentTimeMillis(),
                         )
                     }
@@ -982,31 +983,32 @@ class ChatViewModel(
                     }
                     persistState()
                 }
-                .onFailure { error ->
-                    val uiError = UiErrorMapper.runtimeFailure(error.message ?: "Tool request failed.")
+                is ToolLoopOutcome.Failure -> {
                     appendSystemMessage(
                         sessionId = sessionId,
-                        content = formatUserFacingError(uiError),
+                        content = formatUserFacingError(outcome.uiError),
                     )
                     _uiState.update { state ->
                         state.copy(
                             composer = state.composer.copy(isSending = false),
                             runtime = state.runtime.copy(
                                 modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                                modelStatusDetail = uiError.userMessage,
-                            ).withUiError(uiError),
+                                modelStatusDetail = outcome.uiError.userMessage,
+                            ).withUiError(outcome.uiError),
                         )
                     }
                     persistState()
                 }
+            }
         }
     }
 
-    private fun executeToolIntent(sessionId: String, toolIntent: ToolIntent) {
+    private fun executeToolIntent(sessionId: String, toolIntent: ToolIntent, toolCallId: String) {
         executeToolCommand(
             sessionId = sessionId,
             toolName = toolIntent.name,
             jsonArgs = toolIntent.jsonArgs,
+            toolCallId = toolCallId,
         )
     }
 
@@ -1040,19 +1042,20 @@ class ChatViewModel(
         imagePath: String? = null,
         toolName: String? = null,
         toolArgsJson: String? = null,
+        toolCallId: String? = null,
         requestId: String? = null,
         finishReason: String? = null,
         terminalEventSeen: Boolean = false,
     ): MessageUiModel {
-        val interactionToolCall = if (
-            role == MessageRole.USER &&
+        val assistantToolCall = if (
+            role == MessageRole.ASSISTANT &&
             kind == MessageKind.TOOL &&
             !toolName.isNullOrBlank() &&
             !toolArgsJson.isNullOrBlank()
         ) {
             listOf(
                 PersistedToolCall(
-                    id = "toolcall-${UUID.randomUUID()}",
+                    id = toolCallId ?: "toolcall-${UUID.randomUUID()}",
                     name = toolName,
                     argumentsJson = toolArgsJson,
                 ),
@@ -1060,14 +1063,38 @@ class ChatViewModel(
         } else {
             emptyList()
         }
+        val legacyUserToolCall = if (
+            role == MessageRole.USER &&
+            kind == MessageKind.TOOL &&
+            !toolName.isNullOrBlank() &&
+            !toolArgsJson.isNullOrBlank()
+        ) {
+            listOf(
+                PersistedToolCall(
+                    id = toolCallId ?: "toolcall-${UUID.randomUUID()}",
+                    name = toolName,
+                    argumentsJson = toolArgsJson,
+                ),
+            )
+        } else {
+            emptyList()
+        }
+        val interactionToolCall = if (assistantToolCall.isNotEmpty()) assistantToolCall else legacyUserToolCall
+        val resolvedToolCallId = when {
+            role == MessageRole.TOOL -> toolCallId
+            interactionToolCall.isNotEmpty() -> interactionToolCall.first().id
+            else -> toolCallId
+        }
         val interaction = PersistedInteractionMessage(
             role = role.name,
             parts = listOf(PersistedInteractionPart(type = "text", text = content)),
             toolCalls = interactionToolCall,
+            toolCallId = resolvedToolCallId,
             metadata = buildMap {
                 put("kind", kind.name)
                 imagePath?.let { put("imagePath", it) }
                 toolName?.let { put("toolName", it) }
+                resolvedToolCallId?.let { put("toolCallId", it) }
             },
         )
         return MessageUiModel(
@@ -1131,6 +1158,8 @@ class ChatViewModel(
     }
 
     private fun newRequestId(): String = "req-${UUID.randomUUID()}"
+
+    private fun newToolCallId(): String = "toolcall-${UUID.randomUUID()}"
 
     private fun newMessageId(prefix: String): String = "$prefix-${UUID.randomUUID()}"
 

@@ -442,6 +442,7 @@ private fun MessageList(
                     color = when (message.role) {
                         MessageRole.USER -> MaterialTheme.colorScheme.primaryContainer
                         MessageRole.ASSISTANT -> MaterialTheme.colorScheme.surfaceVariant
+                        MessageRole.TOOL -> MaterialTheme.colorScheme.tertiaryContainer
                         MessageRole.SYSTEM -> MaterialTheme.colorScheme.errorContainer
                     },
                     modifier = Modifier

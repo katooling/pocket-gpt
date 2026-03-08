@@ -8,6 +8,7 @@ data class StreamReducerState(
     val requestId: String,
     val accumulatedText: String = "",
     val firstTokenMs: Long? = null,
+    val lastPhase: String? = null,
     val terminal: StreamTerminalState? = null,
 ) {
     companion object {
@@ -39,6 +40,7 @@ class StreamStateReducer(
         }
         return when (event) {
             is ChatStreamEvent.Started -> state
+            is ChatStreamEvent.Phase -> state.copy(lastPhase = event.phase.name.lowercase())
             is ChatStreamEvent.TokenDelta -> {
                 val firstToken = if (state.firstTokenMs == null && event.accumulatedText.isNotBlank()) {
                     elapsedMs.coerceAtLeast(0L)

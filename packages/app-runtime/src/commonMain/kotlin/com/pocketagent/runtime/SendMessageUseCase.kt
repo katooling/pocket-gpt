@@ -38,6 +38,7 @@ internal class SendMessageUseCase(
     data class Request(
         val sessionId: SessionId,
         val userText: String,
+        val messages: List<InteractionMessage> = emptyList(),
         val taskType: String,
         val deviceState: DeviceState,
         val maxTokens: Int,
@@ -45,12 +46,14 @@ internal class SendMessageUseCase(
         val onToken: (String) -> Unit,
         val requestTimeoutMs: Long,
         val requestId: String,
+        val previousResponseId: String? = null,
         val performanceConfig: PerformanceRuntimeConfig,
         val residencyPolicy: ModelResidencyPolicy,
         val routingMode: RoutingMode,
     )
 
     fun execute(request: Request): ChatResponse {
+        val latestUserText = request.messages.latestUserMessageText().ifBlank { request.userText }
         cancelIdleUnload()
         requirePolicyEvent(
             eventType = "routing.model_select",
@@ -69,7 +72,7 @@ internal class SendMessageUseCase(
             throw RuntimeTemplateUnavailableException(message)
         }
 
-        conversationModule.appendUserTurn(request.sessionId, request.userText)
+        conversationModule.appendUserTurn(request.sessionId, latestUserText)
         requirePolicyEvent(
             eventType = "memory.write_user_turn",
             failureMessage = "Policy module rejected memory write event type.",
@@ -77,7 +80,7 @@ internal class SendMessageUseCase(
         memoryModule.saveMemoryChunk(
             MemoryChunk(
                 id = "mem-${System.currentTimeMillis()}",
-                content = request.userText,
+                content = latestUserText,
                 createdAtEpochMs = System.currentTimeMillis(),
             ),
         )
@@ -87,10 +90,15 @@ internal class SendMessageUseCase(
             "long_text" -> MAX_PROMPT_CHARS_LONG
             else -> MAX_PROMPT_CHARS_SHORT
         }
-        val memorySnippets = memoryModule.retrieveRelevantMemory(request.userText, 3).map { it.content }
+        val memorySnippets = memoryModule.retrieveRelevantMemory(latestUserText, 3).map { it.content }
+        val transcriptMessages = if (request.messages.isNotEmpty()) {
+            request.messages
+        } else {
+            conversationModule.listTurns(request.sessionId).map { turn -> turn.toInteractionMessage() }
+        }
         val renderedPrompt = interactionPlanner.buildRenderedPrompt(
             modelId = modelId,
-            turns = conversationModule.listTurns(request.sessionId),
+            messages = transcriptMessages,
             memorySnippets = memorySnippets,
             taskType = request.taskType,
             deviceState = request.deviceState,
@@ -328,4 +336,31 @@ internal class SendMessageUseCase(
         private const val MAX_PROMPT_CHARS_SHORT: Int = 1024
         private const val MAX_PROMPT_CHARS_LONG: Int = 2048
     }
+}
+
+private fun List<InteractionMessage>.latestUserMessageText(): String {
+    return asReversed()
+        .firstOrNull { message -> message.role == InteractionRole.USER }
+        ?.parts
+        ?.joinToString(separator = "\n") { part ->
+            when (part) {
+                is InteractionContentPart.Text -> part.text
+            }
+        }
+        ?.trim()
+        .orEmpty()
+}
+
+private fun com.pocketagent.core.Turn.toInteractionMessage(): InteractionMessage {
+    val interactionRole = when (role.trim().lowercase()) {
+        "system" -> InteractionRole.SYSTEM
+        "assistant" -> InteractionRole.ASSISTANT
+        "tool" -> InteractionRole.TOOL
+        else -> InteractionRole.USER
+    }
+    return InteractionMessage(
+        role = interactionRole,
+        parts = listOf(InteractionContentPart.Text(content)),
+        metadata = mapOf("timestampEpochMs" to timestampEpochMs.toString()),
+    )
 }

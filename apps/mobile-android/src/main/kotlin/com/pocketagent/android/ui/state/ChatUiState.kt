@@ -6,6 +6,7 @@ import com.pocketagent.runtime.RuntimePerformanceProfile
 enum class MessageRole {
     USER,
     ASSISTANT,
+    TOOL,
     SYSTEM,
 }
 

@@ -120,6 +120,51 @@ class RuntimeOrchestrator(
 
     override fun createSession(): SessionId = sessionManager.createSession()
 
+    override fun sendChatMessages(
+        sessionId: SessionId,
+        messages: List<InteractionMessage>,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int,
+        keepModelLoaded: Boolean,
+        onToken: (String) -> Unit,
+        requestTimeoutMs: Long,
+        requestId: String,
+        previousResponseId: String?,
+        performanceConfig: PerformanceRuntimeConfig,
+        residencyPolicy: ModelResidencyPolicy,
+    ): ChatResponse {
+        val latestUserText = messages
+            .asReversed()
+            .firstOrNull { message -> message.role == InteractionRole.USER }
+            ?.parts
+            ?.joinToString(separator = "\n") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                }
+            }
+            ?.trim()
+            .orEmpty()
+        return sendMessageUseCase.execute(
+            SendMessageUseCase.Request(
+                sessionId = sessionId,
+                userText = latestUserText,
+                messages = messages,
+                taskType = taskType,
+                deviceState = deviceState,
+                maxTokens = maxTokens,
+                keepModelLoaded = keepModelLoaded,
+                onToken = onToken,
+                requestTimeoutMs = requestTimeoutMs,
+                requestId = requestId,
+                previousResponseId = previousResponseId,
+                performanceConfig = performanceConfig,
+                residencyPolicy = residencyPolicy,
+                routingMode = routingMode,
+            ),
+        )
+    }
+
     override fun sendUserMessage(
         sessionId: SessionId,
         userText: String,
@@ -137,6 +182,7 @@ class RuntimeOrchestrator(
             SendMessageUseCase.Request(
                 sessionId = sessionId,
                 userText = userText,
+                messages = emptyList(),
                 taskType = taskType,
                 deviceState = deviceState,
                 maxTokens = maxTokens,
@@ -144,6 +190,7 @@ class RuntimeOrchestrator(
                 onToken = onToken,
                 requestTimeoutMs = requestTimeoutMs,
                 requestId = requestId,
+                previousResponseId = null,
                 performanceConfig = performanceConfig,
                 residencyPolicy = residencyPolicy,
                 routingMode = routingMode,

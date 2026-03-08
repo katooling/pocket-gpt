@@ -29,17 +29,56 @@ class DefaultMvpRuntimeFacadeTest {
         )
 
         val events = facade.streamUserMessage(request).toList()
+        val tokenEvents = events.filterIsInstance<ChatStreamEvent.TokenDelta>()
+        val completed = events.filterIsInstance<ChatStreamEvent.Completed>().single()
+        val phases = events.filterIsInstance<ChatStreamEvent.Phase>().map { phase -> phase.phase }.toSet()
 
-        assertEquals(4, events.size)
-        assertTrue(events[0] is ChatStreamEvent.Started)
-        assertTrue(events[1] is ChatStreamEvent.TokenDelta)
-        assertTrue(events[2] is ChatStreamEvent.TokenDelta)
-        assertTrue(events[3] is ChatStreamEvent.Completed)
-        assertEquals("hello", (events[1] as ChatStreamEvent.TokenDelta).accumulatedText)
-        assertEquals("hello world", (events[2] as ChatStreamEvent.TokenDelta).accumulatedText)
-        assertEquals("response", (events[3] as ChatStreamEvent.Completed).response.text)
+        assertTrue(events.first() is ChatStreamEvent.Started)
+        assertEquals(2, tokenEvents.size)
+        assertEquals("hello", tokenEvents[0].accumulatedText)
+        assertEquals("hello world", tokenEvents[1].accumulatedText)
+        assertEquals("response", completed.response.text)
+        assertTrue(phases.contains(ChatStreamPhase.CHAT_START))
+        assertTrue(phases.contains(ChatStreamPhase.MODEL_LOAD))
+        assertTrue(phases.contains(ChatStreamPhase.PROMPT_PROCESSING))
+        assertTrue(phases.contains(ChatStreamPhase.TOKEN_STREAM))
+        assertTrue(phases.contains(ChatStreamPhase.CHAT_END))
         assertEquals("hello", container.lastUserText)
         assertEquals(64, container.lastMaxTokens)
+    }
+
+    @Test
+    fun `legacy stream adapter and v2 transcript stream produce equivalent terminal output`() = runTest {
+        val container = FakeRuntimeContainer()
+        val facade = DefaultMvpRuntimeFacade(container)
+        val legacy = StreamUserMessageRequest(
+            sessionId = SessionId("session-1"),
+            userText = "hello",
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            maxTokens = 64,
+            requestId = "req-legacy",
+        )
+        val v2 = StreamChatRequestV2(
+            sessionId = SessionId("session-1"),
+            requestId = "req-v2",
+            messages = listOf(
+                InteractionMessage(
+                    role = InteractionRole.USER,
+                    parts = listOf(InteractionContentPart.Text("hello")),
+                ),
+            ),
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            maxTokens = 64,
+        )
+
+        val legacyCompleted = facade.streamUserMessage(legacy).toList().filterIsInstance<ChatStreamEvent.Completed>().single()
+        val v2Completed = facade.streamChat(v2).toList().filterIsInstance<ChatStreamEvent.Completed>().single()
+
+        assertEquals(legacyCompleted.response.text, v2Completed.response.text)
+        assertEquals(legacyCompleted.finishReason, v2Completed.finishReason)
+        assertEquals("hello", container.lastUserText)
     }
 
     @Test
@@ -78,11 +117,10 @@ class DefaultMvpRuntimeFacadeTest {
         )
 
         val events = facade.streamUserMessage(request).toList()
+        val cancelled = events.filterIsInstance<ChatStreamEvent.Cancelled>().single()
 
-        assertEquals(2, events.size)
-        assertTrue(events[0] is ChatStreamEvent.Started)
-        assertTrue(events[1] is ChatStreamEvent.Cancelled)
-        assertEquals("cancelled", (events[1] as ChatStreamEvent.Cancelled).reason)
+        assertTrue(events.first() is ChatStreamEvent.Started)
+        assertEquals("cancelled", cancelled.reason)
     }
 
     @Test
@@ -104,11 +142,10 @@ class DefaultMvpRuntimeFacadeTest {
         )
 
         val events = facade.streamUserMessage(request).toList()
+        val failed = events.filterIsInstance<ChatStreamEvent.Failed>().single()
 
-        assertEquals(2, events.size)
-        assertTrue(events[0] is ChatStreamEvent.Started)
-        assertTrue(events[1] is ChatStreamEvent.Failed)
-        assertEquals("jni_utf8_stream_error", (events[1] as ChatStreamEvent.Failed).errorCode)
+        assertTrue(events.first() is ChatStreamEvent.Started)
+        assertEquals("jni_utf8_stream_error", failed.errorCode)
     }
 
     @Test
@@ -131,7 +168,7 @@ class DefaultMvpRuntimeFacadeTest {
 
         val events = facade.streamUserMessage(request).toList()
 
-        assertEquals(2, events.size)
+        assertTrue(events.any { it is ChatStreamEvent.Failed })
         assertEquals(0, container.cancelByRequestCalls)
         assertEquals(0, container.cancelBySessionCalls)
     }

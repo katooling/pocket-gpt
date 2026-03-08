@@ -20,6 +20,7 @@ import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.RuntimeCompositionRoot
+import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.memory.FileBackedMemoryModule
@@ -210,6 +211,10 @@ private class HotSwappableRuntimeFacade(
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
         return delegate.streamUserMessage(request)
+    }
+
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+        return delegate.streamChat(request)
     }
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = delegate.cancelGeneration(sessionId)

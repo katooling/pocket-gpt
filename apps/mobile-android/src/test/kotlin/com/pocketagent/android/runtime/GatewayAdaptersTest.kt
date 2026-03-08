@@ -17,7 +17,11 @@ import com.pocketagent.runtime.ChatStreamEvent.Started
 import com.pocketagent.runtime.ChatStreamEvent.TokenDelta
 import com.pocketagent.runtime.ChatStreamEvent.Completed
 import com.pocketagent.runtime.ImageAnalysisResult
+import com.pocketagent.runtime.InteractionContentPart
+import com.pocketagent.runtime.InteractionMessage
+import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.android.testutil.fakeUri
@@ -47,6 +51,19 @@ class GatewayAdaptersTest {
                 deviceState = com.pocketagent.inference.DeviceState(80, 3, 8),
             ),
         ).toList()
+        val streamV2Events = gateway.streamChat(
+            StreamChatRequestV2(
+                sessionId = sessionId,
+                messages = listOf(
+                    InteractionMessage(
+                        role = InteractionRole.USER,
+                        parts = listOf(InteractionContentPart.Text("hello")),
+                    ),
+                ),
+                taskType = "short_text",
+                deviceState = com.pocketagent.inference.DeviceState(80, 3, 8),
+            ),
+        ).toList()
         val tool = gateway.runTool("calculator", """{"expression":"1+1"}""")
         val image = gateway.analyzeImage("/tmp/a.jpg", "describe")
         val checks = gateway.runStartupChecks()
@@ -55,6 +72,7 @@ class GatewayAdaptersTest {
         assertEquals(RoutingMode.QWEN_2B, gateway.getRoutingMode())
         assertEquals("session-1", sessionId.value)
         assertEquals(3, streamEvents.size)
+        assertEquals(3, streamV2Events.size)
         assertTrue(tool is ToolExecutionResult.Success)
         assertTrue(image is ImageAnalysisResult.Success)
         assertEquals(listOf("ok"), checks)

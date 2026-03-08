@@ -5,7 +5,11 @@ import com.pocketagent.android.ui.state.StreamReducerState
 import com.pocketagent.android.ui.state.StreamStateReducer
 import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.InteractionContentPart
+import com.pocketagent.runtime.InteractionMessage
+import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
+import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -24,6 +28,45 @@ class ChatStreamCoordinator(
     suspend fun collectStream(
         runtimeGateway: RuntimeGateway,
         request: StreamUserMessageRequest,
+        requestTimeoutMs: Long,
+        streamReducer: StreamStateReducer,
+        sendStartedAtMs: Long,
+        onEvent: (ChatStreamEvent, StreamReducerState) -> Unit,
+        onElapsed: (Long, String?) -> Unit,
+        onBeforeTerminal: () -> Unit,
+        onTerminal: (StreamTerminalState) -> Unit,
+    ) {
+        collectStream(
+            runtimeGateway = runtimeGateway,
+            request = StreamChatRequestV2(
+                sessionId = request.sessionId,
+                requestId = request.requestId,
+                taskType = request.taskType,
+                deviceState = request.deviceState,
+                maxTokens = request.maxTokens,
+                requestTimeoutMs = request.requestTimeoutMs,
+                performanceConfig = request.performanceConfig,
+                residencyPolicy = request.residencyPolicy,
+                messages = listOf(
+                    InteractionMessage(
+                        role = InteractionRole.USER,
+                        parts = listOf(InteractionContentPart.Text(request.userText)),
+                    ),
+                ),
+            ),
+            requestTimeoutMs = requestTimeoutMs,
+            streamReducer = streamReducer,
+            sendStartedAtMs = sendStartedAtMs,
+            onEvent = onEvent,
+            onElapsed = onElapsed,
+            onBeforeTerminal = onBeforeTerminal,
+            onTerminal = onTerminal,
+        )
+    }
+
+    suspend fun collectStream(
+        runtimeGateway: RuntimeGateway,
+        request: StreamChatRequestV2,
         requestTimeoutMs: Long,
         streamReducer: StreamStateReducer,
         sendStartedAtMs: Long,
@@ -82,7 +125,7 @@ class ChatStreamCoordinator(
 
         streamCollector = launch {
             runCatching {
-                runtimeGateway.streamUserMessage(request).collect { event ->
+                runtimeGateway.streamChat(request).collect { event ->
                     if (hasTerminal()) {
                         this.cancel()
                         return@collect

@@ -6,6 +6,7 @@ import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +22,30 @@ fun interface DeviceGpuOffloadSupport {
 interface RuntimeGateway {
     fun createSession(): SessionId
     fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent>
+    fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+        return streamUserMessage(
+            StreamUserMessageRequest(
+                sessionId = request.sessionId,
+                userText = request.messages
+                    .asReversed()
+                    .firstOrNull { message -> message.role == com.pocketagent.runtime.InteractionRole.USER }
+                    ?.parts
+                    ?.joinToString(separator = "\n") { part ->
+                        when (part) {
+                            is com.pocketagent.runtime.InteractionContentPart.Text -> part.text
+                        }
+                    }
+                    .orEmpty(),
+                taskType = request.taskType,
+                deviceState = request.deviceState,
+                maxTokens = request.maxTokens,
+                requestTimeoutMs = request.requestTimeoutMs,
+                requestId = request.requestId,
+                performanceConfig = request.performanceConfig,
+                residencyPolicy = request.residencyPolicy,
+            ),
+        )
+    }
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean
     fun runTool(toolName: String, jsonArgs: String): ToolExecutionResult
@@ -43,6 +68,10 @@ class MvpRuntimeGateway(
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
         return facade.streamUserMessage(request)
+    }
+
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+        return facade.streamChat(request)
     }
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = facade.cancelGeneration(sessionId)

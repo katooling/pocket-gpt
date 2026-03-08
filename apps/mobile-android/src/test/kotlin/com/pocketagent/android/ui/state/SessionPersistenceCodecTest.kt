@@ -153,6 +153,44 @@ class SessionPersistenceCodecTest {
     }
 
     @Test
+    fun `encode and decode preserve tool-role interaction linkage`() {
+        val state = PersistedChatState(
+            sessions = listOf(
+                ChatSessionUiModel(
+                    id = "s1",
+                    title = "Tool role",
+                    createdAtEpochMs = 1L,
+                    updatedAtEpochMs = 2L,
+                    messages = listOf(
+                        MessageUiModel(
+                            id = "tool-1",
+                            role = MessageRole.TOOL,
+                            content = "{\"result\":3}",
+                            timestampEpochMs = 3L,
+                            kind = MessageKind.TOOL,
+                            interaction = PersistedInteractionMessage(
+                                role = MessageRole.TOOL.name,
+                                parts = listOf(PersistedInteractionPart(type = "text", text = "{\"result\":3}")),
+                                toolCallId = "tc-3",
+                                metadata = mapOf("toolName" to "calculator"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            activeSessionId = "s1",
+        )
+
+        val encoded = PersistedChatStateCodec.encode(state)
+        val decoded = PersistedChatStateCodec.decode(encoded)
+        val message = decoded.sessions.single().messages.single()
+
+        assertEquals(MessageRole.TOOL, message.role)
+        assertEquals("TOOL", message.interaction?.role)
+        assertEquals("tc-3", message.interaction?.toolCallId)
+    }
+
+    @Test
     fun `decode fails fast for invalid enum values`() {
         assertThrows(IllegalArgumentException::class.java) {
             PersistedChatStateCodec.decode(

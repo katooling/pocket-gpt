@@ -125,7 +125,7 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - explicit message after runtime checks refresh
 3. Download feedback:
    - terminal guidance for checksum/runtime compatibility/storage/network failure reasons
-   - provenance metadata is currently informational in app download flow (`INTEGRITY_ONLY`) and not a hard-block failure
+   - provenance verification is enforced in strict mode (`STRICT`) and mismatches are hard-block failures before activation
 
 ## Manifest Outage Behavior
 

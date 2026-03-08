@@ -8,13 +8,11 @@ import com.pocketagent.android.ui.withUiError
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.FirstSessionStage
-import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
-import com.pocketagent.core.Turn
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import kotlinx.coroutines.CoroutineDispatcher
 
@@ -38,6 +36,7 @@ class ChatStartupFlow(
     private val ioDispatcher: CoroutineDispatcher,
     private val runtimeStartupProbeTimeoutMs: Long,
     private val nativeRuntimeLibraryPackaged: Boolean,
+    private val timelineProjector: TimelineProjector = TimelineProjector(),
 ) {
     fun bootstrap(loadedState: PersistenceBootstrapState): StartupBootstrapResult {
         val persisted = loadedState.persisted
@@ -85,15 +84,7 @@ class ChatStartupFlow(
         }
 
         val restoredSessions = persisted.sessions.map { session ->
-            val turns = session.messages
-                .filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
-                .map { message ->
-                    Turn(
-                        role = if (message.role == MessageRole.USER) "user" else "assistant",
-                        content = message.content,
-                        timestampEpochMs = message.timestampEpochMs,
-                    )
-                }
+            val turns = timelineProjector.toTurns(session)
             runtimeGateway.restoreSession(sessionId = SessionId(session.id), turns = turns)
             session
         }

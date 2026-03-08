@@ -85,10 +85,16 @@ class ChatViewModelTest {
     fun `natural language calculator prompt executes local tool path`() = runTest(dispatcher) {
         val persistence = RecordingPersistence()
         val runtime = RecordingRuntimeFacade()
+        val sendFlow = ChatSendFlow(
+            runtimeGenerationTimeoutMs = 0L,
+            deviceStateProvider = DeviceStateProvider.DEFAULT,
+            legacyToolIntentParserEnabled = true,
+        )
         val viewModel = ChatViewModel(
             runtimeFacade = runtime,
             sessionPersistence = persistence,
             ioDispatcher = dispatcher,
+            sendFlow = sendFlow,
         )
         advanceUntilIdle()
 
@@ -99,6 +105,7 @@ class ChatViewModelTest {
         val messages = viewModel.uiState.value.activeSession!!.messages
         assertTrue(messages.any { it.role == MessageRole.USER && it.content == "calculate 4*9" })
         assertTrue(messages.any { it.role == MessageRole.ASSISTANT && it.toolName == "calculator" })
+        assertTrue(messages.any { it.role == MessageRole.TOOL && it.toolName == "calculator" && it.content.contains("tool:calculator") })
     }
 
     @Test
@@ -261,6 +268,13 @@ class ChatViewModelTest {
                     timestampEpochMs = 11L,
                     kind = MessageKind.TEXT,
                 ),
+                MessageUiModel(
+                    id = "m3",
+                    role = MessageRole.TOOL,
+                    content = "{\"value\":42}",
+                    timestampEpochMs = 12L,
+                    kind = MessageKind.TOOL,
+                ),
             ),
         )
         val persistence = RecordingPersistence(
@@ -282,7 +296,8 @@ class ChatViewModelTest {
         assertEquals(RoutingMode.QWEN_0_8B, viewModel.uiState.value.runtime.routingMode)
         assertEquals(1, runtime.restoredTurns.size)
         assertEquals("persisted-1", runtime.restoredTurns.first().first.value)
-        assertEquals(2, runtime.restoredTurns.first().second.size)
+        assertEquals(3, runtime.restoredTurns.first().second.size)
+        assertTrue(runtime.restoredTurns.first().second.any { it.role == "tool" && it.content.contains("42") })
     }
 
     @Test
@@ -404,7 +419,7 @@ class ChatViewModelTest {
 
         viewModel.runTool("calculator", """{"expression":"4*9"}""")
         advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.ASSISTANT && it.content.contains("tool:calculator") })
+        assertTrue(viewModel.uiState.value.activeSession!!.messages.any { it.role == MessageRole.TOOL && it.content.contains("tool:calculator") })
 
         runtime.failTool = true
         viewModel.runTool("calculator", """{"expression":"4*9"}""")

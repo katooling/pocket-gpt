@@ -29,12 +29,40 @@ data class StreamUserMessageRequest(
     val residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
 )
 
+data class StreamChatRequestV2(
+    val sessionId: SessionId,
+    val messages: List<InteractionMessage>,
+    val taskType: String,
+    val deviceState: DeviceState,
+    val maxTokens: Int = 128,
+    val requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
+    val requestId: String = defaultRequestId(),
+    val previousResponseId: String? = null,
+    val performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
+    val residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
+)
+
+enum class ChatStreamPhase {
+    CHAT_START,
+    MODEL_LOAD,
+    PROMPT_PROCESSING,
+    TOKEN_STREAM,
+    CHAT_END,
+    ERROR,
+}
+
 sealed interface ChatStreamEvent {
     val requestId: String
 
     data class Started(
         override val requestId: String,
         val startedAtEpochMs: Long,
+    ) : ChatStreamEvent
+
+    data class Phase(
+        override val requestId: String,
+        val phase: ChatStreamPhase,
+        val detail: String? = null,
     ) : ChatStreamEvent
 
     data class TokenDelta(
@@ -73,6 +101,9 @@ sealed interface ChatStreamEvent {
 interface MvpRuntimeFacade {
     fun createSession(): SessionId
     fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent>
+    fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+        return streamUserMessage(request.toLegacyRequest())
+    }
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean = false
     fun runTool(toolName: String, jsonArgs: String): String
@@ -95,6 +126,34 @@ interface MvpRuntimeFacade {
 
 interface RuntimeContainer {
     fun createSession(): SessionId
+    fun sendChatMessages(
+        sessionId: SessionId,
+        messages: List<InteractionMessage>,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int,
+        keepModelLoaded: Boolean = false,
+        onToken: (String) -> Unit,
+        requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
+        requestId: String = "legacy",
+        previousResponseId: String? = null,
+        performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
+        residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
+    ): ChatResponse {
+        return sendUserMessage(
+            sessionId = sessionId,
+            userText = latestUserTextOrFallback(messages),
+            taskType = taskType,
+            deviceState = deviceState,
+            maxTokens = maxTokens,
+            keepModelLoaded = keepModelLoaded,
+            onToken = onToken,
+            requestTimeoutMs = requestTimeoutMs,
+            requestId = requestId,
+            performanceConfig = performanceConfig,
+            residencyPolicy = residencyPolicy,
+        )
+    }
     fun sendUserMessage(
         sessionId: SessionId,
         userText: String,
@@ -135,20 +194,48 @@ class DefaultMvpRuntimeFacade(
 
     override fun createSession(): SessionId = container.createSession()
 
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = callbackFlow {
+    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
+        return streamChat(request.toV2Request())
+    }
+
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = callbackFlow {
         val startedAtMs = System.currentTimeMillis()
         val terminalSent = AtomicBoolean(false)
         if (streamContractV2Enabled) {
             trySend(ChatStreamEvent.Started(requestId = request.requestId, startedAtEpochMs = startedAtMs))
+            trySend(
+                ChatStreamEvent.Phase(
+                    requestId = request.requestId,
+                    phase = ChatStreamPhase.CHAT_START,
+                    detail = "chat.start",
+                ),
+            )
         }
         val textBuilder = StringBuilder()
         var firstTokenMs: Long? = null
+        var tokenStreamPhaseEmitted = false
         val finished = AtomicBoolean(false)
         val producer = launch(Dispatchers.IO) {
             runCatching {
-                val response = container.sendUserMessage(
+                if (streamContractV2Enabled) {
+                    trySend(
+                        ChatStreamEvent.Phase(
+                            requestId = request.requestId,
+                            phase = ChatStreamPhase.MODEL_LOAD,
+                            detail = "model.load",
+                        ),
+                    )
+                    trySend(
+                        ChatStreamEvent.Phase(
+                            requestId = request.requestId,
+                            phase = ChatStreamPhase.PROMPT_PROCESSING,
+                            detail = "prompt.processing",
+                        ),
+                    )
+                }
+                val response = container.sendChatMessages(
                     sessionId = request.sessionId,
-                    userText = request.userText,
+                    messages = request.messages,
                     taskType = request.taskType,
                     deviceState = request.deviceState,
                     maxTokens = request.maxTokens,
@@ -156,6 +243,16 @@ class DefaultMvpRuntimeFacade(
                     onToken = { token ->
                         if (firstTokenMs == null) {
                             firstTokenMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
+                        }
+                        if (streamContractV2Enabled && !tokenStreamPhaseEmitted) {
+                            tokenStreamPhaseEmitted = true
+                            trySend(
+                                ChatStreamEvent.Phase(
+                                    requestId = request.requestId,
+                                    phase = ChatStreamPhase.TOKEN_STREAM,
+                                    detail = "response.delta",
+                                ),
+                            )
                         }
                         textBuilder.append(token)
                         trySend(
@@ -168,6 +265,7 @@ class DefaultMvpRuntimeFacade(
                     },
                     requestTimeoutMs = request.requestTimeoutMs,
                     requestId = request.requestId,
+                    previousResponseId = request.previousResponseId,
                     performanceConfig = request.performanceConfig,
                     residencyPolicy = request.residencyPolicy,
                 )
@@ -182,6 +280,15 @@ class DefaultMvpRuntimeFacade(
                         completionMs = response.totalLatencyMs,
                     ),
                 )
+                if (streamContractV2Enabled) {
+                    trySend(
+                        ChatStreamEvent.Phase(
+                            requestId = request.requestId,
+                            phase = ChatStreamPhase.CHAT_END,
+                            detail = "chat.end",
+                        ),
+                    )
+                }
                 close()
             }.onFailure { error ->
                 finished.set(true)
@@ -223,6 +330,15 @@ class DefaultMvpRuntimeFacade(
                         )
                     }
                     trySend(terminalEvent)
+                }
+                if (streamContractV2Enabled) {
+                    trySend(
+                        ChatStreamEvent.Phase(
+                            requestId = request.requestId,
+                            phase = ChatStreamPhase.ERROR,
+                            detail = "error",
+                        ),
+                    )
                 }
                 close()
             }
@@ -285,6 +401,36 @@ class DefaultRuntimeContainer(
     ),
 ) : RuntimeContainer {
     override fun createSession(): SessionId = orchestrator.createSession()
+
+    override fun sendChatMessages(
+        sessionId: SessionId,
+        messages: List<InteractionMessage>,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int,
+        keepModelLoaded: Boolean,
+        onToken: (String) -> Unit,
+        requestTimeoutMs: Long,
+        requestId: String,
+        previousResponseId: String?,
+        performanceConfig: PerformanceRuntimeConfig,
+        residencyPolicy: ModelResidencyPolicy,
+    ): ChatResponse {
+        return orchestrator.sendChatMessages(
+            sessionId = sessionId,
+            messages = messages,
+            taskType = taskType,
+            deviceState = deviceState,
+            maxTokens = maxTokens,
+            keepModelLoaded = keepModelLoaded,
+            onToken = onToken,
+            requestTimeoutMs = requestTimeoutMs,
+            requestId = requestId,
+            previousResponseId = previousResponseId,
+            performanceConfig = performanceConfig,
+            residencyPolicy = residencyPolicy,
+        )
+    }
 
     override fun sendUserMessage(
         sessionId: SessionId,
@@ -357,6 +503,65 @@ private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 90_000L
 
 private fun defaultRequestId(): String {
     return "req-${System.currentTimeMillis()}-${UUID.randomUUID().toString().substring(0, 8)}"
+}
+
+private fun StreamUserMessageRequest.toV2Request(): StreamChatRequestV2 {
+    return StreamChatRequestV2(
+        sessionId = sessionId,
+        messages = listOf(
+            InteractionMessage(
+                role = InteractionRole.USER,
+                parts = listOf(InteractionContentPart.Text(userText)),
+            ),
+        ),
+        taskType = taskType,
+        deviceState = deviceState,
+        maxTokens = maxTokens,
+        requestTimeoutMs = requestTimeoutMs,
+        requestId = requestId,
+        performanceConfig = performanceConfig,
+        residencyPolicy = residencyPolicy,
+    )
+}
+
+private fun StreamChatRequestV2.toLegacyRequest(): StreamUserMessageRequest {
+    return StreamUserMessageRequest(
+        sessionId = sessionId,
+        userText = latestUserTextOrFallback(messages),
+        taskType = taskType,
+        deviceState = deviceState,
+        maxTokens = maxTokens,
+        requestTimeoutMs = requestTimeoutMs,
+        requestId = requestId,
+        performanceConfig = performanceConfig,
+        residencyPolicy = residencyPolicy,
+    )
+}
+
+private fun latestUserTextOrFallback(messages: List<InteractionMessage>): String {
+    return messages
+        .asReversed()
+        .firstOrNull { message -> message.role == InteractionRole.USER }
+        ?.parts
+        ?.joinToString(separator = "\n") { part ->
+            when (part) {
+                is InteractionContentPart.Text -> part.text
+            }
+        }
+        ?.trim()
+        ?.ifBlank { null }
+        ?: messages
+            .asReversed()
+            .firstOrNull()
+            ?.parts
+            ?.joinToString(separator = "\n") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                }
+            }
+            ?.trim()
+            ?.ifBlank { null }
+        ?: ""
 }
 
 private fun streamContractV2Enabled(): Boolean {
