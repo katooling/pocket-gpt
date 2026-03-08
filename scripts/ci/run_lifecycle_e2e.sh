@@ -6,6 +6,7 @@ OUT_DIR="tmp/lifecycle-e2e-first-run"
 APP_ID="com.pocketagent.android"
 APP_TEST_ID="com.pocketagent.android.test"
 RISK_REASON="${1:-unknown}"
+ATTEMPT_TIMEOUT_SEC="${LIFECYCLE_E2E_ATTEMPT_TIMEOUT_SEC:-1200}"
 
 mkdir -p "${OUT_DIR}"
 
@@ -28,11 +29,14 @@ run_attempt() {
   local attempt_dir="${OUT_DIR}/attempt-${attempt}"
   mkdir -p "${attempt_dir}"
   set +e
-  maestro --device "${DEVICE_SERIAL}" test "${FLOW_PATH}" --format junit --debug-output "${attempt_dir}/debug" \
+  timeout "${ATTEMPT_TIMEOUT_SEC}" maestro --device "${DEVICE_SERIAL}" test "${FLOW_PATH}" --format junit --debug-output "${attempt_dir}/debug" \
     > "${attempt_dir}/junit.xml" \
     2> "${attempt_dir}/maestro-stderr.log"
   local rc=$?
   set -e
+  if [[ ${rc} -eq 124 ]]; then
+    echo "::warning::Lifecycle E2E attempt ${attempt} timed out after ${ATTEMPT_TIMEOUT_SEC}s."
+  fi
   return ${rc}
 }
 
