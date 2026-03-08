@@ -8,6 +8,11 @@ APP_TEST_ID="com.pocketagent.android.test"
 RISK_REASON="${1:-unknown}"
 ATTEMPT_TIMEOUT_SEC="${LIFECYCLE_E2E_ATTEMPT_TIMEOUT_SEC:-1200}"
 ADB_TIMEOUT_SEC="${LIFECYCLE_E2E_ADB_TIMEOUT_SEC:-120}"
+TIMEOUT_KILL_AFTER="${LIFECYCLE_E2E_KILL_AFTER_SEC:-30}"
+
+with_timeout() {
+  timeout --kill-after="${TIMEOUT_KILL_AFTER}" "$@"
+}
 
 mkdir -p "${OUT_DIR}"
 
@@ -17,13 +22,13 @@ if [[ -z "${APK_PATH}" ]]; then
   exit 1
 fi
 
-DEVICE_SERIAL="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
+DEVICE_SERIAL="$(with_timeout "${ADB_TIMEOUT_SEC}" adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
 if [[ -z "${DEVICE_SERIAL}" ]]; then
   echo "No connected emulator/device for Maestro run." >&2
   exit 1
 fi
 
-if ! timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null; then
+if ! with_timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null; then
   echo "Failed to install APK on ${DEVICE_SERIAL} within ${ADB_TIMEOUT_SEC}s." >&2
   exit 1
 fi
@@ -33,7 +38,7 @@ run_attempt() {
   local attempt_dir="${OUT_DIR}/attempt-${attempt}"
   mkdir -p "${attempt_dir}"
   set +e
-  timeout "${ATTEMPT_TIMEOUT_SEC}" maestro --device "${DEVICE_SERIAL}" test "${FLOW_PATH}" --format junit --debug-output "${attempt_dir}/debug" \
+  with_timeout "${ATTEMPT_TIMEOUT_SEC}" maestro --device "${DEVICE_SERIAL}" test "${FLOW_PATH}" --format junit --debug-output "${attempt_dir}/debug" \
     > "${attempt_dir}/junit.xml" \
     2> "${attempt_dir}/maestro-stderr.log"
   local rc=$?
@@ -54,10 +59,10 @@ echo "::warning::First lifecycle E2E attempt failed; retrying once after clean-s
 printf "decision=%s\nreason=%s\nfirst_attempt_failed=%s\n" \
   "run" "${RISK_REASON}" "true" > "${OUT_DIR}/retry-summary.txt"
 
-timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" shell pm clear "${APP_ID}" >/dev/null || true
-timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" uninstall "${APP_ID}" >/dev/null || true
-timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" uninstall "${APP_TEST_ID}" >/dev/null || true
-if ! timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null; then
+with_timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" shell pm clear "${APP_ID}" >/dev/null || true
+with_timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" uninstall "${APP_ID}" >/dev/null || true
+with_timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" uninstall "${APP_TEST_ID}" >/dev/null || true
+if ! with_timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null; then
   echo "Failed to reinstall APK on ${DEVICE_SERIAL} within ${ADB_TIMEOUT_SEC}s." >&2
   exit 1
 fi
