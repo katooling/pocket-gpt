@@ -10,6 +10,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.security.MessageDigest
 
 class ArtifactVerifier(
@@ -66,7 +67,7 @@ class ArtifactVerifier(
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
         if (filePath != null) {
-            val path = Path.of(filePath)
+            val path = Paths.get(filePath)
             val payloadPresent = Files.exists(path, LinkOption.NOFOLLOW_LINKS) && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
             val payloadSha256 = if (payloadPresent) {
                 sha256HexFromFile(path)

@@ -2,6 +2,7 @@ package com.pocketagent.memory
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.sql.Connection
 import java.sql.DriverManager
 
@@ -185,7 +186,7 @@ class SqliteMemoryModule private constructor(
 
         fun fromPath(databasePath: String): SqliteMemoryModule {
             require(databasePath.isNotBlank()) { "databasePath must not be blank." }
-            return fromFile(Path.of(databasePath))
+            return fromFile(Paths.get(databasePath))
         }
 
         fun fromFile(databasePath: Path): SqliteMemoryModule {

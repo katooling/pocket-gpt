@@ -2,6 +2,7 @@ package com.pocketagent.memory
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.util.Base64
 
 class FileBackedMemoryModule private constructor(
@@ -102,7 +103,7 @@ class FileBackedMemoryModule private constructor(
         }
 
         fun ephemeralRuntimeModule(): FileBackedMemoryModule {
-            val dbPath = Path.of(
+            val dbPath = Paths.get(
                 System.getProperty("java.io.tmpdir"),
                 "pocketagent-memory",
                 "android-runtime-memory-${System.nanoTime()}.db",
@@ -111,7 +112,7 @@ class FileBackedMemoryModule private constructor(
         }
 
         fun defaultRuntimeModule(): FileBackedMemoryModule {
-            val dbPath = Path.of(
+            val dbPath = Paths.get(
                 System.getProperty("java.io.tmpdir"),
                 "pocketagent-memory",
                 "android-runtime-memory.db",

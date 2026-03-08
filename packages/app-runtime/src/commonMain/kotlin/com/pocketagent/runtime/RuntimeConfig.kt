@@ -5,6 +5,7 @@ import com.pocketagent.inference.ModelRuntimeProfile
 import java.io.BufferedInputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.security.MessageDigest
 
 data class RuntimeConfig(
@@ -232,7 +233,7 @@ data class RuntimeConfig(
             if (normalized.isEmpty()) {
                 return null
             }
-            val filePath = runCatching { Path.of(normalized) }.getOrNull() ?: return null
+            val filePath = runCatching { Paths.get(normalized) }.getOrNull() ?: return null
             if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
                 return null
             }
@@ -251,7 +252,7 @@ data class RuntimeConfig(
             val filePath = sideLoadPath
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
-                ?.let { Path.of(it) }
+                ?.let { Paths.get(it) }
             if (filePath != null && Files.exists(filePath) && Files.isRegularFile(filePath)) {
                 return sha256HexFromFilePath(filePath)
             }
