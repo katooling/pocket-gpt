@@ -3,8 +3,12 @@
 
 namespace {
 
+void* open_vulkan_loader() {
+    return dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+}
+
 PFN_vkGetPhysicalDeviceFeatures2 resolve_vk_get_physical_device_features2() {
-    void* handle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    void* handle = open_vulkan_loader();
     if (!handle) {
         return nullptr;
     }
@@ -18,6 +22,15 @@ PFN_vkGetPhysicalDeviceFeatures2 resolve_vk_get_physical_device_features2() {
     auto fn_khr = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2KHR>(
         dlsym(handle, "vkGetPhysicalDeviceFeatures2KHR"));
     return reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(fn_khr);
+}
+
+PFN_vkGetPhysicalDeviceFeatures resolve_vk_get_physical_device_features() {
+    void* handle = open_vulkan_loader();
+    if (!handle) {
+        return nullptr;
+    }
+    return reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures>(
+        dlsym(handle, "vkGetPhysicalDeviceFeatures"));
 }
 
 }  // namespace
@@ -37,5 +50,8 @@ extern "C" VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures2(
 
     pFeatures->pNext = nullptr;
     pFeatures->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    vkGetPhysicalDeviceFeatures(physicalDevice, &pFeatures->features);
+    static PFN_vkGetPhysicalDeviceFeatures base_fn = resolve_vk_get_physical_device_features();
+    if (base_fn) {
+        base_fn(physicalDevice, &pFeatures->features);
+    }
 }

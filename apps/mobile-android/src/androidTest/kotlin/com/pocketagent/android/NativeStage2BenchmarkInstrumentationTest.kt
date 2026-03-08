@@ -214,6 +214,11 @@ class NativeStage2BenchmarkInstrumentationTest {
             val finalTokens = requireNotNull(streamedTokens) {
                 "Scenario $scenario run=$index did not capture streamed tokens."
             }
+            assertEquals(
+                "Benchmark run used unexpected model. This indicates fallback rather than the requested model path.",
+                modelId,
+                finalResponse.modelId,
+            )
 
             val observedTokenCount = max(
                 finalTokens.count { it.isNotBlank() },
@@ -492,11 +497,6 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val DEFAULT_MIN_TOKENS = 16
         private const val DEFAULT_WARMUP_MAX_TOKENS = 8
         private const val MAX_ATTEMPTS_PER_RUN = 3
-        private val SUPPORTED_MODELS = setOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4,
-            ModelCatalog.QWEN_3_5_2B_Q4,
-            ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
-            ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
-        )
+        private val SUPPORTED_MODELS = ModelCatalog.bridgeSupportedModels().toSet()
     }
 }
