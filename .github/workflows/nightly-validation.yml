@@ -180,7 +180,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     continue-on-error: true
-    if: ${{ secrets.MAESTRO_CLOUD_API_KEY != '' }}
     env:
       MAESTRO_CLOUD_API_KEY: ${{ secrets.MAESTRO_CLOUD_API_KEY }}
     steps:
@@ -202,10 +201,19 @@ jobs:
           curl -Ls https://get.maestro.mobile.dev | bash
           echo "${HOME}/.maestro/bin" >> "${GITHUB_PATH}"
 
+      - name: Skip when Maestro Cloud key is missing
+        run: |
+          if [[ -z "${MAESTRO_CLOUD_API_KEY}" ]]; then
+            echo "MAESTRO_CLOUD_API_KEY is not configured; skipping cloud supplemental nightly flow."
+            exit 0
+          fi
+
       - name: Assemble debug APK
+        if: env.MAESTRO_CLOUD_API_KEY != ''
         run: ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
 
       - name: Run first-run lifecycle flow on Maestro Cloud
+        if: env.MAESTRO_CLOUD_API_KEY != ''
         run: |
           set -euo pipefail
           mkdir -p tmp/nightly-maestro-cloud-first-run
