@@ -359,6 +359,7 @@ private fun com.pocketagent.core.Turn.toInteractionMessage(): InteractionMessage
         else -> InteractionRole.USER
     }
     return InteractionMessage(
+        id = "turn-${timestampEpochMs}-${interactionRole.name.lowercase()}",
         role = interactionRole,
         parts = listOf(InteractionContentPart.Text(content)),
         metadata = mapOf("timestampEpochMs" to timestampEpochMs.toString()),

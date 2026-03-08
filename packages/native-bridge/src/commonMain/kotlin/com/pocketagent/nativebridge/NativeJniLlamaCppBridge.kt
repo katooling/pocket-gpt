@@ -14,6 +14,7 @@ class NativeJniLlamaCppBridge(
     private val supportedModels: Set<String> = ModelCatalog.bridgeSupportedModels().toSet(),
     private val fallbackBridge: LlamaCppRuntimeBridge = AdbDeviceLlamaCppBridge(),
     private val fallbackEnabled: Boolean = defaultFallbackEnabled(),
+    private val gpuOffloadAllowed: Boolean = defaultGpuOffloadEnabled(),
 ) : LlamaCppRuntimeBridge {
     private var initialized = false
     private var runtimeReady = false
@@ -42,6 +43,9 @@ class NativeJniLlamaCppBridge(
     override fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = runtimeGenerationConfig
 
     override fun supportsGpuOffload(): Boolean {
+        if (!gpuOffloadAllowed) {
+            return false
+        }
         ensureRuntimeInitialized()
         return if (usingFallback) {
             fallbackBridge.supportsGpuOffload()
@@ -74,7 +78,7 @@ class NativeJniLlamaCppBridge(
         }
         val normalizedModelPath = validation.normalizedModelPath.orEmpty()
         val config = runtimeGenerationConfig
-        val gpuEnabledAndSupported = config.gpuEnabled && supportsGpuOffload()
+        val gpuEnabledAndSupported = gpuOffloadAllowed && config.gpuEnabled && supportsGpuOffload()
         val requestedGpuLayers = if (gpuEnabledAndSupported) config.gpuLayers else 0
         val primaryAttempt = runCatching {
             nativeApi.loadModel(
@@ -432,6 +436,7 @@ class NativeJniLlamaCppBridge(
 
     companion object {
         const val ENABLE_ADB_FALLBACK_ENV: String = "POCKETGPT_ENABLE_ADB_FALLBACK"
+        const val ENABLE_GPU_OFFLOAD_ENV: String = "POCKETGPT_ENABLE_GPU_OFFLOAD"
 
         private fun defaultFallbackEnabled(): Boolean {
             val raw = System.getenv(ENABLE_ADB_FALLBACK_ENV)
@@ -439,6 +444,14 @@ class NativeJniLlamaCppBridge(
                 ?.lowercase()
                 ?: return false
             return raw in setOf("1", "true", "yes")
+        }
+
+        private fun defaultGpuOffloadEnabled(): Boolean {
+            val raw = System.getenv(ENABLE_GPU_OFFLOAD_ENV)
+                ?.trim()
+                ?.lowercase()
+                ?: return false
+            return raw in setOf("1", "true", "yes", "on")
         }
     }
 }

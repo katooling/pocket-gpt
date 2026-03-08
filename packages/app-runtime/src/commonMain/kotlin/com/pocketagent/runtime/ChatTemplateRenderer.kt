@@ -68,16 +68,9 @@ private fun InteractionRole.toTemplateRole(): String {
 }
 
 private fun InteractionMessage.renderedText(): String {
-    val partsText = parts.joinToString(separator = "\n") { part ->
+    return parts.joinToString(separator = "\n") { part ->
         when (part) {
             is InteractionContentPart.Text -> part.text
         }
     }
-    if (toolCalls.isEmpty()) {
-        return partsText
-    }
-    val toolCallText = toolCalls.joinToString(separator = "\n") { call ->
-        "tool_call(id=${call.id}, name=${call.name}, args=${call.argumentsJson})"
-    }
-    return if (partsText.isBlank()) toolCallText else "$partsText\n$toolCallText"
 }

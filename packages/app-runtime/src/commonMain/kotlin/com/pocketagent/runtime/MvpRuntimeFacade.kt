@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 
+@Deprecated(
+    message = "Use StreamChatRequestV2 with canonical interaction messages.",
+    replaceWith = ReplaceWith("StreamChatRequestV2"),
+)
 data class StreamUserMessageRequest(
     val sessionId: SessionId,
     val userText: String,
@@ -51,6 +55,12 @@ enum class ChatStreamPhase {
     ERROR,
 }
 
+sealed interface ChatStreamDelta {
+    data class TextDelta(
+        val text: String,
+    ) : ChatStreamDelta
+}
+
 sealed interface ChatStreamEvent {
     val requestId: String
 
@@ -65,9 +75,19 @@ sealed interface ChatStreamEvent {
         val detail: String? = null,
     ) : ChatStreamEvent
 
+    @Deprecated(
+        message = "Use Delta with ChatStreamDelta.TextDelta.",
+        replaceWith = ReplaceWith("Delta"),
+    )
     data class TokenDelta(
         override val requestId: String,
         val token: String,
+        val accumulatedText: String,
+    ) : ChatStreamEvent
+
+    data class Delta(
+        override val requestId: String,
+        val delta: ChatStreamDelta,
         val accumulatedText: String,
     ) : ChatStreamEvent
 
@@ -100,10 +120,10 @@ sealed interface ChatStreamEvent {
 
 interface MvpRuntimeFacade {
     fun createSession(): SessionId
-    fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent>
-    fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
-        return streamUserMessage(request.toLegacyRequest())
+    fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
+        return streamChat(request.toV2Request())
     }
+    fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent>
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean = false
     fun runTool(toolName: String, jsonArgs: String): String
@@ -139,21 +159,7 @@ interface RuntimeContainer {
         previousResponseId: String? = null,
         performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
         residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
-    ): ChatResponse {
-        return sendUserMessage(
-            sessionId = sessionId,
-            userText = latestUserTextOrFallback(messages),
-            taskType = taskType,
-            deviceState = deviceState,
-            maxTokens = maxTokens,
-            keepModelLoaded = keepModelLoaded,
-            onToken = onToken,
-            requestTimeoutMs = requestTimeoutMs,
-            requestId = requestId,
-            performanceConfig = performanceConfig,
-            residencyPolicy = residencyPolicy,
-        )
-    }
+    ): ChatResponse
     fun sendUserMessage(
         sessionId: SessionId,
         userText: String,
@@ -166,7 +172,27 @@ interface RuntimeContainer {
         requestId: String = "legacy",
         performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
         residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
-    ): ChatResponse
+    ): ChatResponse {
+        return sendChatMessages(
+            sessionId = sessionId,
+            messages = listOf(
+                InteractionMessage(
+                    role = InteractionRole.USER,
+                    parts = listOf(InteractionContentPart.Text(userText)),
+                ),
+            ),
+            taskType = taskType,
+            deviceState = deviceState,
+            maxTokens = maxTokens,
+            keepModelLoaded = keepModelLoaded,
+            onToken = onToken,
+            requestTimeoutMs = requestTimeoutMs,
+            requestId = requestId,
+            previousResponseId = null,
+            performanceConfig = performanceConfig,
+            residencyPolicy = residencyPolicy,
+        )
+    }
     fun cancelGeneration(sessionId: SessionId): Boolean = false
     fun cancelGenerationByRequest(requestId: String): Boolean = false
     fun runTool(toolName: String, jsonArgs: String): String
@@ -255,11 +281,12 @@ class DefaultMvpRuntimeFacade(
                             )
                         }
                         textBuilder.append(token)
+                        val accumulatedText = textBuilder.toString()
                         trySend(
-                            ChatStreamEvent.TokenDelta(
+                            ChatStreamEvent.Delta(
                                 requestId = request.requestId,
-                                token = token,
-                                accumulatedText = textBuilder.toString().trim(),
+                                delta = ChatStreamDelta.TextDelta(text = token),
+                                accumulatedText = accumulatedText,
                             ),
                         )
                     },
@@ -510,6 +537,7 @@ private fun StreamUserMessageRequest.toV2Request(): StreamChatRequestV2 {
         sessionId = sessionId,
         messages = listOf(
             InteractionMessage(
+                id = "legacy-user-${requestId}",
                 role = InteractionRole.USER,
                 parts = listOf(InteractionContentPart.Text(userText)),
             ),
@@ -522,46 +550,6 @@ private fun StreamUserMessageRequest.toV2Request(): StreamChatRequestV2 {
         performanceConfig = performanceConfig,
         residencyPolicy = residencyPolicy,
     )
-}
-
-private fun StreamChatRequestV2.toLegacyRequest(): StreamUserMessageRequest {
-    return StreamUserMessageRequest(
-        sessionId = sessionId,
-        userText = latestUserTextOrFallback(messages),
-        taskType = taskType,
-        deviceState = deviceState,
-        maxTokens = maxTokens,
-        requestTimeoutMs = requestTimeoutMs,
-        requestId = requestId,
-        performanceConfig = performanceConfig,
-        residencyPolicy = residencyPolicy,
-    )
-}
-
-private fun latestUserTextOrFallback(messages: List<InteractionMessage>): String {
-    return messages
-        .asReversed()
-        .firstOrNull { message -> message.role == InteractionRole.USER }
-        ?.parts
-        ?.joinToString(separator = "\n") { part ->
-            when (part) {
-                is InteractionContentPart.Text -> part.text
-            }
-        }
-        ?.trim()
-        ?.ifBlank { null }
-        ?: messages
-            .asReversed()
-            .firstOrNull()
-            ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
-            ?.trim()
-            ?.ifBlank { null }
-        ?: ""
 }
 
 private fun streamContractV2Enabled(): Boolean {

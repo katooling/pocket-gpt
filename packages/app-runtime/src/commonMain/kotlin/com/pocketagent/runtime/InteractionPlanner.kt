@@ -19,6 +19,7 @@ class InteractionPlanner(
         val profile = templateRegistry.templateProfileForModel(modelId)
         val enrichedMessages = mutableListOf<InteractionMessage>()
         enrichedMessages += InteractionMessage(
+            id = "system-task-${System.currentTimeMillis()}",
             role = InteractionRole.SYSTEM,
             parts = listOf(
                 InteractionContentPart.Text(
@@ -28,6 +29,7 @@ class InteractionPlanner(
         )
         if (memorySnippets.isNotEmpty()) {
             enrichedMessages += InteractionMessage(
+                id = "system-memory-${System.currentTimeMillis()}",
                 role = InteractionRole.SYSTEM,
                 parts = listOf(
                     InteractionContentPart.Text(
@@ -165,6 +167,7 @@ private fun Turn.toInteractionMessage(): InteractionMessage {
         else -> InteractionRole.USER
     }
     return InteractionMessage(
+        id = "turn-${timestampEpochMs}-${interactionRole.name.lowercase()}",
         role = interactionRole,
         parts = listOf(InteractionContentPart.Text(content)),
         metadata = mapOf("timestampEpochMs" to timestampEpochMs.toString()),

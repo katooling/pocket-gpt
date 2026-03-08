@@ -2,7 +2,6 @@ package com.pocketagent.runtime
 
 import com.pocketagent.core.PolicyModule
 import com.pocketagent.inference.InferenceModule
-import com.pocketagent.inference.ModelRuntimeProfile
 import com.pocketagent.nativebridge.RuntimeBackend
 
 internal class StartupChecksUseCase(
@@ -20,6 +19,7 @@ internal class StartupChecksUseCase(
         val checks = mutableListOf<String>()
         val startupPolicy = modelRegistry.startupPolicy(profile = runtimeConfig.modelRuntimeProfile)
         val startupCandidateModels = startupPolicy.candidateModelIds
+        val startupCandidateModelIdSet = startupCandidateModels.toSet()
         if (startupCandidateModels.isEmpty()) {
             checks.add("Startup model policy invalid: no startup candidate models configured.")
             return checks
@@ -48,6 +48,13 @@ internal class StartupChecksUseCase(
         if (blockingConfigChecks.isNotEmpty()) {
             checks.addAll(blockingConfigChecks)
             return checks
+        }
+        if (configuredModels.size < startupPolicy.minimumReadyCount) {
+            val fallbackConfiguredModels = fullyConfiguredRuntimeModelIds()
+                .filterNot { modelId -> startupCandidateModelIdSet.contains(modelId) }
+            if (fallbackConfiguredModels.isNotEmpty()) {
+                configuredModels.addAll(fallbackConfiguredModels)
+            }
         }
         if (configuredModels.size < startupPolicy.minimumReadyCount) {
             startupCandidateModels.forEach { modelId ->
@@ -113,12 +120,6 @@ internal class StartupChecksUseCase(
         } else if (startupEligibleModels.size < startupPolicy.minimumReadyCount) {
             checks.add("Missing runtime model(s): ${missing.joinToString(", ")}.")
         } else {
-            if (runtimeConfig.modelRuntimeProfile != ModelRuntimeProfile.DEV_FAST) {
-                val startupProbeModel = modelLifecycleCoordinator.preferredModelOrder(startupEligibleModels).firstOrNull()
-                if (startupProbeModel == null || !inferenceModule.loadModel(startupProbeModel)) {
-                    checks.add("Failed to load startup runtime model: ${startupProbeModel ?: "none"}.")
-                }
-            }
             val optionalMissing = missing.filterNot { modelId -> requiredModelIds.contains(modelId) }
             if (optionalMissing.isNotEmpty() && checks.none { it.contains("Optional runtime model unavailable:") }) {
                 checks.add("Optional runtime model unavailable: ${optionalMissing.joinToString(", ")}.")
@@ -134,6 +135,18 @@ internal class StartupChecksUseCase(
         }
         checks.addAll(optionalConfigWarnings)
         return checks
+    }
+
+    private fun fullyConfiguredRuntimeModelIds(): List<String> {
+        val candidateModelIds = linkedSetOf<String>()
+        candidateModelIds += modelRegistry.allMetadata().map { metadata -> metadata.modelId }
+        candidateModelIds += runtimeConfig.artifactPayloadByModelId.keys
+        candidateModelIds += runtimeConfig.artifactFilePathByModelId.keys
+        candidateModelIds += runtimeConfig.artifactSha256ByModelId.keys
+        candidateModelIds += runtimeConfig.artifactProvenanceIssuerByModelId.keys
+        candidateModelIds += runtimeConfig.artifactProvenanceSignatureByModelId.keys
+        return candidateModelIds
+            .filter { modelId -> missingArtifactConfigFields(modelId).isEmpty() }
     }
 
     private fun missingArtifactConfigFields(modelId: String): List<String> {

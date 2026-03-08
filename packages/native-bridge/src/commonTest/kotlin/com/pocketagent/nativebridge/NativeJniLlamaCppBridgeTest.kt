@@ -145,6 +145,7 @@ class NativeJniLlamaCppBridgeTest {
             libraryLoader = { _ -> },
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
+            gpuOffloadAllowed = true,
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -157,6 +158,34 @@ class NativeJniLlamaCppBridgeTest {
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         assertEquals(listOf(32, 0), nativeApi.loadGpuLayers)
         assertEquals(null, bridge.lastError())
+    }
+
+    @Test
+    fun `gpu layers are clamped to cpu path when gpu offload is not allowed`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = false,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 32,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertFalse(bridge.supportsGpuOffload())
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(listOf(0), nativeApi.loadGpuLayers)
     }
 
     @Test

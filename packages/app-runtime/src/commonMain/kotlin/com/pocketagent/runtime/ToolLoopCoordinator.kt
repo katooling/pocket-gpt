@@ -14,6 +14,7 @@ class ToolLoopCoordinator(
             validationErrorCode = result.validationErrorCode,
             validationErrorDetail = result.validationErrorDetail,
             message = InteractionMessage(
+                id = "tool-${System.currentTimeMillis()}",
                 role = InteractionRole.TOOL,
                 toolCallId = "tool-${System.currentTimeMillis()}",
                 parts = listOf(InteractionContentPart.Text(result.content)),

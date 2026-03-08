@@ -5,6 +5,7 @@ package com.pocketagent.runtime
  * This mirrors OpenAI-style roles/content/tool-calls while remaining provider agnostic.
  */
 data class InteractionMessage(
+    val id: String = defaultInteractionMessageId(),
     val role: InteractionRole,
     val parts: List<InteractionContentPart>,
     val toolCalls: List<InteractionToolCall> = emptyList(),
@@ -27,7 +28,19 @@ data class InteractionToolCall(
     val id: String,
     val name: String,
     val argumentsJson: String,
+    val status: InteractionToolCallStatus = InteractionToolCallStatus.PENDING,
 )
+
+enum class InteractionToolCallStatus {
+    PENDING,
+    RUNNING,
+    COMPLETED,
+    FAILED,
+}
+
+private fun defaultInteractionMessageId(): String {
+    return "msg-${System.currentTimeMillis()}-${kotlin.random.Random.nextInt(10_000, 99_999)}"
+}
 
 data class RenderedPrompt(
     val prompt: String,

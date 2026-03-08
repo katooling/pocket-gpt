@@ -70,7 +70,7 @@ class StartupChecksUseCaseTest {
 
         assertTrue(checks.any { it.contains("Optional runtime model unavailable") })
         assertTrue(checks.none { it.contains("Missing runtime model(s)") })
-        assertTrue(inference.loadCalls >= 1)
+        assertEquals(0, inference.loadCalls)
     }
 
     @Test
@@ -195,6 +195,39 @@ class StartupChecksUseCaseTest {
 
         assertTrue(checks.none { it.startsWith("MODEL_ARTIFACT_CONFIG_MISSING:") })
         assertTrue(checks.none { it.contains(ModelCatalog.QWEN_3_5_0_8B_Q4) || it.contains(ModelCatalog.QWEN_3_5_2B_Q4) })
+        assertEquals(0, inference.loadCalls)
+    }
+
+    @Test
+    fun `prod startup profile falls back to configured fast tier model when startup candidates are unavailable`() {
+        val payload = "payload-fast-fallback".encodeToByteArray()
+        val inference = StartupInferenceModule(
+            availableModels = listOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M),
+            loadModelResult = true,
+        )
+        val runtimeConfig = startupRuntimeConfig(validSha = true).copy(
+            artifactPayloadByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to payload),
+            artifactFilePathByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to ""),
+            artifactSha256ByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to startupSha256(payload)),
+            artifactProvenanceIssuerByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to "internal-release"),
+            artifactProvenanceSignatureByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to "sig-fast-fallback"),
+            modelRuntimeProfile = ModelRuntimeProfile.PROD,
+        )
+        val useCase = buildUseCase(
+            runtimeConfig = runtimeConfig,
+            inferenceModule = inference,
+            policyModule = StartupPolicyModule(
+                allowedEvents = setOf("inference.startup_check"),
+                allowedNetworkActions = emptySet(),
+            ),
+            runtimeBackendProvider = { null },
+        )
+
+        val checks = useCase.run()
+
+        assertTrue(checks.none { it.startsWith("MODEL_ARTIFACT_CONFIG_MISSING:") })
+        assertTrue(checks.none { it.contains("Missing runtime model(s)") })
+        assertTrue(checks.any { it.contains("Optional runtime model unavailable: ${ModelCatalog.QWEN_3_5_0_8B_Q4}") })
         assertEquals(0, inference.loadCalls)
     }
 
