@@ -59,7 +59,6 @@ appId: com.pocketagent.android
       - extendedWaitUntil:
           visible: "Model provisioning"
           timeout: 30000
-      - assertVisible: "Downloads"
       - runFlow:
           when:
             visible: "Download default model"

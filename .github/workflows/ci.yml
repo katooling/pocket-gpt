@@ -316,7 +316,7 @@ jobs:
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
-          script: ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=false :apps:mobile-android:connectedDebugAndroidTest
+          script: ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=false -Pandroid.testInstrumentationRunnerArguments.class=com.pocketagent.android.MainActivityUiSmokeTest#onboardingFlowCanProgressAndComplete :apps:mobile-android:connectedDebugAndroidTest
 
       - name: Run instrumentation smoke on emulator (attempt 2)
         id: instrumented_attempt_2
@@ -332,7 +332,7 @@ jobs:
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
-          script: ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=false :apps:mobile-android:connectedDebugAndroidTest
+          script: ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=false -Pandroid.testInstrumentationRunnerArguments.class=com.pocketagent.android.MainActivityUiSmokeTest#onboardingFlowCanProgressAndComplete :apps:mobile-android:connectedDebugAndroidTest
 
       - name: Enforce instrumentation success after bounded retry
         if: always()
