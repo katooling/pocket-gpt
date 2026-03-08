@@ -44,3 +44,5 @@ All non-canonical docs should link back to these where process commands or polic
 - `security/risk-register.md`
 
 Validation PR base=codex/hybrid-reliability-policy (2026-03-08T08:47:32Z).
+
+Label-trigger sync commit 2026-03-08T08:48:40Z.
