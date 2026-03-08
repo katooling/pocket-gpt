@@ -1,0 +1,95 @@
+appId: com.pocketagent.android
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- runFlow:
+    when:
+      visible: "Get started"
+    commands:
+      - tapOn: "Get started"
+- assertVisible: "Offline-first"
+- runFlow:
+    when:
+      visible: "Get ready"
+    commands:
+      - tapOn: "Get ready"
+- runFlow:
+    when:
+      visible: "Open model setup"
+    commands:
+      - tapOn: "Open model setup"
+- runFlow:
+    when:
+      visible: "Fix model setup"
+    commands:
+      - tapOn: "Fix model setup"
+- runFlow:
+    when:
+      notVisible: "Model provisioning"
+    commands:
+      - runFlow:
+          when:
+            visible: "Open advanced controls"
+          commands:
+            - tapOn: "Open advanced controls"
+      - runFlow:
+          when:
+            visible: "Advanced"
+          commands:
+            - tapOn: "Advanced"
+      - runFlow:
+          when:
+            visible: "Open model setup"
+          commands:
+            - tapOn: "Open model setup"
+      - runFlow:
+          when:
+            visible: "Fix model setup"
+          commands:
+            - tapOn: "Fix model setup"
+- extendedWaitUntil:
+    visible: "Model provisioning"
+    timeout: 30000
+- assertVisible: "Downloads"
+- runFlow:
+    when:
+      visible: "Download default model"
+    commands:
+      - tapOn: "Download default model"
+- runFlow:
+    when:
+      visible: "Start download"
+    commands:
+      - tapOn: "Start download"
+      - extendedWaitUntil:
+          visible: "Pause"
+          timeout: 120000
+- runFlow:
+    when:
+      visible: "Model provisioning"
+    commands:
+      - back
+- runFlow:
+    when:
+      visible: "Runtime: Error"
+    commands:
+      - tapOn: "Refresh runtime checks"
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 900000
+- assertNotVisible: "Runtime: Error"
+- tapOn: "Message"
+- eraseText
+- inputText: "download flow smoke"
+- tapOn: "Send"
+- assertVisible: "download flow smoke"
+- extendedWaitUntil:
+    notVisible: "Cancel"
+    timeout: 180000
+- assertNotVisible: "UI-RUNTIME-001"
+- takeScreenshot: "first-run-download-chat-smoke"

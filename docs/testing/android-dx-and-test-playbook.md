@@ -109,6 +109,27 @@ Maestro install (validated against `v1.39.13`):
 curl -Ls https://get.maestro.mobile.dev | bash
 ```
 
+## Maestro Cloud (Supplemental Lane)
+
+Use Maestro Cloud for hosted execution of the same flow files when a local/emulator device is not the bottleneck.
+
+```bash
+set -a
+source .env
+set +a
+: "${MAESTRO_CLOUD_API_KEY:?Set MAESTRO_CLOUD_API_KEY in .env}"
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
+maestro cloud --android-api-level 34 --app-file "${APK_PATH}" --flows tests/maestro/
+```
+
+Notes:
+
+1. Optional project selector: `--project-id <project-id>`
+2. Optional tag filters (once tags are added): `--include-tags ...`, `--exclude-tags ...`
+3. Optional CI metadata: `--branch "$GITHUB_REF_NAME" --commit-sha "$GITHUB_SHA"`
+4. Cloud is supplemental. Required release-gate evidence still comes from `devctl` lanes (`maestro`, `journey`, and stage-specific closure lanes) because those lanes include preflight/provisioning/lock/artifact contracts not executed by direct `maestro cloud` invocation.
+
 ## WP-11 UI Validation Loop
 
 Use this loop once Compose UI changes land:

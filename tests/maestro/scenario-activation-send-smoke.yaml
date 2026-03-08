@@ -17,7 +17,6 @@ appId: com.pocketagent.android
 - extendedWaitUntil:
     notVisible: "Cancel"
     timeout: 120000
-- tapOn: "Message"
 - eraseText
 - inputText: "Simple-first unlock step two"
 - tapOn: "Send"
@@ -56,7 +55,6 @@ appId: com.pocketagent.android
       visible: "Advanced controls"
     commands:
       - back
-- tapOn: "Message"
 - eraseText
 - inputText: "ola how you doin"
 - tapOn: "Send"

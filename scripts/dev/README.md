@@ -182,6 +182,32 @@ Maestro install:
 curl -Ls https://get.maestro.mobile.dev | bash
 ```
 
+## Maestro Cloud (Supplemental)
+
+Use this when you want hosted device coverage without a local emulator/phone. This is supplemental to `python3 tools/devctl/main.py lane maestro`.
+
+```bash
+set -a
+source .env
+set +a
+: "${MAESTRO_CLOUD_API_KEY:?Set MAESTRO_CLOUD_API_KEY in .env}"
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
+maestro cloud --android-api-level 34 --app-file "${APK_PATH}" --flows tests/maestro/
+```
+
+Optional:
+
+1. Set project explicitly when needed: `--project-id <project-id>`
+2. Filter by tags (if tags are added to flows): `--include-tags ...`, `--exclude-tags ...`
+3. Add CI metadata: `--branch "$GITHUB_REF_NAME" --commit-sha "$GITHUB_SHA"`
+
+Important:
+
+1. `maestro cloud` runs the Maestro flow files directly.
+2. It does not run `devctl` device health checks, real-runtime provisioning preflight, per-device lock handling, or local benchmark artifact/logcat capture contracts.
+3. Keep `devctl lane maestro` and `devctl lane journey` as promotion/closure gates.
+
 ## Governance Commands
 
 Wrappers remain callable, but all governance logic runs via `devctl governance`.
