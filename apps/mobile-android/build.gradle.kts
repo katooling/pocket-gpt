@@ -10,6 +10,15 @@ val nativeBuildEnabled = providers.gradleProperty("pocketgpt.enableNativeBuild")
     .orElse("true")
     .map { it.isTruthyFlag() }
     .get()
+val nativeAbiFilters = providers.gradleProperty("pocketgpt.nativeAbiFilters")
+    .orElse("arm64-v8a")
+    .map { raw ->
+        raw
+            .split(",")
+            .map { abi -> abi.trim() }
+            .filter { abi -> abi.isNotEmpty() }
+    }
+    .get()
 val modelManifestUrl = providers.gradleProperty("pocketgpt.modelManifestUrl")
     .orElse("")
     .get()
@@ -40,10 +49,16 @@ android {
                     "Add native sources or disable -Ppocketgpt.enableNativeBuild.",
             )
         }
+        if (nativeAbiFilters.isEmpty()) {
+            throw GradleException(
+                "Native build enabled but no ABIs were configured. " +
+                    "Set -Ppocketgpt.nativeAbiFilters (for example: arm64-v8a or x86_64).",
+            )
+        }
 
         defaultConfig {
             ndk {
-                abiFilters += listOf("arm64-v8a")
+                abiFilters += nativeAbiFilters
             }
             externalNativeBuild {
                 cmake {

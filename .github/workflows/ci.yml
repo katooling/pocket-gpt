@@ -308,7 +308,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
-          script: ./gradlew --no-daemon :apps:mobile-android:connectedDebugAndroidTest
+          script: ./gradlew --no-daemon -Ppocketgpt.nativeAbiFilters=x86_64 :apps:mobile-android:connectedDebugAndroidTest
 
       - name: Upload instrumentation reports
         if: always()
@@ -349,7 +349,7 @@ jobs:
           echo "${HOME}/.maestro/bin" >> "${GITHUB_PATH}"
 
       - name: Assemble debug APK
-        run: ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+        run: ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true -Ppocketgpt.nativeAbiFilters=x86_64 :apps:mobile-android:assembleDebug
 
       - name: Run first-run lifecycle E2E with bounded retry
         uses: reactivecircus/android-emulator-runner@v2
@@ -362,64 +362,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save
           disable-animations: true
-          script: |
-            bash -euo pipefail <<'BASH'
-            FLOW_PATH="tests/maestro/scenario-first-run-download-chat.yaml"
-            OUT_DIR="tmp/lifecycle-e2e-first-run"
-            APP_ID="com.pocketagent.android"
-            APP_TEST_ID="com.pocketagent.android.test"
-
-            mkdir -p "${OUT_DIR}"
-            APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
-            if [[ -z "${APK_PATH}" ]]; then
-              echo "No debug APK found under apps/mobile-android/build/outputs/apk/debug" >&2
-              exit 1
-            fi
-
-            DEVICE_SERIAL="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
-            if [[ -z "${DEVICE_SERIAL}" ]]; then
-              echo "No connected emulator/device for Maestro run." >&2
-              exit 1
-            fi
-
-            adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null
-
-            run_attempt() {
-              local attempt="$1"
-              local attempt_dir="${OUT_DIR}/attempt-${attempt}"
-              mkdir -p "${attempt_dir}"
-              set +e
-              maestro --device "${DEVICE_SERIAL}" test "${FLOW_PATH}" --format junit --debug-output "${attempt_dir}/debug" \
-                > "${attempt_dir}/junit.xml" \
-                2> "${attempt_dir}/maestro-stderr.log"
-              local rc=$?
-              set -e
-              return ${rc}
-            }
-
-            if run_attempt 1; then
-              printf "decision=%s\nreason=%s\nfirst_attempt_failed=%s\nfinal_attempt=%s\n" \
-                "run" "${{ needs.lifecycle-risk.outputs.reason }}" "false" "1" > "${OUT_DIR}/retry-summary.txt"
-              exit 0
-            fi
-
-            echo "::warning::First lifecycle E2E attempt failed; retrying once after clean-state reset."
-            printf "decision=%s\nreason=%s\nfirst_attempt_failed=%s\n" \
-              "run" "${{ needs.lifecycle-risk.outputs.reason }}" "true" > "${OUT_DIR}/retry-summary.txt"
-
-            adb -s "${DEVICE_SERIAL}" shell pm clear "${APP_ID}" >/dev/null || true
-            adb -s "${DEVICE_SERIAL}" uninstall "${APP_ID}" >/dev/null || true
-            adb -s "${DEVICE_SERIAL}" uninstall "${APP_TEST_ID}" >/dev/null || true
-            adb -s "${DEVICE_SERIAL}" install -r "${APK_PATH}" >/dev/null
-
-            if run_attempt 2; then
-              echo "final_attempt=2" >> "${OUT_DIR}/retry-summary.txt"
-              exit 0
-            fi
-
-            echo "final_attempt=none" >> "${OUT_DIR}/retry-summary.txt"
-            exit 1
-            BASH
+          script: bash scripts/ci/run_lifecycle_e2e.sh "${{ needs.lifecycle-risk.outputs.reason }}"
 
       - name: Upload lifecycle E2E artifacts
         if: always()
