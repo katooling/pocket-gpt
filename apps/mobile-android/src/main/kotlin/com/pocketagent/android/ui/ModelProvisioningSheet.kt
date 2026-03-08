@@ -259,7 +259,10 @@ internal fun ModelProvisioningSheet(
                 )
             }
         }
-        items(versions, key = { "${it.modelId}:${it.version}" }) { version ->
+        items(
+            versions,
+            key = { version -> downloadVersionItemKey(modelId = version.modelId, version = version.version) },
+        ) { version ->
             val latest = downloads.firstOrNull {
                 it.modelId == version.modelId && it.version == version.version
             }
@@ -361,7 +364,12 @@ internal fun ModelProvisioningSheet(
             )
         }
         snapshot.models.forEach { model ->
-            items(model.installedVersions, key = { "${model.modelId}:${it.version}" }) { version ->
+            items(
+                model.installedVersions,
+                key = { version ->
+                    installedVersionItemKey(modelId = model.modelId, version = version.version)
+                },
+            ) { version ->
                 Card {
                     Column(
                         modifier = Modifier
@@ -544,3 +552,11 @@ internal fun Long.formatAsGiB(): String {
 }
 
 private const val BYTES_PER_GIB: Double = 1024.0 * 1024.0 * 1024.0
+
+internal fun downloadVersionItemKey(modelId: String, version: String): String {
+    return "download:$modelId:$version"
+}
+
+internal fun installedVersionItemKey(modelId: String, version: String): String {
+    return "installed:$modelId:$version"
+}
