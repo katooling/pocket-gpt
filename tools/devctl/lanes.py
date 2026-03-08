@@ -341,10 +341,15 @@ def _validate_required_device_props(context: RuntimeContext, serial: str) -> Non
 
 
 def _parse_package_uid(dumpsys_text: str) -> int | None:
-    match = re.search(r"\buserId=(\d+)\b", dumpsys_text)
-    if match is None:
-        return None
-    return int(match.group(1))
+    for pattern in (
+        r"\buserId=(\d+)\b",
+        r"\bappId=(\d+)\b",
+        r"\buid=(\d+)\b",
+    ):
+        match = re.search(pattern, dumpsys_text)
+        if match is not None:
+            return int(match.group(1))
+    return None
 
 
 def _run_device_health_preflight(
@@ -449,7 +454,10 @@ def _run_device_health_preflight(
         if uid is None:
             raise DevctlError(
                 "DEVICE_ERROR",
-                f"Package {package_name} is installed but userId could not be resolved from dumpsys package output.",
+                (
+                    f"Package {package_name} is installed but package UID metadata "
+                    "(userId/appId/uid) could not be resolved from dumpsys package output."
+                ),
             )
 
 

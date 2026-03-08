@@ -12,6 +12,7 @@ Current tickets include:
 
 - `doc-02-product-ux-doc-sync-timeout-cancel-send-capture.md`
 - `eng-20-runtime-cancel-timeout-contract.md`
+- `eng-22-provisioning-startup-check-lane-blocker.md`
 - `qa-13-send-capture-gate-operationalization.md`
 - `sec-02-privacy-claim-parity-audit.md`
 - `ux-13-stuck-send-timeout-recovery.md`

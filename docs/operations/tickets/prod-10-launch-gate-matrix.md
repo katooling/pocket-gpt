@@ -1,9 +1,9 @@
 # PROD-10 Launch Gate Matrix
 
-Last updated: 2026-03-05
+Last updated: 2026-03-08
 Owner: Product
 Support: QA, Engineering, Marketing
-Status: Ready
+Status: Hold
 
 ## Purpose
 
@@ -21,11 +21,11 @@ Single promotion interface for release decisions. Every publishable claim must m
 | S-A | Offline quick answer works in first session | `docs/prd/phase-0-prd.md` Workflow A | `MainActivityUiSmokeTest`, `devctl lane android-instrumented`, Maestro scenario A | `docs/operations/evidence/index.md` (WP-11 closure summary), `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md` | C-01 offline quick-answer reliability | Required | PASS |
 | S-B | Local task/tool flow completes without cloud dependency | `docs/prd/phase-0-prd.md` Workflow B | `MainActivityUiSmokeTest`, Maestro scenario B, journey lane | `docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`, `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md` | C-02 local tool utility | Required | PASS |
 | S-C | Context follow-up (incl. optional image) stays coherent | `docs/prd/phase-0-prd.md` Workflow C | Maestro scenario C, journey aggregate | `docs/operations/evidence/index.md` (WP-11 closure summary), `docs/operations/evidence/wp-13/2026-03-05-qa-wireless-lane-rerun.md` | C-03 context continuity + image support | Required | PASS |
-| S-D | User can recover from `NotReady` to `Ready` | `docs/ux/ux-12-recovery-journey-spec.md`, `docs/ux/model-management-flow.md` | `RealRuntimeProvisioningInstrumentationTest`, journey lane, moderated WP-13 script | `docs/operations/evidence/wp-13/2026-03-05-eng-p1-model-manager-phase2-closure.md`, `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` | C-04 first-run setup clarity | Required | HOLD (moderated metrics missing) |
-| S-D1 | User completes simple-first lane and advanced unlock path | `docs/ux/implemented-behavior-reference.md`, `docs/prd/phase-0-prd.md` | `ChatViewModelTest`, `MainActivityUiSmokeTest`, Maestro scenario B unlock prelude, journey first-session fields | pending QA-WP13-RUN02 + weekly QA packet | C-10 simple-first onboarding clarity | Required | Pending |
-| S-E | Privacy boundaries and controls are understandable | `docs/security/privacy-model.md`, `docs/ux/implemented-behavior-reference.md` | UI smoke privacy checks, moderated WP-13 privacy comprehension metrics | `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` | C-05 privacy-first trust | Required | HOLD (moderated metrics missing) |
-| S-F | Stuck send/timeout path recovers without losing context | `docs/prd/phase-0-prd.md`, `docs/operations/tickets/ux-13-stuck-send-timeout-recovery.md` | `ChatViewModelTest`, journey send-capture stage, Maestro scenario A timeout assertions | pending QA-WP13-RUN02 + weekly QA packet | C-08 reliable send recovery | Required | Pending |
-| S-G | Manifest outage still allows setup recovery | `docs/ux/model-management-flow.md`, `docs/operations/tickets/prod-09-soft-gate-pilot-policy.md` | provisioning + model setup regression checks, moderated recovery script | pending QA-WP13-RUN02 | C-09 resilient model setup recovery | Required | Pending |
+| S-D | User can recover from `NotReady` to `Ready` | `docs/ux/ux-12-recovery-journey-spec.md`, `docs/ux/model-management-flow.md` | `RealRuntimeProvisioningInstrumentationTest`, journey lane, moderated WP-13 script | `docs/operations/evidence/wp-13/2026-03-08-qa-lane-rerun-post-p0-parser.md`, `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` | C-04 first-run setup clarity | Required | FAIL (provisioning lane preflight blocker + moderated metrics missing) |
+| S-D1 | User completes simple-first lane and advanced unlock path | `docs/ux/implemented-behavior-reference.md`, `docs/prd/phase-0-prd.md` | `ChatViewModelTest`, `MainActivityUiSmokeTest`, Maestro scenario B unlock prelude, journey first-session fields | `docs/operations/evidence/wp-13/2026-03-08-qa-lane-rerun-post-p0-parser.md` | C-10 simple-first onboarding clarity | Required | FAIL (required lane set blocked before validation) |
+| S-E | Privacy boundaries and controls are understandable | `docs/security/privacy-model.md`, `docs/ux/implemented-behavior-reference.md` | UI smoke privacy checks, moderated WP-13 privacy comprehension metrics | `docs/operations/evidence/wp-13/2026-03-04-wp13-usability-gate-run-01.md` | C-05 privacy-first trust | Required | FAIL (moderated metrics missing) |
+| S-F | Stuck send/timeout path recovers without losing context | `docs/prd/phase-0-prd.md`, `docs/operations/tickets/ux-13-stuck-send-timeout-recovery.md` | `ChatViewModelTest`, journey send-capture stage, Maestro scenario A timeout assertions | `docs/operations/evidence/wp-13/2026-03-08-qa-lane-rerun-post-p0-parser.md` | C-08 reliable send recovery | Required | FAIL (strict journey blocked before run execution) |
+| S-G | Manifest outage still allows setup recovery | `docs/ux/model-management-flow.md`, `docs/operations/tickets/prod-09-soft-gate-pilot-policy.md` | provisioning + model setup regression checks, moderated recovery script | `docs/operations/evidence/wp-13/2026-03-08-qa-lane-rerun-post-p0-parser.md` | C-09 resilient model setup recovery | Required | FAIL (provisioning startup-check blocker) |
 | A-01 | Time-to-first-useful-answer meets pilot target | `docs/ux/ux-12-recovery-journey-spec.md` success targets | journey report timing + moderated notes | pending `QA-WP13-RUN02` packet | C-06 speed perception | Advisory | Pending |
 | A-02 | Channel engagement signal supports expansion | `docs/operations/mkt-03-7-day-scorecard-template.md` | `MKT-09` scorecard execution | pending `MKT-09` run-01 | C-07 channel fit | Advisory | Pending |
 
@@ -51,3 +51,4 @@ Advisory for scope sizing:
 | Decision Date (UTC) | Window | Recommendation | Rationale | Next Scope |
 |---|---|---|---|---|
 | 2026-03-05 | Pre-run-02 baseline | Hold | WP-13 run-01 has missing moderated cohort metrics | Execute `QA-WP13-RUN02`, then rerun matrix |
+| 2026-03-08 | Post-P0 parser rerun | Hold | Required lanes fail at provisioning preflight (`RealRuntimeProvisioningInstrumentationTest`) and moderated packet still incomplete | Close `ENG-22`, rerun required lanes, then execute moderated `QA-WP13-RUN02` |

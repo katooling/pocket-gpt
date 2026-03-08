@@ -1,6 +1,6 @@
 # Test Strategy
 
-Last updated: 2026-03-06
+Last updated: 2026-03-08
 
 ## Excellence Policy
 
@@ -130,6 +130,7 @@ CI note:
    - `tests/maestro/scenario-b.yaml`
    - `tests/maestro/scenario-c.yaml`
    - `tests/maestro/scenario-activation-send-smoke.yaml`
+   - `tests/maestro/scenario-first-run-download-chat.yaml`
 4. Screenshot inventory/manual regression lane: `python3 tools/devctl/main.py lane screenshot-pack`
 5. Real-runtime app-path instrumentation (release candidates only):
    - `apps/mobile-android/src/androidTest/kotlin/com/pocketagent/android/RealRuntimeAppPathInstrumentationTest.kt`

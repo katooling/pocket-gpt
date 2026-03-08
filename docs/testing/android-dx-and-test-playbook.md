@@ -103,7 +103,7 @@ bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models
 21. Cache decisions are written to `real-runtime-preflight.json` (`cache_hit`, `size_probe_hit`, `push_required`, `forced_sync`) for operator auditability.
 22. Debug override: set `POCKETGPT_FORCE_MODEL_SYNC=1` to force model push even when cache matches.
 
-Maestro install (validated against `v1.39.13`):
+Maestro install (validated against `v2.2.0` on March 8, 2026):
 
 ```bash
 curl -Ls https://get.maestro.mobile.dev | bash
@@ -129,6 +129,17 @@ Notes:
 2. Optional tag filters (once tags are added): `--include-tags ...`, `--exclude-tags ...`
 3. Optional CI metadata: `--branch "$GITHUB_REF_NAME" --commit-sha "$GITHUB_SHA"`
 4. Cloud is supplemental. Required release-gate evidence still comes from `devctl` lanes (`maestro`, `journey`, and stage-specific closure lanes) because those lanes include preflight/provisioning/lock/artifact contracts not executed by direct `maestro cloud` invocation.
+5. Android device model selection is not deterministic in our current lane. As of March 8, 2026 with CLI `2.2.0`, Android cloud runs executed on `Pixel 6`; use `--android-api-level` as the reliable selector.
+
+First-run gate flow command:
+
+```bash
+maestro cloud --android-api-level 34 \
+  --app-file "${APK_PATH}" \
+  --flows tests/maestro/scenario-first-run-download-chat.yaml \
+  --format junit \
+  --output tmp/maestro-cloud-first-run.xml
+```
 
 ## WP-11 UI Validation Loop
 

@@ -1,6 +1,6 @@
 # Test Lane Profiles and Selection
 
-Last updated: 2026-03-06
+Last updated: 2026-03-08
 
 ## Purpose
 
@@ -36,7 +36,12 @@ Key mappings:
 3. `packages/memory/**` -> `:packages:memory:test`
 4. `packages/core-domain/**` -> `:packages:core-domain:test`
 5. `apps/mobile-android/src/main/cpp/**` -> native-bridge tests + Stage-2 quick recommendation
-6. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/**` -> Android unit + instrumentation recommendation
+6. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/**` -> Android unit + `android-instrumented` recommendation
+7. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/**` -> Android unit + `android-instrumented` recommendation
+8. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/**` -> Android unit + `android-instrumented` recommendation
+9. `apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/contracts/**` -> Android unit + `android-instrumented` recommendation
+10. `scripts/android/**` -> Stage-2 quick recommendation
+11. `tools/devctl/**`, `scripts/dev/**`, `config/devctl/**` -> core safety net task mapping
 
 `fast`/`auto` writes follow-up lane guidance to:
 
@@ -71,6 +76,8 @@ Key mappings:
    - Run `bash scripts/dev/test.sh merge`.
 4. Preparing closure/signoff evidence?
    - Run Stage-2 closure and publish evidence draft + dated ops note.
+5. Validating timeout-sensitive user journey behavior?
+   - Run `python3 tools/devctl/main.py lane strict-journey` (alias over journey strict mode).
 
 ## Artifacts and Caching
 

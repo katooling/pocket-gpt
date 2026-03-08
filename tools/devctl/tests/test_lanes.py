@@ -786,6 +786,8 @@ class LanesTest(unittest.TestCase):
 
     def test_parse_package_uid(self) -> None:
         self.assertEqual(10635, _parse_package_uid("pkgFlags=[ HAS_CODE ]\nuserId=10635\ngids=[3003]"))
+        self.assertEqual(10419, _parse_package_uid("Packages:\n  Package [com.foo]\n    appId=10419\n"))
+        self.assertEqual(10419, _parse_package_uid("Permissions:\n  uid=10419 gids=[]\n"))
         self.assertIsNone(_parse_package_uid("pkgFlags=[ HAS_CODE ]\ngids=[3003]"))
 
     def test_media_path_fallbacks_maps_to_download_dir(self) -> None:
@@ -1282,6 +1284,52 @@ class LanesTest(unittest.TestCase):
                 return Result(stdout=f"package:{package}\n")
             if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:6] == ["dumpsys", "package"]:
                 return Result(stdout="Packages:\n  userId=10635\n")
+            return Result()
+
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+        _run_device_health_preflight(context, "SER123")
+
+    def test_run_device_health_preflight_accepts_appid_metadata(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+
+        class Result:
+            def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        def fake_run(command, **_kwargs):
+            cmd = list(command)
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:] == ["df", "/data"]:
+                return Result(stdout="Filesystem 1K-blocks Used Available Use% Mounted on\n/data 100 40 60 40% /data\n")
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:8] == ["pm", "list", "packages", "--user"]:
+                package = cmd[-1]
+                return Result(stdout=f"package:{package}\n")
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:6] == ["dumpsys", "package"]:
+                return Result(stdout="Packages:\n  Package [com.pocketagent.android]\n    appId=10419\n")
+            return Result()
+
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+        _run_device_health_preflight(context, "SER123")
+
+    def test_run_device_health_preflight_accepts_uid_metadata(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+
+        class Result:
+            def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        def fake_run(command, **_kwargs):
+            cmd = list(command)
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:] == ["df", "/data"]:
+                return Result(stdout="Filesystem 1K-blocks Used Available Use% Mounted on\n/data 100 40 60 40% /data\n")
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:8] == ["pm", "list", "packages", "--user"]:
+                package = cmd[-1]
+                return Result(stdout=f"package:{package}\n")
+            if cmd[:4] == ["adb", "-s", "SER123", "shell"] and cmd[4:6] == ["dumpsys", "package"]:
+                return Result(stdout="Permissions:\n  uid=10419 gids=[]\n")
             return Result()
 
         context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)

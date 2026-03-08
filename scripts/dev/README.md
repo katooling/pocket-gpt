@@ -201,6 +201,17 @@ Optional:
 1. Set project explicitly when needed: `--project-id <project-id>`
 2. Filter by tags (if tags are added to flows): `--include-tags ...`, `--exclude-tags ...`
 3. Add CI metadata: `--branch "$GITHUB_REF_NAME" --commit-sha "$GITHUB_SHA"`
+4. Android device model selection is not deterministic in our current lane. As of March 8, 2026 with Maestro CLI `2.2.0`, Android cloud runs executed on `Pixel 6`; use `--android-api-level` as the reliable selector.
+
+First-run flow gate command (writes JUnit report for CI/local triage):
+
+```bash
+maestro cloud --android-api-level 34 \
+  --app-file "${APK_PATH}" \
+  --flows tests/maestro/scenario-first-run-download-chat.yaml \
+  --format junit \
+  --output tmp/maestro-cloud-first-run.xml
+```
 
 Important:
 

@@ -1,6 +1,6 @@
 # WP-13 Usability Gate Run 01 (Operational Packet)
 
-Last updated: 2026-03-05  
+Last updated: 2026-03-08  
 Owner: Product  
 Support: QA, Design, Engineering
 
@@ -13,7 +13,7 @@ Decision: `hold` until moderated cohort metrics are collected.
 
 1. Cohort id: `wp13-run-01`
 2. Build id + commit: `414e900` (run-01 packet decision baseline)
-3. Device set used (required-tier + best-effort): Samsung `RR8NB087YTF` + best-effort fallback lane
+3. Device set used (required-tier + best-effort): Samsung `DEVICE_SERIAL_REDACTED` + best-effort fallback lane
 4. Session window (UTC): `not executed`
 5. Moderator(s): Product + QA (pending scheduling)
 
@@ -63,12 +63,12 @@ Execution rule:
 ## Evidence Links
 
 1. QA weekly matrix run: `docs/operations/evidence/wp-09/2026-03-04-qa-10-weekly-ui-regression-matrix-run-01.md`
-2. Instrumentation run id: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/02-android-instrumented.log`
-3. Maestro run id: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-131620/03-maestro.log`
+2. Instrumentation run id: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-132259-pass/02-android-instrumented.log`
+3. Maestro run id: `scripts/benchmarks/runs/2026-03-04/DEVICE_SERIAL_REDACTED/eng-18-qa-10-ui-hardening-20260304-132259-pass/03-maestro.log`
 4. Real runtime closure baseline: `docs/operations/evidence/wp-12/2026-03-05-eng-13-native-runtime-rerun.md`
 5. User session notes: `not yet collected (blocking)`
 6. Video/screenshot proof set: `not yet collected (blocking)`
-7. Raw artifact root: `scripts/benchmarks/runs/2026-03-05/RR8NB087YTF/`
+7. Raw artifact root: `scripts/benchmarks/runs/2026-03-05/DEVICE_SERIAL_REDACTED/`
 
 ## Decision
 
@@ -80,3 +80,11 @@ Execution rule:
    - fill onboarding/runtime/privacy confusion thresholds,
    - attach user-session notes and listing proof set.
 5. Decision date (UTC): `2026-03-05`
+
+## Addendum (2026-03-08 rerun checkpoint)
+
+1. Required automation rerun after P0 parser hardening is recorded in:
+   - `docs/operations/evidence/wp-13/2026-03-08-qa-lane-rerun-post-p0-parser.md`
+2. Moderated `QA-WP13-RUN02` packet remains blocked because required lanes did not clear provisioning preflight on this rerun.
+3. Blocking ticket:
+   - `docs/operations/tickets/eng-22-provisioning-startup-check-lane-blocker.md`

@@ -23,6 +23,7 @@ This index is the canonical evidence inventory after hard-prune.
 - Includes 2026-03-08 manual capture prune summary and GPU observation distillation.
 - Includes 2026-03-08 engineering closure note for session ID safety, provenance strict policy wiring, and chat-flow refactor.
 - Includes 2026-03-08 engineering follow-up for Android telemetry device state, semantic version ordering, process stream deadlock hardening, and runtime payload loading.
+- Includes 2026-03-08 QA rerun evidence after P0 parser hardening, including current provisioning preflight blocker signature.
 
 ## WP-12 Retained (Production-Claim Critical)
 
