@@ -17,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -283,6 +285,9 @@ internal fun ModelProvisioningSheet(
                 ) {
                     Text(
                         text = stringResource(id = R.string.ui_model_download_version_label, version.modelId, version.version),
+                        modifier = Modifier.semantics {
+                            contentDescription = modelDownloadVersionLabel(version.modelId, version.version)
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
@@ -315,6 +320,9 @@ internal fun ModelProvisioningSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Button(
+                            modifier = Modifier.semantics {
+                                contentDescription = modelDownloadStartLabel(version.modelId, version.version)
+                            },
                             onClick = { onDownloadVersion(version) },
                             enabled = !isImporting && active == null,
                         ) {
@@ -381,6 +389,9 @@ internal fun ModelProvisioningSheet(
                     ) {
                         Text(
                             text = stringResource(id = R.string.ui_model_installed_version_row, model.displayName, version.version),
+                            modifier = Modifier.semantics {
+                                contentDescription = modelInstalledVersionLabel(model.modelId, version.version)
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
@@ -434,6 +445,9 @@ internal fun ModelProvisioningSheet(
                                 )
                             } else {
                                 OutlinedButton(
+                                    modifier = Modifier.semantics {
+                                        contentDescription = modelActivateVersionLabel(model.modelId, version.version)
+                                    },
                                     onClick = { onActivateVersion(model.modelId, version.version) },
                                     enabled = !isImporting,
                                 ) {
@@ -537,6 +551,18 @@ private fun ManifestSource.readableNameRes(): Int {
         ManifestSource.BUNDLED_AND_REMOTE -> R.string.ui_model_catalog_source_bundled_and_remote
     }
 }
+
+private fun modelDownloadVersionLabel(modelId: String, version: String): String =
+    "Download version ${modelId} ${version}"
+
+private fun modelDownloadStartLabel(modelId: String, version: String): String =
+    "Start download ${modelId} ${version}"
+
+private fun modelInstalledVersionLabel(modelId: String, version: String): String =
+    "Installed version ${modelId} ${version}"
+
+private fun modelActivateVersionLabel(modelId: String, version: String): String =
+    "Activate version ${modelId} ${version}"
 
 private fun Long.formatAsTimestamp(): String {
     return runCatching {

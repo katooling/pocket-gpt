@@ -258,135 +258,13 @@ class GpuProbeService : Service() {
     }
 }
 
-class AndroidGpuProbeClient(
+internal class AndroidGpuProbeClient internal constructor(
     context: Context,
+    private val transport: RemoteRuntimeTransport = MessengerRemoteRuntimeTransport(context.applicationContext),
 ) : GpuProbeClient {
-    private val appContext = context.applicationContext
-
     override suspend fun runProbe(request: GpuProbeRequest, timeoutMs: Long): GpuProbeResult {
-        return try {
-            withTimeout(timeoutMs) {
-                runProbeBound(request)
-            }
-        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
-            GpuProbeResult(
-                status = GpuProbeStatus.FAILED,
-                failureReason = GpuProbeFailureReason.PROBE_TIMEOUT,
-                detail = "probe_timeout_ms=$timeoutMs",
-            )
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            transport.runGpuProbe(request = request, timeoutMs = timeoutMs)
         }
-    }
-
-    private suspend fun runProbeBound(request: GpuProbeRequest): GpuProbeResult {
-        return suspendCancellableCoroutine { continuation ->
-            val replied = AtomicBoolean(false)
-            var isBound = false
-
-            lateinit var connection: ServiceConnection
-            fun safeUnbindIfNeeded() {
-                if (!isBound) {
-                    return
-                }
-                runCatching { appContext.unbindService(connection) }
-                isBound = false
-            }
-            val replyMessenger = Messenger(
-                Handler(Looper.getMainLooper()) { message ->
-                    if (message.what != GpuProbeIpc.MSG_PROBE_RESULT) {
-                        return@Handler false
-                    }
-                    if (!replied.compareAndSet(false, true)) {
-                        return@Handler true
-                    }
-                    val result = parseResult(message.data)
-                    safeUnbindIfNeeded()
-                    continuation.resume(result)
-                    true
-                },
-            )
-
-            connection = object : ServiceConnection {
-                override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                    val remote = Messenger(service)
-                    val payload = Bundle().apply {
-                        putString(GpuProbeIpc.EXTRA_MODEL_ID, request.modelId)
-                        putString(GpuProbeIpc.EXTRA_MODEL_VERSION, request.modelVersion)
-                        putString(GpuProbeIpc.EXTRA_MODEL_PATH, request.modelPath)
-                        putIntegerArrayList(
-                            GpuProbeIpc.EXTRA_LAYER_LADDER,
-                            ArrayList(request.layerLadder),
-                        )
-                    }
-                    val msg = Message.obtain(null, GpuProbeIpc.MSG_PROBE_REQUEST).apply {
-                        data = payload
-                        replyTo = replyMessenger
-                    }
-                    try {
-                        remote.send(msg)
-                    } catch (error: RemoteException) {
-                        if (replied.compareAndSet(false, true)) {
-                            safeUnbindIfNeeded()
-                            continuation.resumeWithException(error)
-                        }
-                    }
-                }
-
-                override fun onServiceDisconnected(name: ComponentName?) {
-                    if (!replied.compareAndSet(false, true)) {
-                        return
-                    }
-                    safeUnbindIfNeeded()
-                    continuation.resume(
-                        GpuProbeResult(
-                            status = GpuProbeStatus.FAILED,
-                            failureReason = GpuProbeFailureReason.PROBE_PROCESS_DIED,
-                            detail = "probe_process_disconnected",
-                        ),
-                    )
-                }
-            }
-
-            val bound = appContext.bindService(
-                Intent(appContext, GpuProbeService::class.java),
-                connection,
-                Context.BIND_AUTO_CREATE,
-            )
-            if (!bound) {
-                replied.set(true)
-                continuation.resume(
-                    GpuProbeResult(
-                        status = GpuProbeStatus.FAILED,
-                        failureReason = GpuProbeFailureReason.PROBE_BIND_FAILED,
-                        detail = "probe_bind_failed",
-                    ),
-                )
-                return@suspendCancellableCoroutine
-            }
-            isBound = true
-
-            continuation.invokeOnCancellation {
-                safeUnbindIfNeeded()
-            }
-        }
-    }
-
-    private fun parseResult(bundle: Bundle?): GpuProbeResult {
-        val source = bundle ?: return GpuProbeResult(
-            status = GpuProbeStatus.FAILED,
-            failureReason = GpuProbeFailureReason.UNKNOWN,
-            detail = "probe_result_missing_bundle",
-        )
-        val status = source.getString(GpuProbeIpc.EXTRA_RESULT_STATUS)
-            ?.let { raw -> runCatching { GpuProbeStatus.valueOf(raw) }.getOrNull() }
-            ?: GpuProbeStatus.FAILED
-        val reason = source.getString(GpuProbeIpc.EXTRA_RESULT_REASON)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { raw -> runCatching { GpuProbeFailureReason.valueOf(raw) }.getOrNull() }
-        return GpuProbeResult(
-            status = status,
-            maxStableGpuLayers = source.getInt(GpuProbeIpc.EXTRA_RESULT_MAX_LAYERS, 0),
-            failureReason = reason,
-            detail = source.getString(GpuProbeIpc.EXTRA_RESULT_DETAIL),
-        )
     }
 }

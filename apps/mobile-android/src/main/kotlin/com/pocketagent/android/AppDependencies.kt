@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
+import com.pocketagent.android.runtime.createDefaultAndroidInferenceModule
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
@@ -66,6 +67,7 @@ object AppRuntimeDependencies {
                     runtimeConfig = store.runtimeConfig(),
                     conversationModule = getOrCreateConversationModule(),
                     memoryModule = getOrCreateMemoryModule(),
+                    inferenceModule = createDefaultAndroidInferenceModule(context.applicationContext),
                 ),
             )
         }

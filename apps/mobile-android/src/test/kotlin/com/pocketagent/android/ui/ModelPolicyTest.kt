@@ -57,4 +57,43 @@ class ModelPolicyTest {
         )
         assertNull(resolveDefaultGetReadyVersion(manifest = manifest, defaultModelId = "missing"))
     }
+
+    @Test
+    fun `default get ready version prioritizes stable q4 over iq variants`() {
+        val defaultModelId = ModelCatalog.QWEN_3_5_0_8B_Q4
+        val iq2 = ModelDistributionVersion(
+            modelId = defaultModelId,
+            version = "ud_iq2_xxs",
+            downloadUrl = "https://example.test/qwen-iq2.gguf",
+            expectedSha256 = "b".repeat(64),
+            provenanceIssuer = "issuer",
+            provenanceSignature = "sig",
+            runtimeCompatibility = "android-arm64-v8a",
+            fileSizeBytes = 90L,
+        )
+        val q4 = ModelDistributionVersion(
+            modelId = defaultModelId,
+            version = "q4_0",
+            downloadUrl = "https://example.test/qwen-q4.gguf",
+            expectedSha256 = "a".repeat(64),
+            provenanceIssuer = "issuer",
+            provenanceSignature = "sig",
+            runtimeCompatibility = "android-arm64-v8a",
+            fileSizeBytes = 100L,
+        )
+        val manifest = ModelDistributionManifest(
+            models = listOf(
+                ModelDistributionModel(
+                    modelId = defaultModelId,
+                    displayName = "Qwen",
+                    versions = listOf(iq2, q4),
+                ),
+            ),
+        )
+
+        assertEquals(
+            q4,
+            resolveDefaultGetReadyVersion(manifest = manifest, defaultModelId = defaultModelId),
+        )
+    }
 }

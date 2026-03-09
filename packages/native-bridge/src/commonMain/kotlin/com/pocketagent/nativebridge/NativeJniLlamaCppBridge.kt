@@ -57,7 +57,7 @@ class NativeJniLlamaCppBridge(
         }
     }
 
-    fun vulkanDiagnosticsJson(): String? {
+    override fun vulkanDiagnosticsJson(): String? {
         ensureRuntimeInitialized()
         if (usingFallback) {
             return null
@@ -317,7 +317,7 @@ class NativeJniLlamaCppBridge(
         return if (usingFallback) RuntimeBackend.ADB_FALLBACK else RuntimeBackend.NATIVE_JNI
     }
 
-    fun lastError(): BridgeError? = lastBridgeError
+    override fun lastError(): BridgeError? = lastBridgeError
 
     private fun ensureRuntimeInitialized() {
         if (initialized) {

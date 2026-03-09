@@ -6,7 +6,6 @@ import android.os.Build
 import android.util.Log
 import com.pocketagent.android.BuildConfig
 import com.pocketagent.inference.ModelRuntimeProfile
-import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.runtime.ModelRegistry
 import java.security.MessageDigest
 import kotlin.math.max
@@ -56,6 +55,8 @@ data class GpuProbeRequest(
     val modelVersion: String,
     val modelPath: String,
     val layerLadder: List<Int>,
+    val modelContentFingerprint: String? = null,
+    val modelFileSizeBytes: Long = 0L,
 )
 
 interface GpuProbeClient {
@@ -170,12 +171,21 @@ private fun resolveProbeRequestFromStore(store: AndroidRuntimeProvisioningStore)
     val candidate = orderedModels.firstOrNull { state ->
         !state.absolutePath.isNullOrBlank() && !state.activeVersion.isNullOrBlank() && state.isProvisioned
     } ?: return null
+    val activeVersion = candidate.activeVersion.orEmpty()
+    val activeDescriptor = candidate.installedVersions.firstOrNull { version ->
+        version.version == activeVersion && version.absolutePath.isNotBlank()
+    }
+    val modelPath = activeDescriptor?.absolutePath ?: candidate.absolutePath.orEmpty()
+    val modelFingerprint = activeDescriptor?.sha256 ?: candidate.sha256
+    val modelFileSizeBytes = activeDescriptor?.fileSizeBytes?.coerceAtLeast(0L) ?: 0L
 
     return GpuProbeRequest(
         modelId = candidate.modelId,
-        modelVersion = candidate.activeVersion.orEmpty(),
-        modelPath = candidate.absolutePath.orEmpty(),
+        modelVersion = activeVersion,
+        modelPath = modelPath,
         layerLadder = PROBE_LAYER_LADDER_FULL,
+        modelContentFingerprint = modelFingerprint,
+        modelFileSizeBytes = modelFileSizeBytes,
     )
 }
 
@@ -185,7 +195,11 @@ class AndroidGpuOffloadQualifier(
     probeRequestResolver: () -> GpuProbeRequest? = {
         resolveProbeRequestFromStore(AndroidRuntimeProvisioningStore(context.applicationContext))
     },
-    nativeDiagnosticsReader: NativeVulkanDiagnosticsReader = NativeVulkanDiagnosticsReader(),
+    nativeDiagnosticsReader: NativeVulkanDiagnosticsReader = NativeVulkanDiagnosticsReader(
+        payloadProvider = {
+            createDefaultAndroidRuntimeBridge(context.applicationContext).vulkanDiagnosticsJson()
+        },
+    ),
     now: () -> Long = { System.currentTimeMillis() },
 ) : GpuOffloadQualifier {
     private val appContext = context.applicationContext
@@ -252,7 +266,7 @@ internal class InternalAndroidGpuOffloadQualifier(
             return GpuProbeResult(
                 status = GpuProbeStatus.FAILED,
                 failureReason = GpuProbeFailureReason.MODEL_UNAVAILABLE,
-                detail = "active_probe_model_unavailable",
+                detail = "download_model_to_validate_gpu",
                 checkedAtEpochMs = now(),
             ).also { latestResult = it }
         }
@@ -466,10 +480,21 @@ internal class InternalAndroidGpuOffloadQualifier(
             "vkApi=${nativeDiagnostics.selectedDeviceApiVersion}",
             "half16=${nativeDiagnostics.storageBuffer16BitAccess && nativeDiagnostics.shaderFloat16}",
             "build=$appBuildSignature",
-            "model=${request.modelId}@${request.modelVersion}",
+            "model=${request.cacheIdentity()}",
             "ladder=${policy.layerLadder.joinToString(",")}",
         ).joinToString(separator = "|")
         return sha256(raw)
+    }
+
+    private fun GpuProbeRequest.cacheIdentity(): String {
+        val fingerprint = modelContentFingerprint?.trim().orEmpty()
+        val versionOrFingerprint = if (fingerprint.isNotEmpty()) {
+            "sha256=$fingerprint"
+        } else {
+            "version=${modelVersion.ifBlank { "unknown" }}"
+        }
+        val fileSizePart = modelFileSizeBytes.takeIf { it > 0L }?.let { bytes -> "|bytes=$bytes" }.orEmpty()
+        return "${modelId}|$versionOrFingerprint$fileSizePart"
     }
 
     private fun readCachedResult(cacheKey: String): GpuProbeResult? {
@@ -534,7 +559,7 @@ data class NativeVulkanDiagnostics(
 )
 
 class NativeVulkanDiagnosticsReader(
-    private val payloadProvider: () -> String? = { NativeJniLlamaCppBridge().vulkanDiagnosticsJson() },
+    private val payloadProvider: () -> String? = { null },
 ) {
     fun read(): NativeVulkanDiagnostics {
         val payload = runCatching { payloadProvider() }

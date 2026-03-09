@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
@@ -138,7 +139,7 @@ internal fun AdvancedSettingsSheet(
                     else ->
                         stringResource(
                             id = R.string.ui_gpu_acceleration_unavailable_with_reason,
-                            state.runtime.gpuProbeFailureReason ?: stringResource(id = R.string.ui_gpu_acceleration_reason_unknown),
+                            gpuProbeFailureReasonLabel(state.runtime.gpuProbeFailureReason),
                         )
                 },
             )
@@ -250,5 +251,16 @@ internal fun AdvancedSettingsSheet(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+    }
+}
+
+@Composable
+private fun gpuProbeFailureReasonLabel(reason: String?): String {
+    return when (reason) {
+        GpuProbeFailureReason.MODEL_UNAVAILABLE.name ->
+            stringResource(id = R.string.ui_gpu_acceleration_reason_model_required)
+        null, "" ->
+            stringResource(id = R.string.ui_gpu_acceleration_reason_unknown)
+        else -> reason.lowercase().replace('_', ' ')
     }
 }

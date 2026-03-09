@@ -440,15 +440,24 @@ class NativeStage2BenchmarkInstrumentationTest {
         }
         val candidates = listOf(
             normalized,
-            normalized.replace("/Android/media/", "/Download/"),
-            normalized.replace("/storage/emulated/0/Android/media/", "/storage/emulated/0/Download/"),
-            normalized.replace("/sdcard/Android/media/", "/sdcard/Download/"),
+            normalized.replace("/sdcard/", "/storage/emulated/0/"),
+            normalized.replace("/storage/emulated/0/", "/sdcard/"),
         )
         return candidates
             .asSequence()
             .map { candidate -> File(candidate) }
-            .firstOrNull { file -> file.exists() && file.isFile }
+            .firstOrNull(::isReadableRegularFile)
             ?.absolutePath
+    }
+
+    private fun isReadableRegularFile(file: File): Boolean {
+        if (!file.exists() || !file.isFile) {
+            return false
+        }
+        return runCatching {
+            file.inputStream().use { input -> input.read() }
+            true
+        }.getOrDefault(false)
     }
 
     private fun sha256HexFromFile(file: File): String {

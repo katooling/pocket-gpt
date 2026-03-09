@@ -51,6 +51,7 @@
     <string name="ui_gpu_acceleration_unavailable">GPU acceleration unavailable on this build/device</string>
     <string name="ui_gpu_acceleration_validating">Validating GPU support...</string>
     <string name="ui_gpu_acceleration_unavailable_with_reason">GPU acceleration unavailable (%1$s)</string>
+    <string name="ui_gpu_acceleration_reason_model_required">download a model to validate</string>
     <string name="ui_gpu_acceleration_reason_unknown">unknown</string>
     <string name="ui_gpu_acceleration_hint">GPU is opt-in. If unsupported or unstable, runtime automatically falls back to CPU.</string>
     <string name="ui_model_selection_title">Model selection</string>

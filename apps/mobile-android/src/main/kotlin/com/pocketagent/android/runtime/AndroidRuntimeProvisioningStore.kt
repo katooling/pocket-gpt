@@ -516,20 +516,20 @@ class AndroidRuntimeProvisioningStore(
             }
     }
 
-    private fun runOneTimePathAliasMigrationLocked() {
-        if (prefs.getBoolean(PATH_ALIAS_MIGRATION_DONE_KEY, false)) {
-            return
-        }
+    private fun runPathAliasMigrationLocked() {
+        var updatedAny = false
         allModelSpecs().forEach { spec ->
-            migratePathAliasesForSpec(spec)
+            updatedAny = migratePathAliasesForSpec(spec) || updatedAny
         }
-        prefs.edit().putBoolean(PATH_ALIAS_MIGRATION_DONE_KEY, true).apply()
+        if (updatedAny || !prefs.getBoolean(PATH_ALIAS_MIGRATION_DONE_KEY, false)) {
+            prefs.edit().putBoolean(PATH_ALIAS_MIGRATION_DONE_KEY, true).apply()
+        }
     }
 
-    private fun migratePathAliasesForSpec(spec: ModelSpec) {
+    private fun migratePathAliasesForSpec(spec: ModelSpec): Boolean {
         val entries = readStoredVersionEntries(spec)
         if (entries.isEmpty()) {
-            return
+            return false
         }
         var changed = false
         val migrated = entries.map { entry ->
@@ -549,6 +549,7 @@ class AndroidRuntimeProvisioningStore(
         if (changed) {
             writeStoredVersionEntries(spec, migrated)
         }
+        return changed
     }
 
     private fun readStoredVersionEntries(spec: ModelSpec): List<StoredVersionEntry> {
@@ -570,39 +571,106 @@ class AndroidRuntimeProvisioningStore(
             }
             val dropped = array.length() - decoded.size
             if (dropped > 0) {
+                val corruptionDetail = "model=${spec.modelId};dropped_rows=$dropped"
                 backupCorruptPayload(
                     key = versionsKey(spec),
                     raw = raw,
                     code = "PROVISIONING_VERSIONS_ROW_CORRUPT",
-                    detail = "model=${spec.modelId};dropped_rows=$dropped",
+                    detail = corruptionDetail,
                 )
+                if (decoded.isEmpty()) {
+                    recoverStoredEntriesFromDiscovery(
+                        spec = spec,
+                        corruptionCode = "PROVISIONING_VERSIONS_ROW_CORRUPT",
+                        corruptionDetail = corruptionDetail,
+                    )?.let { recovered ->
+                        return recovered
+                    }
+                }
                 writeStoredVersionEntries(spec, decoded)
                 StoredEntriesReadResult(
                     entries = decoded,
                     signal = ProvisioningRecoverySignal(
                         code = "PROVISIONING_VERSIONS_ROW_CORRUPT",
                         message = "Some stored model versions were invalid and were removed for ${spec.modelId}.",
-                        technicalDetail = "model=${spec.modelId};dropped_rows=$dropped",
+                        technicalDetail = corruptionDetail,
                     ),
                 )
             } else {
+                if (decoded.isEmpty()) {
+                    val emptyDetail = "model=${spec.modelId};source=empty_versions_array"
+                    recoverStoredEntriesFromDiscovery(
+                        spec = spec,
+                        corruptionCode = "PROVISIONING_VERSIONS_EMPTY",
+                        corruptionDetail = emptyDetail,
+                    )?.let { recovered ->
+                        return recovered
+                    }
+                    val activeKey = activeVersionKey(spec)
+                    if (!prefs.readOptional(activeKey).isNullOrBlank()) {
+                        prefs.edit().remove(activeKey).apply()
+                        return StoredEntriesReadResult(
+                            entries = emptyList(),
+                            signal = ProvisioningRecoverySignal(
+                                code = "PROVISIONING_ACTIVE_VERSION_ORPHANED",
+                                message = "Active model version metadata was orphaned for ${spec.modelId} and has been reset.",
+                                technicalDetail = emptyDetail,
+                            ),
+                        )
+                    }
+                }
                 StoredEntriesReadResult(entries = decoded)
             }
         }.getOrElse { error ->
+            val corruptionDetail = "model=${spec.modelId};error=${error.message ?: "json_parse_failed"}"
             backupCorruptPayload(
                 key = versionsKey(spec),
                 raw = raw,
                 code = "PROVISIONING_VERSIONS_JSON_CORRUPT",
-                detail = "model=${spec.modelId};error=${error.message ?: "json_parse_failed"}",
+                detail = corruptionDetail,
             )
-            prefs.edit().putString(versionsKey(spec), "[]").apply()
+            recoverStoredEntriesFromDiscovery(
+                spec = spec,
+                corruptionCode = "PROVISIONING_VERSIONS_JSON_CORRUPT",
+                corruptionDetail = corruptionDetail,
+            )?.let { recovered ->
+                return recovered
+            }
+            prefs.edit()
+                .putString(versionsKey(spec), "[]")
+                .remove(activeVersionKey(spec))
+                .apply()
             val signal = ProvisioningRecoverySignal(
                 code = "PROVISIONING_VERSIONS_JSON_CORRUPT",
                 message = "Stored model metadata was corrupted for ${spec.modelId} and has been reset.",
-                technicalDetail = "model=${spec.modelId};error=${error.message ?: "json_parse_failed"}",
+                technicalDetail = corruptionDetail,
             )
             StoredEntriesReadResult(entries = emptyList(), signal = signal)
         }
+    }
+
+    private fun recoverStoredEntriesFromDiscovery(
+        spec: ModelSpec,
+        corruptionCode: String,
+        corruptionDetail: String,
+    ): StoredEntriesReadResult? {
+        val recoveredEntries = discoverPersistedEntries(spec)
+        if (recoveredEntries.isEmpty()) {
+            return null
+        }
+        writeStoredVersionEntries(spec, recoveredEntries)
+        val latestVersion = recoveredEntries.maxByOrNull { it.importedAtEpochMs }?.version
+        prefs.edit().putString(activeVersionKey(spec), latestVersion).apply()
+        val signal = ProvisioningRecoverySignal(
+            code = "PROVISIONING_VERSIONS_RECOVERED_FROM_DISCOVERY",
+            message = "Stored model metadata was corrupted for ${spec.modelId} and rebuilt from local model files.",
+            technicalDetail = "model=${spec.modelId};source=$corruptionCode;recovered=${recoveredEntries.size};$corruptionDetail",
+        )
+        recordMigrationCorruption(signal)
+        return StoredEntriesReadResult(
+            entries = recoveredEntries,
+            signal = signal,
+        )
     }
 
     private fun writeStoredVersionEntries(spec: ModelSpec, entries: List<StoredVersionEntry>) {
@@ -655,7 +723,9 @@ class AndroidRuntimeProvisioningStore(
             mergedDynamicIds
                 .map(::dynamicModelSpec)
                 .forEach(::migrateSpecIfNeeded)
-            runOneTimePathAliasMigrationLocked()
+            // Re-run alias migration on every startup so stale metadata can self-heal
+            // after external model files are restored later in the session lifecycle.
+            runPathAliasMigrationLocked()
         }
     }
 
@@ -713,12 +783,11 @@ class AndroidRuntimeProvisioningStore(
     }
 
     private fun discoverDynamicModelIdsFromMetadata(): Set<String> {
-        val dir = managedModelDirectory()
-        val metadataFiles = dir.listFiles()
-            ?.asSequence()
-            ?.filter { file -> file.isFile && file.name.endsWith(METADATA_SUFFIX, ignoreCase = true) }
-            ?.toList()
-            ?: emptyList()
+        val metadataFiles = discoveryModelDirectories()
+            .asSequence()
+            .flatMap { dir -> dir.listFiles()?.asSequence() ?: emptySequence() }
+            .filter { file -> file.isFile && file.name.endsWith(METADATA_SUFFIX, ignoreCase = true) }
+            .toList()
         if (metadataFiles.isEmpty()) {
             return emptySet()
         }
@@ -867,12 +936,11 @@ class AndroidRuntimeProvisioningStore(
         if (metadataEntries.isNotEmpty()) {
             return metadataEntries
         }
-        val dir = managedModelDirectory()
-        val files = dir.listFiles()
-            ?.asSequence()
-            ?.filter { file -> file.isFile && file.name.endsWith(".gguf", ignoreCase = true) }
-            ?.toList()
-            ?: emptyList()
+        val files = discoveryModelDirectories()
+            .asSequence()
+            .flatMap { dir -> dir.listFiles()?.asSequence() ?: emptySequence() }
+            .filter { file -> file.isFile && file.name.endsWith(".gguf", ignoreCase = true) }
+            .toList()
         if (files.isEmpty()) {
             return emptyList()
         }
@@ -921,12 +989,11 @@ class AndroidRuntimeProvisioningStore(
     }
 
     private fun discoverPersistedEntriesFromMetadata(spec: ModelSpec): List<StoredVersionEntry> {
-        val dir = managedModelDirectory()
-        val metadataFiles = dir.listFiles()
-            ?.asSequence()
-            ?.filter { file -> file.isFile && file.name.endsWith(METADATA_SUFFIX, ignoreCase = true) }
-            ?.toList()
-            ?: emptyList()
+        val metadataFiles = discoveryModelDirectories()
+            .asSequence()
+            .flatMap { dir -> dir.listFiles()?.asSequence() ?: emptySequence() }
+            .filter { file -> file.isFile && file.name.endsWith(METADATA_SUFFIX, ignoreCase = true) }
+            .toList()
         if (metadataFiles.isEmpty()) {
             return emptyList()
         }
@@ -1010,6 +1077,22 @@ class AndroidRuntimeProvisioningStore(
             )
         }
         return discovered.sortedByDescending { it.importedAtEpochMs }
+    }
+
+    private fun discoveryModelDirectories(): List<File> {
+        val packageName = context.packageName
+        val candidates = listOf(
+            managedModelDirectory(),
+            managedDownloadWorkspaceDirectory(),
+            File("/sdcard/Android/media/$packageName/models"),
+            File("/storage/emulated/0/Android/media/$packageName/models"),
+            File("/sdcard/Download/$packageName/models"),
+            File("/storage/emulated/0/Download/$packageName/models"),
+        )
+        val seen = mutableSetOf<String>()
+        return candidates
+            .map { candidate -> File(normalizeAbsolutePath(candidate.absolutePath)) }
+            .filter { candidate -> seen.add(candidate.absolutePath) }
     }
 
     private fun parseVersionFromFileName(spec: ModelSpec, fileName: String): String? {

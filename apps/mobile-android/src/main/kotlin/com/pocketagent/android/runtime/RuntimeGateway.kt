@@ -239,7 +239,13 @@ class MvpRuntimeGateway(
         if (code == "template_unavailable") {
             return false
         }
-        if (code.contains("jni") || code.contains("gpu") || code.contains("vulkan")) {
+        if (
+            code.contains("jni") ||
+            code.contains("gpu") ||
+            code.contains("vulkan") ||
+            code.contains("remote_process_died") ||
+            code.contains("remote_runtime")
+        ) {
             return true
         }
         val normalizedMessage = message.lowercase()

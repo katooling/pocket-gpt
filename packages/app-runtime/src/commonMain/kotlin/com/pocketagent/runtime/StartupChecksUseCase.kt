@@ -101,7 +101,8 @@ internal class StartupChecksUseCase(
         val runtimeBackend = runtimeBackendProvider()
         if (runtimeConfig.requireNativeRuntimeForStartupChecks &&
             runtimeBackend != null &&
-            runtimeBackend != RuntimeBackend.NATIVE_JNI.name
+            runtimeBackend != RuntimeBackend.NATIVE_JNI.name &&
+            runtimeBackend != RuntimeBackend.REMOTE_ANDROID_SERVICE.name
         ) {
             checks.add(
                 "Runtime backend is $runtimeBackend. " +

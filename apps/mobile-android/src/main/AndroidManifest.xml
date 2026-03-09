@@ -24,8 +24,8 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
         <service
-            android:name=".runtime.GpuProbeService"
+            android:name=".runtime.LlamaRuntimeService"
             android:exported="false"
-            android:process=":gpu_probe" />
+            android:process=":llama_runtime" />
     </application>
 </manifest>

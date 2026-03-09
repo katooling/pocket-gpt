@@ -597,9 +597,21 @@ bool decode_tokens_from_offset(
         const int32_t chunk_size = static_cast<int32_t>(
             std::min(remaining, static_cast<size_t>(PROMPT_DECODE_BATCH_SIZE)));
         llama_batch prompt_batch = llama_batch_get_one(const_cast<llama_token *>(tokens.data() + idx), chunk_size);
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "GPU_PROBE_DIAG|stage=prompt_decode_before|idx=%zu|chunk=%d",
+            idx,
+            static_cast<int>(chunk_size));
         if (llama_decode(ctx, prompt_batch) != 0) {
             return false;
         }
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "GPU_PROBE_DIAG|stage=prompt_decode_after|idx=%zu|chunk=%d",
+            idx,
+            static_cast<int>(chunk_size));
     }
     return true;
 }
@@ -632,6 +644,12 @@ jint generate_locked(
         log_error("nativeGenerate failed: runtime not initialized");
         return STREAM_STATUS_RUNTIME_ERROR;
     }
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "GPU_PROBE_DIAG|stage=generate_enter|max_tokens=%d|prompt_bytes=%zu",
+        max_tokens,
+        prompt_text.size());
     if (g_cancel_requested.exchange(false, std::memory_order_acq_rel)) {
         log_error("nativeGenerate cancelled before start");
         return STREAM_STATUS_CANCELLED;
@@ -733,11 +751,21 @@ jint generate_locked(
 
         llama_token next_token = token;
         batch = llama_batch_get_one(&next_token, 1);
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "GPU_PROBE_DIAG|stage=sample_decode_before|index=%d",
+            index);
         if (llama_decode(g_context, batch) != 0) {
             log_error("nativeGenerate failed: llama_decode failed on sampled token");
             g_cancel_requested.store(false, std::memory_order_release);
             return STREAM_STATUS_RUNTIME_ERROR;
         }
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "GPU_PROBE_DIAG|stage=sample_decode_after|index=%d",
+            index);
         if (g_cancel_requested.load(std::memory_order_acquire)) {
             log_error("nativeGenerate cancelled after decode");
             g_cancel_requested.store(false, std::memory_order_release);

@@ -34,6 +34,29 @@ class GpuOffloadQualificationTest {
     }
 
     @Test
+    fun `no provisioned model fails immediately without entering pending state`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 8,
+                )
+            },
+        )
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { null },
+        )
+
+        val result = qualifier.evaluate(runtimeSupported = true)
+
+        assertEquals(GpuProbeStatus.FAILED, result.status)
+        assertEquals(GpuProbeFailureReason.MODEL_UNAVAILABLE, result.failureReason)
+        assertEquals("download_model_to_validate_gpu", result.detail)
+        assertEquals(0, probeClient.callCount)
+    }
+
+    @Test
     fun `qualification transitions pending to cached qualified`() = runTest {
         val probeClient = RecordingProbeClient(
             responseForRequest = {
@@ -98,6 +121,44 @@ class GpuOffloadQualificationTest {
         val requalified = qualifier.evaluate(runtimeSupported = true)
         assertEquals(GpuProbeStatus.QUALIFIED, requalified.status)
         assertEquals(8, probeClient.callCount)
+    }
+
+    @Test
+    fun `cache key reuses qualification for same model bits across version relabels`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 4,
+                )
+            },
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        var request = testProbeRequest(
+            modelVersion = "v1",
+            modelContentFingerprint = "sha-123",
+            modelFileSizeBytes = 507_154_688L,
+        )
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { request },
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        assertEquals(GpuProbeStatus.QUALIFIED, qualifier.evaluate(runtimeSupported = true).status)
+        assertEquals(4, probeClient.callCount)
+
+        request = testProbeRequest(
+            modelVersion = "manual-import-2",
+            modelContentFingerprint = "sha-123",
+            modelFileSizeBytes = 507_154_688L,
+        )
+
+        val reused = qualifier.evaluate(runtimeSupported = true)
+        assertEquals(GpuProbeStatus.QUALIFIED, reused.status)
+        assertEquals(4, probeClient.callCount)
     }
 
     @Test
@@ -278,12 +339,18 @@ private fun buildQualifier(
     )
 }
 
-private fun testProbeRequest(): GpuProbeRequest {
+private fun testProbeRequest(
+    modelVersion: String = "v1",
+    modelContentFingerprint: String? = null,
+    modelFileSizeBytes: Long = 0L,
+): GpuProbeRequest {
     return GpuProbeRequest(
         modelId = "qwen3.5-0.8b-q4",
-        modelVersion = "v1",
+        modelVersion = modelVersion,
         modelPath = "/tmp/model.gguf",
         layerLadder = listOf(1, 2, 4, 8, 16, 32),
+        modelContentFingerprint = modelContentFingerprint,
+        modelFileSizeBytes = modelFileSizeBytes,
     )
 }
 

@@ -1,0 +1,152 @@
+package com.pocketagent.android.runtime
+
+import com.pocketagent.nativebridge.BridgeError
+import com.pocketagent.nativebridge.CachePolicy
+import com.pocketagent.nativebridge.GenerationFinishReason
+import com.pocketagent.nativebridge.GenerationResult
+import com.pocketagent.nativebridge.RuntimeBackend
+import com.pocketagent.nativebridge.RuntimeGenerationConfig
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class RemoteLlamaCppRuntimeBridgeTest {
+    @Test
+    fun `bridge reloads active model after remote epoch changes`() {
+        val transport = FakeRemoteRuntimeTransport()
+        val bridge = RemoteLlamaCppRuntimeBridge(transport)
+
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 1,
+            ),
+        )
+        assertTrue(bridge.loadModel("model-a", "/tmp/model-a.gguf"))
+
+        transport.epochValue += 1L
+        val result = bridge.generate(
+            requestId = "req-1",
+            prompt = "hello",
+            maxTokens = 8,
+            cacheKey = null,
+            cachePolicy = CachePolicy.OFF,
+        ) {}
+
+        assertTrue(result.success)
+        assertEquals(2, transport.loadModelCalls)
+        assertEquals(3, transport.setConfigCalls)
+    }
+
+    @Test
+    fun `bridge surfaces remote process death as structured error`() {
+        val transport = FakeRemoteRuntimeTransport(
+            nextGenerationResult = GenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = 0L,
+                cancelled = false,
+                errorCode = "REMOTE_PROCESS_DIED",
+            ),
+            nextLastError = BridgeError("REMOTE_PROCESS_DIED", "runtime process disconnected"),
+        )
+        val bridge = RemoteLlamaCppRuntimeBridge(transport)
+
+        assertTrue(bridge.loadModel("model-a", "/tmp/model-a.gguf"))
+        val result = bridge.generate(
+            requestId = "req-2",
+            prompt = "hello",
+            maxTokens = 8,
+            cacheKey = null,
+            cachePolicy = CachePolicy.OFF,
+        ) {}
+
+        assertFalse(result.success)
+        assertEquals("REMOTE_PROCESS_DIED", result.errorCode)
+        assertEquals("REMOTE_PROCESS_DIED", bridge.lastError()?.code)
+    }
+
+    @Test
+    fun `runtime backend reports remote service when ping succeeds`() {
+        val bridge = RemoteLlamaCppRuntimeBridge(FakeRemoteRuntimeTransport())
+        assertEquals(RuntimeBackend.REMOTE_ANDROID_SERVICE, bridge.runtimeBackend())
+    }
+
+    @Test
+    fun `runtime mode defaults to remote and honors in process override`() {
+        assertEquals("remote", resolveAndroidRuntimeMode(emptyMap()))
+        assertEquals("in_process", resolveAndroidRuntimeMode(mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "in_process")))
+        assertEquals("remote", resolveAndroidRuntimeMode(mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "unexpected")))
+    }
+}
+
+private class FakeRemoteRuntimeTransport(
+    var epochValue: Long = 1L,
+    private val pingOk: Boolean = true,
+    private val loadModelOk: Boolean = true,
+    private val gpuSupported: Boolean = true,
+    private val nextDiagnosticsJson: String? = null,
+    private val nextGenerationResult: GenerationResult = GenerationResult(
+        finishReason = GenerationFinishReason.COMPLETED,
+        tokenCount = 1,
+        firstTokenMs = 1L,
+        totalMs = 2L,
+        cancelled = false,
+    ),
+    private val nextLastError: BridgeError? = null,
+) : RemoteRuntimeTransport {
+    var setConfigCalls: Int = 0
+    var loadModelCalls: Int = 0
+
+    override fun epoch(): Long = epochValue
+
+    override fun ping(): Boolean = pingOk
+
+    override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig): Boolean {
+        setConfigCalls += 1
+        return true
+    }
+
+    override fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = RuntimeGenerationConfig.default()
+
+    override fun listAvailableModels(): List<String> = listOf("model-a")
+
+    override fun loadModel(modelId: String, modelPath: String?): Boolean {
+        loadModelCalls += 1
+        return loadModelOk
+    }
+
+    override fun unloadModel(): Boolean = true
+
+    override fun generate(
+        requestId: String,
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicy: CachePolicy,
+        onToken: (String) -> Unit,
+    ): GenerationResult {
+        if (nextGenerationResult.success) {
+            onToken("token")
+        }
+        return nextGenerationResult
+    }
+
+    override fun cancelGeneration(requestId: String?): Boolean = true
+
+    override fun supportsGpuOffload(): Boolean = gpuSupported
+
+    override fun vulkanDiagnosticsJson(): String? = nextDiagnosticsJson
+
+    override fun lastError(): BridgeError? = nextLastError
+
+    override fun runGpuProbe(request: GpuProbeRequest, timeoutMs: Long): GpuProbeResult {
+        return GpuProbeResult(
+            status = GpuProbeStatus.QUALIFIED,
+            maxStableGpuLayers = 1,
+        )
+    }
+}

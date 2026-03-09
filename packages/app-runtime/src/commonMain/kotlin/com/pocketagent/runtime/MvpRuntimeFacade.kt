@@ -6,6 +6,7 @@ import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.core.InMemoryConversationModule
+import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
@@ -421,10 +422,12 @@ class DefaultRuntimeContainer(
     runtimeConfig: RuntimeConfig = RuntimeConfig.fromEnvironment(),
     conversationModule: ConversationModule = InMemoryConversationModule(),
     memoryModule: MemoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
+    inferenceModule: InferenceModule? = null,
     private val orchestrator: RuntimeOrchestrator = RuntimeOrchestrator(
         conversationModule = conversationModule,
         memoryModule = memoryModule,
         runtimeConfig = runtimeConfig,
+        inferenceModule = inferenceModule ?: com.pocketagent.nativebridge.LlamaCppInferenceModule(),
     ),
 ) : RuntimeContainer {
     override fun createSession(): SessionId = orchestrator.createSession()

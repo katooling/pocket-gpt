@@ -28,10 +28,28 @@ internal fun resolveDefaultGetReadyVersion(
     if (defaultModelId.isNullOrBlank()) {
         return null
     }
-    return manifest.models
+    val versions = manifest.models
         .firstOrNull { model -> model.modelId == defaultModelId }
         ?.versions
-        ?.firstOrNull()
+        ?: return null
+    return versions.minWithOrNull(
+        compareBy<ModelDistributionVersion>(
+            { defaultGetReadyVersionPriority(it.version) },
+            { it.fileSizeBytes.takeIf { size -> size > 0L } ?: Long.MAX_VALUE },
+            { it.version },
+        ),
+    )
+}
+
+private fun defaultGetReadyVersionPriority(version: String): Int {
+    val normalized = version.trim().lowercase()
+    return when {
+        normalized == "q4_0" -> 0
+        normalized.startsWith("q4") -> 1
+        normalized.contains("q4") -> 2
+        normalized.contains("iq") -> 4
+        else -> 3
+    }
 }
 
 internal fun supportedRoutingModes(): List<RoutingMode> {

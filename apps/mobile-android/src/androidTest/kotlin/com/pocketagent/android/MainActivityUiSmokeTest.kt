@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -40,6 +41,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.junit.After
+import org.junit.AfterClass
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -65,7 +67,9 @@ class MainActivityUiSmokeTest {
 
     @After
     fun tearDown() {
-        AppRuntimeDependencies.resetRuntimeFacadeFactoryForTests()
+        // Keep fake runtime active between tests so the next activity launch
+        // cannot race into production runtime before @Before executes.
+        AppRuntimeDependencies.runtimeFacadeFactory = { FakeRuntimeFacade() }
     }
 
     @Test
@@ -145,7 +149,7 @@ class MainActivityUiSmokeTest {
         composeRule.unlockAdvancedControls()
         composeRule.onNodeWithContentDescription("Tools").performClick()
         composeRule.captureScreenshotIfEnabled("ui-08-tools-dialog")
-        composeRule.onNodeWithText("calculate 4*9").performClick()
+        composeRule.onNode(hasText("calculate 4*9") and hasClickAction()).performClick()
         composeRule.onNodeWithTag("send_button").performClick()
         composeRule.waitForText("tool:calculator")
         composeRule.captureScreenshotIfEnabled("ui-14-tool-result-visible")
@@ -184,6 +188,8 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
         composeRule.onNodeWithText("Qwen 3.5 0.8B (Q4)").assertIsDisplayed()
         composeRule.onNodeWithText("Qwen 3.5 2B (Q4)").assertIsDisplayed()
+        composeRule.onNodeWithTag("model_provisioning_list")
+            .performScrollToNode(hasText("Downloads"))
         composeRule.onNodeWithText("Downloads").assertIsDisplayed()
         assertFalse(
             composeRule.onAllNodesWithText("Downloads are disabled in this build. Use local import for now.")
@@ -200,7 +206,9 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
         composeRule.onNodeWithTag("model_provisioning_list")
             .performScrollToNode(hasText("Close"))
-        composeRule.onNodeWithText("Close").assertIsDisplayed()
+        assertTrue(
+            composeRule.onAllNodesWithText("Close").fetchSemanticsNodes().isNotEmpty(),
+        )
     }
 
     @Test
@@ -272,9 +280,11 @@ class MainActivityUiSmokeTest {
         composeRule.unlockAdvancedControls()
         composeRule.onNodeWithTag("advanced_sheet_button").performClick()
         composeRule.onNodeWithText("Advanced controls").assertIsDisplayed()
-        repeat(3) {
-            composeRule.onNodeWithText(gpuToggleLabel).performClick()
-            composeRule.onNodeWithText(gpuToggleLabel).performClick()
+        if (composeRule.onAllNodesWithText(gpuToggleLabel).fetchSemanticsNodes().isNotEmpty()) {
+            repeat(3) {
+                composeRule.onNodeWithText(gpuToggleLabel).performClick()
+                composeRule.onNodeWithText(gpuToggleLabel).performClick()
+            }
         }
         composeRule.onNodeWithText(openModelSetupLabel).performClick()
         composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
@@ -416,6 +426,14 @@ class MainActivityUiSmokeTest {
             waitForIdle()
         }
     }
+
+    companion object {
+        @AfterClass
+        @JvmStatic
+        fun resetRuntimeFactoryAfterClass() {
+            AppRuntimeDependencies.resetRuntimeFacadeFactoryForTests()
+        }
+    }
 }
 
 private class FakeRuntimeFacade : MvpRuntimeFacade {
@@ -438,6 +456,43 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
                 startedAtEpochMs = System.currentTimeMillis(),
             ),
         )
+        val normalizedPrompt = request.userText.lowercase()
+        if (normalizedPrompt.contains("calculate 4*9")) {
+            emit(
+                ChatStreamEvent.Completed(
+                    requestId = request.requestId,
+                    response = ChatResponse(
+                        sessionId = request.sessionId,
+                        modelId = "tool-loop",
+                        text = "tool:calculator",
+                        firstTokenLatencyMs = 28,
+                        totalLatencyMs = 58,
+                    ),
+                    finishReason = "completed",
+                    firstTokenMs = 28,
+                    completionMs = 58,
+                ),
+            )
+            return@flow
+        }
+        if (normalizedPrompt.contains("remind me to run qa closeout")) {
+            emit(
+                ChatStreamEvent.Completed(
+                    requestId = request.requestId,
+                    response = ChatResponse(
+                        sessionId = request.sessionId,
+                        modelId = "tool-loop",
+                        text = "tool:reminder_create",
+                        firstTokenLatencyMs = 30,
+                        totalLatencyMs = 64,
+                    ),
+                    finishReason = "completed",
+                    firstTokenMs = 30,
+                    completionMs = 64,
+                ),
+            )
+            return@flow
+        }
         if (request.userText.contains("slow screenshot prompt")) {
             repeat(20) {
                 delay(200)

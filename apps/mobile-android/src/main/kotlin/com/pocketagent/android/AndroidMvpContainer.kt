@@ -1,5 +1,7 @@
 package com.pocketagent.android
 
+import android.content.Context
+import com.pocketagent.android.runtime.createDefaultAndroidInferenceModule
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.ConversationModule
 import com.pocketagent.core.DefaultPolicyModule
@@ -28,23 +30,18 @@ import com.pocketagent.runtime.RuntimeOrchestrator
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolModule
 
-private fun defaultInferenceModule(): InferenceModule {
-    val fallbackRequested = System.getenv(NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV)
-        ?.trim()
-        ?.lowercase()
-        ?.let { raw -> raw in setOf("1", "true", "yes") }
-        ?: false
-    val fallbackEnabled = BuildConfig.DEBUG && fallbackRequested
-    return LlamaCppInferenceModule(
-        runtimeBridge = NativeJniLlamaCppBridge(
-            fallbackEnabled = fallbackEnabled,
-        ),
-    )
+private fun defaultInferenceModule(appContext: Context? = null): InferenceModule {
+    return if (appContext != null) {
+        createDefaultAndroidInferenceModule(appContext.applicationContext)
+    } else {
+        LlamaCppInferenceModule()
+    }
 }
 
 class AndroidMvpContainer(
+    private val appContext: Context? = null,
     private val conversationModule: ConversationModule = InMemoryConversationModule(),
-    private val inferenceModule: InferenceModule = defaultInferenceModule(),
+    private val inferenceModule: InferenceModule = defaultInferenceModule(appContext),
     private val routingModule: RoutingModule = AdaptiveRoutingPolicy(),
     private val policyModule: PolicyModule = DefaultPolicyModule(offlineOnly = true),
     private val observabilityModule: ObservabilityModule = InMemoryObservabilityModule(),
@@ -194,6 +191,7 @@ class AndroidMvpContainer(
         const val RESPONSE_CACHE_MAX_ENTRIES_ENV: String = RuntimeConfig.RESPONSE_CACHE_MAX_ENTRIES_ENV
         const val STREAM_CONTRACT_V2_ENV: String = RuntimeConfig.STREAM_CONTRACT_V2_ENV
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
+        const val ANDROID_RUNTIME_MODE_ENV: String = "POCKETGPT_ANDROID_RUNTIME_MODE"
 
         fun sideLoadPathEnvName(modelId: String): String = RuntimeConfig.sideLoadPathEnvName(modelId)
 

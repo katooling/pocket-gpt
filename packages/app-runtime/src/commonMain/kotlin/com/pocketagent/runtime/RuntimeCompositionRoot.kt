@@ -2,6 +2,7 @@ package com.pocketagent.runtime
 
 import com.pocketagent.core.ConversationModule
 import com.pocketagent.core.InMemoryConversationModule
+import com.pocketagent.inference.InferenceModule
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
 
@@ -10,11 +11,13 @@ object RuntimeCompositionRoot {
         runtimeConfig: RuntimeConfig = RuntimeConfig.fromEnvironment(),
         conversationModule: ConversationModule = InMemoryConversationModule(),
         memoryModule: MemoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
+        inferenceModule: InferenceModule? = null,
     ): RuntimeContainer {
         return DefaultRuntimeContainer(
             runtimeConfig = runtimeConfig,
             conversationModule = conversationModule,
             memoryModule = memoryModule,
+            inferenceModule = inferenceModule,
         )
     }
 
@@ -22,12 +25,14 @@ object RuntimeCompositionRoot {
         runtimeConfig: RuntimeConfig = RuntimeConfig.fromEnvironment(),
         conversationModule: ConversationModule = InMemoryConversationModule(),
         memoryModule: MemoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
+        inferenceModule: InferenceModule? = null,
     ): MvpRuntimeFacade {
         return DefaultMvpRuntimeFacade(
             container = createContainer(
                 runtimeConfig = runtimeConfig,
                 conversationModule = conversationModule,
                 memoryModule = memoryModule,
+                inferenceModule = inferenceModule,
             ),
         )
     }

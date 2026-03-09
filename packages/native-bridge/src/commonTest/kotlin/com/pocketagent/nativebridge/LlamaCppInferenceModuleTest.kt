@@ -49,6 +49,14 @@ class LlamaCppInferenceModuleTest {
         assertTrue(error.message?.contains("generation failed") == true)
     }
 
+
+    @Test
+    fun `last bridge error delegates to runtime bridge contract`() {
+        val module = LlamaCppInferenceModule(FakeBridge(lastError = BridgeError("REMOTE_PROCESS_DIED", "service disconnected")))
+
+        assertEquals("REMOTE_PROCESS_DIED", module.lastBridgeError()?.code)
+    }
+
     @Test
     fun `runtime backend delegates to bridge`() {
         val module = LlamaCppInferenceModule(FakeBridge(backend = RuntimeBackend.ADB_FALLBACK))
@@ -101,6 +109,7 @@ class LlamaCppInferenceModuleTest {
 private class FakeBridge(
     private val generateOk: Boolean = true,
     private val backend: RuntimeBackend = RuntimeBackend.NATIVE_JNI,
+    private val lastError: BridgeError? = null,
 ) : LlamaCppRuntimeBridge {
     var loadCalls: Int = 0
     var generateCalls: Int = 0
@@ -161,4 +170,6 @@ private class FakeBridge(
     }
 
     override fun runtimeBackend(): RuntimeBackend = backend
+
+    override fun lastError(): BridgeError? = lastError
 }

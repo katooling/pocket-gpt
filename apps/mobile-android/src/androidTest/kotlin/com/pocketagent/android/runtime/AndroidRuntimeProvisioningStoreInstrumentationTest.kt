@@ -6,6 +6,8 @@ import com.pocketagent.inference.ModelCatalog
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -176,6 +178,29 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
     }
 
     @Test
+    fun persistedDownloadWorkspaceModelsAreDiscoveredAfterPreferencesReset() {
+        val fallbackDir = store.managedDownloadWorkspaceDirectory().apply { mkdirs() }
+        val fallbackModel = writeTempFile(
+            dir = fallbackDir,
+            fileName = "qwen3.5-0.8b-q4.gguf",
+            content = "persisted-download-workspace-content",
+        )
+        val expectedPath = normalizePath(fallbackModel.absolutePath)
+
+        appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit().clear().commit()
+        val recoveredStore = AndroidRuntimeProvisioningStore(appContext)
+        val recoveredSnapshot = recoveredStore.snapshot()
+        val recoveredModel = recoveredSnapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+
+        assertTrue(
+            "Expected download workspace model to be rediscovered after metadata reset.",
+            recoveredModel.isProvisioned,
+        )
+        assertEquals("discovered", recoveredModel.activeVersion)
+        assertEquals(expectedPath, normalizePath(recoveredModel.absolutePath.orEmpty()))
+    }
+
+    @Test
     fun persistedDynamicManagedModelsAreDiscoveredAfterPreferencesReset() = runBlocking {
         val source = writeTempFile(
             dir = appContext.cacheDir,
@@ -204,6 +229,111 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
             recoveredModel.installedVersions.any { it.version == "persisted-dynamic-v1" },
         )
         assertEquals("persisted-dynamic-v1", recoveredModel.activeVersion)
+    }
+
+    @Test
+    fun pathAliasMigrationSelfHealsStaleActiveVersionPathAfterFlagWasSet() {
+        val managedDir = store.managedModelDirectory().apply { mkdirs() }
+        val canonicalModel = writeTempFile(
+            dir = managedDir,
+            fileName = "qwen3.5-0.8b-q4.gguf",
+            content = "alias-migration-repair",
+        )
+        val stalePath = File(managedDir, "qwen3.5-0.8b-q4-q4_0.gguf").absolutePath
+        assertFalse(File(stalePath).exists())
+
+        val seededArray = JSONArray().put(
+            JSONObject()
+                .put("version", "q4_0")
+                .put("absolutePath", stalePath)
+                .put("sha256", sha256Hex(canonicalModel))
+                .put("provenanceIssuer", "internal-release")
+                .put("provenanceSignature", "sig-q4_0")
+                .put("runtimeCompatibility", store.expectedRuntimeCompatibilityTag())
+                .put("fileSizeBytes", canonicalModel.length())
+                .put("importedAtEpochMs", System.currentTimeMillis()),
+        )
+        appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit()
+            .putString("model_versions_json_0_8b", seededArray.toString())
+            .putString("model_active_version_0_8b", "q4_0")
+            .putBoolean("path_alias_migration_done_v1", true)
+            .apply()
+
+        val recoveredStore = AndroidRuntimeProvisioningStore(appContext)
+        val recovered = recoveredStore.snapshot()
+            .models
+            .first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+
+        assertEquals("q4_0", recovered.activeVersion)
+        assertEquals(
+            normalizePath(canonicalModel.absolutePath),
+            normalizePath(recovered.absolutePath.orEmpty()),
+        )
+        assertTrue(recovered.isProvisioned)
+    }
+
+    @Test
+    fun corruptedVersionsJsonSelfHealsFromDiscoveredManagedModelFile() {
+        val managedDir = store.managedModelDirectory().apply { mkdirs() }
+        val canonicalModel = writeTempFile(
+            dir = managedDir,
+            fileName = "qwen3.5-0.8b-q4.gguf",
+            content = "corrupt-json-recovery",
+        )
+
+        appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit()
+            .putString("model_versions_json_0_8b", "{invalid-json")
+            .putString("model_active_version_0_8b", "broken-version")
+            .commit()
+
+        val recoveredStore = AndroidRuntimeProvisioningStore(appContext)
+        val snapshot = recoveredStore.snapshot()
+        val recovered = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+
+        assertTrue("Expected recovered model to be provisioned after metadata corruption.", recovered.isProvisioned)
+        assertEquals("discovered", recovered.activeVersion)
+        assertEquals(
+            normalizePath(canonicalModel.absolutePath),
+            normalizePath(recovered.absolutePath.orEmpty()),
+        )
+        assertTrue(
+            snapshot.recoverableCorruptions.any { signal ->
+                signal.code == "PROVISIONING_VERSIONS_RECOVERED_FROM_DISCOVERY" &&
+                    signal.technicalDetail.contains("model=${ModelCatalog.QWEN_3_5_0_8B_Q4}")
+            },
+        )
+    }
+
+    @Test
+    fun emptyVersionsJsonSelfHealsFromDiscoveredManagedModelFile() {
+        val managedDir = store.managedModelDirectory().apply { mkdirs() }
+        val canonicalModel = writeTempFile(
+            dir = managedDir,
+            fileName = "qwen3.5-0.8b-q4.gguf",
+            content = "empty-json-recovery",
+        )
+
+        appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit()
+            .putString("model_versions_json_0_8b", "[]")
+            .remove("model_active_version_0_8b")
+            .commit()
+
+        val recoveredStore = AndroidRuntimeProvisioningStore(appContext)
+        val snapshot = recoveredStore.snapshot()
+        val recovered = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+
+        assertTrue("Expected recovered model to be provisioned after empty metadata reset.", recovered.isProvisioned)
+        assertEquals("discovered", recovered.activeVersion)
+        assertEquals(
+            normalizePath(canonicalModel.absolutePath),
+            normalizePath(recovered.absolutePath.orEmpty()),
+        )
+        assertTrue(
+            snapshot.recoverableCorruptions.any { signal ->
+                signal.code == "PROVISIONING_VERSIONS_RECOVERED_FROM_DISCOVERY" &&
+                    signal.technicalDetail.contains("source=PROVISIONING_VERSIONS_EMPTY")
+            },
+        )
     }
 
     private fun writeTempFile(dir: File, fileName: String, content: String): File {

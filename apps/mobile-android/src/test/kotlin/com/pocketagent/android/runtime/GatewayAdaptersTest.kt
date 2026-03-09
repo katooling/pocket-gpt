@@ -175,6 +175,55 @@ class GatewayAdaptersTest {
     }
 
     @Test
+    fun `mvp runtime gateway demotes qualified gpu after remote process death`() = runTest {
+        val qualifier = FakeGpuQualifier(
+            resultWhenRuntimeSupported = GpuProbeResult(
+                status = GpuProbeStatus.QUALIFIED,
+                maxStableGpuLayers = 8,
+            ),
+        )
+        val facade = RecordingMvpRuntimeFacade(
+            gpuSupported = true,
+            streamChatEvents = flowOf(
+                Started(requestId = "req-remote", startedAtEpochMs = 1L),
+                ChatStreamEvent.Failed(
+                    requestId = "req-remote",
+                    errorCode = "REMOTE_PROCESS_DIED",
+                    message = "remote runtime disconnected during gpu generation",
+                ),
+            ),
+        )
+        val gateway = MvpRuntimeGateway(
+            facade = facade,
+            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
+            gpuOffloadQualifier = qualifier,
+        )
+
+        gateway.streamChat(
+            StreamChatRequestV2(
+                sessionId = SessionId("session-remote"),
+                messages = listOf(
+                    InteractionMessage(
+                        role = InteractionRole.USER,
+                        parts = listOf(InteractionContentPart.Text("hello")),
+                    ),
+                ),
+                taskType = "short_text",
+                deviceState = com.pocketagent.inference.DeviceState(80, 3, 8),
+                performanceConfig = PerformanceRuntimeConfig.forProfile(
+                    profile = RuntimePerformanceProfile.BALANCED,
+                    availableCpuThreads = 4,
+                    gpuEnabled = true,
+                    gpuLayers = 8,
+                ),
+            ),
+        ).toList()
+
+        assertEquals(1, qualifier.reportedFailures.size)
+        assertEquals(GpuProbeFailureReason.NATIVE_GENERATE_FAILED, qualifier.reportedFailures.single().first)
+    }
+
+    @Test
     fun `mvp runtime gateway demotes qualified gpu after gpu stream failure`() = runTest {
         val qualifier = FakeGpuQualifier(
             resultWhenRuntimeSupported = GpuProbeResult(

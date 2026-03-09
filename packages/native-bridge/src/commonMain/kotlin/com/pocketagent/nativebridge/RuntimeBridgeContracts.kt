@@ -5,6 +5,7 @@ import kotlin.concurrent.thread
 
 enum class RuntimeBackend {
     NATIVE_JNI,
+    REMOTE_ANDROID_SERVICE,
     ADB_FALLBACK,
     UNAVAILABLE,
 }
@@ -90,6 +91,8 @@ interface LlamaCppRuntimeBridge {
     fun cancelGeneration(requestId: String): Boolean = cancelGeneration()
     fun unloadModel()
     fun runtimeBackend(): RuntimeBackend
+    fun lastError(): BridgeError? = null
+    fun vulkanDiagnosticsJson(): String? = null
 }
 
 data class CommandResult(
