@@ -14,10 +14,12 @@ class GpuOffloadQualificationTest {
     @Test
     fun `runtime unsupported fails fast without probe`() = runTest {
         val probeClient = RecordingProbeClient(
-            response = GpuProbeResult(
-                status = GpuProbeStatus.QUALIFIED,
-                maxStableGpuLayers = 8,
-            ),
+            responseForRequest = {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 8,
+                )
+            },
         )
         val qualifier = buildQualifier(
             probeClient = probeClient,
@@ -34,10 +36,12 @@ class GpuOffloadQualificationTest {
     @Test
     fun `qualification transitions pending to cached qualified`() = runTest {
         val probeClient = RecordingProbeClient(
-            response = GpuProbeResult(
-                status = GpuProbeStatus.QUALIFIED,
-                maxStableGpuLayers = 16,
-            ),
+            responseForRequest = {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 16,
+                )
+            },
         )
         val dispatcher = StandardTestDispatcher(testScheduler)
         val qualifier = buildQualifier(
@@ -54,20 +58,22 @@ class GpuOffloadQualificationTest {
         val qualified = qualifier.evaluate(runtimeSupported = true)
         assertEquals(GpuProbeStatus.QUALIFIED, qualified.status)
         assertEquals(16, qualified.maxStableGpuLayers)
-        assertEquals(1, probeClient.callCount)
+        assertEquals(6, probeClient.callCount)
 
         val cached = qualifier.evaluate(runtimeSupported = true)
         assertEquals(GpuProbeStatus.QUALIFIED, cached.status)
-        assertEquals(1, probeClient.callCount)
+        assertEquals(6, probeClient.callCount)
     }
 
     @Test
     fun `cache key invalidates when driver diagnostics change`() = runTest {
         val probeClient = RecordingProbeClient(
-            response = GpuProbeResult(
-                status = GpuProbeStatus.QUALIFIED,
-                maxStableGpuLayers = 4,
-            ),
+            responseForRequest = {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 4,
+                )
+            },
         )
         val dispatcher = StandardTestDispatcher(testScheduler)
         var diagnosticsPayload = diagnosticsJson(driverVersion = 1L)
@@ -81,17 +87,51 @@ class GpuOffloadQualificationTest {
         assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
         advanceUntilIdle()
         assertEquals(GpuProbeStatus.QUALIFIED, qualifier.evaluate(runtimeSupported = true).status)
-        assertEquals(1, probeClient.callCount)
+        assertEquals(4, probeClient.callCount)
 
         diagnosticsPayload = diagnosticsJson(driverVersion = 2L)
         val invalidated = qualifier.evaluate(runtimeSupported = true)
         assertEquals(GpuProbeStatus.PENDING, invalidated.status)
-        assertEquals(1, probeClient.callCount)
+        assertEquals(4, probeClient.callCount)
 
         advanceUntilIdle()
         val requalified = qualifier.evaluate(runtimeSupported = true)
         assertEquals(GpuProbeStatus.QUALIFIED, requalified.status)
-        assertEquals(2, probeClient.callCount)
+        assertEquals(8, probeClient.callCount)
+    }
+
+    @Test
+    fun `qualification fails when upper layer probe process dies`() = runTest {
+        val probeClient = RecordingProbeClient { request ->
+            val layer = request.layerLadder.singleOrNull() ?: 0
+            if (layer >= 32) {
+                GpuProbeResult(
+                    status = GpuProbeStatus.FAILED,
+                    failureReason = GpuProbeFailureReason.PROBE_PROCESS_DIED,
+                    detail = "probe_process_disconnected",
+                )
+            } else {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = layer,
+                    detail = "probe_success",
+                )
+            }
+        }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        val result = qualifier.evaluate(runtimeSupported = true)
+        assertEquals(GpuProbeStatus.FAILED, result.status)
+        assertEquals(GpuProbeFailureReason.PROBE_PROCESS_DIED, result.failureReason)
+        assertEquals(0, result.maxStableGpuLayers)
+        assertEquals(6, probeClient.callCount)
     }
 }
 
@@ -150,15 +190,16 @@ private class InMemoryProbeResultStore : GpuProbeResultStore {
 }
 
 private class RecordingProbeClient(
-    private val response: GpuProbeResult,
+    private val responseForRequest: (GpuProbeRequest) -> GpuProbeResult,
 ) : GpuProbeClient {
     var callCount: Int = 0
         private set
 
     override suspend fun runProbe(request: GpuProbeRequest, timeoutMs: Long): GpuProbeResult {
         assertTrue(request.modelId.isNotBlank())
+        assertTrue(request.layerLadder.size == 1)
         assertTrue(timeoutMs > 0)
         callCount += 1
-        return response
+        return responseForRequest(request)
     }
 }

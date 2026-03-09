@@ -70,6 +70,30 @@ class NativeJniLlamaCppBridge(
             ?.takeIf { it.isNotEmpty() }
     }
 
+    fun generateSyncProbe(
+        prompt: String,
+        maxTokens: Int,
+        cachePolicy: CachePolicy = CachePolicy.OFF,
+    ): Boolean {
+        ensureRuntimeInitialized()
+        if (!runtimeReady || usingFallback) {
+            return false
+        }
+        return runCatching {
+            nativeApi.generate(
+                prompt = prompt,
+                maxTokens = maxTokens,
+                cacheKey = null,
+                cachePolicyCode = cachePolicy.code,
+            )
+            true
+        }.onSuccess {
+            clearBridgeError()
+        }.onFailure { error ->
+            recordBridgeError("JNI_GENERATE_SYNC_EXCEPTION", error)
+        }.getOrElse { false }
+    }
+
     override fun loadModel(modelId: String, modelPath: String?): Boolean {
         ensureRuntimeInitialized()
         if (!runtimeReady) {

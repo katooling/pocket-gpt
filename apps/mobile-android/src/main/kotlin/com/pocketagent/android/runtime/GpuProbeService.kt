@@ -12,6 +12,8 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import android.util.Log
+import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import java.util.concurrent.atomic.AtomicBoolean
@@ -43,6 +45,7 @@ internal object GpuProbeIpc {
 
 class GpuProbeService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val tag = "GpuProbeService"
 
     private val messenger = Messenger(
         Handler(Looper.getMainLooper()) { message ->
@@ -93,8 +96,8 @@ class GpuProbeService : Service() {
             val config = RuntimeGenerationConfig.default().copy(
                 gpuEnabled = true,
                 gpuLayers = layer,
-                nBatch = 256,
-                nUbatch = 256,
+                nBatch = PROBE_SAFE_BATCH,
+                nUbatch = PROBE_SAFE_BATCH,
             )
             bridge.setRuntimeGenerationConfig(config)
             val loaded = runCatching {
@@ -103,6 +106,22 @@ class GpuProbeService : Service() {
                     modelPath = request.modelPath,
                 )
             }.getOrElse {
+                false
+            }
+            val generationSucceeded = if (loaded) {
+                PROBE_PROMPTS.all { prompt ->
+                    runCatching {
+                        bridge.generateSyncProbe(
+                            prompt = prompt,
+                            maxTokens = PROBE_MAX_TOKENS,
+                            cachePolicy = CachePolicy.OFF,
+                        )
+                    }.getOrElse { error ->
+                        Log.w(tag, "GPU_PROBE|layer=$layer|generate_exception=${error.message}", error)
+                        false
+                    }
+                }
+            } else {
                 false
             }
             runCatching { bridge.unloadModel() }
@@ -122,6 +141,22 @@ class GpuProbeService : Service() {
                     )
                 }
             }
+            if (!generationSucceeded) {
+                return if (maxStableLayers > 0) {
+                    GpuProbeResult(
+                        status = GpuProbeStatus.QUALIFIED,
+                        maxStableGpuLayers = maxStableLayers,
+                        detail = "probe_partial_success:last_generate_failed_layer=$layer",
+                    )
+                } else {
+                    GpuProbeResult(
+                        status = GpuProbeStatus.FAILED,
+                        failureReason = GpuProbeFailureReason.NATIVE_GENERATE_FAILED,
+                        detail = bridge.lastError()?.let { "${it.code}:${it.detail.orEmpty()}" }
+                            ?: "probe_generate_failed:layer=$layer",
+                    )
+                }
+            }
             maxStableLayers = max(maxStableLayers, layer)
         }
 
@@ -138,6 +173,14 @@ class GpuProbeService : Service() {
                 detail = "probe_no_stable_layers",
             )
         }
+    }
+
+    private companion object {
+        private const val PROBE_SAFE_BATCH = 256
+        private const val PROBE_MAX_TOKENS = 1
+        private val PROBE_PROMPTS: List<String> = listOf(
+            "GPU probe warmup request",
+        )
     }
 
     private fun sendResult(replyTo: Messenger, result: GpuProbeResult) {

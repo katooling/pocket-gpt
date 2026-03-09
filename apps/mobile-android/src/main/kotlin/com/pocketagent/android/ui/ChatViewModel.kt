@@ -927,10 +927,7 @@ class ChatViewModel(
             return
         }
         gpuProbeRefreshJob = viewModelScope.launch(ioDispatcher) {
-            repeat(GPU_PROBE_REFRESH_MAX_ATTEMPTS) {
-                if (!isActive) {
-                    return@launch
-                }
+            while (isActive) {
                 val nextProbe = runCatching { runtimeFacade.gpuOffloadStatus() }.getOrElse {
                     GpuProbeResult(
                         status = GpuProbeStatus.FAILED,
@@ -1357,7 +1354,6 @@ class ChatViewModel(
         private const val ONBOARDING_LAST_PAGE = 2
         private const val DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS = 30_000L
         private const val GPU_PROBE_REFRESH_INTERVAL_MS = 700L
-        private const val GPU_PROBE_REFRESH_MAX_ATTEMPTS = 160
         private const val STREAM_UI_UPDATE_MIN_INTERVAL_MS = 80L
         private const val TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED = "simple_first_entered"
         private const val TELEMETRY_EVENT_GET_READY_STARTED = "get_ready_started"

@@ -47,11 +47,19 @@ class ChatSendFlow(
         gpuLayers: Int = 32,
     ): PerformanceRuntimeConfig {
         val cpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        return PerformanceRuntimeConfig.forProfile(
+        val config = PerformanceRuntimeConfig.forProfile(
             profile = profile,
             availableCpuThreads = cpuThreads,
             gpuEnabled = gpuEnabled,
             gpuLayers = gpuLayers.coerceAtLeast(0),
+        )
+        if (!config.gpuEnabled || config.gpuLayers <= 0) {
+            return config
+        }
+        // Keep GPU execution aligned with probe-safe defaults on mobile Vulkan drivers.
+        return config.copy(
+            nBatch = minOf(config.nBatch, GPU_SAFE_BATCH),
+            nUbatch = minOf(config.nUbatch, GPU_SAFE_BATCH),
         )
     }
 
@@ -100,5 +108,6 @@ class ChatSendFlow(
         private const val SHORT_PROMPT_MAX_TOKENS = 32
         private const val LONG_PROMPT_MAX_TOKENS = 96
         private const val IDLE_MODEL_UNLOAD_TTL_MS = 10 * 60 * 1000L
+        private const val GPU_SAFE_BATCH = 256
     }
 }

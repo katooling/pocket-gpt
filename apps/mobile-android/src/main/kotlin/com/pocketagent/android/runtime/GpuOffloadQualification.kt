@@ -9,6 +9,7 @@ import com.pocketagent.inference.ModelRuntimeProfile
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.runtime.ModelRegistry
 import java.security.MessageDigest
+import kotlin.math.max
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +37,7 @@ enum class GpuProbeFailureReason {
     PROBE_TIMEOUT,
     PROBE_BIND_FAILED,
     NATIVE_LOAD_FAILED,
+    NATIVE_GENERATE_FAILED,
     NATIVE_RUNTIME_UNAVAILABLE,
     UNKNOWN,
 }
@@ -95,7 +97,7 @@ interface GpuOffloadQualifier {
 private const val PREFS_NAME = "pocketagent_gpu_probe_cache"
 private const val RESULT_PREFIX = "gpu_probe_result_"
 private const val KEY_LAST_WRITE_EPOCH_MS = "gpu_probe_last_write_ms"
-private const val PROBE_TIMEOUT_MS = 90_000L
+private const val PROBE_LAYER_TIMEOUT_MS = 30_000L
 private val PROBE_LAYER_LADDER: List<Int> = listOf(1, 2, 4, 8, 16, 32)
 
 private fun resolveProbeRequestFromStore(store: AndroidRuntimeProvisioningStore): GpuProbeRequest? {
@@ -220,7 +222,7 @@ internal class InternalAndroidGpuOffloadQualifier(
         latestResult = pending
         scope.launch {
             val result = runCatching {
-                probeClient.runProbe(request = request, timeoutMs = PROBE_TIMEOUT_MS)
+                runLayerQualification(request = request)
             }.getOrElse { error ->
                 GpuProbeResult(
                     status = GpuProbeStatus.FAILED,
@@ -238,6 +240,76 @@ internal class InternalAndroidGpuOffloadQualifier(
             )
         }
         return pending
+    }
+
+    private suspend fun runLayerQualification(request: GpuProbeRequest): GpuProbeResult {
+        val orderedLayers = request.layerLadder.filter { it > 0 }.distinct().sorted()
+        if (orderedLayers.isEmpty()) {
+            return GpuProbeResult(
+                status = GpuProbeStatus.FAILED,
+                failureReason = GpuProbeFailureReason.UNKNOWN,
+                detail = "probe_layer_ladder_empty",
+            )
+        }
+
+        var maxStableLayers = 0
+        var failedLayer: Int? = null
+        var failure: GpuProbeResult? = null
+
+        for (layer in orderedLayers) {
+            val layerResult = probeClient.runProbe(
+                request = request.copy(layerLadder = listOf(layer)),
+                timeoutMs = PROBE_LAYER_TIMEOUT_MS,
+            )
+            if (layerResult.status == GpuProbeStatus.QUALIFIED && layerResult.maxStableGpuLayers > 0) {
+                val stableForLayer = layerResult.maxStableGpuLayers.coerceAtMost(layer)
+                maxStableLayers = max(maxStableLayers, stableForLayer)
+                if (stableForLayer >= layer) {
+                    continue
+                }
+            }
+            failedLayer = layer
+            failure = layerResult
+            break
+        }
+
+        if (maxStableLayers > 0) {
+            val hardFailure = when (failure?.failureReason) {
+                GpuProbeFailureReason.PROBE_PROCESS_DIED,
+                GpuProbeFailureReason.PROBE_TIMEOUT,
+                GpuProbeFailureReason.NATIVE_GENERATE_FAILED,
+                    -> true
+                else -> false
+            }
+            val hardFailureResult = failure
+            if (hardFailure && hardFailureResult != null) {
+                return hardFailureResult.copy(
+                    status = GpuProbeStatus.FAILED,
+                    maxStableGpuLayers = 0,
+                    detail = hardFailureResult.detail ?: "probe_hard_failure_at_layer=${failedLayer ?: "unknown"}",
+                )
+            }
+            val detail = if (failedLayer == null) {
+                "probe_success"
+            } else {
+                "probe_partial_success:last_failed_layer=$failedLayer:reason=${failure?.failureReason ?: "unknown"}"
+            }
+            return GpuProbeResult(
+                status = GpuProbeStatus.QUALIFIED,
+                maxStableGpuLayers = maxStableLayers,
+                detail = detail,
+            )
+        }
+
+        return failure?.copy(
+            status = GpuProbeStatus.FAILED,
+            maxStableGpuLayers = 0,
+            detail = failure.detail ?: "probe_failed_at_layer=${failedLayer ?: "unknown"}",
+        ) ?: GpuProbeResult(
+            status = GpuProbeStatus.FAILED,
+            failureReason = GpuProbeFailureReason.UNKNOWN,
+            detail = "probe_failed_without_result",
+        )
     }
 
     override fun diagnosticsLine(): String {

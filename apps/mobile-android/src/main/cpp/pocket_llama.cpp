@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <exception>
 #include <functional>
@@ -110,6 +111,30 @@ bool gpu_offload_supported() {
 #endif
     cached_support.store(supported ? 1 : 0, std::memory_order_release);
     return supported;
+}
+
+void apply_android_vulkan_safety_env_once() {
+    static std::atomic<bool> applied{false};
+    bool expected = false;
+    if (!applied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        return;
+    }
+#if defined(GGML_USE_VULKAN)
+    // Conservative defaults for fragile mobile Vulkan drivers.
+    // These map to upstream ggml-vulkan runtime switches.
+    setenv("GGML_VK_DISABLE_COOPMAT", "1", 1);
+    setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
+    setenv("GGML_VK_DISABLE_INTEGER_DOT_PRODUCT", "1", 1);
+    setenv("GGML_VK_DISABLE_ASYNC", "1", 1);
+    setenv("GGML_VK_ALLOW_SYSMEM_FALLBACK", "1", 1);
+    setenv("GGML_VK_PREFER_HOST_MEMORY", "1", 1);
+    setenv("GGML_VK_DISABLE_BUFFER_DEVICE_ADDRESS", "1", 1);
+    setenv("GGML_VK_DISABLE_F16", "1", 1);
+    setenv("GGML_VK_DISABLE_FUSION", "1", 1);
+    setenv("GGML_VK_DISABLE_MMVQ", "1", 1);
+    setenv("GGML_VK_DISABLE_GRAPH_OPTIMIZE", "1", 1);
+    __android_log_print(ANDROID_LOG_INFO, TAG, "GPU_OFFLOAD|vulkan_safety_env=applied");
+#endif
 }
 
 const char * compiled_gpu_backends() {
@@ -485,6 +510,9 @@ void release_runtime_locked() {
 }
 
 bool ensure_backend_initialized_locked(bool require_gpu_backend) {
+    if (require_gpu_backend) {
+        apply_android_vulkan_safety_env_once();
+    }
     if (g_backend_init_mode == BackendInitMode::GPU_ENABLED) {
         return true;
     }
@@ -493,8 +521,12 @@ bool ensure_backend_initialized_locked(bool require_gpu_backend) {
     }
 
     if (require_gpu_backend && g_backend_init_mode == BackendInitMode::CPU_ONLY) {
-        llama_backend_free();
-        g_backend_init_mode = BackendInitMode::NONE;
+        // Promote CPU-only backend init to GPU-enabled without tearing down the backend.
+        // Full backend free/re-init has been unstable on some Android Vulkan drivers.
+        ggml_backend_load_all();
+        g_backend_init_mode = BackendInitMode::GPU_ENABLED;
+        __android_log_print(ANDROID_LOG_INFO, TAG, "GPU_OFFLOAD|backend_init_mode=gpu-enabled");
+        return true;
     }
 
     if (require_gpu_backend) {
@@ -767,14 +799,12 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         ? clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128)
         : 0;
     const bool use_gpu_ops = model_params.n_gpu_layers > 0;
-    if (use_gpu_ops) {
-        // Use a single explicit GPU target to avoid multi-device split heuristics on fragile drivers.
-        model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
-        model_params.main_gpu = 0;
-    } else {
-        // Force a strict CPU-only model device list when GPU layers are disabled.
-        // On some Vulkan-capable drivers, leaving the default split/device policy can still
-        // route scheduler allocations through GPU backends and crash inside llama_init_from_model.
+    // Keep upstream defaults for split/device selection on GPU paths to avoid driver-specific
+    // regressions from aggressive overrides.
+    if (!use_gpu_ops) {
+        // Force strict CPU-only placement for non-GPU runs.
+        // On some Vulkan-capable devices, default split policy can still allocate Vulkan buffers
+        // even with n_gpu_layers=0, which can trigger driver crashes.
         model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
         model_params.main_gpu = -1;
     }
@@ -802,19 +832,20 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     context_params.n_ubatch = resolve_batch(nUbatch);
     context_params.n_threads = resolve_threads(nThreads);
     context_params.n_threads_batch = resolve_threads(nThreadsBatch);
-    // Keep the CPU path fully CPU-only unless explicit GPU layers are requested.
-    context_params.offload_kqv = use_gpu_ops;
-    context_params.op_offload = use_gpu_ops;
-    if (!use_gpu_ops) {
-        context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
-    }
+    // Keep CPU path fully CPU-only and use conservative Vulkan context toggles by default.
+    // We avoid aggressive op/KV offload until a device has shown stable generation behavior.
+    const bool conservative_gpu_context = use_gpu_ops;
+    context_params.offload_kqv = use_gpu_ops && !conservative_gpu_context;
+    context_params.op_offload = use_gpu_ops && !conservative_gpu_context;
+    context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|offload_kqv=%s|op_offload=%s|flash_attn_type=%d",
+        "GPU_OFFLOAD|offload_kqv=%s|op_offload=%s|flash_attn_type=%d|conservative_gpu_context=%s",
         context_params.offload_kqv ? "true" : "false",
         context_params.op_offload ? "true" : "false",
-        static_cast<int>(context_params.flash_attn_type));
+        static_cast<int>(context_params.flash_attn_type),
+        conservative_gpu_context ? "true" : "false");
     g_context = llama_init_from_model(g_model, context_params);
     if (g_context == nullptr) {
         log_error("nativeLoadModel failed: llama_init_from_model returned null");

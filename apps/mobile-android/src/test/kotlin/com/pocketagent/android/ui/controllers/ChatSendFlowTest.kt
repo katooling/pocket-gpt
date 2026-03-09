@@ -19,6 +19,20 @@ class ChatSendFlowTest {
     }
 
     @Test
+    fun `resolvePerformanceConfig caps gpu batches to safe defaults`() {
+        val flow = ChatSendFlow(runtimeGenerationTimeoutMs = 0L)
+
+        val config = flow.resolvePerformanceConfig(
+            profile = RuntimePerformanceProfile.FAST,
+            gpuEnabled = true,
+            gpuLayers = 16,
+        )
+
+        assertEquals(256, config.nBatch)
+        assertEquals(256, config.nUbatch)
+    }
+
+    @Test
     fun `resolvePerformanceConfig clamps negative gpu layer budget`() {
         val flow = ChatSendFlow(runtimeGenerationTimeoutMs = 0L)
 
