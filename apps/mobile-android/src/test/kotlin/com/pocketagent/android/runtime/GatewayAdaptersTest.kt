@@ -76,7 +76,8 @@ class GatewayAdaptersTest {
         assertTrue(tool is ToolExecutionResult.Success)
         assertTrue(image is ImageAnalysisResult.Success)
         assertEquals(listOf("ok"), checks)
-        assertEquals("diag=ok", diagnostics)
+        assertTrue(diagnostics.startsWith("diag=ok"))
+        assertTrue(diagnostics.contains("GPU_OFFLOAD|runtime_supported="))
         assertEquals("calculator", facade.lastToolName)
         assertEquals("/tmp/a.jpg", facade.lastImagePath)
     }
@@ -120,26 +121,73 @@ class GatewayAdaptersTest {
     }
 
     @Test
-    fun `mvp runtime gateway treats native runtime signal as authoritative for gpu offload`() {
+    fun `mvp runtime gateway keeps gpu disabled while probe is pending`() {
         val facade = RecordingMvpRuntimeFacade()
         val gateway = MvpRuntimeGateway(
             facade = facade,
-            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { false },
-        )
-
-        assertTrue(gateway.supportsGpuOffload())
-    }
-
-    @Test
-    fun `mvp runtime gateway disables gpu offload when native runtime reports unsupported`() {
-        val facade = RecordingMvpRuntimeFacade(gpuSupported = false)
-        val gateway = MvpRuntimeGateway(
-            facade = facade,
             deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
+            gpuOffloadQualifier = FakeGpuQualifier(
+                resultWhenRuntimeSupported = GpuProbeResult(
+                    status = GpuProbeStatus.PENDING,
+                    detail = "probe_running",
+                ),
+            ),
         )
 
         assertFalse(gateway.supportsGpuOffload())
     }
+
+    @Test
+    fun `mvp runtime gateway disables gpu offload when probe fails`() {
+        val facade = RecordingMvpRuntimeFacade(gpuSupported = true)
+        val gateway = MvpRuntimeGateway(
+            facade = facade,
+            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
+            gpuOffloadQualifier = FakeGpuQualifier(
+                resultWhenRuntimeSupported = GpuProbeResult(
+                    status = GpuProbeStatus.FAILED,
+                    failureReason = GpuProbeFailureReason.NATIVE_LOAD_FAILED,
+                ),
+            ),
+        )
+
+        assertFalse(gateway.supportsGpuOffload())
+    }
+
+    @Test
+    fun `mvp runtime gateway enables gpu offload when probe qualifies runtime`() {
+        val facade = RecordingMvpRuntimeFacade(gpuSupported = true)
+        val gateway = MvpRuntimeGateway(
+            facade = facade,
+            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { false },
+            gpuOffloadQualifier = FakeGpuQualifier(
+                resultWhenRuntimeSupported = GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 8,
+                ),
+            ),
+        )
+
+        assertTrue(gateway.supportsGpuOffload())
+        assertEquals(8, gateway.gpuOffloadStatus().maxStableGpuLayers)
+    }
+}
+
+private class FakeGpuQualifier(
+    private val resultWhenRuntimeSupported: GpuProbeResult,
+) : GpuOffloadQualifier {
+    override fun evaluate(runtimeSupported: Boolean): GpuProbeResult {
+        return if (runtimeSupported) {
+            resultWhenRuntimeSupported
+        } else {
+            GpuProbeResult(
+                status = GpuProbeStatus.FAILED,
+                failureReason = GpuProbeFailureReason.RUNTIME_UNSUPPORTED,
+            )
+        }
+    }
+
+    override fun diagnosticsLine(): String = "GPU_PROBE|status=fake"
 }
 
 private class RecordingMvpRuntimeFacade(

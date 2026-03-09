@@ -73,6 +73,29 @@ class LlamaCppInferenceModuleTest {
         assertEquals("cache-key-v1", bridge.lastCacheKey)
         assertEquals(CachePolicy.PREFIX_KV_REUSE, bridge.lastCachePolicy)
     }
+
+    @Test
+    fun `changing runtime generation config reloads active model on next load`() {
+        val bridge = FakeBridge()
+        val module = LlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        module.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig(
+                nThreads = 6,
+                nThreadsBatch = 6,
+                nBatch = 768,
+                nUbatch = 768,
+                gpuEnabled = true,
+                gpuLayers = 32,
+            ),
+        )
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+
+        assertEquals(2, bridge.loadCalls)
+        assertEquals(1, bridge.unloadCalls)
+    }
 }
 
 private class FakeBridge(

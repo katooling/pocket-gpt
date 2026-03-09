@@ -57,6 +57,19 @@ class NativeJniLlamaCppBridge(
         }
     }
 
+    fun vulkanDiagnosticsJson(): String? {
+        ensureRuntimeInitialized()
+        if (usingFallback) {
+            return null
+        }
+        return runCatching { nativeApi.vulkanDiagnosticsJson() }
+            .onSuccess { clearBridgeError() }
+            .onFailure { error -> recordBridgeError("JNI_GPU_DIAGNOSTICS_EXCEPTION", error) }
+            .getOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
     override fun loadModel(modelId: String, modelPath: String?): Boolean {
         ensureRuntimeInitialized()
         if (!runtimeReady) {
@@ -364,6 +377,7 @@ class NativeJniLlamaCppBridge(
         fun cancelGeneration(): Boolean
         fun unloadModel()
         fun supportsGpuOffload(): Boolean
+        fun vulkanDiagnosticsJson(): String
     }
 
     private class JniNativeApi : NativeApi {
@@ -389,6 +403,7 @@ class NativeJniLlamaCppBridge(
         external fun nativeCancelGeneration(): Boolean
         external fun nativeUnloadModel()
         external fun nativeSupportsGpuOffload(): Boolean
+        external fun nativeVulkanDiagnosticsJson(): String
 
         override fun initialize(): Boolean = nativeInitialize()
 
@@ -432,6 +447,8 @@ class NativeJniLlamaCppBridge(
         override fun unloadModel() = nativeUnloadModel()
 
         override fun supportsGpuOffload(): Boolean = nativeSupportsGpuOffload()
+
+        override fun vulkanDiagnosticsJson(): String = nativeVulkanDiagnosticsJson()
     }
 
     companion object {
@@ -450,8 +467,8 @@ class NativeJniLlamaCppBridge(
             val raw = System.getenv(ENABLE_GPU_OFFLOAD_ENV)
                 ?.trim()
                 ?.lowercase()
-                ?: return false
-            return raw in setOf("1", "true", "yes", "on")
+                ?: return true
+            return raw !in setOf("0", "false", "no", "off")
         }
     }
 }

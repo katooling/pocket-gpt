@@ -7,10 +7,11 @@ import kotlin.test.assertTrue
 
 class AndroidGpuOffloadSupportTest {
     @Test
-    fun `reports supported when vulkan compute feature is present`() {
+    fun `reports supported when vulkan compute and version 1_2 are present`() {
         val support = AndroidGpuOffloadSupport(
             featureProbe = FakeFeatureProbe(
-                supports = mapOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE to true),
+                supportedFeatures = setOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE),
+                featureVersions = mapOf(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION to VULKAN_1_2),
             ),
         )
 
@@ -18,19 +19,22 @@ class AndroidGpuOffloadSupportTest {
     }
 
     @Test
-    fun `reports supported when vulkan level feature is present`() {
+    fun `reports unsupported when vulkan compute is present but version is below 1_2`() {
         val support = AndroidGpuOffloadSupport(
             featureProbe = FakeFeatureProbe(
-                supports = mapOf(PackageManager.FEATURE_VULKAN_HARDWARE_LEVEL to true),
+                supportedFeatures = setOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE),
+                featureVersions = mapOf(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION to VULKAN_1_1),
             ),
         )
 
-        assertTrue(support.isSupported())
+        assertFalse(support.isSupported())
     }
 
     @Test
     fun `reports unsupported when vulkan feature signals are absent`() {
-        val support = AndroidGpuOffloadSupport(featureProbe = FakeFeatureProbe())
+        val support = AndroidGpuOffloadSupport(
+            featureProbe = FakeFeatureProbe(),
+        )
 
         assertFalse(support.isSupported())
     }
@@ -47,12 +51,42 @@ class AndroidGpuOffloadSupportTest {
 
         assertFalse(support.isSupported())
     }
+
+    @Test
+    fun `reports unsupported when vulkan version 1_2 is present but compute feature is absent`() {
+        val support = AndroidGpuOffloadSupport(
+            featureProbe = FakeFeatureProbe(
+                featureVersions = mapOf(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION to VULKAN_1_2),
+            ),
+        )
+
+        assertFalse(support.isSupported())
+    }
+
+    @Test
+    fun `reports unsupported when vulkan compute is present but version feature is absent`() {
+        val support = AndroidGpuOffloadSupport(
+            featureProbe = FakeFeatureProbe(
+                supportedFeatures = setOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE),
+            ),
+        )
+
+        assertFalse(support.isSupported())
+    }
 }
 
 private class FakeFeatureProbe(
-    private val supports: Map<String, Boolean> = emptyMap(),
+    private val supportedFeatures: Set<String> = emptySet(),
+    private val featureVersions: Map<String, Int> = emptyMap(),
 ) : AndroidGpuOffloadSupport.FeatureProbe {
     override fun hasSystemFeature(name: String, version: Int): Boolean {
-        return supports[name] ?: false
+        if (version <= 0) {
+            return supportedFeatures.contains(name) || featureVersions.containsKey(name)
+        }
+        val maxVersion = featureVersions[name] ?: return false
+        return maxVersion >= version
     }
 }
+
+private const val VULKAN_1_1 = (1 shl 22) or (1 shl 12)
+private const val VULKAN_1_2 = (1 shl 22) or (2 shl 12)

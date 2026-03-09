@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui.controllers
 
+import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.runtime.RuntimeGateway
 import com.pocketagent.android.ui.addTelemetryEventIfMissing
 import com.pocketagent.android.ui.coerceSupportedRoutingMode
@@ -25,7 +26,7 @@ data class StartupBootstrapResult(
 data class StartupProbeOutcome(
     val startupChecks: List<String>,
     val runtimeBackend: String?,
-    val gpuSupported: Boolean,
+    val gpuProbeResult: com.pocketagent.android.runtime.GpuProbeResult,
     val readinessDecision: StartupReadinessDecision,
 )
 
@@ -54,7 +55,8 @@ class ChatStartupFlow(
             restoredFirstSessionStage == FirstSessionStage.ONBOARDING -> FirstSessionStage.GET_READY
             else -> restoredFirstSessionStage
         }
-        val gpuSupported = runtimeGateway.supportsGpuOffload()
+        val gpuProbe = runtimeGateway.gpuOffloadStatus()
+        val gpuSupported = gpuProbe.status == GpuProbeStatus.QUALIFIED && gpuProbe.maxStableGpuLayers > 0
         val restoredGpuEnabled = persisted.gpuAccelerationEnabled && gpuSupported
         runtimeGateway.setRoutingMode(effectiveRoutingMode)
 
@@ -64,6 +66,9 @@ class ChatStartupFlow(
                 performanceProfile = restoredPerformanceProfile,
                 gpuAccelerationEnabled = restoredGpuEnabled,
                 gpuAccelerationSupported = gpuSupported,
+                gpuProbeStatus = gpuProbe.status,
+                gpuProbeFailureReason = gpuProbe.failureReason?.name,
+                gpuMaxQualifiedLayers = gpuProbe.maxStableGpuLayers,
                 runtimeBackend = runtimeBackend,
                 startupProbeState = StartupProbeState.RUNNING,
                 modelRuntimeStatus = ModelRuntimeStatus.LOADING,
@@ -75,6 +80,9 @@ class ChatStartupFlow(
                 performanceProfile = restoredPerformanceProfile,
                 gpuAccelerationEnabled = restoredGpuEnabled,
                 gpuAccelerationSupported = gpuSupported,
+                gpuProbeStatus = gpuProbe.status,
+                gpuProbeFailureReason = gpuProbe.failureReason?.name,
+                gpuMaxQualifiedLayers = gpuProbe.maxStableGpuLayers,
                 runtimeBackend = runtimeBackend,
                 startupProbeState = StartupProbeState.BLOCKED,
                 modelRuntimeStatus = ModelRuntimeStatus.ERROR,
@@ -158,10 +166,11 @@ class ChatStartupFlow(
             )
         }
         val runtimeBackend = runtimeGateway.runtimeBackend()
+        val gpuProbe = runtimeGateway.gpuOffloadStatus()
         return StartupProbeOutcome(
             startupChecks = startupChecks,
             runtimeBackend = runtimeBackend,
-            gpuSupported = runtimeGateway.supportsGpuOffload(),
+            gpuProbeResult = gpuProbe,
             readinessDecision = startupReadinessCoordinator.decide(
                 startupChecks = startupChecks,
                 runtimeBackend = runtimeBackend,
@@ -174,10 +183,15 @@ class ChatStartupFlow(
         state: ChatUiState,
         outcome: StartupProbeOutcome,
     ): ChatUiState {
+        val probe = outcome.gpuProbeResult
+        val gpuSupported = probe.status == GpuProbeStatus.QUALIFIED && probe.maxStableGpuLayers > 0
         val nextRuntime = state.runtime.copy(
             runtimeBackend = outcome.runtimeBackend,
-            gpuAccelerationSupported = outcome.gpuSupported,
-            gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled && outcome.gpuSupported,
+            gpuAccelerationSupported = gpuSupported,
+            gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled && gpuSupported,
+            gpuProbeStatus = probe.status,
+            gpuProbeFailureReason = probe.failureReason?.name,
+            gpuMaxQualifiedLayers = probe.maxStableGpuLayers,
             startupProbeState = outcome.readinessDecision.startupProbeState,
             modelRuntimeStatus = outcome.readinessDecision.modelRuntimeStatus,
             modelStatusDetail = outcome.readinessDecision.modelStatusDetail,

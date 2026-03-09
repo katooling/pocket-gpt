@@ -139,6 +139,7 @@ class ChatViewModel(
         val performanceConfig = sendFlow.resolvePerformanceConfig(
             profile = snapshot.runtime.performanceProfile,
             gpuEnabled = snapshot.runtime.gpuAccelerationEnabled,
+            gpuLayers = snapshot.runtime.gpuMaxQualifiedLayers.coerceAtLeast(0),
         )
         val requestTimeoutMs = sendFlow.resolveRequestTimeoutMs(performanceConfig)
         val userMessage = createMessage(
@@ -679,7 +680,14 @@ class ChatViewModel(
         val supported = snapshot.gpuAccelerationSupported
         val effective = enabled && supported
         val detail = if (enabled && !supported) {
-            "GPU acceleration is unavailable on this build/device. Using CPU."
+            when (snapshot.gpuProbeStatus) {
+                com.pocketagent.android.runtime.GpuProbeStatus.PENDING ->
+                    "Validating GPU support... keeping CPU until probe is qualified."
+                com.pocketagent.android.runtime.GpuProbeStatus.FAILED ->
+                    "GPU acceleration unavailable (${snapshot.gpuProbeFailureReason ?: "probe_failed"}). Using CPU."
+                else ->
+                    "GPU acceleration is unavailable on this build/device. Using CPU."
+            }
         } else {
             performanceProfileStatusDetail(
                 profile = snapshot.performanceProfile,
@@ -882,11 +890,17 @@ class ChatViewModel(
     private fun buildFallbackProbeOutcome(error: Throwable): StartupProbeOutcome {
         val fallbackCheck = "Startup checks failed unexpectedly: ${error.message ?: error::class.simpleName.orEmpty()}"
         val runtimeBackend = runtimeFacade.runtimeBackend()
-        val gpuSupported = runCatching { runtimeFacade.supportsGpuOffload() }.getOrDefault(false)
+        val gpuProbe = runCatching { runtimeFacade.gpuOffloadStatus() }.getOrElse {
+            com.pocketagent.android.runtime.GpuProbeResult(
+                status = com.pocketagent.android.runtime.GpuProbeStatus.FAILED,
+                failureReason = com.pocketagent.android.runtime.GpuProbeFailureReason.UNKNOWN,
+                detail = "fallback_probe_status_failed:${it.message ?: it::class.simpleName}",
+            )
+        }
         return StartupProbeOutcome(
             startupChecks = listOf(fallbackCheck),
             runtimeBackend = runtimeBackend,
-            gpuSupported = gpuSupported,
+            gpuProbeResult = gpuProbe,
             readinessDecision = startupReadinessCoordinator.decide(
                 startupChecks = listOf(fallbackCheck),
                 runtimeBackend = runtimeBackend,

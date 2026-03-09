@@ -5,13 +5,20 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <dlfcn.h>
+#include <exception>
 #include <functional>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 #include "llama.h"
+#if defined(GGML_USE_VULKAN)
+#include "ggml-vulkan.h"
+#endif
 
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
@@ -29,7 +36,12 @@ constexpr jint STREAM_STATUS_UTF8_STREAM_ERROR = 4;
 constexpr jint STREAM_STATUS_RUNTIME_ERROR = 5;
 
 std::mutex g_mutex;
-bool g_backend_initialized = false;
+enum class BackendInitMode {
+    NONE,
+    CPU_ONLY,
+    GPU_ENABLED,
+};
+BackendInitMode g_backend_init_mode = BackendInitMode::NONE;
 llama_model * g_model = nullptr;
 llama_context * g_context = nullptr;
 llama_sampler * g_sampler = nullptr;
@@ -59,7 +71,45 @@ int32_t resolve_batch(jint requested_batch) {
 }
 
 bool gpu_offload_supported() {
-    return llama_supports_gpu_offload();
+    static std::atomic<int> cached_support{-1};
+    const int cached = cached_support.load(std::memory_order_acquire);
+    if (cached >= 0) {
+        return cached == 1;
+    }
+
+    bool supported = llama_supports_gpu_offload();
+#if defined(GGML_USE_VULKAN)
+    if (supported) {
+        try {
+            // ggml Vulkan device enumeration applies backend-level capability filtering
+            // (for example 16-bit storage support), so only expose GPU offload when at
+            // least one usable Vulkan device is visible.
+            const int device_count = ggml_backend_vk_get_device_count();
+            supported = device_count > 0;
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "GPU_OFFLOAD|vk_device_count=%d|supported=%s",
+                device_count,
+                supported ? "true" : "false");
+        } catch (const std::exception & e) {
+            supported = false;
+            __android_log_print(
+                ANDROID_LOG_WARN,
+                TAG,
+                "GPU_OFFLOAD|vk_probe_failed=%s",
+                e.what());
+        } catch (...) {
+            supported = false;
+            __android_log_print(
+                ANDROID_LOG_WARN,
+                TAG,
+                "GPU_OFFLOAD|vk_probe_failed=unknown");
+        }
+    }
+#endif
+    cached_support.store(supported ? 1 : 0, std::memory_order_release);
+    return supported;
 }
 
 const char * compiled_gpu_backends() {
@@ -74,6 +124,201 @@ const char * compiled_gpu_backends() {
 #else
     return "cpu-only";
 #endif
+}
+
+std::string json_escape(const std::string & value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (const char ch : value) {
+        switch (ch) {
+            case '"':
+                escaped += "\\\"";
+                break;
+            case '\\':
+                escaped += "\\\\";
+                break;
+            case '\n':
+                escaped += "\\n";
+                break;
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            default:
+                escaped.push_back(ch);
+                break;
+        }
+    }
+    return escaped;
+}
+
+std::string format_api_version(uint32_t version) {
+    if (version == 0) {
+        return "0.0.0";
+    }
+    std::ostringstream out;
+    out << VK_API_VERSION_MAJOR(version)
+        << "."
+        << VK_API_VERSION_MINOR(version)
+        << "."
+        << VK_API_VERSION_PATCH(version);
+    return out.str();
+}
+
+struct VulkanDiagnostics {
+    bool loader_available = false;
+    uint32_t instance_api_version = 0;
+    uint32_t selected_device_api_version = 0;
+    uint32_t physical_device_count = 0;
+    bool storage_buffer_16bit_access = false;
+    bool shader_float16 = false;
+    std::string driver_name;
+    uint32_t driver_version = 0;
+};
+
+VulkanDiagnostics collect_vulkan_diagnostics() {
+    VulkanDiagnostics info;
+#if defined(GGML_USE_VULKAN)
+    void * handle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    if (handle == nullptr) {
+        return info;
+    }
+    info.loader_available = true;
+
+    auto vk_get_instance_proc_addr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+        dlsym(handle, "vkGetInstanceProcAddr"));
+    auto vk_enumerate_instance_version = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+        dlsym(handle, "vkEnumerateInstanceVersion"));
+    if (vk_get_instance_proc_addr == nullptr) {
+        dlclose(handle);
+        return info;
+    }
+
+    if (vk_enumerate_instance_version != nullptr) {
+        vk_enumerate_instance_version(&info.instance_api_version);
+    } else {
+        info.instance_api_version = VK_API_VERSION_1_0;
+    }
+
+    auto vk_create_instance = reinterpret_cast<PFN_vkCreateInstance>(
+        vk_get_instance_proc_addr(nullptr, "vkCreateInstance"));
+    if (vk_create_instance == nullptr) {
+        dlclose(handle);
+        return info;
+    }
+
+    VkApplicationInfo app_info{};
+    app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app_info.pApplicationName = "pocket_llama_vulkan_diag";
+    app_info.applicationVersion = 1;
+    app_info.pEngineName = "pocket_llama";
+    app_info.engineVersion = 1;
+    app_info.apiVersion = info.instance_api_version == 0 ? VK_API_VERSION_1_0 : info.instance_api_version;
+
+    VkInstanceCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    create_info.pApplicationInfo = &app_info;
+
+    VkInstance instance = VK_NULL_HANDLE;
+    if (vk_create_instance(&create_info, nullptr, &instance) != VK_SUCCESS || instance == VK_NULL_HANDLE) {
+        dlclose(handle);
+        return info;
+    }
+
+    auto vk_destroy_instance = reinterpret_cast<PFN_vkDestroyInstance>(
+        vk_get_instance_proc_addr(instance, "vkDestroyInstance"));
+    auto vk_enumerate_physical_devices = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+        vk_get_instance_proc_addr(instance, "vkEnumeratePhysicalDevices"));
+    auto vk_get_physical_device_properties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+        vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceProperties2"));
+    if (vk_get_physical_device_properties2 == nullptr) {
+        vk_get_physical_device_properties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+            vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceProperties2KHR"));
+    }
+    auto vk_get_physical_device_features2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
+        vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceFeatures2"));
+    if (vk_get_physical_device_features2 == nullptr) {
+        vk_get_physical_device_features2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
+            vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceFeatures2KHR"));
+    }
+
+    if (vk_enumerate_physical_devices != nullptr) {
+        uint32_t device_count = 0;
+        if (vk_enumerate_physical_devices(instance, &device_count, nullptr) == VK_SUCCESS && device_count > 0) {
+            info.physical_device_count = device_count;
+            std::vector<VkPhysicalDevice> devices(device_count);
+            if (vk_enumerate_physical_devices(instance, &device_count, devices.data()) == VK_SUCCESS &&
+                !devices.empty()) {
+                const VkPhysicalDevice selected = devices.front();
+                if (vk_get_physical_device_properties2 != nullptr) {
+                    VkPhysicalDeviceDriverProperties driver_props{};
+                    driver_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+                    VkPhysicalDeviceProperties2 props2{};
+                    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+                    props2.pNext = &driver_props;
+                    vk_get_physical_device_properties2(selected, &props2);
+                    info.selected_device_api_version = props2.properties.apiVersion;
+                    info.driver_version = props2.properties.driverVersion;
+                    if (driver_props.driverName[0] != '\0') {
+                        info.driver_name = driver_props.driverName;
+                    }
+                }
+
+                if (vk_get_physical_device_features2 != nullptr) {
+                    VkPhysicalDeviceVulkan11Features features11{};
+                    features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+                    VkPhysicalDeviceVulkan12Features features12{};
+                    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+                    features11.pNext = &features12;
+                    VkPhysicalDeviceFeatures2 features2{};
+                    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+                    features2.pNext = &features11;
+                    vk_get_physical_device_features2(selected, &features2);
+                    info.storage_buffer_16bit_access = features11.storageBuffer16BitAccess == VK_TRUE;
+                    info.shader_float16 = features12.shaderFloat16 == VK_TRUE;
+                }
+            }
+        }
+    }
+
+    if (vk_destroy_instance != nullptr) {
+        vk_destroy_instance(instance, nullptr);
+    }
+    dlclose(handle);
+#endif
+    return info;
+}
+
+std::string vulkan_diagnostics_json() {
+    const bool runtime_supported = gpu_offload_supported();
+    int vk_device_count = -1;
+#if defined(GGML_USE_VULKAN)
+    try {
+        vk_device_count = ggml_backend_vk_get_device_count();
+    } catch (...) {
+        vk_device_count = -1;
+    }
+#endif
+    const VulkanDiagnostics diag = collect_vulkan_diagnostics();
+    std::ostringstream out;
+    out << "{"
+        << "\"compiled_backend\":\"" << json_escape(compiled_gpu_backends()) << "\","
+        << "\"runtime_supported\":" << (runtime_supported ? "true" : "false") << ","
+        << "\"vk_device_count\":" << vk_device_count << ","
+        << "\"loader_available\":" << (diag.loader_available ? "true" : "false") << ","
+        << "\"instance_api_version\":" << diag.instance_api_version << ","
+        << "\"instance_api_version_name\":\"" << format_api_version(diag.instance_api_version) << "\","
+        << "\"selected_device_api_version\":" << diag.selected_device_api_version << ","
+        << "\"selected_device_api_version_name\":\"" << format_api_version(diag.selected_device_api_version) << "\","
+        << "\"physical_device_count\":" << diag.physical_device_count << ","
+        << "\"storage_buffer_16bit_access\":" << (diag.storage_buffer_16bit_access ? "true" : "false") << ","
+        << "\"shader_float16\":" << (diag.shader_float16 ? "true" : "false") << ","
+        << "\"driver_name\":\"" << json_escape(diag.driver_name) << "\","
+        << "\"driver_version\":" << diag.driver_version
+        << "}";
+    return out.str();
 }
 
 void log_gpu_support_once() {
@@ -239,13 +484,29 @@ void release_runtime_locked() {
     g_cancel_requested.store(false, std::memory_order_release);
 }
 
-bool ensure_backend_initialized_locked() {
-    if (g_backend_initialized) {
+bool ensure_backend_initialized_locked(bool require_gpu_backend) {
+    if (g_backend_init_mode == BackendInitMode::GPU_ENABLED) {
         return true;
     }
-    ggml_backend_load_all();
+    if (!require_gpu_backend && g_backend_init_mode == BackendInitMode::CPU_ONLY) {
+        return true;
+    }
+
+    if (require_gpu_backend && g_backend_init_mode == BackendInitMode::CPU_ONLY) {
+        llama_backend_free();
+        g_backend_init_mode = BackendInitMode::NONE;
+    }
+
+    if (require_gpu_backend) {
+        ggml_backend_load_all();
+    }
     llama_backend_init();
-    g_backend_initialized = true;
+    g_backend_init_mode = require_gpu_backend ? BackendInitMode::GPU_ENABLED : BackendInitMode::CPU_ONLY;
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "GPU_OFFLOAD|backend_init_mode=%s",
+        require_gpu_backend ? "gpu-enabled" : "cpu-only");
     return true;
 }
 
@@ -476,7 +737,7 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     JNIEnv * /*env*/,
     jobject /*thiz*/) {
     std::lock_guard<std::mutex> lock(g_mutex);
-    return ensure_backend_initialized_locked() ? JNI_TRUE : JNI_FALSE;
+    return ensure_backend_initialized_locked(false) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -498,22 +759,37 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
 
     std::lock_guard<std::mutex> lock(g_mutex);
     release_runtime_locked();
-    if (!ensure_backend_initialized_locked()) {
+    log_gpu_support_once();
+    const bool supports_gpu_offload = gpu_offload_supported();
+    const bool request_gpu_layers = static_cast<int32_t>(nGpuLayers) > 0;
+    llama_model_params model_params = llama_model_default_params();
+    model_params.n_gpu_layers = supports_gpu_offload
+        ? clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128)
+        : 0;
+    const bool use_gpu_ops = model_params.n_gpu_layers > 0;
+    if (use_gpu_ops) {
+        // Use a single explicit GPU target to avoid multi-device split heuristics on fragile drivers.
+        model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
+        model_params.main_gpu = 0;
+    } else {
+        // Force a strict CPU-only model device list when GPU layers are disabled.
+        // On some Vulkan-capable drivers, leaving the default split/device policy can still
+        // route scheduler allocations through GPU backends and crash inside llama_init_from_model.
+        model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
+        model_params.main_gpu = -1;
+    }
+    if (!ensure_backend_initialized_locked(request_gpu_layers && supports_gpu_offload)) {
         log_error("nativeLoadModel failed: backend initialization failed");
         return JNI_FALSE;
     }
-
-    log_gpu_support_once();
-    llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = gpu_offload_supported()
-        ? clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128)
-        : 0;
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|requested_layers=%d|effective_layers=%d",
+        "GPU_OFFLOAD|requested_layers=%d|effective_layers=%d|split_mode=%d|main_gpu=%d",
         static_cast<int>(nGpuLayers),
-        static_cast<int>(model_params.n_gpu_layers));
+        static_cast<int>(model_params.n_gpu_layers),
+        static_cast<int>(model_params.split_mode),
+        static_cast<int>(model_params.main_gpu));
     g_model = llama_model_load_from_file(model_path.c_str(), model_params);
     if (g_model == nullptr) {
         log_error("nativeLoadModel failed: llama_model_load_from_file returned null");
@@ -526,6 +802,19 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     context_params.n_ubatch = resolve_batch(nUbatch);
     context_params.n_threads = resolve_threads(nThreads);
     context_params.n_threads_batch = resolve_threads(nThreadsBatch);
+    // Keep the CPU path fully CPU-only unless explicit GPU layers are requested.
+    context_params.offload_kqv = use_gpu_ops;
+    context_params.op_offload = use_gpu_ops;
+    if (!use_gpu_ops) {
+        context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    }
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "GPU_OFFLOAD|offload_kqv=%s|op_offload=%s|flash_attn_type=%d",
+        context_params.offload_kqv ? "true" : "false",
+        context_params.op_offload ? "true" : "false",
+        static_cast<int>(context_params.flash_attn_type));
     g_context = llama_init_from_model(g_model, context_params);
     if (g_context == nullptr) {
         log_error("nativeLoadModel failed: llama_init_from_model returned null");
@@ -743,6 +1032,14 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     return gpu_offload_supported() ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeVulkanDiagnosticsJson(
+    JNIEnv * env,
+    jobject /*thiz*/) {
+    const std::string payload = vulkan_diagnostics_json();
+    return env->NewStringUTF(payload.c_str());
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeSupportsGpuOffload(
     JNIEnv * env,
@@ -752,11 +1049,20 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
         thiz);
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeVulkanDiagnosticsJson(
+    JNIEnv * env,
+    jobject thiz) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeVulkanDiagnosticsJson(
+        env,
+        thiz);
+}
+
 extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM * /*vm*/, void * /*reserved*/) {
     std::lock_guard<std::mutex> lock(g_mutex);
     release_runtime_locked();
-    if (g_backend_initialized) {
+    if (g_backend_init_mode != BackendInitMode::NONE) {
         llama_backend_free();
-        g_backend_initialized = false;
+        g_backend_init_mode = BackendInitMode::NONE;
     }
 }

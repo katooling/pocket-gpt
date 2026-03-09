@@ -23,5 +23,9 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+        <service
+            android:name=".runtime.GpuProbeService"
+            android:exported="false"
+            android:process=":gpu_probe" />
     </application>
 </manifest>

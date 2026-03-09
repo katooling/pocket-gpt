@@ -8,6 +8,8 @@ class LlamaCppInferenceModule(
 ) : InferenceModule {
     private var activeModelId: String? = null
     private val modelPathById: MutableMap<String, String> = mutableMapOf()
+    private var runtimeGenerationConfig: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
+    private var requiresReloadForConfigChange: Boolean = false
 
     override fun listAvailableModels(): List<String> {
         val bridgeModels = runtimeBridge.listAvailableModels()
@@ -21,14 +23,16 @@ class LlamaCppInferenceModule(
         if (!runtimeBridge.listAvailableModels().contains(modelId)) {
             return false
         }
-        if (activeModelId == modelId) {
+        if (activeModelId == modelId && !requiresReloadForConfigChange) {
             return true
         }
-        if (activeModelId != null && activeModelId != modelId) {
+        if (activeModelId != null) {
             runtimeBridge.unloadModel()
+            activeModelId = null
         }
         val loaded = runtimeBridge.loadModel(modelId, modelPathById[modelId])
         activeModelId = if (loaded) modelId else null
+        requiresReloadForConfigChange = false
         return loaded
     }
 
@@ -67,10 +71,17 @@ class LlamaCppInferenceModule(
     override fun unloadModel() {
         runtimeBridge.unloadModel()
         activeModelId = null
+        requiresReloadForConfigChange = false
     }
 
     fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
+        val changed = runtimeGenerationConfig != config
+        runtimeGenerationConfig = config
         runtimeBridge.setRuntimeGenerationConfig(config)
+        if (changed && activeModelId != null) {
+            // Model load-time params changed; force a reload on the next loadModel call.
+            requiresReloadForConfigChange = true
+        }
     }
 
     fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = runtimeBridge.getRuntimeGenerationConfig()

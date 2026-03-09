@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.core.RoutingMode
@@ -129,10 +130,16 @@ internal fun AdvancedSettingsSheet(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (state.runtime.gpuAccelerationSupported) {
-                    stringResource(id = R.string.ui_gpu_acceleration_toggle)
-                } else {
-                    stringResource(id = R.string.ui_gpu_acceleration_unavailable)
+                text = when {
+                    state.runtime.gpuProbeStatus == GpuProbeStatus.PENDING ->
+                        stringResource(id = R.string.ui_gpu_acceleration_validating)
+                    state.runtime.gpuAccelerationSupported ->
+                        stringResource(id = R.string.ui_gpu_acceleration_toggle)
+                    else ->
+                        stringResource(
+                            id = R.string.ui_gpu_acceleration_unavailable_with_reason,
+                            state.runtime.gpuProbeFailureReason ?: stringResource(id = R.string.ui_gpu_acceleration_reason_unknown),
+                        )
                 },
             )
         }

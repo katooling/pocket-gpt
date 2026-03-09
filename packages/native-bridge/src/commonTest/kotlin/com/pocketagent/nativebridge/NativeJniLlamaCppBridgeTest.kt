@@ -203,6 +203,24 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals("MODEL_PATH_INVALID", bridge.lastError()?.code)
         assertFalse(nativeApi.loadCalled)
     }
+
+    @Test
+    fun `vulkan diagnostics are returned when native runtime is active`() {
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(
+                initializeOk = true,
+                loadOk = true,
+                generatedText = "ok",
+                vulkanDiagnosticsJson = """{"compiled_backend":"vulkan"}""",
+            ),
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertTrue(bridge.isReady())
+        assertEquals("""{"compiled_backend":"vulkan"}""", bridge.vulkanDiagnosticsJson())
+    }
 }
 
 private class FakeNativeApi(
@@ -212,6 +230,7 @@ private class FakeNativeApi(
     private val throwOnLoad: Boolean = false,
     private val supportsGpuOffload: Boolean = false,
     private val loadResults: MutableList<Boolean>? = null,
+    private val vulkanDiagnosticsJson: String = "{}",
 ) : NativeJniLlamaCppBridge.NativeApi {
     var loadCalled = false
     var generateCalled = false
@@ -279,6 +298,8 @@ private class FakeNativeApi(
     }
 
     override fun supportsGpuOffload(): Boolean = supportsGpuOffload
+
+    override fun vulkanDiagnosticsJson(): String = vulkanDiagnosticsJson
 }
 
 private class FakeFallbackBridge(

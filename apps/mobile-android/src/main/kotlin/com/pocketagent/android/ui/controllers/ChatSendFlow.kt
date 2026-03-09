@@ -44,12 +44,14 @@ class ChatSendFlow(
     fun resolvePerformanceConfig(
         profile: RuntimePerformanceProfile,
         gpuEnabled: Boolean,
+        gpuLayers: Int = 32,
     ): PerformanceRuntimeConfig {
         val cpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         return PerformanceRuntimeConfig.forProfile(
             profile = profile,
             availableCpuThreads = cpuThreads,
             gpuEnabled = gpuEnabled,
+            gpuLayers = gpuLayers.coerceAtLeast(0),
         )
     }
 

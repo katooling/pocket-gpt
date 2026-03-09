@@ -1,5 +1,6 @@
 package com.pocketagent.android.runtime
 
+import android.util.Log
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
@@ -54,12 +55,24 @@ interface RuntimeGateway {
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String?
     fun supportsGpuOffload(): Boolean
+    fun gpuOffloadStatus(): GpuProbeResult = if (supportsGpuOffload()) {
+        GpuProbeResult(status = GpuProbeStatus.QUALIFIED, maxStableGpuLayers = 32)
+    } else {
+        GpuProbeResult(
+            status = GpuProbeStatus.FAILED,
+            failureReason = GpuProbeFailureReason.UNKNOWN,
+            detail = "gpu_offload_unsupported",
+        )
+    }
 }
 
 class MvpRuntimeGateway(
     private val facade: MvpRuntimeFacade,
     private val deviceGpuOffloadSupport: DeviceGpuOffloadSupport = DeviceGpuOffloadSupport.ASSUME_SUPPORTED,
+    private val gpuOffloadQualifier: GpuOffloadQualifier = GpuOffloadQualifier.DISABLED,
 ) : RuntimeGateway {
+    private val tag = "RuntimeGateway"
+
     override fun createSession(): SessionId = facade.createSession()
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
@@ -82,7 +95,28 @@ class MvpRuntimeGateway(
         return facade.analyzeImageDetailed(imagePath = imagePath, prompt = prompt)
     }
 
-    override fun exportDiagnostics(): String = facade.exportDiagnostics()
+    override fun exportDiagnostics(): String {
+        val runtimeSupported = runCatching { facade.supportsGpuOffload() }.getOrElse { false }
+        val devicePolicySupported = runCatching { deviceGpuOffloadSupport.isSupported() }.getOrElse { false }
+        val probe = runCatching { gpuOffloadQualifier.evaluate(runtimeSupported) }.getOrElse {
+            GpuProbeResult(
+                status = GpuProbeStatus.FAILED,
+                failureReason = GpuProbeFailureReason.UNKNOWN,
+                detail = "probe_evaluation_failed:${it.message ?: it::class.simpleName}",
+            )
+        }
+        val diagnosticFooter = buildString {
+            appendLine()
+            append(
+                "GPU_OFFLOAD|runtime_supported=$runtimeSupported|device_policy_supported=$devicePolicySupported|" +
+                    "probe_status=${probe.status}|probe_layers=${probe.maxStableGpuLayers}|" +
+                    "probe_reason=${probe.failureReason ?: "none"}|probe_detail=${probe.detail.orEmpty()}",
+            )
+            appendLine()
+            append(gpuOffloadQualifier.diagnosticsLine())
+        }
+        return facade.exportDiagnostics() + diagnosticFooter
+    }
 
     override fun setRoutingMode(mode: RoutingMode) {
         facade.setRoutingMode(mode)
@@ -101,12 +135,32 @@ class MvpRuntimeGateway(
     override fun runtimeBackend(): String? = facade.runtimeBackend()
 
     override fun supportsGpuOffload(): Boolean {
-        val runtimeSupported = facade.supportsGpuOffload()
-        if (!runtimeSupported) {
-            return false
+        val status = gpuOffloadStatus()
+        return status.status == GpuProbeStatus.QUALIFIED && status.maxStableGpuLayers > 0
+    }
+
+    override fun gpuOffloadStatus(): GpuProbeResult {
+        val runtimeSupported = runCatching { facade.supportsGpuOffload() }.getOrElse { false }
+        val deviceReportedSupported = runCatching { deviceGpuOffloadSupport.isSupported() }
+            .getOrElse { false }
+        val probe = runCatching { gpuOffloadQualifier.evaluate(runtimeSupported) }.getOrElse {
+            GpuProbeResult(
+                status = GpuProbeStatus.FAILED,
+                failureReason = GpuProbeFailureReason.UNKNOWN,
+                detail = "probe_evaluation_failed:${it.message ?: it::class.simpleName}",
+            )
         }
-        // Device feature probing is advisory only because it can false-negative on some OEM builds.
-        deviceGpuOffloadSupport.isSupported()
-        return true
+        if (runtimeSupported != deviceReportedSupported || probe.status != GpuProbeStatus.QUALIFIED) {
+            safeLogInfo(
+                "GPU_OFFLOAD|eligibility|runtime_supported=$runtimeSupported|device_policy_supported=$deviceReportedSupported|" +
+                    "probe_status=${probe.status}|probe_layers=${probe.maxStableGpuLayers}|" +
+                    "probe_reason=${probe.failureReason ?: "none"}|authoritative=runtime_plus_probe",
+            )
+        }
+        return probe
+    }
+
+    private fun safeLogInfo(message: String) {
+        runCatching { Log.i(tag, message) }
     }
 }

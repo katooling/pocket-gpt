@@ -7,6 +7,7 @@ import androidx.activity.viewModels
 import androidx.compose.material3.Surface
 import com.pocketagent.android.runtime.DefaultProvisioningGateway
 import com.pocketagent.android.runtime.AndroidGpuOffloadSupport
+import com.pocketagent.android.runtime.AndroidGpuOffloadQualifier
 import com.pocketagent.android.runtime.MvpRuntimeGateway
 import com.pocketagent.android.runtime.RuntimeBootstrapper
 import com.pocketagent.android.ui.ChatViewModel
@@ -23,6 +24,7 @@ class MainActivity : ComponentActivity() {
         MvpRuntimeGateway(
             facade = RuntimeBootstrapper.runtimeFacade(),
             deviceGpuOffloadSupport = AndroidGpuOffloadSupport(applicationContext),
+            gpuOffloadQualifier = AndroidGpuOffloadQualifier(applicationContext),
         )
     }
 

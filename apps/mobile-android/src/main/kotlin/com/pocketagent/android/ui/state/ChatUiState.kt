@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui.state
 
+import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.runtime.RuntimePerformanceProfile
 
@@ -78,6 +79,9 @@ data class RuntimeUiState(
     val performanceProfile: RuntimePerformanceProfile = RuntimePerformanceProfile.BALANCED,
     val gpuAccelerationEnabled: Boolean = false,
     val gpuAccelerationSupported: Boolean = false,
+    val gpuProbeStatus: GpuProbeStatus = GpuProbeStatus.PENDING,
+    val gpuProbeFailureReason: String? = null,
+    val gpuMaxQualifiedLayers: Int = 0,
     val runtimeBackend: String? = null,
     val startupProbeState: StartupProbeState = StartupProbeState.IDLE,
     val modelRuntimeStatus: ModelRuntimeStatus = ModelRuntimeStatus.NOT_READY,
