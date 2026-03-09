@@ -28,58 +28,66 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.max
 
-internal object GpuProbeIpc {
-    const val MSG_PROBE_REQUEST = 1
-    const val MSG_PROBE_RESULT = 2
-
-    const val EXTRA_MODEL_ID = "model_id"
-    const val EXTRA_MODEL_VERSION = "model_version"
-    const val EXTRA_MODEL_PATH = "model_path"
-    const val EXTRA_LAYER_LADDER = "layer_ladder"
-
-    const val EXTRA_RESULT_STATUS = "result_status"
-    const val EXTRA_RESULT_MAX_LAYERS = "result_max_layers"
-    const val EXTRA_RESULT_REASON = "result_reason"
-    const val EXTRA_RESULT_DETAIL = "result_detail"
+internal interface GpuProbeBridge {
+    fun isReady(): Boolean
+    fun supportsGpuOffload(): Boolean
+    fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig)
+    fun loadModel(modelId: String, modelPath: String): Boolean
+    fun generateSyncProbe(prompt: String, maxTokens: Int, cachePolicy: CachePolicy): Boolean
+    fun unloadModel()
+    fun lastErrorDetail(): String?
 }
 
-class GpuProbeService : Service() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val tag = "GpuProbeService"
-
-    private val messenger = Messenger(
-        Handler(Looper.getMainLooper()) { message ->
-            if (message.what != GpuProbeIpc.MSG_PROBE_REQUEST) {
-                return@Handler false
-            }
-            val replyTo = message.replyTo ?: return@Handler true
-            val request = requestFromBundle(message.data)
-                ?: return@Handler true
-            scope.launch {
-                val result = runProbeLadder(request)
-                sendResult(replyTo, result)
-                stopSelf()
-            }
-            true
-        },
+internal class NativeGpuProbeBridge : GpuProbeBridge {
+    private val delegate = NativeJniLlamaCppBridge(
+        fallbackEnabled = false,
     )
 
-    override fun onBind(intent: Intent?): IBinder = messenger.binder
+    override fun isReady(): Boolean = delegate.isReady()
 
-    override fun onDestroy() {
-        scope.cancel()
-        super.onDestroy()
+    override fun supportsGpuOffload(): Boolean = delegate.supportsGpuOffload()
+
+    override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
+        delegate.setRuntimeGenerationConfig(config)
     }
 
-    private fun runProbeLadder(request: GpuProbeRequest): GpuProbeResult {
-        val bridge = NativeJniLlamaCppBridge(
-            fallbackEnabled = false,
+    override fun loadModel(modelId: String, modelPath: String): Boolean {
+        return delegate.loadModel(
+            modelId = modelId,
+            modelPath = modelPath,
         )
+    }
+
+    override fun generateSyncProbe(prompt: String, maxTokens: Int, cachePolicy: CachePolicy): Boolean {
+        return delegate.generateSyncProbe(
+            prompt = prompt,
+            maxTokens = maxTokens,
+            cachePolicy = cachePolicy,
+        )
+    }
+
+    override fun unloadModel() {
+        delegate.unloadModel()
+    }
+
+    override fun lastErrorDetail(): String? {
+        return delegate.lastError()?.let { "${it.code}:${it.detail.orEmpty()}" }
+    }
+}
+
+internal class GpuProbeRunner(
+    private val bridgeFactory: () -> GpuProbeBridge = { NativeGpuProbeBridge() },
+    private val safeBatch: Int = 256,
+    private val maxTokens: Int = 1,
+    private val prompts: List<String> = listOf("GPU probe warmup request"),
+) {
+    fun runProbeLadder(request: GpuProbeRequest): GpuProbeResult {
+        val bridge = bridgeFactory()
         if (!bridge.isReady()) {
             return GpuProbeResult(
                 status = GpuProbeStatus.FAILED,
                 failureReason = GpuProbeFailureReason.NATIVE_RUNTIME_UNAVAILABLE,
-                detail = bridge.lastError()?.let { "${it.code}:${it.detail.orEmpty()}" } ?: "probe_runtime_not_ready",
+                detail = bridge.lastErrorDetail() ?: "probe_runtime_not_ready",
             )
         }
         if (!bridge.supportsGpuOffload()) {
@@ -96,8 +104,8 @@ class GpuProbeService : Service() {
             val config = RuntimeGenerationConfig.default().copy(
                 gpuEnabled = true,
                 gpuLayers = layer,
-                nBatch = PROBE_SAFE_BATCH,
-                nUbatch = PROBE_SAFE_BATCH,
+                nBatch = safeBatch,
+                nUbatch = safeBatch,
             )
             bridge.setRuntimeGenerationConfig(config)
             val loaded = runCatching {
@@ -109,15 +117,15 @@ class GpuProbeService : Service() {
                 false
             }
             val generationSucceeded = if (loaded) {
-                PROBE_PROMPTS.all { prompt ->
+                prompts.all { prompt ->
                     runCatching {
                         bridge.generateSyncProbe(
                             prompt = prompt,
-                            maxTokens = PROBE_MAX_TOKENS,
+                            maxTokens = maxTokens,
                             cachePolicy = CachePolicy.OFF,
                         )
                     }.getOrElse { error ->
-                        Log.w(tag, "GPU_PROBE|layer=$layer|generate_exception=${error.message}", error)
+                        Log.w("GpuProbeRunner", "GPU_PROBE|layer=$layer|generate_exception=${error.message}", error)
                         false
                     }
                 }
@@ -136,8 +144,7 @@ class GpuProbeService : Service() {
                     GpuProbeResult(
                         status = GpuProbeStatus.FAILED,
                         failureReason = GpuProbeFailureReason.NATIVE_LOAD_FAILED,
-                        detail = bridge.lastError()?.let { "${it.code}:${it.detail.orEmpty()}" }
-                            ?: "probe_load_failed:layer=$layer",
+                        detail = bridge.lastErrorDetail() ?: "probe_load_failed:layer=$layer",
                     )
                 }
             }
@@ -152,8 +159,7 @@ class GpuProbeService : Service() {
                     GpuProbeResult(
                         status = GpuProbeStatus.FAILED,
                         failureReason = GpuProbeFailureReason.NATIVE_GENERATE_FAILED,
-                        detail = bridge.lastError()?.let { "${it.code}:${it.detail.orEmpty()}" }
-                            ?: "probe_generate_failed:layer=$layer",
+                        detail = bridge.lastErrorDetail() ?: "probe_generate_failed:layer=$layer",
                     )
                 }
             }
@@ -174,13 +180,49 @@ class GpuProbeService : Service() {
             )
         }
     }
+}
 
-    private companion object {
-        private const val PROBE_SAFE_BATCH = 256
-        private const val PROBE_MAX_TOKENS = 1
-        private val PROBE_PROMPTS: List<String> = listOf(
-            "GPU probe warmup request",
-        )
+internal object GpuProbeIpc {
+    const val MSG_PROBE_REQUEST = 1
+    const val MSG_PROBE_RESULT = 2
+
+    const val EXTRA_MODEL_ID = "model_id"
+    const val EXTRA_MODEL_VERSION = "model_version"
+    const val EXTRA_MODEL_PATH = "model_path"
+    const val EXTRA_LAYER_LADDER = "layer_ladder"
+
+    const val EXTRA_RESULT_STATUS = "result_status"
+    const val EXTRA_RESULT_MAX_LAYERS = "result_max_layers"
+    const val EXTRA_RESULT_REASON = "result_reason"
+    const val EXTRA_RESULT_DETAIL = "result_detail"
+}
+
+class GpuProbeService : Service() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    internal var runner: GpuProbeRunner = GpuProbeRunner()
+
+    private val messenger = Messenger(
+        Handler(Looper.getMainLooper()) { message ->
+            if (message.what != GpuProbeIpc.MSG_PROBE_REQUEST) {
+                return@Handler false
+            }
+            val replyTo = message.replyTo ?: return@Handler true
+            val request = requestFromBundle(message.data)
+                ?: return@Handler true
+            scope.launch {
+                val result = runner.runProbeLadder(request)
+                sendResult(replyTo, result)
+                stopSelf()
+            }
+            true
+        },
+    )
+
+    override fun onBind(intent: Intent?): IBinder = messenger.binder
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 
     private fun sendResult(replyTo: Messenger, result: GpuProbeResult) {
