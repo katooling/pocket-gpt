@@ -1,0 +1,71 @@
+appId: com.pocketagent.android
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- runFlow:
+    when:
+      visible: "Get started"
+    commands:
+      - tapOn: "Get started"
+- assertVisible: "Offline-first"
+- runFlow:
+    when:
+      visible: "Open advanced controls"
+    commands:
+      - tapOn: "Open advanced controls"
+- runFlow:
+    when:
+      visible: "Advanced"
+    commands:
+      - tapOn: "Advanced"
+- assertVisible: "Advanced controls"
+- tapOn: "Open model setup"
+- assertVisible: "Model provisioning"
+- scrollUntilVisible:
+    element:
+      text: "Downloads"
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: "__TARGET_DOWNLOAD_ROW__"
+    direction: DOWN
+    timeout: 120000
+- tapOn: "__TARGET_DOWNLOAD_START__"
+- extendedWaitUntil:
+    visible: "Pause"
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      text: "Installed versions"
+    direction: DOWN
+    timeout: 120000
+- extendedWaitUntil:
+    visible: "__TARGET_INSTALLED_ROW__"
+    timeout: 900000
+- runFlow:
+    when:
+      visible: "__TARGET_ACTIVATE_BUTTON__"
+    commands:
+      - tapOn: "__TARGET_ACTIVATE_BUTTON__"
+- back
+- assertVisible: "Advanced controls"
+- extendedWaitUntil:
+    notVisible: "Validating GPU support..."
+    timeout: 240000
+- takeScreenshot: "__RUN_TAG__-gate"
+- runFlow:
+    when:
+      visible: "Enable GPU acceleration"
+    commands:
+      - assertVisible: "Enable GPU acceleration"
+- runFlow:
+    when:
+      notVisible: "Enable GPU acceleration"
+    commands:
+      - assertVisible: "GPU acceleration unavailable"

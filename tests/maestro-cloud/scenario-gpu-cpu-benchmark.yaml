@@ -1,0 +1,144 @@
+appId: com.pocketagent.android
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- runFlow:
+    when:
+      visible: "Get started"
+    commands:
+      - tapOn: "Get started"
+- assertVisible: "Offline-first"
+- runFlow:
+    when:
+      notVisible: "Runtime: Ready"
+    commands:
+      - runFlow:
+          when:
+            visible: "Get ready"
+          commands:
+            - tapOn: "Get ready"
+      - runFlow:
+          when:
+            visible: "Open model setup"
+          commands:
+            - tapOn: "Open model setup"
+      - runFlow:
+          when:
+            visible: "Fix model setup"
+          commands:
+            - tapOn: "Fix model setup"
+      - runFlow:
+          when:
+            notVisible: "Model provisioning"
+          commands:
+            - runFlow:
+                when:
+                  visible: "Open advanced controls"
+                commands:
+                  - tapOn: "Open advanced controls"
+            - runFlow:
+                when:
+                  visible: "Advanced"
+                commands:
+                  - tapOn: "Advanced"
+            - runFlow:
+                when:
+                  visible: "Open model setup"
+                commands:
+                  - tapOn: "Open model setup"
+            - runFlow:
+                when:
+                  visible: "Fix model setup"
+                commands:
+                  - tapOn: "Fix model setup"
+      - extendedWaitUntil:
+          visible: "Model provisioning"
+          timeout: 30000
+      - runFlow:
+          when:
+            visible: "Download default model"
+          commands:
+            - tapOn: "Download default model"
+      - runFlow:
+          when:
+            visible: "Start download"
+          commands:
+            - tapOn: "Start download"
+            - extendedWaitUntil:
+                visible: "Pause"
+                timeout: 120000
+      - runFlow:
+          when:
+            visible: "Model provisioning"
+          commands:
+            - back
+      - runFlow:
+          when:
+            visible: "Runtime: Error"
+          commands:
+            - tapOn: "Refresh runtime checks"
+      - extendedWaitUntil:
+          visible: "Runtime: Ready"
+          timeout: 900000
+- assertNotVisible: "Runtime: Error"
+- tapOn: "Advanced"
+- assertVisible: "Advanced controls"
+- extendedWaitUntil:
+    visible: "Enable GPU acceleration"
+    timeout: 180000
+- takeScreenshot: "cloud-gpu-benchmark-gate"
+- assertNotVisible: "GPU acceleration unavailable on this build/device"
+- tapOn: "Enable GPU acceleration"
+- back
+- assertVisible: "Speed & Battery: Balanced (GPU enabled)"
+- tapOn: "Message"
+- eraseText
+- inputText: "Benchmark alpha. Reply with exactly sixty short one-word items about rivers and mountains, separated by single spaces, with no numbering, no punctuation, and no intro or outro."
+- hideKeyboard
+- evalScript: ${output.gpu_elapsed_ms = null}
+- evalScript: ${output.gpu_started_ms = Date.now()}
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: "Cancel"
+    timeout: 300000
+- evalScript: ${output.gpu_elapsed_ms = Date.now() - output.gpu_started_ms}
+- assertNotVisible: "UI-RUNTIME-001"
+- tapOn: "Advanced"
+- assertVisible: "Advanced controls"
+- takeScreenshot: "cloud-gpu-benchmark-gpu"
+- back
+- tapOn: "Sessions"
+- tapOn: "Create session"
+- tapOn: "Advanced"
+- assertVisible: "Advanced controls"
+- assertVisible: "Enable GPU acceleration"
+- tapOn: "Enable GPU acceleration"
+- back
+- assertVisible: "Speed & Battery: Balanced (GPU off)"
+- tapOn: "Message"
+- eraseText
+- inputText: "Benchmark beta. Reply with exactly sixty short one-word items about rivers and mountains, separated by single spaces, with no numbering, no punctuation, and no intro or outro."
+- hideKeyboard
+- evalScript: ${output.cpu_elapsed_ms = null}
+- evalScript: ${output.cpu_started_ms = Date.now()}
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: "Cancel"
+    timeout: 300000
+- evalScript: ${output.cpu_elapsed_ms = Date.now() - output.cpu_started_ms}
+- assertNotVisible: "UI-RUNTIME-001"
+- tapOn: "Advanced"
+- assertVisible: "Advanced controls"
+- takeScreenshot: "cloud-gpu-benchmark-cpu"
+- runScript: assert_gpu_faster.js
