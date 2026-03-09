@@ -2,6 +2,9 @@ package com.pocketagent.android.ui
 
 import android.util.Log
 import com.pocketagent.android.BuildConfig
+import com.pocketagent.android.runtime.GpuProbeFailureReason
+import com.pocketagent.android.runtime.GpuProbeResult
+import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.runtime.RuntimeGateway
 import com.pocketagent.android.ui.controllers.ChatPersistenceFlow
 import com.pocketagent.android.ui.controllers.ChatStreamCoordinator
@@ -51,9 +54,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class ChatViewModel(
@@ -91,6 +96,7 @@ class ChatViewModel(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState = _uiState.asStateFlow()
     private var startupProbeJob: Job? = null
+    private var gpuProbeRefreshJob: Job? = null
     @Volatile
     private var latestStartupProbeToken: Long = 0L
     @Volatile
@@ -830,6 +836,7 @@ class ChatViewModel(
         val loadedState = persistenceFlow.loadBootstrapState()
         val bootstrapResult = startupFlow.bootstrap(loadedState)
         _uiState.value = bootstrapResult.state
+        refreshGpuProbeStatusIfPending()
         ensureSimpleFirstEnteredTelemetryIfNeeded()
         if (bootstrapResult.shouldPersist) {
             persistState()
@@ -865,6 +872,7 @@ class ChatViewModel(
                     return@launch
                 }
                 _uiState.update { state -> startupFlow.applyProbeOutcome(state, outcome) }
+                refreshGpuProbeStatusIfPending()
                 persistState()
                 logStartupProbe("completed", probeToken, normalizedDetail)
             } catch (cancelled: CancellationException) {
@@ -907,6 +915,61 @@ class ChatViewModel(
                 statusDetailOverride = null,
             ),
         )
+    }
+
+    private fun refreshGpuProbeStatusIfPending() {
+        if (_uiState.value.runtime.gpuProbeStatus != GpuProbeStatus.PENDING) {
+            gpuProbeRefreshJob?.cancel()
+            gpuProbeRefreshJob = null
+            return
+        }
+        if (gpuProbeRefreshJob?.isActive == true) {
+            return
+        }
+        gpuProbeRefreshJob = viewModelScope.launch(ioDispatcher) {
+            repeat(GPU_PROBE_REFRESH_MAX_ATTEMPTS) {
+                if (!isActive) {
+                    return@launch
+                }
+                val nextProbe = runCatching { runtimeFacade.gpuOffloadStatus() }.getOrElse {
+                    GpuProbeResult(
+                        status = GpuProbeStatus.FAILED,
+                        failureReason = GpuProbeFailureReason.UNKNOWN,
+                        detail = "gpu_probe_refresh_failed:${it.message ?: it::class.simpleName}",
+                    )
+                }
+                val changed = updateRuntimeGpuProbeState(nextProbe)
+                if (changed) {
+                    persistState()
+                }
+                if (nextProbe.status != GpuProbeStatus.PENDING) {
+                    return@launch
+                }
+                delay(GPU_PROBE_REFRESH_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun updateRuntimeGpuProbeState(probe: GpuProbeResult): Boolean {
+        var changed = false
+        _uiState.update { state ->
+            val gpuSupported = probe.status == GpuProbeStatus.QUALIFIED && probe.maxStableGpuLayers > 0
+            val runtime = state.runtime
+            val nextRuntime = runtime.copy(
+                gpuAccelerationSupported = gpuSupported,
+                gpuAccelerationEnabled = runtime.gpuAccelerationEnabled && gpuSupported,
+                gpuProbeStatus = probe.status,
+                gpuProbeFailureReason = probe.failureReason?.name,
+                gpuMaxQualifiedLayers = probe.maxStableGpuLayers,
+            )
+            changed = runtime != nextRuntime
+            if (!changed) {
+                state
+            } else {
+                state.copy(runtime = nextRuntime)
+            }
+        }
+        return changed
     }
 
     private fun logStartupProbe(
@@ -1293,6 +1356,8 @@ class ChatViewModel(
         private const val TITLE_MAX_CHARS = 42
         private const val ONBOARDING_LAST_PAGE = 2
         private const val DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS = 30_000L
+        private const val GPU_PROBE_REFRESH_INTERVAL_MS = 700L
+        private const val GPU_PROBE_REFRESH_MAX_ATTEMPTS = 160
         private const val STREAM_UI_UPDATE_MIN_INTERVAL_MS = 80L
         private const val TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED = "simple_first_entered"
         private const val TELEMETRY_EVENT_GET_READY_STARTED = "get_ready_started"

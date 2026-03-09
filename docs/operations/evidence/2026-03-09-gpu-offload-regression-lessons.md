@@ -45,6 +45,8 @@
 - Fixed probe-client unbind behavior on probe-process death.
 - Before fix, Android could schedule repeated restarts of crashed probe service connection.
 - After fix, probe failure is captured and cached; subsequent app launches use cached `FAILED` state without re-probing for same key.
+- Fixed a UI state progression gap where `PENDING` could remain visible too long.
+- ChatViewModel now polls `gpuOffloadStatus()` while probe is pending and updates UI to terminal `FAILED/QUALIFIED` once available.
 
 ## Validation Snapshot (Time-Balanced)
 - Unit/build:

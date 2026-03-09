@@ -881,6 +881,34 @@ class ChatViewModelTest {
         assertEquals(afterFirstPassSaves, persistence.savedStates.size)
         assertEquals(afterFirstRoutingCalls, runtime.routingModeSetCalls)
     }
+
+    @Test
+    fun `gpu probe pending state is refreshed to terminal status`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            runtimeBackend = "NATIVE_JNI",
+            gpuStatusSequence = mutableListOf(
+                com.pocketagent.android.runtime.GpuProbeResult(
+                    status = com.pocketagent.android.runtime.GpuProbeStatus.PENDING,
+                ),
+                com.pocketagent.android.runtime.GpuProbeResult(
+                    status = com.pocketagent.android.runtime.GpuProbeStatus.FAILED,
+                    failureReason = com.pocketagent.android.runtime.GpuProbeFailureReason.MODEL_UNAVAILABLE,
+                ),
+            ),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+
+        advanceTimeBy(2_000L)
+        advanceUntilIdle()
+
+        val runtimeState = viewModel.uiState.value.runtime
+        assertEquals(com.pocketagent.android.runtime.GpuProbeStatus.FAILED, runtimeState.gpuProbeStatus)
+        assertFalse(runtimeState.gpuAccelerationSupported)
+    }
 }
 
 private class RecordingPersistence(
@@ -924,6 +952,7 @@ private class RecordingRuntimeFacade(
     private val streamDelayMs: Long = 0L,
     private val streamTerminal: StreamTerminal = StreamTerminal.COMPLETED,
     private val runtimeBackend: String? = null,
+    private val gpuStatusSequence: MutableList<com.pocketagent.android.runtime.GpuProbeResult> = mutableListOf(),
 ) : RuntimeGateway {
     private var sessionCounter = 0
     private var routingMode: RoutingMode = RoutingMode.AUTO
@@ -1104,7 +1133,21 @@ private class RecordingRuntimeFacade(
 
     override fun runtimeBackend(): String? = runtimeBackend
 
-    override fun supportsGpuOffload(): Boolean = false
+    override fun supportsGpuOffload(): Boolean {
+        val current = gpuStatusSequence.firstOrNull() ?: return false
+        return current.status == com.pocketagent.android.runtime.GpuProbeStatus.QUALIFIED &&
+            current.maxStableGpuLayers > 0
+    }
+
+    override fun gpuOffloadStatus(): com.pocketagent.android.runtime.GpuProbeResult {
+        if (gpuStatusSequence.isEmpty()) {
+            return com.pocketagent.android.runtime.GpuProbeResult(
+                status = com.pocketagent.android.runtime.GpuProbeStatus.FAILED,
+                failureReason = com.pocketagent.android.runtime.GpuProbeFailureReason.UNKNOWN,
+            )
+        }
+        return gpuStatusSequence.removeAt(0)
+    }
 }
 
 private enum class StreamTerminal {
