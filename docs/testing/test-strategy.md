@@ -74,9 +74,10 @@ Last updated: 2026-03-08
 Primary workflow: `.github/workflows/ci.yml`
 
 1. Hosted required checks: `unit-and-host-tests`, `android-lint`, `native-build-package-check`, `android-instrumented-smoke`, `lifecycle-e2e-first-run` (risk-conditional on PRs, always-on for `main`).
-2. Governance checks run docs drift/health/accuracy and governance self-tests.
-3. Nightly workflows provide emulator matrix coverage and Maestro supplemental coverage (including first-run lifecycle); cloud first-run runs when API key is configured.
-4. Required checks for branch protection should include `lifecycle-e2e-first-run`.
+2. `android-instrumented-smoke` is intentionally scoped to one deterministic Compose smoke assertion (`MainActivityUiSmokeTest#onboardingFlowCanProgressAndComplete`) to reduce flake while lifecycle E2E covers full first-run/download/send behavior.
+3. Governance checks run docs drift/health/accuracy and governance self-tests.
+4. Nightly workflows provide emulator matrix coverage and Maestro supplemental coverage (including first-run lifecycle); cloud first-run runs when API key is configured.
+5. Required checks for branch protection should include `lifecycle-e2e-first-run`.
 
 ## Engineering Principles (Applied)
 

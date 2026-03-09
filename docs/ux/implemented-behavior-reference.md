@@ -12,7 +12,7 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
 1. `Tools` opens a prompt-shortcut dialog.
 2. Selecting a tool item pre-fills composer text and closes the dialog.
 3. Tool shortcuts do not directly dispatch `runTool` from the dialog.
-4. Legacy prompt parser exists in `ChatSendFlow`, but default is `legacyToolIntentParserEnabled = false`.
+4. No legacy tool-intent parser runs in send flow.
 5. Direct typed tool execution path (`runTool` + typed tool results) exists in ViewModel/controller code and test contracts, but is not currently bound to a primary user action.
 
 ## Privacy Sheet Behavior

@@ -50,13 +50,13 @@
     },
     {
       "id": "tool-prompt-first",
-      "description": "Tool entry point is prompt-first; legacy parser is disabled by default",
+      "description": "Tool entry point is prompt-first and pre-fills composer text",
       "docs": [
         {
           "path": "docs/ux/implemented-behavior-reference.md",
           "must_contain": [
             "pre-fills composer text",
-            "legacyToolIntentParserEnabled = false"
+            "No legacy tool-intent parser runs in send flow."
           ]
         }
       ],
@@ -69,10 +69,17 @@
           ]
         },
         {
-          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/ChatSendFlow.kt",
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt",
           "must_contain": [
-            "legacyToolIntentParserEnabled: Boolean = false",
-            "if (!legacyToolIntentParserEnabled)"
+            "ToolDialog(",
+            "onUsePrompt = viewModel::prefillComposer"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt",
+          "must_contain": [
+            "fun prefillComposer(text: String)",
+            "isToolDialogOpen = false"
           ]
         }
       ]

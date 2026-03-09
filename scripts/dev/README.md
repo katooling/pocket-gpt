@@ -236,7 +236,7 @@ Contract summary:
 Local command to mirror the lifecycle gate quickly:
 
 ```bash
-./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=false :apps:mobile-android:assembleDebug
 APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
 adb install -r "${APK_PATH}"
 maestro --format junit --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" \

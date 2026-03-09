@@ -16,7 +16,7 @@ This is the evergreen tracker for doc/code drift. Replace point-in-time audit no
 | ID | Area | Risk | Severity | Owner | Next Action |
 |---|---|---|---|---|---|
 | DR-001 | Streaming contract docs | Runtime stream phase contract can drift when event types change | High | Engineering | Keep `docs/governance/docs-accuracy-manifest.json` synchronized with `MvpRuntimeFacade.kt` |
-| DR-002 | Tool UX docs | Prompt shortcuts can be mistaken for direct tool execution | High | Product + Android | Keep `docs/ux/implemented-behavior-reference.md` aligned with `ToolDialog.kt` + `ChatSendFlow.kt` |
+| DR-002 | Tool UX docs | Prompt shortcuts can be mistaken for direct tool execution | High | Product + Android | Keep `docs/ux/implemented-behavior-reference.md` aligned with `ToolDialog.kt` + `ChatApp.kt` + `ChatViewModel.kt` |
 | DR-003 | Privacy claims | User-control claims can exceed current in-app controls | High | Product + Security | Keep `docs/security/privacy-model.md` bounded to implemented controls |
 | DR-004 | Test process duplication | Command/process guidance can split across multiple docs | Medium | Engineering + QA | Keep one playbook (`docs/testing/test-strategy.md`) and move task details to runbooks |
 | DR-005 | Evidence-note sprawl | Historical notes accumulate after decisions are stable | Medium | Product Ops | Prune superseded notes not referenced by active roadmap/PRD/ticket artifacts |

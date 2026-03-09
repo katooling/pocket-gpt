@@ -31,7 +31,7 @@ python3 tools/devctl/main.py lane maestro
 ## Runbook: Local Lifecycle E2E (First-Run Download -> Chat)
 
 ```bash
-./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=false :apps:mobile-android:assembleDebug
 APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
 adb install -r "${APK_PATH}"
 maestro --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" test tests/maestro/scenario-first-run-download-chat.yaml
@@ -51,7 +51,7 @@ maestro --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" 
 ## Runbook: Main-Push Blocking Lifecycle Check (CI Equivalent)
 
 ```bash
-./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
+./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=false :apps:mobile-android:assembleDebug
 APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
 adb install -r "${APK_PATH}"
 maestro --format junit --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" test tests/maestro/scenario-first-run-download-chat.yaml > tmp/lifecycle-e2e-first-run-local.xml
