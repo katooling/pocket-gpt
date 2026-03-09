@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 
 class AndroidGpuOffloadSupportTest {
     @Test
-    fun `reports supported when vulkan compute and version 1_2 are present`() {
+    fun `reports supported for probe when vulkan compute and version 1_2 are present`() {
         val support = AndroidGpuOffloadSupport(
             featureProbe = FakeFeatureProbe(
                 supportedFeatures = setOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE),
@@ -19,7 +19,7 @@ class AndroidGpuOffloadSupportTest {
     }
 
     @Test
-    fun `reports unsupported when vulkan compute is present but version is below 1_2`() {
+    fun `reports supported for probe when vulkan compute is present and version feature exists below 1_2`() {
         val support = AndroidGpuOffloadSupport(
             featureProbe = FakeFeatureProbe(
                 supportedFeatures = setOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE),
@@ -27,7 +27,7 @@ class AndroidGpuOffloadSupportTest {
             ),
         )
 
-        assertFalse(support.isSupported())
+        assertTrue(support.isSupported())
     }
 
     @Test
@@ -72,6 +72,20 @@ class AndroidGpuOffloadSupportTest {
         )
 
         assertFalse(support.isSupported())
+    }
+
+    @Test
+    fun `reports supported when vulkan compute and any version metadata are present`() {
+        val support = AndroidGpuOffloadSupport(
+            featureProbe = FakeFeatureProbe(
+                supportedFeatures = setOf(
+                    PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE,
+                    PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
+                ),
+            ),
+        )
+
+        assertTrue(support.isSupported())
     }
 }
 

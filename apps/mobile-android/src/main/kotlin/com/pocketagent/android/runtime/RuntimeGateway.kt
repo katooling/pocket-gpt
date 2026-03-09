@@ -11,6 +11,8 @@ import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onEach
 
 fun interface DeviceGpuOffloadSupport {
     fun isSupported(): Boolean
@@ -55,6 +57,7 @@ interface RuntimeGateway {
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String?
     fun supportsGpuOffload(): Boolean
+    fun reportGpuRuntimeFailure(reason: GpuProbeFailureReason, detail: String? = null) = Unit
     fun gpuOffloadStatus(): GpuProbeResult = if (supportsGpuOffload()) {
         GpuProbeResult(status = GpuProbeStatus.QUALIFIED, maxStableGpuLayers = 32)
     } else {
@@ -76,11 +79,46 @@ class MvpRuntimeGateway(
     override fun createSession(): SessionId = facade.createSession()
 
     override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
-        return facade.streamUserMessage(request)
+        return streamChat(
+            StreamChatRequestV2(
+                sessionId = request.sessionId,
+                messages = listOf(
+                    com.pocketagent.runtime.InteractionMessage(
+                        role = com.pocketagent.runtime.InteractionRole.USER,
+                        parts = listOf(com.pocketagent.runtime.InteractionContentPart.Text(request.userText)),
+                    ),
+                ),
+                taskType = request.taskType,
+                deviceState = request.deviceState,
+                maxTokens = request.maxTokens,
+                requestTimeoutMs = request.requestTimeoutMs,
+                requestId = request.requestId,
+                performanceConfig = request.performanceConfig,
+                residencyPolicy = request.residencyPolicy,
+            ),
+        )
     }
 
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
         return facade.streamChat(request)
+            .onEach { event ->
+                if (event is ChatStreamEvent.Failed) {
+                    maybeDemoteGpuAfterFailure(
+                        request = request,
+                        errorCode = event.errorCode,
+                        message = event.message,
+                    )
+                }
+            }
+            .catch { error ->
+                if (isGpuRequested(request) && error !is kotlinx.coroutines.TimeoutCancellationException) {
+                    reportGpuRuntimeFailure(
+                        reason = GpuProbeFailureReason.NATIVE_GENERATE_FAILED,
+                        detail = "stream_exception:${error.message ?: error::class.simpleName}",
+                    )
+                }
+                throw error
+            }
     }
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = facade.cancelGeneration(sessionId)
@@ -97,7 +135,7 @@ class MvpRuntimeGateway(
 
     override fun exportDiagnostics(): String {
         val runtimeSupported = runCatching { facade.supportsGpuOffload() }.getOrElse { false }
-        val devicePolicySupported = runCatching { deviceGpuOffloadSupport.isSupported() }.getOrElse { false }
+        val deviceFeatureAdvisorySupported = runCatching { deviceGpuOffloadSupport.isSupported() }.getOrElse { false }
         val probe = runCatching { gpuOffloadQualifier.evaluate(runtimeSupported) }.getOrElse {
             GpuProbeResult(
                 status = GpuProbeStatus.FAILED,
@@ -108,7 +146,7 @@ class MvpRuntimeGateway(
         val diagnosticFooter = buildString {
             appendLine()
             append(
-                "GPU_OFFLOAD|runtime_supported=$runtimeSupported|device_policy_supported=$devicePolicySupported|" +
+                "GPU_OFFLOAD|runtime_supported=$runtimeSupported|device_feature_advisory_supported=$deviceFeatureAdvisorySupported|" +
                     "probe_status=${probe.status}|probe_layers=${probe.maxStableGpuLayers}|" +
                     "probe_reason=${probe.failureReason ?: "none"}|probe_detail=${probe.detail.orEmpty()}",
             )
@@ -139,9 +177,18 @@ class MvpRuntimeGateway(
         return status.status == GpuProbeStatus.QUALIFIED && status.maxStableGpuLayers > 0
     }
 
+    override fun reportGpuRuntimeFailure(reason: GpuProbeFailureReason, detail: String?) {
+        runCatching { gpuOffloadQualifier.reportRuntimeFailure(reason = reason, detail = detail) }
+            .onFailure { error ->
+                safeLogInfo(
+                    "GPU_OFFLOAD|demote_failed|reason=$reason|detail=${detail.orEmpty()}|error=${error.message ?: error::class.simpleName}",
+                )
+            }
+    }
+
     override fun gpuOffloadStatus(): GpuProbeResult {
         val runtimeSupported = runCatching { facade.supportsGpuOffload() }.getOrElse { false }
-        val deviceReportedSupported = runCatching { deviceGpuOffloadSupport.isSupported() }
+        val deviceFeatureAdvisorySupported = runCatching { deviceGpuOffloadSupport.isSupported() }
             .getOrElse { false }
         val probe = runCatching { gpuOffloadQualifier.evaluate(runtimeSupported) }.getOrElse {
             GpuProbeResult(
@@ -150,9 +197,10 @@ class MvpRuntimeGateway(
                 detail = "probe_evaluation_failed:${it.message ?: it::class.simpleName}",
             )
         }
-        if (runtimeSupported != deviceReportedSupported || probe.status != GpuProbeStatus.QUALIFIED) {
+        if (runtimeSupported != deviceFeatureAdvisorySupported || probe.status != GpuProbeStatus.QUALIFIED) {
             safeLogInfo(
-                "GPU_OFFLOAD|eligibility|runtime_supported=$runtimeSupported|device_policy_supported=$deviceReportedSupported|" +
+                "GPU_OFFLOAD|eligibility|runtime_supported=$runtimeSupported|" +
+                    "device_feature_advisory_supported=$deviceFeatureAdvisorySupported|" +
                     "probe_status=${probe.status}|probe_layers=${probe.maxStableGpuLayers}|" +
                     "probe_reason=${probe.failureReason ?: "none"}|authoritative=runtime_plus_probe",
             )
@@ -162,5 +210,47 @@ class MvpRuntimeGateway(
 
     private fun safeLogInfo(message: String) {
         runCatching { Log.i(tag, message) }
+    }
+
+    private fun isGpuRequested(request: StreamChatRequestV2): Boolean {
+        val config = request.performanceConfig
+        return config.gpuEnabled && config.gpuLayers > 0
+    }
+
+    private fun maybeDemoteGpuAfterFailure(
+        request: StreamChatRequestV2,
+        errorCode: String,
+        message: String,
+    ) {
+        if (!isGpuRequested(request)) {
+            return
+        }
+        if (!shouldDemoteForFailure(errorCode = errorCode, message = message)) {
+            return
+        }
+        reportGpuRuntimeFailure(
+            reason = GpuProbeFailureReason.NATIVE_GENERATE_FAILED,
+            detail = "stream_failed:code=$errorCode|message=${message.take(240)}",
+        )
+    }
+
+    private fun shouldDemoteForFailure(errorCode: String, message: String): Boolean {
+        val code = errorCode.trim().lowercase()
+        if (code == "template_unavailable") {
+            return false
+        }
+        if (code.contains("jni") || code.contains("gpu") || code.contains("vulkan")) {
+            return true
+        }
+        val normalizedMessage = message.lowercase()
+        if (
+            normalizedMessage.contains("gpu") ||
+            normalizedMessage.contains("vulkan") ||
+            normalizedMessage.contains("n_gpu_layers") ||
+            normalizedMessage.contains("native load")
+        ) {
+            return true
+        }
+        return code == "runtime_error"
     }
 }

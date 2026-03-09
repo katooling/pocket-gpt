@@ -21,6 +21,8 @@ import com.pocketagent.runtime.InteractionContentPart
 import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.PerformanceRuntimeConfig
+import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
@@ -171,11 +173,62 @@ class GatewayAdaptersTest {
         assertTrue(gateway.supportsGpuOffload())
         assertEquals(8, gateway.gpuOffloadStatus().maxStableGpuLayers)
     }
+
+    @Test
+    fun `mvp runtime gateway demotes qualified gpu after gpu stream failure`() = runTest {
+        val qualifier = FakeGpuQualifier(
+            resultWhenRuntimeSupported = GpuProbeResult(
+                status = GpuProbeStatus.QUALIFIED,
+                maxStableGpuLayers = 8,
+            ),
+        )
+        val facade = RecordingMvpRuntimeFacade(
+            gpuSupported = true,
+            streamChatEvents = flowOf(
+                Started(requestId = "req-1", startedAtEpochMs = 1L),
+                ChatStreamEvent.Failed(
+                    requestId = "req-1",
+                    errorCode = "JNI_RUNTIME_ERROR",
+                    message = "native stream failure",
+                ),
+            ),
+        )
+        val gateway = MvpRuntimeGateway(
+            facade = facade,
+            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
+            gpuOffloadQualifier = qualifier,
+        )
+
+        gateway.streamChat(
+            StreamChatRequestV2(
+                sessionId = SessionId("session-1"),
+                messages = listOf(
+                    InteractionMessage(
+                        role = InteractionRole.USER,
+                        parts = listOf(InteractionContentPart.Text("hello")),
+                    ),
+                ),
+                taskType = "short_text",
+                deviceState = com.pocketagent.inference.DeviceState(80, 3, 8),
+                performanceConfig = PerformanceRuntimeConfig.forProfile(
+                    profile = RuntimePerformanceProfile.BALANCED,
+                    availableCpuThreads = 4,
+                    gpuEnabled = true,
+                    gpuLayers = 8,
+                ),
+            ),
+        ).toList()
+
+        assertEquals(1, qualifier.reportedFailures.size)
+        assertEquals(GpuProbeFailureReason.NATIVE_GENERATE_FAILED, qualifier.reportedFailures.single().first)
+    }
 }
 
 private class FakeGpuQualifier(
     private val resultWhenRuntimeSupported: GpuProbeResult,
 ) : GpuOffloadQualifier {
+    val reportedFailures: MutableList<Pair<GpuProbeFailureReason, String?>> = mutableListOf()
+
     override fun evaluate(runtimeSupported: Boolean): GpuProbeResult {
         return if (runtimeSupported) {
             resultWhenRuntimeSupported
@@ -188,10 +241,15 @@ private class FakeGpuQualifier(
     }
 
     override fun diagnosticsLine(): String = "GPU_PROBE|status=fake"
+
+    override fun reportRuntimeFailure(reason: GpuProbeFailureReason, detail: String?) {
+        reportedFailures += reason to detail
+    }
 }
 
 private class RecordingMvpRuntimeFacade(
     private val gpuSupported: Boolean = true,
+    private val streamChatEvents: Flow<ChatStreamEvent>? = null,
 ) : MvpRuntimeFacade {
     private var currentRoutingMode: RoutingMode = RoutingMode.AUTO
     var lastToolName: String? = null
@@ -218,6 +276,7 @@ private class RecordingMvpRuntimeFacade(
     }
 
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+        streamChatEvents?.let { return it }
         val latestUserText = request.messages
             .asReversed()
             .firstOrNull { message -> message.role == InteractionRole.USER }

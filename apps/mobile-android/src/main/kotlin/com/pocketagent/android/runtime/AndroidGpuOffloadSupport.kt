@@ -28,14 +28,16 @@ class AndroidGpuOffloadSupport : DeviceGpuOffloadSupport {
                 PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
                 MIN_VULKAN_VERSION_1_2,
             )
-            // Keep this gate strict to avoid native hard-crashes on devices that expose Vulkan
-            // metadata but fail in runtime model load when GPU layers are enabled.
-            val supported = hasCompute && hasVersion12
+            // Advisory-only signal for policy diagnostics. Final eligibility is runtime + crash-safe probe.
+            val supportedForProbe = hasCompute && hasVersionAny
+            val strict12Eligible = hasCompute && hasVersion12
             safeLogInfo(
                 tag,
-                "GPU_OFFLOAD|has_compute=$hasCompute|has_level=$hasLevel|has_version_any=$hasVersionAny|has_version_1_2=$hasVersion12|supported=$supported",
+                "GPU_OFFLOAD|has_compute=$hasCompute|has_level=$hasLevel|has_version_any=$hasVersionAny|" +
+                    "has_version_1_2=$hasVersion12|supported_for_probe=$supportedForProbe|" +
+                    "strict_1_2_eligible=$strict12Eligible",
             )
-            supported
+            supportedForProbe
         }.getOrElse {
             safeLogWarning(tag, "GPU_OFFLOAD|feature_query_failed", it)
             false

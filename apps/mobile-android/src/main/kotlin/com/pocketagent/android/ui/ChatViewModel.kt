@@ -282,6 +282,9 @@ class ChatViewModel(
                             .withUiError(uiError),
                     )
                 }
+                runCatching { runtimeFacade.gpuOffloadStatus() }
+                    .getOrNull()
+                    ?.let { probe -> updateRuntimeGpuProbeState(probe) }
                 persistState()
             }
 

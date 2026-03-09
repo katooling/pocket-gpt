@@ -101,7 +101,7 @@ class GpuOffloadQualificationTest {
     }
 
     @Test
-    fun `qualification fails when upper layer probe process dies`() = runTest {
+    fun `qualification keeps lower stable layer when upper layer probe process dies`() = runTest {
         val probeClient = RecordingProbeClient { request ->
             val layer = request.layerLadder.singleOrNull() ?: 0
             if (layer >= 32) {
@@ -128,10 +128,132 @@ class GpuOffloadQualificationTest {
         assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
         advanceUntilIdle()
         val result = qualifier.evaluate(runtimeSupported = true)
-        assertEquals(GpuProbeStatus.FAILED, result.status)
-        assertEquals(GpuProbeFailureReason.PROBE_PROCESS_DIED, result.failureReason)
-        assertEquals(0, result.maxStableGpuLayers)
+        assertEquals(GpuProbeStatus.QUALIFIED, result.status)
+        assertEquals(16, result.maxStableGpuLayers)
+        assertTrue(result.detail?.contains("reason=PROBE_PROCESS_DIED") == true)
         assertEquals(6, probeClient.callCount)
+    }
+
+    @Test
+    fun `qualification uses adaptive per-layer timeout for default policy`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = { request ->
+                val layer = request.layerLadder.singleOrNull() ?: 0
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = layer,
+                    detail = "probe_success",
+                )
+            },
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        val result = qualifier.evaluate(runtimeSupported = true)
+        assertEquals(GpuProbeStatus.QUALIFIED, result.status)
+        assertEquals(32, result.maxStableGpuLayers)
+        assertEquals(listOf(20_000L, 20_000L, 25_000L, 30_000L, 38_000L, 45_000L), probeClient.timeoutHistory)
+    }
+
+    @Test
+    fun `qualification uses conservative ladder when half precision features are missing`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = { request ->
+                val layer = request.layerLadder.singleOrNull() ?: 0
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = layer,
+                    detail = "probe_success",
+                )
+            },
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            diagnosticsReader = NativeVulkanDiagnosticsReader(
+                payloadProvider = { diagnosticsJson(driverVersion = 1L, shaderFloat16 = false) },
+            ),
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        val result = qualifier.evaluate(runtimeSupported = true)
+        assertEquals(GpuProbeStatus.QUALIFIED, result.status)
+        assertEquals(8, result.maxStableGpuLayers)
+        assertEquals(4, probeClient.callCount)
+        assertEquals(listOf(1, 2, 4, 8), probeClient.layerHistory)
+    }
+
+    @Test
+    fun `runtime failure report demotes previously qualified gpu result`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = { request ->
+                val layer = request.layerLadder.singleOrNull() ?: 0
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = layer,
+                    detail = "probe_success",
+                )
+            },
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        assertEquals(GpuProbeStatus.QUALIFIED, qualifier.evaluate(runtimeSupported = true).status)
+
+        qualifier.reportRuntimeFailure(
+            reason = GpuProbeFailureReason.NATIVE_GENERATE_FAILED,
+            detail = "jni_runtime_error",
+        )
+        val demoted = qualifier.evaluate(runtimeSupported = true)
+
+        assertEquals(GpuProbeStatus.FAILED, demoted.status)
+        assertEquals(GpuProbeFailureReason.NATIVE_GENERATE_FAILED, demoted.failureReason)
+        assertTrue(demoted.detail?.contains("runtime_failure_demoted:") == true)
+        assertEquals(6, probeClient.callCount)
+    }
+
+    @Test
+    fun `stale in flight probe state is restarted instead of staying pending forever`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 8,
+                )
+            },
+        )
+        val clock = ProbeTestClock(startAtMs = 1_000L)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            scope = TestScope(dispatcher),
+            clock = clock,
+        )
+
+        val firstPending = qualifier.evaluate(runtimeSupported = true)
+        assertEquals(GpuProbeStatus.PENDING, firstPending.status)
+
+        clock.advanceBy(10 * 60_000L)
+        val secondPending = qualifier.evaluate(runtimeSupported = true)
+
+        assertEquals(GpuProbeStatus.PENDING, secondPending.status)
+        assertTrue(secondPending.checkedAtEpochMs > firstPending.checkedAtEpochMs)
     }
 }
 
@@ -142,13 +264,13 @@ private fun buildQualifier(
         payloadProvider = { diagnosticsJson(driverVersion = 1L) },
     ),
     scope: TestScope = TestScope(),
+    clock: ProbeTestClock = ProbeTestClock(startAtMs = 1_000L),
 ): InternalAndroidGpuOffloadQualifier {
-    var now = 1_000L
     return InternalAndroidGpuOffloadQualifier(
         probeClient = probeClient,
         probeRequestResolver = probeRequestResolver,
         nativeDiagnosticsReader = diagnosticsReader,
-        now = { now++ },
+        now = { clock.now() },
         appBuildSignature = "1:100",
         deviceFingerprint = "fingerprint-1",
         resultStore = InMemoryProbeResultStore(),
@@ -165,16 +287,21 @@ private fun testProbeRequest(): GpuProbeRequest {
     )
 }
 
-private fun diagnosticsJson(driverVersion: Long): String {
+private fun diagnosticsJson(
+    driverVersion: Long,
+    shaderFloat16: Boolean = true,
+    storageBuffer16BitAccess: Boolean = true,
+    selectedDeviceApiVersion: Long = 4202496L,
+): String {
     return """
         {
           "runtime_supported": true,
           "driver_name": "test-driver",
           "driver_version": $driverVersion,
           "instance_api_version": 4202496,
-          "selected_device_api_version": 4202496,
-          "storage_buffer_16bit_access": true,
-          "shader_float16": true
+          "selected_device_api_version": $selectedDeviceApiVersion,
+          "storage_buffer_16bit_access": $storageBuffer16BitAccess,
+          "shader_float16": $shaderFloat16
         }
     """.trimIndent()
 }
@@ -194,12 +321,28 @@ private class RecordingProbeClient(
 ) : GpuProbeClient {
     var callCount: Int = 0
         private set
+    val timeoutHistory: MutableList<Long> = mutableListOf()
+    val layerHistory: MutableList<Int> = mutableListOf()
 
     override suspend fun runProbe(request: GpuProbeRequest, timeoutMs: Long): GpuProbeResult {
         assertTrue(request.modelId.isNotBlank())
         assertTrue(request.layerLadder.size == 1)
         assertTrue(timeoutMs > 0)
         callCount += 1
+        timeoutHistory += timeoutMs
+        layerHistory += request.layerLadder.single()
         return responseForRequest(request)
+    }
+}
+
+private class ProbeTestClock(
+    startAtMs: Long,
+) {
+    private var current: Long = startAtMs
+
+    fun now(): Long = current++
+
+    fun advanceBy(deltaMs: Long) {
+        current += deltaMs.coerceAtLeast(0L)
     }
 }

@@ -70,6 +70,10 @@ internal interface GpuProbeResultStore {
 interface GpuOffloadQualifier {
     fun evaluate(runtimeSupported: Boolean): GpuProbeResult
     fun diagnosticsLine(): String
+    fun reportRuntimeFailure(
+        reason: GpuProbeFailureReason,
+        detail: String? = null,
+    ) = Unit
 
     companion object {
         val DISABLED: GpuOffloadQualifier = object : GpuOffloadQualifier {
@@ -97,8 +101,60 @@ interface GpuOffloadQualifier {
 private const val PREFS_NAME = "pocketagent_gpu_probe_cache"
 private const val RESULT_PREFIX = "gpu_probe_result_"
 private const val KEY_LAST_WRITE_EPOCH_MS = "gpu_probe_last_write_ms"
-private const val PROBE_LAYER_TIMEOUT_MS = 30_000L
-private val PROBE_LAYER_LADDER: List<Int> = listOf(1, 2, 4, 8, 16, 32)
+private const val PROBE_POLICY_VERSION = 2
+private const val PROBE_TOTAL_TIMEOUT_MS = 2 * 60_000L
+private const val PROBE_MIN_LAYER_TIMEOUT_MS = 12_000L
+private const val PROBE_MAX_LAYER_TIMEOUT_MS = 45_000L
+private const val PROBE_STALE_PENDING_TIMEOUT_MS = PROBE_TOTAL_TIMEOUT_MS + 30_000L
+private const val VULKAN_API_1_2 = (1L shl 22) or (2L shl 12)
+private val PROBE_LAYER_LADDER_FULL: List<Int> = listOf(1, 2, 4, 8, 16, 32)
+private val PROBE_LAYER_LADDER_NO_HALF: List<Int> = listOf(1, 2, 4, 8)
+private val PROBE_LAYER_LADDER_PRE_12: List<Int> = listOf(1, 2, 4, 8, 16)
+
+private data class GpuProbePolicy(
+    val layerLadder: List<Int>,
+    val totalTimeoutMs: Long,
+) {
+    fun timeoutForLayer(layer: Int, nativeDiagnostics: NativeVulkanDiagnostics): Long {
+        val layerTimeout = when {
+            layer <= 2 -> 20_000L
+            layer <= 4 -> 25_000L
+            layer <= 8 -> 30_000L
+            layer <= 16 -> 38_000L
+            else -> 45_000L
+        }
+        val halfPrecisionSlowdownPenalty = if (
+            !nativeDiagnostics.storageBuffer16BitAccess || !nativeDiagnostics.shaderFloat16
+        ) {
+            8_000L
+        } else {
+            0L
+        }
+        val apiVersionPenalty = if (
+            nativeDiagnostics.selectedDeviceApiVersion in 1L until VULKAN_API_1_2
+        ) {
+            8_000L
+        } else {
+            0L
+        }
+        return (layerTimeout + halfPrecisionSlowdownPenalty + apiVersionPenalty)
+            .coerceIn(PROBE_MIN_LAYER_TIMEOUT_MS, PROBE_MAX_LAYER_TIMEOUT_MS)
+    }
+}
+
+private fun resolveProbePolicy(nativeDiagnostics: NativeVulkanDiagnostics): GpuProbePolicy {
+    val hasHalfPrecision = nativeDiagnostics.storageBuffer16BitAccess && nativeDiagnostics.shaderFloat16
+    val apiAtLeast12 = nativeDiagnostics.selectedDeviceApiVersion >= VULKAN_API_1_2
+    val ladder = when {
+        !hasHalfPrecision -> PROBE_LAYER_LADDER_NO_HALF
+        !apiAtLeast12 -> PROBE_LAYER_LADDER_PRE_12
+        else -> PROBE_LAYER_LADDER_FULL
+    }
+    return GpuProbePolicy(
+        layerLadder = ladder,
+        totalTimeoutMs = PROBE_TOTAL_TIMEOUT_MS,
+    )
+}
 
 private fun resolveProbeRequestFromStore(store: AndroidRuntimeProvisioningStore): GpuProbeRequest? {
     val snapshot = store.snapshot()
@@ -119,7 +175,7 @@ private fun resolveProbeRequestFromStore(store: AndroidRuntimeProvisioningStore)
         modelId = candidate.modelId,
         modelVersion = candidate.activeVersion.orEmpty(),
         modelPath = candidate.absolutePath.orEmpty(),
-        layerLadder = PROBE_LAYER_LADDER,
+        layerLadder = PROBE_LAYER_LADDER_FULL,
     )
 }
 
@@ -153,6 +209,10 @@ class AndroidGpuOffloadQualifier(
     override fun evaluate(runtimeSupported: Boolean): GpuProbeResult = delegate.evaluate(runtimeSupported)
 
     override fun diagnosticsLine(): String = delegate.diagnosticsLine()
+
+    override fun reportRuntimeFailure(reason: GpuProbeFailureReason, detail: String?) {
+        delegate.reportRuntimeFailure(reason = reason, detail = detail)
+    }
 }
 
 internal class InternalAndroidGpuOffloadQualifier(
@@ -209,7 +269,15 @@ internal class InternalAndroidGpuOffloadQualifier(
         }
 
         if (inFlightCacheKey == cacheKey) {
-            return latestResult.copy(status = GpuProbeStatus.PENDING, cacheKey = cacheKey)
+            val pendingAgeMs = (now() - latestResult.checkedAtEpochMs).coerceAtLeast(0L)
+            if (pendingAgeMs > PROBE_STALE_PENDING_TIMEOUT_MS) {
+                safeLogWarning(
+                    "GPU_PROBE|stale_pending_detected|age_ms=$pendingAgeMs|cache_key=$cacheKey",
+                )
+                inFlightCacheKey = null
+            } else {
+                return latestResult.copy(status = GpuProbeStatus.PENDING, cacheKey = cacheKey)
+            }
         }
 
         inFlightCacheKey = cacheKey
@@ -221,29 +289,94 @@ internal class InternalAndroidGpuOffloadQualifier(
         )
         latestResult = pending
         scope.launch {
-            val result = runCatching {
-                runLayerQualification(request = request)
-            }.getOrElse { error ->
-                GpuProbeResult(
-                    status = GpuProbeStatus.FAILED,
-                    failureReason = GpuProbeFailureReason.UNKNOWN,
-                    detail = "probe_exception:${error.message ?: error::class.simpleName}",
-                )
-            }.copy(cacheKey = cacheKey, checkedAtEpochMs = now())
+            try {
+                val result = runCatching {
+                    runLayerQualification(
+                        request = request,
+                        nativeDiagnostics = nativeDiag,
+                    )
+                }.getOrElse { error ->
+                    GpuProbeResult(
+                        status = GpuProbeStatus.FAILED,
+                        failureReason = GpuProbeFailureReason.UNKNOWN,
+                        detail = "probe_exception:${error.message ?: error::class.simpleName}",
+                    )
+                }.copy(cacheKey = cacheKey, checkedAtEpochMs = now())
 
-            writeCachedResult(cacheKey = cacheKey, result = result)
-            latestResult = result
-            inFlightCacheKey = null
-            safeLogInfo(
-                "GPU_PROBE|status=${result.status}|max_layers=${result.maxStableGpuLayers}|reason=${result.failureReason}|" +
-                    "detail=${result.detail.orEmpty()}|cache_key=$cacheKey",
-            )
+                runCatching { writeCachedResult(cacheKey = cacheKey, result = result) }
+                    .onFailure { cacheError ->
+                        safeLogWarning(
+                            "GPU_PROBE|cache_write_failed|cache_key=$cacheKey|detail=${cacheError.message ?: cacheError::class.simpleName}",
+                        )
+                    }
+                latestResult = result
+                safeLogInfo(
+                    "GPU_PROBE|status=${result.status}|max_layers=${result.maxStableGpuLayers}|reason=${result.failureReason}|" +
+                        "detail=${result.detail.orEmpty()}|cache_key=$cacheKey",
+                )
+            } finally {
+                inFlightCacheKey = null
+            }
         }
         return pending
     }
 
-    private suspend fun runLayerQualification(request: GpuProbeRequest): GpuProbeResult {
-        val orderedLayers = request.layerLadder.filter { it > 0 }.distinct().sorted()
+    override fun reportRuntimeFailure(
+        reason: GpuProbeFailureReason,
+        detail: String?,
+    ) {
+        val request = probeRequestResolver()
+        val nativeDiag = nativeDiagnosticsReader.read()
+        latestNativeDiagnosticsPayload = nativeDiag.rawPayload
+        val cacheKey = when {
+            request != null -> computeCacheKey(request = request, nativeDiagnostics = nativeDiag)
+            !latestResult.cacheKey.isNullOrBlank() -> latestResult.cacheKey.orEmpty()
+            else -> {
+                safeLogWarning("GPU_PROBE|runtime_failure_demote_skipped|reason=$reason|detail=${detail.orEmpty()}")
+                return
+            }
+        }
+        val demoted = GpuProbeResult(
+            status = GpuProbeStatus.FAILED,
+            maxStableGpuLayers = 0,
+            failureReason = reason,
+            detail = "runtime_failure_demoted:${detail.orEmpty()}",
+            cacheKey = cacheKey,
+            checkedAtEpochMs = now(),
+        )
+        latestResult = demoted
+        inFlightCacheKey = null
+        runCatching { writeCachedResult(cacheKey = cacheKey, result = demoted) }
+            .onFailure { cacheError ->
+                safeLogWarning(
+                    "GPU_PROBE|demote_cache_write_failed|cache_key=$cacheKey|detail=${cacheError.message ?: cacheError::class.simpleName}",
+                )
+            }
+        safeLogInfo(
+            "GPU_PROBE|demoted=true|reason=$reason|detail=${detail.orEmpty()}|cache_key=$cacheKey",
+        )
+    }
+
+    private fun safeLogInfo(message: String) {
+        runCatching { Log.i(tag, message) }
+    }
+
+    private fun safeLogWarning(message: String) {
+        runCatching { Log.w(tag, message) }
+    }
+
+    private fun safeLogWarning(message: String, throwable: Throwable) {
+        runCatching { Log.w(tag, message, throwable) }
+    }
+
+    private suspend fun runLayerQualification(
+        request: GpuProbeRequest,
+        nativeDiagnostics: NativeVulkanDiagnostics,
+    ): GpuProbeResult {
+        val policy = resolveProbePolicy(nativeDiagnostics)
+        val requestLadder = request.layerLadder.filter { it > 0 }.distinct().sorted()
+        val orderedLayers = requestLadder.filter { candidate -> policy.layerLadder.contains(candidate) }
+            .ifEmpty { policy.layerLadder }
         if (orderedLayers.isEmpty()) {
             return GpuProbeResult(
                 status = GpuProbeStatus.FAILED,
@@ -256,10 +389,26 @@ internal class InternalAndroidGpuOffloadQualifier(
         var failedLayer: Int? = null
         var failure: GpuProbeResult? = null
 
+        val startedAtMs = now()
         for (layer in orderedLayers) {
+            val elapsedMs = (now() - startedAtMs).coerceAtLeast(0L)
+            val remainingBudgetMs = (policy.totalTimeoutMs - elapsedMs).coerceAtLeast(0L)
+            if (remainingBudgetMs < PROBE_MIN_LAYER_TIMEOUT_MS) {
+                failure = GpuProbeResult(
+                    status = GpuProbeStatus.FAILED,
+                    failureReason = GpuProbeFailureReason.PROBE_TIMEOUT,
+                    detail = "probe_total_timeout_exhausted:elapsed_ms=$elapsedMs",
+                )
+                failedLayer = layer
+                break
+            }
+            val timeoutMs = minOf(
+                policy.timeoutForLayer(layer = layer, nativeDiagnostics = nativeDiagnostics),
+                remainingBudgetMs,
+            )
             val layerResult = probeClient.runProbe(
                 request = request.copy(layerLadder = listOf(layer)),
-                timeoutMs = PROBE_LAYER_TIMEOUT_MS,
+                timeoutMs = timeoutMs,
             )
             if (layerResult.status == GpuProbeStatus.QUALIFIED && layerResult.maxStableGpuLayers > 0) {
                 val stableForLayer = layerResult.maxStableGpuLayers.coerceAtMost(layer)
@@ -274,25 +423,11 @@ internal class InternalAndroidGpuOffloadQualifier(
         }
 
         if (maxStableLayers > 0) {
-            val hardFailure = when (failure?.failureReason) {
-                GpuProbeFailureReason.PROBE_PROCESS_DIED,
-                GpuProbeFailureReason.PROBE_TIMEOUT,
-                GpuProbeFailureReason.NATIVE_GENERATE_FAILED,
-                    -> true
-                else -> false
-            }
-            val hardFailureResult = failure
-            if (hardFailure && hardFailureResult != null) {
-                return hardFailureResult.copy(
-                    status = GpuProbeStatus.FAILED,
-                    maxStableGpuLayers = 0,
-                    detail = hardFailureResult.detail ?: "probe_hard_failure_at_layer=${failedLayer ?: "unknown"}",
-                )
-            }
             val detail = if (failedLayer == null) {
                 "probe_success"
             } else {
-                "probe_partial_success:last_failed_layer=$failedLayer:reason=${failure?.failureReason ?: "unknown"}"
+                "probe_partial_success:max_stable=$maxStableLayers:last_failed_layer=$failedLayer:" +
+                    "reason=${failure?.failureReason ?: "unknown"}"
             }
             return GpuProbeResult(
                 status = GpuProbeStatus.QUALIFIED,
@@ -322,12 +457,17 @@ internal class InternalAndroidGpuOffloadQualifier(
         request: GpuProbeRequest,
         nativeDiagnostics: NativeVulkanDiagnostics,
     ): String {
+        val policy = resolveProbePolicy(nativeDiagnostics)
         val raw = listOf(
+            "policy=$PROBE_POLICY_VERSION",
             "fingerprint=$deviceFingerprint",
             "driverName=${nativeDiagnostics.driverName}",
             "driverVersion=${nativeDiagnostics.driverVersion}",
+            "vkApi=${nativeDiagnostics.selectedDeviceApiVersion}",
+            "half16=${nativeDiagnostics.storageBuffer16BitAccess && nativeDiagnostics.shaderFloat16}",
             "build=$appBuildSignature",
             "model=${request.modelId}@${request.modelVersion}",
+            "ladder=${policy.layerLadder.joinToString(",")}",
         ).joinToString(separator = "|")
         return sha256(raw)
     }
@@ -367,9 +507,6 @@ internal class InternalAndroidGpuOffloadQualifier(
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
-    private fun safeLogInfo(message: String) {
-        runCatching { Log.i(tag, message) }
-    }
 }
 
 private class SharedPrefsGpuProbeResultStore(
