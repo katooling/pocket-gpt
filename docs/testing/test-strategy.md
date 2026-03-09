@@ -1,6 +1,6 @@
 # Test Strategy (Canonical Playbook)
 
-Last updated: 2026-03-08
+Last updated: 2026-03-09
 
 ## Source Of Truth
 
@@ -42,6 +42,7 @@ Last updated: 2026-03-08
 | When | Primary Commands | Target Runtime | Decision Value |
 |---|---|---|---|
 | Per-save | `bash scripts/dev/test.sh fast` | 2-8 min | catches common logic regressions early |
+| Targeted bug repro loop | scoped Maestro flow in `tmp/` + logcat dump/scan (see `docs/testing/runbooks.md`) | 3-15 min | fastest device-level crash signature isolation for one path |
 | Pre-push | `bash scripts/dev/test.sh merge` | 10-25 min | validates merge-equivalent safety net |
 | Runtime/UI change local check | `python3 tools/devctl/main.py lane android-instrumented` + `python3 tools/devctl/main.py lane maestro` | 10-35 min | validates on-device runtime/UI wiring |
 | PR high-risk gate | CI `lifecycle-e2e-first-run` | 10-35 min | blocks critical lifecycle regressions before merge |
@@ -52,12 +53,13 @@ Last updated: 2026-03-08
 ## Lane Policy
 
 1. `bash scripts/dev/test.sh fast` for fast changed-file confidence.
-2. `bash scripts/dev/test.sh merge` for merge-gate safety net.
-3. `python3 tools/devctl/main.py lane android-instrumented` for Android smoke.
-4. `python3 tools/devctl/main.py lane maestro` for E2E app workflows.
-5. `python3 tools/devctl/main.py lane journey` for strict send/runtime journey evidence.
-6. `python3 tools/devctl/main.py lane screenshot-pack` for UI screenshot contract.
-7. Stage-2 runtime closure lanes remain physical-device signoff lanes.
+2. scoped Maestro + logcat loop for device-specific crash/hang debugging only (not merge/release signoff).
+3. `bash scripts/dev/test.sh merge` for merge-gate safety net.
+4. `python3 tools/devctl/main.py lane android-instrumented` for Android smoke.
+5. `python3 tools/devctl/main.py lane maestro` for E2E app workflows.
+6. `python3 tools/devctl/main.py lane journey` for strict send/runtime journey evidence.
+7. `python3 tools/devctl/main.py lane screenshot-pack` for UI screenshot contract.
+8. Stage-2 runtime closure lanes remain physical-device signoff lanes.
 
 ## Risk-Based Lifecycle Gate Policy
 

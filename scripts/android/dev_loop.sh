@@ -10,6 +10,7 @@ INSTALL_TASK=":apps:mobile-android:installDebug"
 NO_INSTALL=0
 FULL_LOGCAT=0
 FILTER_PATTERN='com\.pocketagent\.android|AndroidRuntime|FATAL EXCEPTION|ANR in|OutOfMemoryError|PocketAgent|NATIVE_JNI|STAGE2_METRIC'
+INSTALL_LOG=""
 
 usage() {
   cat <<'EOF'
@@ -31,6 +32,41 @@ EOF
 
 has_rg() {
   command -v rg >/dev/null 2>&1
+}
+
+print_install_restricted_help() {
+  cat <<'EOF'
+Install was blocked by the device, not by app code.
+
+ADB reported: INSTALL_FAILED_USER_RESTRICTED (install canceled by user)
+
+Usual fixes on Android devices:
+  1. Unlock the phone and keep the screen on while installing.
+  2. Accept any install confirmation dialog shown on-device.
+  3. In Developer options, enable the setting that allows installs from USB/ADB.
+  4. If Play Protect or device policy blocks ADB installs, temporarily allow this debug install.
+
+If the app is already installed and you only want to relaunch it, rerun with:
+  bash scripts/android/dev_loop.sh --serial "$ADB_SERIAL" --no-install
+EOF
+}
+
+run_install_task() {
+  local log_file
+  log_file="$(mktemp -t pocketgpt-install.XXXXXX.log)"
+  INSTALL_LOG="$log_file"
+  if ./gradlew --no-daemon "${INSTALL_TASK}" >"$log_file" 2>&1; then
+    rm -f "$log_file"
+    INSTALL_LOG=""
+    return 0
+  fi
+
+  cat "$log_file"
+  if has_rg && rg -q 'INSTALL_FAILED_USER_RESTRICTED|Install canceled by user' "$log_file"; then
+    echo >&2
+    print_install_restricted_help >&2
+  fi
+  return 1
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -70,7 +106,7 @@ echo "Device: ${SERIAL}"
 
 if [[ "${NO_INSTALL}" -eq 0 ]]; then
   echo "Installing debug build (${INSTALL_TASK})..."
-  ./gradlew --no-daemon "${INSTALL_TASK}"
+  run_install_task
 else
   echo "Skipping installDebug (--no-install)."
 fi

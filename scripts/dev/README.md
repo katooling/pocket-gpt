@@ -169,6 +169,21 @@ Wrapper:
 bash scripts/dev/journey.sh [--repeats N]
 ```
 
+## Scoped Device Crash Repro Helper (Maestro + Logcat)
+
+Use this for targeted single-path crash/hang debugging on a connected device.
+
+```bash
+bash scripts/dev/scoped-repro.sh --flow tmp/maestro-repro.yaml
+```
+
+Common options:
+
+1. `--no-build --no-install` for faster iterative loops.
+2. `--serial <device-id>` when multiple devices are attached.
+3. `--pattern "<regex>"` to tune crash/runtime signature detection.
+4. `-- --format junit` to pass extra flags through to `maestro test`.
+
 Screenshot pack workflow:
 
 ```bash

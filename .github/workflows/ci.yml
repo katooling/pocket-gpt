@@ -438,6 +438,43 @@ jobs:
           echo "::error::Lifecycle E2E failed after bounded retry (first=${first}, second=${second})."
           exit 1
 
+      - name: Summarize lifecycle crash signatures
+        if: always()
+        run: |
+          set -euo pipefail
+          summary="${GITHUB_STEP_SUMMARY}"
+          echo "## Lifecycle Crash Signature Summary" >> "${summary}"
+          echo "" >> "${summary}"
+
+          shopt -s nullglob
+          crash_files=(tmp/lifecycle-e2e-first-run/attempt-*/crash-signatures.txt)
+          if [[ ${#crash_files[@]} -eq 0 ]]; then
+            echo "- No crash-signature artifacts were generated." >> "${summary}"
+            exit 0
+          fi
+
+          found="false"
+          for file in "${crash_files[@]}"; do
+            if [[ ! -s "${file}" ]]; then
+              continue
+            fi
+            found="true"
+            attempt="$(basename "$(dirname "${file}")")"
+            echo "### ${attempt}" >> "${summary}"
+            echo "" >> "${summary}"
+            echo '```text' >> "${summary}"
+            sed -n '1,200p' "${file}" >> "${summary}"
+            if [[ $(wc -l < "${file}") -gt 200 ]]; then
+              echo "... (truncated to first 200 lines)" >> "${summary}"
+            fi
+            echo '```' >> "${summary}"
+            echo "" >> "${summary}"
+          done
+
+          if [[ "${found}" != "true" ]]; then
+            echo "- No app crash signatures detected in lifecycle attempts." >> "${summary}"
+          fi
+
       - name: Upload lifecycle E2E artifacts
         if: always()
         uses: actions/upload-artifact@v4

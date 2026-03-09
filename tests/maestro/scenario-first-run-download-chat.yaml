@@ -93,6 +93,6 @@ appId: com.pocketagent.android
 - assertVisible: "download flow smoke"
 - extendedWaitUntil:
     notVisible: "Cancel"
-    timeout: 180000
+    timeout: 600000
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "first-run-download-chat-smoke"

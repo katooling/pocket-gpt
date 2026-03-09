@@ -9,6 +9,7 @@ Canonical ownership by concern:
 5. Weekly QA UI regression matrix (`UI-01..UI-15`): `docs/testing/wp-09-ui-regression-matrix.md`
 6. Maestro flow assets and lifecycle flow contract: `tests/maestro/`
 7. CI required lifecycle gate job: `lifecycle-e2e-first-run` in `.github/workflows/ci.yml`
+8. Agent-level testing policy and scoped debug loop guardrails: `AGENTS.md`
 
 Consolidation rule:
 

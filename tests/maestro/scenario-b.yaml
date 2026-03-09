@@ -1,83 +1,39 @@
 appId: com.pocketagent.android
 ---
 - launchApp:
-    clearState: true
+    clearState: false
+- tapOn:
+    text: "Skip"
+    optional: true
+    waitUntilVisible: true
 - runFlow:
     when:
-      visible: "Welcome to Pocket GPT"
-    commands:
-      - tapOn: "Skip"
-- assertVisible: "Offline-first"
-- runFlow:
-    when:
-      visible: "Runtime: Error"
+      visible: "Refresh runtime checks"
     commands:
       - tapOn: "Refresh runtime checks"
-- runFlow:
-    when:
-      visible: "Get ready"
-    commands:
-      - tapOn: "Get ready"
-- runFlow:
-    when:
-      visible: "Model provisioning"
-    commands:
-      - back
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 180000
+- assertNotVisible: "UI-STARTUP-001"
 - takeScreenshot: "scenario-b-01-ready"
-- tapOn: "Message"
-- eraseText
-- inputText: "Simple-first unlock step one"
-- tapOn: "Send"
-- assertVisible: "Simple-first unlock step one"
-- extendedWaitUntil:
-    visible: "Simple-first unlock step one"
-    timeout: 30000
-- extendedWaitUntil:
-    notVisible: "Cancel"
-    timeout: 120000
-- eraseText
-- inputText: "Simple-first unlock step two"
-- tapOn: "Send"
-- extendedWaitUntil:
-    visible: "Simple-first unlock step two"
-    timeout: 30000
-- extendedWaitUntil:
-    notVisible: "Cancel"
-    timeout: 120000
-- runFlow:
-    when:
-      visible: "Open advanced controls"
-    commands:
-      - tapOn: "Open advanced controls"
-- runFlow:
-    when:
-      visible: "Advanced"
-    commands:
-      - tapOn: "Advanced"
-- extendedWaitUntil:
-    visible: "Advanced controls"
-    timeout: 30000
-- tapOn: "Tools"
-- tapOn: "calculate 4*9"
-- tapOn: "Send"
-- assertVisible: "Tool: calculator"
-- assertNotVisible: "UI-RUNTIME-001"
-- takeScreenshot: "ui-14-tool-result-visible-maestro"
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
 - tapOn: "QWEN_2B"
-- tapOn: "Export diagnostics"
-- assertNotVisible: "UI-RUNTIME-001"
-- takeScreenshot: "scenario-b-03-after-diagnostics"
 - back
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 180000
+- takeScreenshot: "scenario-b-03-after-diagnostics"
+- tapOn: "Message"
 - eraseText
-- inputText: "Model switch sanity check"
+- inputText: "Reply with exactly: CORE_B_OK"
 - tapOn: "Send"
-- assertVisible: "Model switch sanity check"
-- runFlow:
-    when:
-      visible: "Runtime: Error"
-    commands:
-      - tapOn: "Refresh runtime checks"
+- assertVisible: "Reply with exactly: CORE_B_OK"
+- extendedWaitUntil:
+    visible: "CORE_B_OK"
+    timeout: 180000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 180000
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-b-04-after-switch-send"

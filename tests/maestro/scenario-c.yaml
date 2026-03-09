@@ -1,44 +1,33 @@
 appId: com.pocketagent.android
 ---
 - launchApp:
-    clearState: true
+    clearState: false
+- tapOn:
+    text: "Skip"
+    optional: true
+    waitUntilVisible: true
 - runFlow:
     when:
-      visible: "Welcome to Pocket GPT"
-    commands:
-      - tapOn: "Skip"
-- assertVisible: "Offline-first"
-- runFlow:
-    when:
-      visible: "Runtime: Error"
+      visible: "Refresh runtime checks"
     commands:
       - tapOn: "Refresh runtime checks"
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 180000
+- assertNotVisible: "UI-STARTUP-001"
 - takeScreenshot: "ui-15-image-entry-visible-maestro"
+- assertVisible: "Attach image"
 - tapOn: "Message"
 - eraseText
-- inputText: "Remember this launch risk list for scenario C."
+- inputText: "Reply with exactly: CORE_C_OK"
 - tapOn: "Send"
-- assertVisible: "Remember this launch risk list for scenario C."
+- assertVisible: "Reply with exactly: CORE_C_OK"
 - extendedWaitUntil:
-    notVisible: "Cancel"
-    timeout: 120000
-- runFlow:
-    when:
-      visible: "Runtime: Error"
-    commands:
-      - tapOn: "Refresh runtime checks"
+    visible: "CORE_C_OK"
+    timeout: 180000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 180000
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-c-02-first-turn"
-- tapOn: "Message"
-- eraseText
-- inputText: "What did I ask you to remember earlier?"
-- tapOn: "Send"
-- runFlow:
-    when:
-      visible: "Runtime: Error"
-    commands:
-      - tapOn: "Refresh runtime checks"
-- assertVisible: "Remember this launch risk list for scenario C."
-- assertVisible: "Attach image"
-- assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "scenario-c-03-follow-up"

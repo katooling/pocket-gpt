@@ -1,9 +1,9 @@
 # ENG-22 Provisioning Startup-Check Lane Blocker
 
-Last updated: 2026-03-08
+Last updated: 2026-03-09
 Owner: Engineering
 Support: QA, Product
-Status: In Progress
+Status: Done
 
 ## Objective
 
@@ -37,7 +37,13 @@ Failure text:
 
 ## Current Evidence
 
-1. `docs/operations/evidence/wp-13/2026-03-08-qa-lane-rerun-post-p0-parser.md`
-2. `scripts/benchmarks/runs/2026-03-08/DEVICE_SERIAL_REDACTED/android-instrumented/20260308-132026/`
-3. `scripts/benchmarks/runs/2026-03-08/DEVICE_SERIAL_REDACTED/maestro/20260308-132156/`
-4. `scripts/benchmarks/runs/2026-03-08/DEVICE_SERIAL_REDACTED/journey/20260308-132325/`
+1. `docs/operations/evidence/wp-13/2026-03-09-qa-lane-rerun-eng22-a51-revalidation.md`
+2. `scripts/benchmarks/runs/2026-03-09/DEVICE_SERIAL_REDACTED/android-instrumented/20260309-132538/`
+3. `scripts/benchmarks/runs/2026-03-09/DEVICE_SERIAL_REDACTED/maestro/20260309-133051/`
+4. `scripts/benchmarks/runs/2026-03-09/DEVICE_SERIAL_REDACTED/journey/20260309-133607/`
+
+## Closure Notes
+
+1. Provisioning preflight now self-heals missing model paths before probe and retries once on `Model path does not exist`.
+2. Strict journey rerun executes requested repeats without provisioning short-circuit.
+3. Required lanes still show non-ENG-22 failures (send/runtime UI flow), tracked as next-priority reliability work.

@@ -1,6 +1,6 @@
 # Execution Board
 
-Last updated: 2026-03-08
+Last updated: 2026-03-09
 
 This is the single mutable board for planning and delivery.
 
@@ -45,13 +45,12 @@ Engineering and quality excellence are mandatory.
 - [ ] DOC-01 timeline/status reconciliation across roadmap + board + role docs
 - [ ] DOC-02 product/UX doc parity sync for timeout/cancel/send-capture + manifest outage UX
 - [ ] ENG-20 runtime cancel/timeout contract hardening
-- [ ] ENG-22 provisioning startup-check lane blocker (`docs/operations/tickets/eng-22-provisioning-startup-check-lane-blocker.md`)
 - [ ] WP-09 distribution plan and beta operations execution
 - [ ] WP-13 run-01 hold closure prep
 
 ### Blocked
 
-- [ ] QA-11 rerun `android-instrumented` + `maestro` + strict `journey` (`--mode strict --repeats 3`) blocked by ENG-22 provisioning preflight failure
+- [ ] QA-11 rerun `android-instrumented` + `maestro` + strict `journey` (`--mode strict --repeats 3`) blocked by runtime-state failures (`MainActivityUiSmokeTest`; `scenario-b` startup degradation `UI-STARTUP-001` / `MODEL_ARTIFACT_CONFIG_MISSING`). Targeted strict subset (`send-capture` + `scenario-a`) now passes on A51.
 - [ ] QA-WP13-RUN02 moderated 5-user usability run packet completion blocked pending required-lane reliability rerun
 - [ ] PROD-10 launch gate matrix decision run blocked by required-row failures (`S-D`, `S-E`, `S-F`, `S-G`)
 
@@ -71,11 +70,12 @@ Engineering and quality excellence are mandatory.
 - [x] UX-12 recovery journey spec published
 - [x] ENG-21 interaction architecture refactor landed
 - [x] ENG-19 devctl package UID parser hardening landed (`userId`/`appId`/`uid` + tests)
+- [x] ENG-22 provisioning startup-check lane blocker closed (`docs/operations/tickets/eng-22-provisioning-startup-check-lane-blocker.md`)
 - [x] WP-12 package closeout complete
 
 ## Owner Focus (Current)
 
-1. Engineering: close ENG-22 and ENG-20, then support required-lane reruns with strict journey repeats.
+1. Engineering: close ENG-20 and stabilize send/runtime flow reliability for required-lane reruns.
 2. QA: rerun required lanes after ENG-22 closure, then execute moderated WP-13 run-02 packet.
 3. Product: close DOC-01 and DOC-02, then run PROD-10 decision flow.
 4. Marketing: execute MKT-08 and MKT-09, then finalize MKT-10 claim freeze.

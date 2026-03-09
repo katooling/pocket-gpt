@@ -1,29 +1,32 @@
 appId: com.pocketagent.android
 ---
 - launchApp:
-    clearState: true
+    clearState: false
+- tapOn:
+    text: "Skip"
+    optional: true
+    waitUntilVisible: true
 - runFlow:
     when:
-      visible: "Welcome to Pocket GPT"
-    commands:
-      - tapOn: "Skip"
-- assertVisible: "Offline-first"
-- runFlow:
-    when:
-      visible: "Runtime: Error"
+      visible: "Refresh runtime checks"
     commands:
       - tapOn: "Refresh runtime checks"
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 180000
+- assertNotVisible: "UI-STARTUP-001"
 - takeScreenshot: "ui-04-chat-ready-empty-maestro"
 - tapOn: "Message"
 - eraseText
-- inputText: "Hello from Maestro scenario A"
+- inputText: "Reply with exactly: CORE_A_OK"
 - takeScreenshot: "scenario-a-02-typed"
 - tapOn: "Send"
-- assertVisible: "Hello from Maestro scenario A"
-- runFlow:
-    when:
-      visible: "Runtime: Error"
-    commands:
-      - tapOn: "Refresh runtime checks"
+- assertVisible: "Reply with exactly: CORE_A_OK"
+- extendedWaitUntil:
+    visible: "CORE_A_OK"
+    timeout: 180000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 180000
 - assertNotVisible: "UI-RUNTIME-001"
 - takeScreenshot: "ui-05-chat-post-send-maestro"
