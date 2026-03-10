@@ -148,7 +148,7 @@ fun PocketAgentApp(
                 transitioned.modelId == pendingActivation.first &&
                 transitioned.version == pendingActivation.second
             ) {
-                val activated = provisioningViewModel.setActiveVersion(
+                val activated = provisioningViewModel.setActiveVersionAsync(
                     modelId = transitioned.modelId,
                     version = transitioned.version,
                 )
@@ -317,12 +317,12 @@ fun PocketAgentApp(
                             return@launch
                         }
 
-                        val existingVersion = provisioningViewModel.listInstalledVersions(
+                        val existingVersion = provisioningViewModel.listInstalledVersionsAsync(
                             modelId = defaultVersion.modelId,
                         ).firstOrNull { it.version == defaultVersion.version }
 
                         if (existingVersion != null) {
-                            provisioningViewModel.setActiveVersion(
+                            provisioningViewModel.setActiveVersionAsync(
                                 modelId = defaultVersion.modelId,
                                 version = defaultVersion.version,
                             )
@@ -445,45 +445,49 @@ fun PocketAgentApp(
                     provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_download_cancelled))
                 },
                 onActivateVersion = { modelId, version ->
-                    val activated = provisioningViewModel.setActiveVersion(modelId, version)
-                    if (activated) {
-                        readinessRefreshSequence += 1L
-                        logProvisioningTransition(
-                            phase = "manual_activation",
-                            eventId = "refresh-${readinessRefreshSequence}",
-                            detail = "$modelId@$version",
-                        )
-                        viewModel.refreshRuntimeReadiness(
-                            statusDetailOverride = context.getString(
-                                R.string.ui_model_version_activated,
-                                modelId,
-                                version,
-                            ),
-                        )
-                        provisioningViewModel.setStatusMessage(
-                            context.getString(
-                                R.string.ui_model_version_activated,
-                                modelId,
-                                version,
-                            ),
-                        )
-                    } else {
-                        provisioningViewModel.setStatusMessage(
-                            context.getString(
-                                R.string.ui_model_version_activation_failed,
-                            ),
-                        )
+                    scope.launch {
+                        val activated = provisioningViewModel.setActiveVersionAsync(modelId, version)
+                        if (activated) {
+                            readinessRefreshSequence += 1L
+                            logProvisioningTransition(
+                                phase = "manual_activation",
+                                eventId = "refresh-${readinessRefreshSequence}",
+                                detail = "$modelId@$version",
+                            )
+                            viewModel.refreshRuntimeReadiness(
+                                statusDetailOverride = context.getString(
+                                    R.string.ui_model_version_activated,
+                                    modelId,
+                                    version,
+                                ),
+                            )
+                            provisioningViewModel.setStatusMessage(
+                                context.getString(
+                                    R.string.ui_model_version_activated,
+                                    modelId,
+                                    version,
+                                ),
+                            )
+                        } else {
+                            provisioningViewModel.setStatusMessage(
+                                context.getString(
+                                    R.string.ui_model_version_activation_failed,
+                                ),
+                            )
+                        }
                     }
                 },
                 onRemoveVersion = { modelId, version ->
-                    val removed = provisioningViewModel.removeVersion(modelId, version)
-                    provisioningViewModel.setStatusMessage(
-                        if (removed) {
-                            context.getString(R.string.ui_model_version_removed, modelId, version)
-                        } else {
-                            context.getString(R.string.ui_model_version_remove_blocked)
-                        },
-                    )
+                    scope.launch {
+                        val removed = provisioningViewModel.removeVersionAsync(modelId, version)
+                        provisioningViewModel.setStatusMessage(
+                            if (removed) {
+                                context.getString(R.string.ui_model_version_removed, modelId, version)
+                            } else {
+                                context.getString(R.string.ui_model_version_remove_blocked)
+                            },
+                        )
+                    }
                 },
                 onRefreshManifest = {
                     scope.launch {

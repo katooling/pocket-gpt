@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.material3.Surface
 import com.pocketagent.android.runtime.AndroidGpuOffloadQualifier
 import com.pocketagent.android.runtime.AndroidGpuOffloadSupport
@@ -20,6 +21,9 @@ import com.pocketagent.android.ui.PocketAgentApp
 import com.pocketagent.android.ui.PocketAgentTheme
 import com.pocketagent.android.ui.controllers.AndroidTelemetryDeviceStateProvider
 import com.pocketagent.android.ui.state.AndroidSessionPersistence
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val runtimeTuning by lazy {
@@ -52,7 +56,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        RuntimeBootstrapper.installProductionRuntime(applicationContext)
         setContent {
             PocketAgentTheme {
                 Surface {
@@ -62,6 +65,12 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                RuntimeBootstrapper.installProductionRuntime(applicationContext)
+            }
+            viewModel.refreshRuntimeReadiness()
         }
     }
 
