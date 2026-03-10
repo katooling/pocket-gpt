@@ -28,7 +28,7 @@ This catalog lists current and possible features based on known technical constr
 
 | Feature | Why It Matters | Constraints | Engine Status | In-App UX Status |
 |---|---|---|---|---|
-| iOS parity | market expansion | runtime bridge and platform integration | Planned | Not started |
+| Expanded Android device-tier coverage | market expansion within Android install base | OEM variance and runtime compatibility qualification | Planned | Planned |
 | Strict JSON-schema tools | stronger safety guarantees | parser contract and test coverage | Implemented | Implemented (WP-11 UI integration validated) |
 | Rich diagnostics dashboards | faster QA and regression triage | safe redaction + metrics consistency | Planned | Planned |
 | Better image workflows | broader use cases (documents/photos) | model quality on edge cases | Planned | Planned |

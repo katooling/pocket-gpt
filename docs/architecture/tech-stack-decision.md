@@ -19,9 +19,8 @@ Last updated: 2026-03-10
 
 ## Alternatives and Current Position
 
-1. Core ML iOS runtime remains a future parity track; not part of current shipped Android path.
-2. LiteRT/NNAPI-first approach is no longer the active Android baseline; current baseline is JNI + `llama.cpp`.
-3. Hosted/cloud inference default path remains out of scope for MVP claims.
+1. LiteRT/NNAPI-first approach is no longer the active Android baseline; current baseline is JNI + `llama.cpp`.
+2. Hosted/cloud inference default path remains out of scope for MVP claims.
 
 ## Non-Negotiables
 
@@ -39,5 +38,4 @@ Last updated: 2026-03-10
 | Runtime orchestration layer | `packages/app-runtime` use-case composition | Implemented |
 | Tool runtime safety | schema-validated allowlist | Implemented |
 | Memory persistence | local persisted module + retrieval | Implemented |
-| iOS runtime parity | Core ML + Metal track | Planned |
 | Voice layer (STT/TTS) | offline-first, policy-gated | Planned |

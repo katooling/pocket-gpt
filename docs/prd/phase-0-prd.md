@@ -193,7 +193,7 @@ MVP readiness:
 
 1. Quantized `0.8B` and `2B` models provide acceptable utility for key tasks
 2. Local image pathway can run within thermal and memory limits
-3. `llama.cpp` baseline can be integrated on iOS and Android within schedule
+3. `llama.cpp` baseline can be integrated and stabilized on Android within schedule
 4. Packaging/downloading model artifacts is compatible with app-store constraints
 
 ## Constraints

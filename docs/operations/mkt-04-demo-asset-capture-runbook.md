@@ -43,7 +43,7 @@ If `--serial` is omitted, the script uses the first connected `adb` device.
 
 ## Claim QA Checklist
 
-1. No iOS-now or voice-now claims.
+1. No voice-now or cross-platform-now claims.
 2. No universal device-performance guarantees.
 3. No unsourced competitor comparisons.
 4. Every caption line maps to a `PROD-10` row and allowed claim set in `MKT-10`.

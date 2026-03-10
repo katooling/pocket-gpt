@@ -5,7 +5,7 @@
 | R-001 | Mid-tier devices fail memory targets with 2B | High | Medium | Default 0.8B on constrained devices, enforce routing caps | AI Runtime |
 | R-002 | Thermal throttling degrades UX in sustained sessions | High | High | Session-aware token caps, thermal downgrade policy | Mobile Platform |
 | R-003 | Android acceleration path fragmented by OEM drivers | High | High | Keep robust baseline runtime fallback, device qualification list | Android |
-| R-004 | iOS conversion path blocks optimization timeline | Medium | Medium | Keep baseline runtime for launch, isolate optimization track | iOS |
+| R-004 | Android OEM/runtime variance blocks optimization timeline | Medium | Medium | Keep baseline runtime path stable and isolate optional acceleration tracks | Android |
 | R-005 | Privacy claims diverge from implementation | Critical | Medium | PolicyModule enforcement, privacy test checklist, docs audits | Security |
 | R-006 | Tool injection/execution abuse | Critical | Medium | strict JSON schema, allowlist tools, no shell execution | Platform |
 | R-007 | Model download/package strategy fails app-store constraints | High | Medium | on-demand model packs, preflight checks, progressive downloads | Product/Platform |

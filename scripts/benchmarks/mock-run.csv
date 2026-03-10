@@ -1,5 +1,4 @@
 date,platform,device_class,device_name,runtime,model,scenario,cold_start_s,first_token_ms,decode_tps,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom
-2026-03-03,ios,mid,iphone_mock,llama.cpp,qwen3.5-0.8b-q4,A,1.8,1100,12.4,1450,3.2,warm,false
-2026-03-03,ios,mid,iphone_mock,llama.cpp,qwen3.5-2b-q4,A,2.6,1900,6.2,2600,4.8,warm,false
+2026-03-03,android,low,sm-a515f_mock,llama.cpp,qwen3.5-0.8b-q4,A,2.3,1650,8.9,1710,4.4,warm,false
 2026-03-03,android,mid,pixel_mock,llama.cpp,qwen3.5-0.8b-q4,A,2.1,1400,10.1,1620,3.9,warm,false
 2026-03-03,android,mid,pixel_mock,llama.cpp,qwen3.5-2b-q4,A,3.0,2350,4.4,2980,6.2,hot,false
