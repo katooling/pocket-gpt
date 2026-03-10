@@ -38,6 +38,7 @@ interface RuntimeGateway {
     fun restoreSession(sessionId: SessionId, turns: List<Turn>)
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String?
+    fun runtimeDiagnosticsSnapshot(): RuntimeDiagnosticsSnapshot = RuntimeDiagnosticsSnapshot()
     fun supportsGpuOffload(): Boolean
     fun loadModel(modelId: String, modelVersion: String? = null): RuntimeModelLifecycleCommandResult =
         RuntimeModelLifecycleCommandResult.rejected(
@@ -152,6 +153,11 @@ class MvpRuntimeGateway(
     override fun deleteSession(sessionId: SessionId): Boolean = facade.deleteSession(sessionId)
 
     override fun runtimeBackend(): String? = facade.runtimeBackend()
+
+    override fun runtimeDiagnosticsSnapshot(): RuntimeDiagnosticsSnapshot {
+        val diagnostics = runCatching { exportDiagnostics() }.getOrElse { "" }
+        return RuntimeDiagnosticsSnapshotParser.parse(diagnostics)
+    }
 
     override fun loadModel(modelId: String, modelVersion: String?): RuntimeModelLifecycleCommandResult {
         return (facade as? RuntimeResourceControl)?.loadModel(modelId = modelId, modelVersion = modelVersion)

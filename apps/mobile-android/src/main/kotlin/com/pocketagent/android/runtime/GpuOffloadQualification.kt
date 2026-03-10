@@ -111,7 +111,6 @@ private const val PROBE_MAX_LAYER_TIMEOUT_MS = 45_000L
 private const val PROBE_STALE_PENDING_TIMEOUT_MS = PROBE_TOTAL_TIMEOUT_MS + 30_000L
 private const val PROBE_BUSY_RETRY_DELAY_MS = 5_000L
 private const val PROBE_BUSY_MAX_RETRIES = 12
-private const val ACCELERATOR_API_VERSION_1_2 = (1L shl 22) or (2L shl 12)
 private const val MIB = 1024L * 1024L
 private const val MIN_GPU_HEADROOM_BYTES = 256L * MIB
 private val PROBE_RETRIABLE_REASONS: Set<GpuProbeFailureReason> = setOf(
@@ -120,14 +119,11 @@ private val PROBE_RETRIABLE_REASONS: Set<GpuProbeFailureReason> = setOf(
     GpuProbeFailureReason.PROBE_BIND_FAILED,
 )
 private val PROBE_LAYER_LADDER_FULL: List<Int> = listOf(1, 2, 4, 8, 16, 32)
-private val PROBE_LAYER_LADDER_NO_HALF: List<Int> = listOf(1, 2, 4, 8)
-private val PROBE_LAYER_LADDER_PRE_12: List<Int> = listOf(1, 2, 4, 8, 16)
 
 private data class GpuProbePolicy(
     val layerLadder: List<Int>,
     val totalTimeoutMs: Long,
     val backendProfile: String = "auto",
-    val applyLegacyApiHeuristics: Boolean = false,
 ) {
     fun timeoutForLayer(layer: Int, nativeDiagnostics: NativeBackendDiagnostics): Long {
         val layerTimeout = when {
@@ -137,51 +133,17 @@ private data class GpuProbePolicy(
             layer <= 16 -> 38_000L
             else -> 45_000L
         }
-        if (!applyLegacyApiHeuristics) {
-            return layerTimeout.coerceIn(PROBE_MIN_LAYER_TIMEOUT_MS, PROBE_MAX_LAYER_TIMEOUT_MS)
-        }
-        val halfPrecisionSlowdownPenalty = if (
-            !nativeDiagnostics.storageBuffer16BitAccess || !nativeDiagnostics.shaderFloat16
-        ) {
-            8_000L
-        } else {
-            0L
-        }
-        val apiVersionPenalty = if (
-            nativeDiagnostics.selectedDeviceApiVersion in 1L until ACCELERATOR_API_VERSION_1_2
-        ) {
-            8_000L
-        } else {
-            0L
-        }
-        return (layerTimeout + halfPrecisionSlowdownPenalty + apiVersionPenalty)
-            .coerceIn(PROBE_MIN_LAYER_TIMEOUT_MS, PROBE_MAX_LAYER_TIMEOUT_MS)
+        return layerTimeout.coerceIn(PROBE_MIN_LAYER_TIMEOUT_MS, PROBE_MAX_LAYER_TIMEOUT_MS)
     }
 }
 
-private fun resolveProbePolicy(nativeDiagnostics: NativeBackendDiagnostics): GpuProbePolicy {
-    val compiledBackend = nativeDiagnostics.compiledBackend.trim().lowercase()
-    val usesLegacyApiHeuristics = compiledBackend.contains("vulkan")
-    if (!usesLegacyApiHeuristics) {
-        return GpuProbePolicy(
-            layerLadder = PROBE_LAYER_LADDER_FULL,
-            totalTimeoutMs = PROBE_TOTAL_TIMEOUT_MS,
-            backendProfile = "auto",
-            applyLegacyApiHeuristics = false,
-        )
-    }
-    val hasHalfPrecision = nativeDiagnostics.storageBuffer16BitAccess && nativeDiagnostics.shaderFloat16
-    val apiAtLeast12 = nativeDiagnostics.selectedDeviceApiVersion >= ACCELERATOR_API_VERSION_1_2
-    val ladder = when {
-        !hasHalfPrecision -> PROBE_LAYER_LADDER_NO_HALF
-        !apiAtLeast12 -> PROBE_LAYER_LADDER_PRE_12
-        else -> PROBE_LAYER_LADDER_FULL
-    }
+private fun resolveProbePolicy(
+    @Suppress("UNUSED_PARAMETER") nativeDiagnostics: NativeBackendDiagnostics,
+): GpuProbePolicy {
     return GpuProbePolicy(
-        layerLadder = ladder,
+        layerLadder = PROBE_LAYER_LADDER_FULL,
         totalTimeoutMs = PROBE_TOTAL_TIMEOUT_MS,
         backendProfile = "auto",
-        applyLegacyApiHeuristics = true,
     )
 }
 

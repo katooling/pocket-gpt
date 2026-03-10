@@ -278,6 +278,38 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
+    fun `explicit opencl backend fails before native load when diagnostics report zero opencl devices`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """
+                {"compiled_backend":"hexagon,opencl","runtime_supported":true,"hexagon_device_count":1,"opencl_device_count":0}
+            """.trimIndent(),
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 24,
+                gpuBackend = GpuExecutionBackend.OPENCL,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals("GPU_BACKEND_UNAVAILABLE", bridge.lastError()?.code)
+        assertTrue(nativeApi.loadGpuLayers.isEmpty())
+    }
+
+    @Test
     fun `auto backend can downgrade to cpu when gpu offload is disabled`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
@@ -359,6 +391,36 @@ class NativeJniLlamaCppBridgeTest {
             "PREFIX_CACHE_DIAG|restore_state_success=1|restore_state_failure=0",
             bridge.prefixCacheDiagnosticsLine(),
         )
+    }
+
+    @Test
+    fun `lifecycle events expose load and offload transitions`() {
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(
+                initializeOk = true,
+                loadOk = true,
+                generatedText = "ok",
+            ),
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+        val states = mutableListOf<ModelLifecycleState>()
+        val subscription = bridge.observeModelLifecycleState { event ->
+            states += event.state
+        }
+
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(ModelCatalog.QWEN_3_5_0_8B_Q4, bridge.getLoadedModel()?.modelId)
+        assertTrue(bridge.offloadModel("test"))
+        assertEquals(null, bridge.getLoadedModel())
+
+        subscription.close()
+
+        assertTrue(states.contains(ModelLifecycleState.LOADING))
+        assertTrue(states.contains(ModelLifecycleState.LOADED))
+        assertTrue(states.contains(ModelLifecycleState.OFFLOADING))
+        assertTrue(states.contains(ModelLifecycleState.UNLOADED))
     }
 }
 

@@ -64,6 +64,24 @@ class RuntimeResidencyManagerTest {
         assertEquals(0, manager.queueDepth())
         assertEquals("slot-1", manager.listResident().single().slotId)
     }
+
+    @Test
+    fun `offload requested during generation is queued until generation completes`() {
+        val inferenceModule = RecordingInferenceModule()
+        val manager = RuntimeResidencyManager(inferenceModule, nowMs = advancingClock())
+
+        manager.ensureLoaded(modelId = "model-a", slotId = "slot-1", keepAliveMs = 5_000L)
+        manager.onGenerationStarted()
+        assertEquals(RuntimeUnloadDisposition.QUEUED, manager.requestUnload(reason = "manual"))
+        assertEquals(0, inferenceModule.unloadCalls)
+        assertEquals(1, manager.queueDepth())
+
+        manager.onGenerationFinished(slotId = "slot-1", keepAliveMs = 5_000L)
+
+        assertEquals(1, inferenceModule.unloadCalls)
+        assertTrue(manager.listResident().isEmpty())
+        assertEquals(0, manager.queueDepth())
+    }
 }
 
 private class RecordingInferenceModule : InferenceModule {

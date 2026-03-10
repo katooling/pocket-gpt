@@ -70,6 +70,7 @@ class GatewayAdaptersTest {
         val image = gateway.analyzeImage("/tmp/a.jpg", "describe")
         val checks = gateway.runStartupChecks()
         val diagnostics = gateway.exportDiagnostics()
+        val runtimeSnapshot = gateway.runtimeDiagnosticsSnapshot()
 
         assertEquals(RoutingMode.QWEN_2B, gateway.getRoutingMode())
         assertEquals("session-1", sessionId.value)
@@ -80,6 +81,8 @@ class GatewayAdaptersTest {
         assertTrue(diagnostics.startsWith("diag=ok"))
         assertTrue(diagnostics.contains("GPU_OFFLOAD|runtime_supported="))
         assertTrue(diagnostics.contains("RUNTIME_TUNING|model=qwen|benchmark_win_count=2"))
+        assertEquals(null, runtimeSnapshot.strictAcceleratorFailFast)
+        assertEquals(null, runtimeSnapshot.autoBackendCpuFallback)
         assertEquals("calculator", facade.lastToolName)
         assertEquals("/tmp/a.jpg", facade.lastImagePath)
     }

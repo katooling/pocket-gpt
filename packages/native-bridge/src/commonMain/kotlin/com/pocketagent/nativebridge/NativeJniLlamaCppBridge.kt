@@ -267,7 +267,11 @@ class NativeJniLlamaCppBridge(
         }
         if (usingFallback) {
             fallbackBridge.setRuntimeGenerationConfig(runtimeGenerationConfig)
-            return fallbackBridge.loadModel(modelId, validation.normalizedModelPath)
+            return fallbackBridge.loadModel(
+                modelId = modelId,
+                modelPath = validation.normalizedModelPath,
+                options = options,
+            )
         }
         val normalizedModelPath = validation.normalizedModelPath.orEmpty()
         val config = runtimeGenerationConfig
@@ -332,9 +336,10 @@ class NativeJniLlamaCppBridge(
         if (finalError != null) {
             recordBridgeError("JNI_LOAD_EXCEPTION", finalError)
         } else if (gpuRequested && strictGpuOffload) {
+            val nativeError = parseNativeBackendError(backendDiagnosticsJson().orEmpty())
             recordBridgeError(
-                "GPU_BACKEND_LOAD_FAILED",
-                "modelId=$modelId|backend=${config.gpuBackend.name.lowercase()}|gpu_layers=$requestedGpuLayers|draft_gpu_layers=$requestedDraftGpuLayers",
+                nativeError?.first ?: "GPU_BACKEND_LOAD_FAILED",
+                nativeError?.second ?: "modelId=$modelId|backend=${config.gpuBackend.name.lowercase()}|gpu_layers=$requestedGpuLayers|draft_gpu_layers=$requestedDraftGpuLayers",
             )
         } else {
             recordBridgeError("JNI_LOAD_FAILED", "modelId=$modelId")
@@ -686,9 +691,14 @@ class NativeJniLlamaCppBridge(
             // If diagnostics are unavailable, avoid false negatives and rely on runtime probing.
             return true
         }
+        val openclDeviceCount = parseBackendDeviceCount(diagnostics, OPENCL_DEVICE_COUNT_REGEX)
+        val hexagonDeviceCount = parseBackendDeviceCount(diagnostics, HEXAGON_DEVICE_COUNT_REGEX)
         val compiledBackends = parseCompiledBackends(diagnostics)
         return when (backend) {
             GpuExecutionBackend.HEXAGON -> {
+                if (hexagonDeviceCount != null) {
+                    return hexagonDeviceCount > 0
+                }
                 if (compiledBackends.isNotEmpty()) {
                     compiledBackends.contains("hexagon")
                 } else {
@@ -696,6 +706,9 @@ class NativeJniLlamaCppBridge(
                 }
             }
             GpuExecutionBackend.OPENCL -> {
+                if (openclDeviceCount != null) {
+                    return openclDeviceCount > 0
+                }
                 if (compiledBackends.isNotEmpty()) {
                     compiledBackends.contains("opencl")
                 } else {
@@ -717,6 +730,36 @@ class NativeJniLlamaCppBridge(
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .toSet()
+    }
+
+    private fun parseBackendDeviceCount(
+        diagnosticsJson: String,
+        regex: Regex,
+    ): Int? {
+        val raw = regex.find(diagnosticsJson)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?: return null
+        return raw.toIntOrNull()
+    }
+
+    private fun parseNativeBackendError(diagnosticsJson: String): Pair<String, String?>? {
+        if (diagnosticsJson.isBlank()) {
+            return null
+        }
+        val code = LAST_ERROR_CODE_REGEX.find(diagnosticsJson)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return null
+        val detail = LAST_ERROR_DETAIL_REGEX.find(diagnosticsJson)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        return code to detail
     }
 
     private fun isStrictBackendSelection(config: RuntimeGenerationConfig): Boolean {
@@ -956,6 +999,18 @@ class NativeJniLlamaCppBridge(
         const val ENABLE_ADB_FALLBACK_ENV: String = "POCKETGPT_ENABLE_ADB_FALLBACK"
         const val ENABLE_GPU_OFFLOAD_ENV: String = "POCKETGPT_ENABLE_GPU_OFFLOAD"
         private val COMPILED_BACKEND_REGEX = "\"compiled_backend\"\\s*:\\s*\"([^\"]*)\"".toRegex(
+            option = RegexOption.IGNORE_CASE,
+        )
+        private val OPENCL_DEVICE_COUNT_REGEX = "\"opencl_device_count\"\\s*:\\s*(\\d+)".toRegex(
+            option = RegexOption.IGNORE_CASE,
+        )
+        private val HEXAGON_DEVICE_COUNT_REGEX = "\"hexagon_device_count\"\\s*:\\s*(\\d+)".toRegex(
+            option = RegexOption.IGNORE_CASE,
+        )
+        private val LAST_ERROR_CODE_REGEX = "\"last_error_code\"\\s*:\\s*\"([^\"]*)\"".toRegex(
+            option = RegexOption.IGNORE_CASE,
+        )
+        private val LAST_ERROR_DETAIL_REGEX = "\"last_error_detail\"\\s*:\\s*\"([^\"]*)\"".toRegex(
             option = RegexOption.IGNORE_CASE,
         )
 

@@ -16,7 +16,7 @@ Use Maestro Cloud only for Android UI and API-tier coverage:
 4. Ineligible builds show the correct disabled reason.
 5. The behavior is stable across Android API levels.
 
-Do not use this lane as the authority for Samsung or Vulkan driver qualification.
+Do not use this lane as the authority for Samsung or accelerator driver qualification.
 
 ### Real Android Devices (ADB + Maestro)
 
@@ -118,4 +118,3 @@ Only after qualification passes for a given model/device pair, run one short GPU
 1. `bash scripts/dev/maestro-cloud-gpu-model-matrix.sh`
 2. `bash scripts/dev/maestro-cloud-upload-status.sh`
 3. `bash scripts/dev/maestro-gpu-real-device-matrix.sh`
-

@@ -224,7 +224,7 @@ class GpuOffloadQualificationTest {
     }
 
     @Test
-    fun `qualification uses conservative ladder when half precision features are missing`() = runTest {
+    fun `qualification keeps full ladder when half precision features are missing`() = runTest {
         val probeClient = RecordingProbeClient(
             responseForRequest = { request ->
                 val layer = request.layerLadder.singleOrNull() ?: 0
@@ -249,13 +249,13 @@ class GpuOffloadQualificationTest {
         advanceUntilIdle()
         val result = qualifier.evaluate(runtimeSupported = true)
         assertEquals(GpuProbeStatus.QUALIFIED, result.status)
-        assertEquals(8, result.maxStableGpuLayers)
-        assertEquals(4, probeClient.callCount)
-        assertEquals(listOf(1, 2, 4, 8), probeClient.layerHistory)
+        assertEquals(32, result.maxStableGpuLayers)
+        assertEquals(6, probeClient.callCount)
+        assertEquals(listOf(1, 2, 4, 8, 16, 32), probeClient.layerHistory)
     }
 
     @Test
-    fun `qualification keeps full ladder for non-vulkan backends even when legacy feature flags are absent`() = runTest {
+    fun `qualification keeps full ladder for accelerator backends even when legacy feature flags are absent`() = runTest {
         val probeClient = RecordingProbeClient(
             responseForRequest = { request ->
                 val layer = request.layerLadder.singleOrNull() ?: 0
@@ -463,7 +463,7 @@ private fun testProbeRequest(
 
 private fun diagnosticsJson(
     driverVersion: Long,
-    compiledBackend: String = "vulkan",
+    compiledBackend: String = "opencl",
     shaderFloat16: Boolean = true,
     storageBuffer16BitAccess: Boolean = true,
     selectedDeviceApiVersion: Long = 4202496L,

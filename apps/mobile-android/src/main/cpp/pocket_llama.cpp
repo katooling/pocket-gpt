@@ -11,7 +11,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <dlfcn.h>
 #include <exception>
 #include <fcntl.h>
 #include <fstream>
@@ -24,14 +23,9 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
-#if defined(GGML_USE_VULKAN)
-#include <vulkan/vulkan.h>
-#endif
 
 #include "llama.h"
-#if defined(GGML_USE_VULKAN)
-#include "ggml-vulkan.h"
-#endif
+#include "ggml-backend.h"
 
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
@@ -111,6 +105,10 @@ bool g_last_flash_attn_gpu_ops = false;
 bool g_last_flash_attn_active = false;
 bool g_last_quantized_kv_cache = false;
 std::string g_backend_profile = "auto";
+std::string g_active_backend = "cpu";
+uint64_t g_active_backend_memory_bytes = 0;
+std::string g_last_backend_error_code;
+std::string g_last_backend_error_detail;
 float g_speculative_acceptance_rate = 0.65f;
 bool g_speculative_enabled = false;
 int32_t g_speculative_max_draft_tokens = 6;
@@ -356,100 +354,14 @@ std::string lowercase_copy(const std::string & value) {
     return lower;
 }
 
-bool gpu_offload_supported() {
-    static std::atomic<int> cached_support{-1};
-    const int cached = cached_support.load(std::memory_order_acquire);
-    if (cached >= 0) {
-        return cached == 1;
-    }
-
-    bool supported = llama_supports_gpu_offload();
-#if defined(GGML_USE_VULKAN)
-    if (supported) {
-        try {
-            // ggml Vulkan device enumeration applies backend-level capability filtering
-            // (for example 16-bit storage support), so only expose GPU offload when at
-            // least one usable Vulkan device is visible.
-            const int device_count = ggml_backend_vk_get_device_count();
-            supported = device_count > 0;
-            __android_log_print(
-                ANDROID_LOG_INFO,
-                TAG,
-                "GPU_OFFLOAD|vk_device_count=%d|supported=%s",
-                device_count,
-                supported ? "true" : "false");
-        } catch (const std::exception & e) {
-            supported = false;
-            __android_log_print(
-                ANDROID_LOG_WARN,
-                TAG,
-                "GPU_OFFLOAD|vk_probe_failed=%s",
-                e.what());
-        } catch (...) {
-            supported = false;
-            __android_log_print(
-                ANDROID_LOG_WARN,
-                TAG,
-                "GPU_OFFLOAD|vk_probe_failed=unknown");
-        }
-    }
-#endif
-    cached_support.store(supported ? 1 : 0, std::memory_order_release);
-    return supported;
-}
-
-void apply_android_backend_profile_env_once() {
-    static std::atomic<bool> applied{false};
-    bool expected = false;
-    if (!applied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-        return;
-    }
-#if defined(GGML_USE_VULKAN)
-    const std::string profile = lowercase_copy(std::getenv("POCKETGPT_BACKEND_PROFILE") != nullptr
-        ? std::getenv("POCKETGPT_BACKEND_PROFILE")
-        : "auto");
-    g_backend_profile = profile;
-    const bool safe_profile = profile == "safe";
-    const bool aggressive_profile = profile == "aggressive";
-
-    setenv("GGML_VK_ALLOW_SYSMEM_FALLBACK", "1", 1);
-    setenv("GGML_VK_PREFER_HOST_MEMORY", "1", 1);
-    if (safe_profile) {
-        setenv("GGML_VK_DISABLE_COOPMAT", "1", 1);
-        setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
-        setenv("GGML_VK_DISABLE_INTEGER_DOT_PRODUCT", "1", 1);
-        setenv("GGML_VK_DISABLE_ASYNC", "1", 1);
-        setenv("GGML_VK_DISABLE_BUFFER_DEVICE_ADDRESS", "1", 1);
-        setenv("GGML_VK_DISABLE_F16", "1", 1);
-        setenv("GGML_VK_DISABLE_FUSION", "1", 1);
-        setenv("GGML_VK_DISABLE_MMVQ", "1", 1);
-        setenv("GGML_VK_DISABLE_GRAPH_OPTIMIZE", "1", 1);
-    } else if (aggressive_profile) {
-        setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
+void apply_android_backend_profile_env() {
+    const char * env_profile = std::getenv("POCKETGPT_BACKEND_PROFILE");
+    const std::string resolved = lowercase_copy(env_profile != nullptr ? env_profile : g_backend_profile);
+    if (resolved == "hexagon" || resolved == "opencl" || resolved == "cpu" || resolved == "auto") {
+        g_backend_profile = resolved;
     } else {
-        // Balanced mode keeps core safety rails but allows high-impact optimizations.
-        setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
-        setenv("GGML_VK_DISABLE_BUFFER_DEVICE_ADDRESS", "1", 1);
+        g_backend_profile = "auto";
     }
-    __android_log_print(
-        ANDROID_LOG_INFO,
-        TAG,
-        "GPU_OFFLOAD|backend_profile=%s|safe=%s|aggressive=%s",
-        profile.c_str(),
-        safe_profile ? "true" : "false",
-        aggressive_profile ? "true" : "false");
-#else
-    const std::string profile = lowercase_copy(std::getenv("POCKETGPT_BACKEND_PROFILE") != nullptr
-        ? std::getenv("POCKETGPT_BACKEND_PROFILE")
-        : "auto");
-    g_backend_profile = profile;
-    __android_log_print(
-        ANDROID_LOG_INFO,
-        TAG,
-        "GPU_OFFLOAD|backend_profile=%s|compiled_backend=%s",
-        profile.c_str(),
-        compiled_gpu_backends());
-#endif
 }
 
 const char * compiled_gpu_backends() {
@@ -459,12 +371,6 @@ const char * compiled_gpu_backends() {
     return "hexagon";
 #elif defined(GGML_USE_OPENCL)
     return "opencl";
-#elif defined(GGML_USE_VULKAN)
-    return "vulkan";
-#elif defined(GGML_USE_CUDA)
-    return "cuda";
-#elif defined(GGML_USE_METAL)
-    return "metal";
 #else
     return "cpu-only";
 #endif
@@ -498,191 +404,177 @@ std::string json_escape(const std::string & value) {
     return escaped;
 }
 
-#if defined(GGML_USE_VULKAN)
-std::string format_api_version(uint32_t version) {
-    if (version == 0) {
-        return "0.0.0";
-    }
-    std::ostringstream out;
-    out << VK_API_VERSION_MAJOR(version)
-        << "."
-        << VK_API_VERSION_MINOR(version)
-        << "."
-        << VK_API_VERSION_PATCH(version);
-    return out.str();
-}
-#else
-std::string format_api_version(uint32_t /*version*/) {
-    return "n/a";
-}
-#endif
-
 struct BackendDiagnosticsSnapshot {
-    bool loader_available = false;
-    uint32_t instance_api_version = 0;
-    uint32_t selected_device_api_version = 0;
-    uint32_t physical_device_count = 0;
-    bool storage_buffer_16bit_access = false;
-    bool shader_float16 = false;
-    std::string driver_name;
-    uint32_t driver_version = 0;
-    uint64_t device_local_heap_bytes = 0;
+    int opencl_device_count = 0;
+    int hexagon_device_count = 0;
+    int gpu_device_count = 0;
+    int accel_device_count = 0;
+    ggml_backend_dev_t opencl_device = nullptr;
+    ggml_backend_dev_t hexagon_device = nullptr;
+    uint64_t opencl_memory_bytes = 0;
+    uint64_t hexagon_memory_bytes = 0;
 };
+
+struct BackendSelection {
+    std::string requested_profile = "auto";
+    std::string selected_backend = "cpu";
+    ggml_backend_dev_t selected_device = nullptr;
+    uint64_t selected_device_memory_bytes = 0;
+    bool runtime_supported = false;
+    bool auto_fallback_to_cpu = false;
+};
+
+void clear_backend_error_locked() {
+    g_last_backend_error_code.clear();
+    g_last_backend_error_detail.clear();
+}
+
+void set_backend_error_locked(const std::string & code, const std::string & detail) {
+    g_last_backend_error_code = code;
+    g_last_backend_error_detail = detail;
+}
+
+std::string backend_label_for_device(ggml_backend_dev_t dev) {
+    if (dev == nullptr) {
+        return "cpu";
+    }
+    ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+    const std::string reg_name = lowercase_copy(reg != nullptr && ggml_backend_reg_name(reg) != nullptr
+        ? ggml_backend_reg_name(reg)
+        : "");
+    const std::string dev_name = lowercase_copy(ggml_backend_dev_name(dev) != nullptr
+        ? ggml_backend_dev_name(dev)
+        : "");
+    const std::string dev_desc = lowercase_copy(ggml_backend_dev_description(dev) != nullptr
+        ? ggml_backend_dev_description(dev)
+        : "");
+    if (reg_name.find("hexagon") != std::string::npos ||
+        dev_name.find("hexagon") != std::string::npos ||
+        dev_desc.find("hexagon") != std::string::npos ||
+        ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_ACCEL) {
+        return "hexagon";
+    }
+    if (reg_name.find("opencl") != std::string::npos ||
+        dev_name.find("opencl") != std::string::npos ||
+        dev_desc.find("opencl") != std::string::npos) {
+        return "opencl";
+    }
+    if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_GPU ||
+        ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+        return "opencl";
+    }
+    return "unknown";
+}
 
 BackendDiagnosticsSnapshot collect_backend_diagnostics() {
     BackendDiagnosticsSnapshot info;
-#if defined(GGML_USE_VULKAN)
-    void * handle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
-    if (handle == nullptr) {
-        return info;
-    }
-    info.loader_available = true;
-
-    auto vk_get_instance_proc_addr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
-        dlsym(handle, "vkGetInstanceProcAddr"));
-    auto vk_enumerate_instance_version = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
-        dlsym(handle, "vkEnumerateInstanceVersion"));
-    if (vk_get_instance_proc_addr == nullptr) {
-        dlclose(handle);
-        return info;
-    }
-
-    if (vk_enumerate_instance_version != nullptr) {
-        vk_enumerate_instance_version(&info.instance_api_version);
-    } else {
-        info.instance_api_version = VK_API_VERSION_1_0;
-    }
-
-    auto vk_create_instance = reinterpret_cast<PFN_vkCreateInstance>(
-        vk_get_instance_proc_addr(nullptr, "vkCreateInstance"));
-    if (vk_create_instance == nullptr) {
-        dlclose(handle);
-        return info;
-    }
-
-    VkApplicationInfo app_info{};
-    app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    app_info.pApplicationName = "pocket_llama_vulkan_diag";
-    app_info.applicationVersion = 1;
-    app_info.pEngineName = "pocket_llama";
-    app_info.engineVersion = 1;
-    app_info.apiVersion = info.instance_api_version == 0 ? VK_API_VERSION_1_0 : info.instance_api_version;
-
-    VkInstanceCreateInfo create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    create_info.pApplicationInfo = &app_info;
-
-    VkInstance instance = VK_NULL_HANDLE;
-    if (vk_create_instance(&create_info, nullptr, &instance) != VK_SUCCESS || instance == VK_NULL_HANDLE) {
-        dlclose(handle);
-        return info;
-    }
-
-    auto vk_destroy_instance = reinterpret_cast<PFN_vkDestroyInstance>(
-        vk_get_instance_proc_addr(instance, "vkDestroyInstance"));
-    auto vk_enumerate_physical_devices = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
-        vk_get_instance_proc_addr(instance, "vkEnumeratePhysicalDevices"));
-    auto vk_get_physical_device_properties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
-        vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceProperties2"));
-    if (vk_get_physical_device_properties2 == nullptr) {
-        vk_get_physical_device_properties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
-            vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceProperties2KHR"));
-    }
-    auto vk_get_physical_device_features2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
-        vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceFeatures2"));
-    if (vk_get_physical_device_features2 == nullptr) {
-        vk_get_physical_device_features2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
-            vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceFeatures2KHR"));
-    }
-    auto vk_get_physical_device_memory_properties = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
-        vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceMemoryProperties"));
-
-    if (vk_enumerate_physical_devices != nullptr) {
-        uint32_t device_count = 0;
-        if (vk_enumerate_physical_devices(instance, &device_count, nullptr) == VK_SUCCESS && device_count > 0) {
-            info.physical_device_count = device_count;
-            std::vector<VkPhysicalDevice> devices(device_count);
-            if (vk_enumerate_physical_devices(instance, &device_count, devices.data()) == VK_SUCCESS &&
-                !devices.empty()) {
-                const VkPhysicalDevice selected = devices.front();
-                if (vk_get_physical_device_properties2 != nullptr) {
-                    VkPhysicalDeviceDriverProperties driver_props{};
-                    driver_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
-                    VkPhysicalDeviceProperties2 props2{};
-                    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-                    props2.pNext = &driver_props;
-                    vk_get_physical_device_properties2(selected, &props2);
-                    info.selected_device_api_version = props2.properties.apiVersion;
-                    info.driver_version = props2.properties.driverVersion;
-                    if (driver_props.driverName[0] != '\0') {
-                        info.driver_name = driver_props.driverName;
-                    }
-                }
-                if (vk_get_physical_device_memory_properties != nullptr) {
-                    VkPhysicalDeviceMemoryProperties memory_props{};
-                    vk_get_physical_device_memory_properties(selected, &memory_props);
-                    for (uint32_t heap_index = 0; heap_index < memory_props.memoryHeapCount; ++heap_index) {
-                        const VkMemoryHeap & heap = memory_props.memoryHeaps[heap_index];
-                        if ((heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0) {
-                            info.device_local_heap_bytes += heap.size;
-                        }
-                    }
-                }
-
-                if (vk_get_physical_device_features2 != nullptr) {
-                    VkPhysicalDeviceVulkan11Features features11{};
-                    features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-                    VkPhysicalDeviceVulkan12Features features12{};
-                    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-                    features11.pNext = &features12;
-                    VkPhysicalDeviceFeatures2 features2{};
-                    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-                    features2.pNext = &features11;
-                    vk_get_physical_device_features2(selected, &features2);
-                    info.storage_buffer_16bit_access = features11.storageBuffer16BitAccess == VK_TRUE;
-                    info.shader_float16 = features12.shaderFloat16 == VK_TRUE;
-                }
+    for (size_t index = 0; index < ggml_backend_dev_count(); ++index) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(index);
+        if (dev == nullptr) {
+            continue;
+        }
+        const auto type = ggml_backend_dev_type(dev);
+        if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            info.gpu_device_count += 1;
+        } else if (type == GGML_BACKEND_DEVICE_TYPE_ACCEL) {
+            info.accel_device_count += 1;
+        }
+        size_t free_bytes = 0;
+        size_t total_bytes = 0;
+        ggml_backend_dev_memory(dev, &free_bytes, &total_bytes);
+        (void) free_bytes;
+        const uint64_t memory_bytes = static_cast<uint64_t>(total_bytes);
+        const std::string label = backend_label_for_device(dev);
+        if (label == "hexagon") {
+            info.hexagon_device_count += 1;
+            if (info.hexagon_device == nullptr || memory_bytes > info.hexagon_memory_bytes) {
+                info.hexagon_device = dev;
+                info.hexagon_memory_bytes = memory_bytes;
+            }
+        } else if (label == "opencl") {
+            info.opencl_device_count += 1;
+            if (info.opencl_device == nullptr || memory_bytes > info.opencl_memory_bytes) {
+                info.opencl_device = dev;
+                info.opencl_memory_bytes = memory_bytes;
             }
         }
     }
-
-    if (vk_destroy_instance != nullptr) {
-        vk_destroy_instance(instance, nullptr);
-    }
-    dlclose(handle);
-#endif
     return info;
 }
 
-std::string backend_diagnostics_json() {
-    const bool runtime_supported = gpu_offload_supported();
-    int vk_device_count = -1;
-#if defined(GGML_USE_VULKAN)
-    try {
-        vk_device_count = ggml_backend_vk_get_device_count();
-    } catch (...) {
-        vk_device_count = -1;
+BackendSelection resolve_backend_selection_locked(bool gpu_requested) {
+    apply_android_backend_profile_env();
+    const BackendDiagnosticsSnapshot diag = collect_backend_diagnostics();
+    BackendSelection selection;
+    selection.requested_profile = g_backend_profile;
+    selection.runtime_supported = diag.hexagon_device_count > 0 || diag.opencl_device_count > 0;
+
+    if (!gpu_requested || selection.requested_profile == "cpu") {
+        return selection;
     }
-#endif
+
+    if (selection.requested_profile == "hexagon") {
+        if (diag.hexagon_device != nullptr) {
+            selection.selected_backend = "hexagon";
+            selection.selected_device = diag.hexagon_device;
+            selection.selected_device_memory_bytes = diag.hexagon_memory_bytes;
+        }
+        return selection;
+    }
+    if (selection.requested_profile == "opencl") {
+        if (diag.opencl_device != nullptr) {
+            selection.selected_backend = "opencl";
+            selection.selected_device = diag.opencl_device;
+            selection.selected_device_memory_bytes = diag.opencl_memory_bytes;
+        }
+        return selection;
+    }
+
+    if (diag.hexagon_device != nullptr) {
+        selection.selected_backend = "hexagon";
+        selection.selected_device = diag.hexagon_device;
+        selection.selected_device_memory_bytes = diag.hexagon_memory_bytes;
+        return selection;
+    }
+    if (diag.opencl_device != nullptr) {
+        selection.selected_backend = "opencl";
+        selection.selected_device = diag.opencl_device;
+        selection.selected_device_memory_bytes = diag.opencl_memory_bytes;
+        return selection;
+    }
+    selection.auto_fallback_to_cpu = true;
+    return selection;
+}
+
+bool gpu_offload_supported() {
+    const BackendDiagnosticsSnapshot diag = collect_backend_diagnostics();
+    return diag.hexagon_device_count > 0 || diag.opencl_device_count > 0;
+}
+
+std::string backend_diagnostics_json() {
+    apply_android_backend_profile_env();
+    const bool runtime_supported = gpu_offload_supported();
     const BackendDiagnosticsSnapshot diag = collect_backend_diagnostics();
     std::ostringstream out;
+    const bool strict_accelerator_fail_fast = g_backend_profile == "hexagon" || g_backend_profile == "opencl";
+    const bool auto_backend_cpu_fallback = g_backend_profile == "auto";
     out << "{"
         << "\"compiled_backend\":\"" << json_escape(compiled_gpu_backends()) << "\","
         << "\"backend_profile\":\"" << json_escape(g_backend_profile) << "\","
         << "\"runtime_supported\":" << (runtime_supported ? "true" : "false") << ","
-        << "\"vk_device_count\":" << vk_device_count << ","
-        << "\"loader_available\":" << (diag.loader_available ? "true" : "false") << ","
-        << "\"instance_api_version\":" << diag.instance_api_version << ","
-        << "\"instance_api_version_name\":\"" << format_api_version(diag.instance_api_version) << "\","
-        << "\"selected_device_api_version\":" << diag.selected_device_api_version << ","
-        << "\"selected_device_api_version_name\":\"" << format_api_version(diag.selected_device_api_version) << "\","
-        << "\"physical_device_count\":" << diag.physical_device_count << ","
-        << "\"storage_buffer_16bit_access\":" << (diag.storage_buffer_16bit_access ? "true" : "false") << ","
-        << "\"shader_float16\":" << (diag.shader_float16 ? "true" : "false") << ","
+        << "\"strict_accelerator_fail_fast\":" << (strict_accelerator_fail_fast ? "true" : "false") << ","
+        << "\"auto_backend_cpu_fallback\":" << (auto_backend_cpu_fallback ? "true" : "false") << ","
+        << "\"active_backend\":\"" << json_escape(g_active_backend) << "\","
+        << "\"opencl_device_count\":" << diag.opencl_device_count << ","
+        << "\"hexagon_device_count\":" << diag.hexagon_device_count << ","
+        << "\"gpu_device_count\":" << diag.gpu_device_count << ","
+        << "\"accel_device_count\":" << diag.accel_device_count << ","
+        << "\"opencl_memory_bytes\":" << static_cast<unsigned long long>(diag.opencl_memory_bytes) << ","
+        << "\"hexagon_memory_bytes\":" << static_cast<unsigned long long>(diag.hexagon_memory_bytes) << ","
         << "\"flashAttnActive\":" << (g_last_flash_attn_active ? "true" : "false") << ","
-        << "\"driver_name\":\"" << json_escape(diag.driver_name) << "\","
-        << "\"driver_version\":" << diag.driver_version << ","
-        << "\"device_local_heap_bytes\":" << static_cast<unsigned long long>(diag.device_local_heap_bytes)
+        << "\"device_local_heap_bytes\":" << static_cast<unsigned long long>(g_active_backend_memory_bytes) << ","
+        << "\"last_error_code\":\"" << json_escape(g_last_backend_error_code) << "\","
+        << "\"last_error_detail\":\"" << json_escape(g_last_backend_error_detail) << "\""
         << "}";
     return out.str();
 }
@@ -701,20 +593,26 @@ int32_t estimate_max_gpu_layers_locked(int32_t requested_n_ctx) {
     if (model_size == 0) {
         return -1;
     }
-    const BackendDiagnosticsSnapshot diag = collect_backend_diagnostics();
-    if (diag.device_local_heap_bytes == 0) {
-#if !defined(GGML_USE_VULKAN)
+    uint64_t backend_memory_bytes = g_active_backend_memory_bytes;
+    if (backend_memory_bytes == 0) {
+        const BackendDiagnosticsSnapshot diag = collect_backend_diagnostics();
+        if (g_active_backend == "hexagon") {
+            backend_memory_bytes = diag.hexagon_memory_bytes;
+        } else if (g_active_backend == "opencl") {
+            backend_memory_bytes = diag.opencl_memory_bytes;
+        } else {
+            backend_memory_bytes = std::max(diag.opencl_memory_bytes, diag.hexagon_memory_bytes);
+        }
+    }
+    if (backend_memory_bytes == 0) {
         const int32_t heuristic = clamp_i32(layer_count / 2, 1, layer_count);
         __android_log_print(
             ANDROID_LOG_INFO,
             TAG,
-            "GPU_OFFLOAD|estimate_layers=%d|strategy=heuristic_non_vulkan|layer_count=%d",
+            "GPU_OFFLOAD|estimate_layers=%d|strategy=heuristic_backend_unknown|layer_count=%d",
             static_cast<int>(heuristic),
             static_cast<int>(layer_count));
         return heuristic;
-#else
-        return -1;
-#endif
     }
     const int32_t n_ctx = std::max<int32_t>(1, requested_n_ctx > 0 ? requested_n_ctx : g_runtime_context_size);
     const int32_t n_embd = std::max(1, llama_model_n_embd(g_model));
@@ -729,7 +627,7 @@ int32_t estimate_max_gpu_layers_locked(int32_t requested_n_ctx) {
     if (per_layer_total_bytes <= 0.0) {
         return -1;
     }
-    const double available_bytes = static_cast<double>(diag.device_local_heap_bytes) * 0.75;
+    const double available_bytes = static_cast<double>(backend_memory_bytes) * 0.75;
     const int32_t estimate = clamp_i32(
         static_cast<int32_t>(std::floor(available_bytes / per_layer_total_bytes)),
         0,
@@ -741,7 +639,7 @@ int32_t estimate_max_gpu_layers_locked(int32_t requested_n_ctx) {
         static_cast<int>(estimate),
         static_cast<int>(layer_count),
         static_cast<int>(n_ctx),
-        static_cast<unsigned long long>(diag.device_local_heap_bytes),
+        static_cast<unsigned long long>(backend_memory_bytes),
         static_cast<unsigned long long>(model_size),
         per_layer_model_bytes,
         per_layer_kv_bytes);
@@ -757,9 +655,10 @@ void log_gpu_support_once() {
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|compiled_backend=%s|supported=%s",
+        "GPU_OFFLOAD|compiled_backend=%s|supported=%s|active_backend=%s",
         compiled_gpu_backends(),
-        gpu_offload_supported() ? "true" : "false");
+        gpu_offload_supported() ? "true" : "false",
+        g_active_backend.c_str());
 }
 
 void log_error(const std::string & message) {
@@ -933,6 +832,8 @@ void release_runtime_locked() {
     g_last_flash_attn_gpu_ops = false;
     g_last_flash_attn_active = false;
     g_last_quantized_kv_cache = false;
+    g_active_backend = "cpu";
+    g_active_backend_memory_bytes = 0;
     g_speculative_acceptance_rate = 0.65f;
     g_speculative_enabled = false;
     g_speculative_max_draft_tokens = 6;
@@ -941,35 +842,19 @@ void release_runtime_locked() {
 }
 
 bool ensure_backend_initialized_locked(bool require_gpu_backend) {
-    if (require_gpu_backend) {
-        apply_android_backend_profile_env_once();
+    apply_android_backend_profile_env();
+    if (g_backend_init_mode == BackendInitMode::NONE) {
+        llama_backend_init();
     }
-    if (g_backend_init_mode == BackendInitMode::GPU_ENABLED) {
-        return true;
-    }
-    if (!require_gpu_backend && g_backend_init_mode == BackendInitMode::CPU_ONLY) {
-        return true;
-    }
-
-    if (require_gpu_backend && g_backend_init_mode == BackendInitMode::CPU_ONLY) {
-        // Promote CPU-only backend init to GPU-enabled without tearing down the backend.
-        // Full backend free/re-init has been unstable on some Android GPU drivers.
-        ggml_backend_load_all();
-        g_backend_init_mode = BackendInitMode::GPU_ENABLED;
-        __android_log_print(ANDROID_LOG_INFO, TAG, "GPU_OFFLOAD|backend_init_mode=gpu-enabled");
-        return true;
-    }
-
-    if (require_gpu_backend) {
-        ggml_backend_load_all();
-    }
-    llama_backend_init();
+    // Always load available backends so runtime support and backend selection are deterministic.
+    ggml_backend_load_all();
     g_backend_init_mode = require_gpu_backend ? BackendInitMode::GPU_ENABLED : BackendInitMode::CPU_ONLY;
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|backend_init_mode=%s",
-        require_gpu_backend ? "gpu-enabled" : "cpu-only");
+        "GPU_OFFLOAD|backend_init_mode=%s|profile=%s",
+        require_gpu_backend ? "gpu-enabled" : "cpu-only",
+        g_backend_profile.c_str());
     return true;
 }
 
@@ -2069,42 +1954,68 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
 
     std::lock_guard<std::mutex> lock(g_mutex);
     release_runtime_locked();
-    log_gpu_support_once();
-    const bool supports_gpu_offload = gpu_offload_supported();
+    clear_backend_error_locked();
     const int32_t requested_target_gpu_layers =
         nGpuLayers < 0 ? -1 : clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128);
     const int32_t requested_draft_gpu_layers =
         speculativeDraftGpuLayers < 0 ? -1 : clamp_i32(static_cast<int32_t>(speculativeDraftGpuLayers), 0, 128);
     const bool request_gpu_layers = requested_target_gpu_layers != 0 || requested_draft_gpu_layers != 0;
+    if (!ensure_backend_initialized_locked(request_gpu_layers)) {
+        set_backend_error_locked("BACKEND_INIT_FAILED", "backend initialization failed");
+        log_error("nativeLoadModel failed: backend initialization failed");
+        return JNI_FALSE;
+    }
+    log_gpu_support_once();
+    const BackendSelection backend_selection = resolve_backend_selection_locked(request_gpu_layers);
+    const bool supports_gpu_offload = backend_selection.runtime_supported;
+    const bool explicit_accelerator_profile = g_backend_profile == "hexagon" || g_backend_profile == "opencl";
+    if (request_gpu_layers && explicit_accelerator_profile && backend_selection.selected_device == nullptr) {
+        std::ostringstream detail;
+        detail << "profile=" << g_backend_profile
+               << "|runtime_supported=" << (supports_gpu_offload ? "true" : "false")
+               << "|requested_layers=" << requested_target_gpu_layers
+               << "|requested_draft_layers=" << requested_draft_gpu_layers;
+        set_backend_error_locked("GPU_BACKEND_UNAVAILABLE", detail.str());
+        log_error("nativeLoadModel failed: requested accelerator backend unavailable");
+        return JNI_FALSE;
+    }
+    const bool accelerator_selected = backend_selection.selected_device != nullptr;
+    std::vector<ggml_backend_dev_t> selected_devices;
+    if (accelerator_selected) {
+        selected_devices.push_back(backend_selection.selected_device);
+        selected_devices.push_back(nullptr);
+    }
+
     llama_model_params model_params = llama_model_default_params();
     model_params.use_mmap = useMmap == JNI_TRUE;
     model_params.use_mlock = useMlock == JNI_TRUE;
-    model_params.n_gpu_layers = supports_gpu_offload ? requested_target_gpu_layers : 0;
+    model_params.n_gpu_layers = accelerator_selected ? requested_target_gpu_layers : 0;
+    model_params.devices = accelerator_selected ? selected_devices.data() : nullptr;
     g_model_use_mmap = model_params.use_mmap;
     g_model_use_mlock = model_params.use_mlock;
     const bool use_gpu_ops = model_params.n_gpu_layers != 0;
-    // Keep upstream defaults for split/device selection on GPU paths to avoid driver-specific
-    // regressions from aggressive overrides.
-    if (!use_gpu_ops) {
-        // Force strict CPU-only placement for non-GPU runs.
-        // On some accelerator-capable devices, default split policy can still allocate
-        // backend buffers even with n_gpu_layers=0, which can trigger driver crashes.
+    if (accelerator_selected) {
+        model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
+        model_params.main_gpu = 0;
+        g_active_backend = backend_selection.selected_backend;
+        g_active_backend_memory_bytes = backend_selection.selected_device_memory_bytes;
+    } else {
         model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
         model_params.main_gpu = -1;
-    }
-    if (!ensure_backend_initialized_locked(request_gpu_layers && supports_gpu_offload)) {
-        log_error("nativeLoadModel failed: backend initialization failed");
-        return JNI_FALSE;
+        g_active_backend = "cpu";
+        g_active_backend_memory_bytes = 0;
     }
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|requested_layers=%d|effective_layers=%d|requested_draft_layers=%d|split_mode=%d|main_gpu=%d",
+        "GPU_OFFLOAD|requested_layers=%d|effective_layers=%d|requested_draft_layers=%d|split_mode=%d|main_gpu=%d|requested_profile=%s|selected_backend=%s",
         static_cast<int>(requested_target_gpu_layers),
         static_cast<int>(model_params.n_gpu_layers),
         static_cast<int>(requested_draft_gpu_layers),
         static_cast<int>(model_params.split_mode),
-        static_cast<int>(model_params.main_gpu));
+        static_cast<int>(model_params.main_gpu),
+        g_backend_profile.c_str(),
+        g_active_backend.c_str());
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
@@ -2114,6 +2025,10 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         model_params.use_direct_io ? "true" : "false");
     g_model = llama_model_load_from_file(model_path.c_str(), model_params);
     if (g_model == nullptr) {
+        set_backend_error_locked(
+            "GPU_BACKEND_LOAD_FAILED",
+            std::string("profile=") + g_backend_profile + "|selected_backend=" + g_active_backend + "|target_layers=" +
+                std::to_string(static_cast<int>(model_params.n_gpu_layers)));
         log_error("nativeLoadModel failed: llama_model_load_from_file returned null");
         return JNI_FALSE;
     }
@@ -2145,6 +2060,9 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         quantizedKvCache == JNI_TRUE ? "true" : "false");
     g_context = llama_init_from_model(g_model, context_params);
     if (g_context == nullptr) {
+        set_backend_error_locked(
+            "GPU_CONTEXT_INIT_FAILED",
+            std::string("profile=") + g_backend_profile + "|selected_backend=" + g_active_backend);
         log_error("nativeLoadModel failed: llama_init_from_model returned null");
         release_runtime_locked();
         return JNI_FALSE;
@@ -2185,10 +2103,14 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         llama_model_params draft_model_params = llama_model_default_params();
         draft_model_params.use_mmap = model_params.use_mmap;
         draft_model_params.use_mlock = model_params.use_mlock;
-        draft_model_params.n_gpu_layers = supports_gpu_offload ? requested_draft_gpu_layers : 0;
+        draft_model_params.n_gpu_layers = accelerator_selected ? requested_draft_gpu_layers : 0;
+        draft_model_params.devices = accelerator_selected ? selected_devices.data() : nullptr;
         if (draft_model_params.n_gpu_layers <= 0) {
             draft_model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
             draft_model_params.main_gpu = -1;
+        } else {
+            draft_model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
+            draft_model_params.main_gpu = 0;
         }
         g_draft_model = llama_model_load_from_file(draft_model_path.c_str(), draft_model_params);
         if (g_draft_model != nullptr) {
@@ -2244,10 +2166,12 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         }
     }
     if (!apply_sampling_config_locked(resolved_temperature, resolved_top_k, resolved_top_p)) {
+        set_backend_error_locked("SAMPLER_CONFIG_FAILED", "failed to apply runtime sampling config");
         log_error("nativeLoadModel failed: sampler config apply failed");
         release_runtime_locked();
         return JNI_FALSE;
     }
+    clear_backend_error_locked();
     g_cancel_requested.store(false, std::memory_order_release);
 
     return JNI_TRUE;
@@ -2529,6 +2453,8 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeSupportsGpuOffload(
     JNIEnv * /*env*/,
     jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    ensure_backend_initialized_locked(true);
     log_gpu_support_once();
     return gpu_offload_supported() ? JNI_TRUE : JNI_FALSE;
 }
@@ -2561,6 +2487,8 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeBackendDiagnosticsJson(
     JNIEnv * env,
     jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    ensure_backend_initialized_locked(true);
     const std::string payload = backend_diagnostics_json();
     return env->NewStringUTF(payload.c_str());
 }
@@ -2650,15 +2578,23 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     JNIEnv * env,
     jobject /*thiz*/,
     jstring profile) {
+    if (profile == nullptr) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_mutex);
     const char * profileChars = env->GetStringUTFChars(profile, nullptr);
     if (profileChars) {
-        setenv("POCKETGPT_BACKEND_PROFILE", profileChars, 1);
-        g_backend_profile = lowercase_copy(profileChars);
+        const std::string normalized = lowercase_copy(profileChars);
+        const std::string profile_value = normalized == "hexagon" || normalized == "opencl" || normalized == "cpu"
+            ? normalized
+            : "auto";
+        setenv("POCKETGPT_BACKEND_PROFILE", profile_value.c_str(), 1);
+        g_backend_profile = profile_value;
         __android_log_print(
             ANDROID_LOG_INFO,
             TAG,
             "GPU_OFFLOAD|set_backend_profile=%s",
-            profileChars);
+            profile_value.c_str());
         env->ReleaseStringUTFChars(profile, profileChars);
     }
 }

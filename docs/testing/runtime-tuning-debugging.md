@@ -197,7 +197,7 @@ Check:
 1. `RUNTIME_TUNING|last_decision=demote_gpu_regression`
 2. `RUNTIME_TUNING_SAMPLE|error_code=...`
 3. `runtime-log-signals.md` for summarized `FLASH_ATTN|`, `MMAP|`, `SPECULATIVE|`, and `PREFIX_CACHE|` findings
-4. `logcat.txt` for Vulkan/JNI/remote-runtime failures
+4. `logcat.txt` for OpenCL/Hexagon/JNI/remote-runtime failures
 5. `GPU_OFFLOAD|probe_status=...`
 
 ### Batch Sizes Were Cut
