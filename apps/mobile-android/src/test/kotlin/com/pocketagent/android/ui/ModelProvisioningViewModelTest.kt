@@ -128,6 +128,26 @@ class ModelProvisioningViewModelTest {
         assertEquals(1, gateway.removeCalls)
         assertEquals(1, gateway.cancelCalls)
     }
+
+    @Test
+    fun `load and offload model update lifecycle state`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway()
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+
+        val loadResult = viewModel.loadInstalledModel("qwen3.5-0.8b-q4", "1")
+        advanceUntilIdle()
+        assertTrue(loadResult.success)
+        assertEquals(
+            "qwen3.5-0.8b-q4",
+            viewModel.uiState.value.lifecycle.loadedModel?.modelId,
+        )
+
+        val offloadResult = viewModel.offloadModel("manual")
+        advanceUntilIdle()
+        assertTrue(offloadResult.success)
+        assertEquals(null, viewModel.uiState.value.lifecycle.loadedModel)
+    }
 }
 
 private class FakeProvisioningGateway : ProvisioningGateway {
@@ -191,9 +211,13 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     }
 
     override suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult {
-        return RuntimeModelLifecycleCommandResult.applied(
-            loadedModel = RuntimeLoadedModel(modelId = modelId, modelVersion = version),
+        val loaded = RuntimeLoadedModel(modelId = modelId, modelVersion = version)
+        lifecycle.value = lifecycle.value.copy(
+            state = com.pocketagent.nativebridge.ModelLifecycleState.LOADED,
+            loadedModel = loaded,
+            lastUsedModel = loaded,
         )
+        return RuntimeModelLifecycleCommandResult.applied(loadedModel = loaded)
     }
 
     override suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult {
@@ -204,6 +228,11 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     }
 
     override suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        lifecycle.value = lifecycle.value.copy(
+            state = com.pocketagent.nativebridge.ModelLifecycleState.UNLOADED,
+            loadedModel = null,
+            queuedOffload = false,
+        )
         return RuntimeModelLifecycleCommandResult.applied()
     }
 

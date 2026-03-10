@@ -59,7 +59,7 @@ internal fun ModelProvisioningSheet(
     onActivateVersion: (String, String) -> Unit,
     onLoadVersion: (String, String) -> Unit,
     onLoadLastUsedModel: () -> Unit,
-    onOffloadModel: (String) -> Unit,
+    onOffloadModel: () -> Unit,
     onRemoveVersion: (String, String) -> Unit,
     onRefreshManifest: () -> Unit,
     onRefreshRuntime: () -> Unit,
@@ -209,7 +209,7 @@ internal fun ModelProvisioningSheet(
                     }
                     if (lifecycle.loadedModel != null) {
                         OutlinedButton(
-                            onClick = { onOffloadModel("manual_model_offload") },
+                            onClick = onOffloadModel,
                             enabled = !isImporting && lifecycle.state != ModelLifecycleState.OFFLOADING,
                         ) {
                             Text(stringResource(id = R.string.ui_model_runtime_offload))
@@ -274,7 +274,7 @@ internal fun ModelProvisioningSheet(
                         Text(
                             text = stringResource(
                                 id = R.string.ui_model_path_origin_label,
-                                model.pathOrigin.readableName(),
+                                stringResource(id = model.pathOrigin.pathOriginLabelRes()),
                             ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -596,7 +596,7 @@ internal fun ModelProvisioningSheet(
                         Text(
                             text = stringResource(
                                 id = R.string.ui_model_path_origin_label,
-                                model.pathOrigin.readableName(),
+                                stringResource(id = model.pathOriginForVersion(version.version).pathOriginLabelRes()),
                             ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -637,7 +637,7 @@ internal fun ModelProvisioningSheet(
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 OutlinedButton(
-                                    onClick = { onOffloadModel("manual_model_offload") },
+                                    onClick = onOffloadModel,
                                     enabled = !isImporting && !isOffloadingVersion,
                                 ) {
                                     Text(stringResource(id = R.string.ui_model_runtime_offload))
@@ -769,30 +769,36 @@ internal fun DownloadTaskState.transferSummary(): String? {
     }
 }
 
+@Composable
 private fun RuntimeModelLifecycleSnapshot.readableRuntimeStateLabel(): String {
     return when (state) {
-        ModelLifecycleState.UNLOADED -> "unloaded"
-        ModelLifecycleState.LOADING -> "loading"
-        ModelLifecycleState.LOADED -> "loaded"
-        ModelLifecycleState.OFFLOADING -> if (queuedOffload) "offloading (queued)" else "offloading"
-        ModelLifecycleState.FAILED -> "failed"
+        ModelLifecycleState.UNLOADED -> stringResource(id = R.string.ui_model_runtime_state_unloaded)
+        ModelLifecycleState.LOADING -> stringResource(id = R.string.ui_model_runtime_state_loading)
+        ModelLifecycleState.LOADED -> stringResource(id = R.string.ui_model_runtime_state_loaded)
+        ModelLifecycleState.OFFLOADING -> if (queuedOffload) {
+            stringResource(id = R.string.ui_model_runtime_state_offloading_queued)
+        } else {
+            stringResource(id = R.string.ui_model_runtime_state_offloading)
+        }
+        ModelLifecycleState.FAILED -> stringResource(id = R.string.ui_model_runtime_state_failed)
     }
 }
 
+@Composable
 private fun RuntimeModelLifecycleSnapshot.modelRuntimeBadge(modelId: String): String {
     val loaded = loadedModel
     if (loaded != null && loaded.modelId == modelId) {
-        return "loaded"
+        return stringResource(id = R.string.ui_model_runtime_badge_loaded)
     }
     val requested = requestedModel
     if (requested != null && requested.modelId == modelId) {
         return when (state) {
-            ModelLifecycleState.LOADING -> "loading"
-            ModelLifecycleState.OFFLOADING -> "offloading"
-            else -> "unloaded"
+            ModelLifecycleState.LOADING -> stringResource(id = R.string.ui_model_runtime_badge_loading)
+            ModelLifecycleState.OFFLOADING -> stringResource(id = R.string.ui_model_runtime_badge_offloading)
+            else -> stringResource(id = R.string.ui_model_runtime_badge_unloaded)
         }
     }
-    return "unloaded"
+    return stringResource(id = R.string.ui_model_runtime_badge_unloaded)
 }
 
 @Composable
@@ -874,12 +880,12 @@ private fun DownloadTaskState.failureReasonMessage(version: ModelDistributionVer
     }
 }
 
-internal fun String.readableName(): String {
+internal fun String.pathOriginLabelRes(): Int {
     return when (this) {
-        ModelPathOrigin.MANAGED -> "managed"
-        ModelPathOrigin.IMPORTED_EXTERNAL -> "imported external"
-        ModelPathOrigin.DISCOVERED_RECOVERED -> "discovered recovery"
-        else -> this
+        ModelPathOrigin.MANAGED -> R.string.ui_model_path_origin_managed
+        ModelPathOrigin.IMPORTED_EXTERNAL -> R.string.ui_model_path_origin_imported_external
+        ModelPathOrigin.DISCOVERED_RECOVERED -> R.string.ui_model_path_origin_discovered_recovered
+        else -> R.string.ui_model_path_origin_unknown
     }
 }
 

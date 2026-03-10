@@ -91,6 +91,7 @@ class ModelDownloadManager(
                 status = DownloadTaskStatus.PAUSED,
                 downloadSpeedBps = null,
                 etaSeconds = null,
+                lastProgressEpochMs = null,
                 updatedAtEpochMs = System.currentTimeMillis(),
                 message = "Paused",
             ),
@@ -111,6 +112,7 @@ class ModelDownloadManager(
             failureReason = null,
             downloadSpeedBps = null,
             etaSeconds = null,
+            lastProgressEpochMs = null,
             message = "Resumed",
         )
         ModelDownloadTaskStateStore.upsert(appContext, resumed)
@@ -151,6 +153,7 @@ class ModelDownloadManager(
                 failureReason = DownloadFailureReason.CANCELLED,
                 downloadSpeedBps = null,
                 etaSeconds = null,
+                lastProgressEpochMs = null,
                 updatedAtEpochMs = System.currentTimeMillis(),
                 message = "Cancelled",
             ),
@@ -195,6 +198,7 @@ class ModelDownloadManager(
                         updatedAtEpochMs = now,
                         downloadSpeedBps = null,
                         etaSeconds = null,
+                        lastProgressEpochMs = null,
                         message = nextMessage,
                     ),
                 )
@@ -257,6 +261,7 @@ class ModelDownloadManager(
                     failureReason = DownloadFailureReason.UNKNOWN,
                     downloadSpeedBps = null,
                     etaSeconds = null,
+                    lastProgressEpochMs = null,
                     updatedAtEpochMs = now,
                     message = "Download interrupted. Retry or cancel.",
                 )

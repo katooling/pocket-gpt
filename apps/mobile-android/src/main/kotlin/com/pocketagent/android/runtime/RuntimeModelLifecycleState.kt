@@ -18,3 +18,5 @@ data class RuntimeModelLifecycleSnapshot(
         fun initial(): RuntimeModelLifecycleSnapshot = RuntimeModelLifecycleSnapshot()
     }
 }
+
+const val MODEL_OFFLOAD_REASON_MANUAL = "manual_model_offload"

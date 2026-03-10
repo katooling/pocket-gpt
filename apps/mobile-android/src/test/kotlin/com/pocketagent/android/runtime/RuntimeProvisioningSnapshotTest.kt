@@ -107,12 +107,30 @@ class RuntimeProvisioningSnapshotTest {
         assertEquals(ModelPathOrigin.IMPORTED_EXTERNAL, snapshot.models.single().pathOrigin)
     }
 
+    @Test
+    fun `pathOriginForVersion prefers version specific mapping`() {
+        val model = state(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            activeVersion = "managed-v1",
+            pathOrigin = ModelPathOrigin.MANAGED,
+            versionPathOrigins = mapOf(
+                "managed-v1" to ModelPathOrigin.MANAGED,
+                "external-v2" to ModelPathOrigin.IMPORTED_EXTERNAL,
+            ),
+        )
+
+        assertEquals(ModelPathOrigin.MANAGED, model.pathOriginForVersion("managed-v1"))
+        assertEquals(ModelPathOrigin.IMPORTED_EXTERNAL, model.pathOriginForVersion("external-v2"))
+        assertEquals(ModelPathOrigin.MANAGED, model.pathOriginForVersion("missing-version"))
+    }
+
     private fun state(
         modelId: String,
         activeVersion: String?,
         absolutePath: String? = "/tmp/$modelId.gguf",
         sha: String? = "sha-$modelId",
         pathOrigin: String = ModelPathOrigin.MANAGED,
+        versionPathOrigins: Map<String, String> = emptyMap(),
         storageRootLabel: String? = null,
         localFileMissing: Boolean = false,
     ): ProvisionedModelState {
@@ -126,6 +144,7 @@ class RuntimeProvisioningSnapshotTest {
             activeVersion = activeVersion,
             installedVersions = emptyList(),
             pathOrigin = pathOrigin,
+            versionPathOrigins = versionPathOrigins,
             storageRootLabel = storageRootLabel,
             localFileMissing = localFileMissing,
         )

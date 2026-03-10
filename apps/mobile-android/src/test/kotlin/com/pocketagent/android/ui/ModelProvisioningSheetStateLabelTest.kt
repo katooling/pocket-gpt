@@ -6,6 +6,7 @@ import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.DownloadVerificationPolicy
 import com.pocketagent.android.runtime.ModelPathOrigin
+import com.pocketagent.android.R
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -48,10 +49,10 @@ class ModelProvisioningSheetStateLabelTest {
     }
 
     @Test
-    fun `readableName maps path origins`() {
-        assertEquals("managed", ModelPathOrigin.MANAGED.readableName())
-        assertEquals("imported external", ModelPathOrigin.IMPORTED_EXTERNAL.readableName())
-        assertEquals("discovered recovery", ModelPathOrigin.DISCOVERED_RECOVERED.readableName())
+    fun `pathOriginLabelRes maps path origins`() {
+        assertEquals(R.string.ui_model_path_origin_managed, ModelPathOrigin.MANAGED.pathOriginLabelRes())
+        assertEquals(R.string.ui_model_path_origin_imported_external, ModelPathOrigin.IMPORTED_EXTERNAL.pathOriginLabelRes())
+        assertEquals(R.string.ui_model_path_origin_discovered_recovered, ModelPathOrigin.DISCOVERED_RECOVERED.pathOriginLabelRes())
     }
 
     private fun fixture(

@@ -14,11 +14,16 @@ data class ProvisionedModelState(
     val activeVersion: String?,
     val installedVersions: List<ModelVersionDescriptor>,
     val pathOrigin: String = ModelPathOrigin.MANAGED,
+    val versionPathOrigins: Map<String, String> = emptyMap(),
     val storageRootLabel: String? = null,
     val localFileMissing: Boolean = false,
 ) {
     val isProvisioned: Boolean
         get() = !localFileMissing && !absolutePath.isNullOrBlank() && !sha256.isNullOrBlank()
+
+    fun pathOriginForVersion(version: String): String {
+        return versionPathOrigins[version] ?: pathOrigin
+    }
 }
 
 data class ProvisioningRecoverySignal(

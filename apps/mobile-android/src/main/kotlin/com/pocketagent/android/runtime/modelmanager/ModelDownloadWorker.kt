@@ -326,7 +326,8 @@ class ModelDownloadWorker(
         lastKnownState: DownloadTaskState?,
     ): Pair<Long, Long> {
         var existingBytes = partFile.length().coerceAtLeast(0L)
-        var lastMetricBytes = lastKnownState?.progressBytes?.coerceAtLeast(0L) ?: existingBytes
+        var lastMetricBytes = (lastKnownState?.progressBytes?.coerceAtLeast(0L) ?: existingBytes)
+            .coerceAtMost(existingBytes)
         var lastMetricEpochMs = lastKnownState?.lastProgressEpochMs?.takeIf { it > 0L } ?: System.currentTimeMillis()
         val connection = URL(downloadUrl).openConnection() as HttpURLConnection
         connection.connectTimeout = 20_000
@@ -340,10 +341,19 @@ class ModelDownloadWorker(
             if (responseCode !in 200..299 && responseCode != HttpURLConnection.HTTP_PARTIAL) {
                 throw IllegalStateException("Download server returned HTTP $responseCode")
             }
-            if (responseCode == HttpURLConnection.HTTP_OK && existingBytes > 0L) {
+            val baseline = resolveResumeTransferBaseline(
+                responseCode = responseCode,
+                existingBytes = existingBytes,
+                metricBytes = lastMetricBytes,
+                metricEpochMs = lastMetricEpochMs,
+                nowEpochMs = System.currentTimeMillis(),
+            )
+            if (baseline.truncatePartialFile) {
                 partFile.delete()
-                existingBytes = 0L
             }
+            existingBytes = baseline.existingBytes
+            lastMetricBytes = baseline.metricBytes
+            lastMetricEpochMs = baseline.metricEpochMs
 
             val bodyLength = connection.contentLengthLong.coerceAtLeast(0L)
             val expectedTotal = when {
@@ -622,6 +632,38 @@ internal data class TransferMetrics(
     val etaSeconds: Long?,
     val lastProgressEpochMs: Long?,
 )
+
+internal data class ResumeTransferBaseline(
+    val existingBytes: Long,
+    val metricBytes: Long,
+    val metricEpochMs: Long,
+    val truncatePartialFile: Boolean,
+)
+
+internal fun resolveResumeTransferBaseline(
+    responseCode: Int,
+    existingBytes: Long,
+    metricBytes: Long,
+    metricEpochMs: Long,
+    nowEpochMs: Long,
+): ResumeTransferBaseline {
+    val safeNow = nowEpochMs.takeIf { it > 0L } ?: 1L
+    val safeExisting = existingBytes.coerceAtLeast(0L)
+    if (responseCode == HttpURLConnection.HTTP_OK && safeExisting > 0L) {
+        return ResumeTransferBaseline(
+            existingBytes = 0L,
+            metricBytes = 0L,
+            metricEpochMs = safeNow,
+            truncatePartialFile = true,
+        )
+    }
+    return ResumeTransferBaseline(
+        existingBytes = safeExisting,
+        metricBytes = metricBytes.coerceAtLeast(0L).coerceAtMost(safeExisting),
+        metricEpochMs = metricEpochMs.takeIf { it > 0L } ?: safeNow,
+        truncatePartialFile = false,
+    )
+}
 
 internal fun calculateTransferMetrics(
     previousBytes: Long,

@@ -1,8 +1,10 @@
 package com.pocketagent.android.runtime.modelmanager
 
+import java.net.HttpURLConnection
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ModelDownloadWorkerMetricsTest {
@@ -35,5 +37,37 @@ class ModelDownloadWorkerMetricsTest {
         assertTrue((metrics.downloadSpeedBps ?: 0L) > 0L)
         assertNotNull(metrics.etaSeconds)
         assertTrue((metrics.etaSeconds ?: -1L) >= 0L)
+    }
+
+    @Test
+    fun `resolveResumeTransferBaseline resets stale partial baseline when server returns full response`() {
+        val baseline = resolveResumeTransferBaseline(
+            responseCode = HttpURLConnection.HTTP_OK,
+            existingBytes = 4_096L,
+            metricBytes = 4_096L,
+            metricEpochMs = 1_000L,
+            nowEpochMs = 2_000L,
+        )
+
+        assertTrue(baseline.truncatePartialFile)
+        assertEquals(0L, baseline.existingBytes)
+        assertEquals(0L, baseline.metricBytes)
+        assertEquals(2_000L, baseline.metricEpochMs)
+    }
+
+    @Test
+    fun `resolveResumeTransferBaseline clamps metric bytes for range continuation`() {
+        val baseline = resolveResumeTransferBaseline(
+            responseCode = HttpURLConnection.HTTP_PARTIAL,
+            existingBytes = 2_048L,
+            metricBytes = 4_096L,
+            metricEpochMs = 1_000L,
+            nowEpochMs = 2_000L,
+        )
+
+        assertFalse(baseline.truncatePartialFile)
+        assertEquals(2_048L, baseline.existingBytes)
+        assertEquals(2_048L, baseline.metricBytes)
+        assertEquals(1_000L, baseline.metricEpochMs)
     }
 }

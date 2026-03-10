@@ -1,5 +1,9 @@
 package com.pocketagent.android.runtime
 
+import android.content.ContentUris
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.pocketagent.inference.ModelCatalog
@@ -146,6 +150,51 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
             oldManaged.exists(),
         )
         assertTrue(newManaged.exists())
+    }
+
+    @Test
+    fun installDownloadedModelMirrorsManagedArtifactIntoDownloadsFolder() {
+        val managedDir = store.managedModelDirectory().apply { mkdirs() }
+        val source = writeTempFile(
+            dir = managedDir,
+            fileName = "download-mirror-source.gguf",
+            content = "download-mirror-source-content",
+        )
+        val version = "downloads-mirror-v1"
+        val installed = store.installDownloadedModel(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            version = version,
+            absolutePath = source.absolutePath,
+            sha256 = sha256Hex(source),
+            provenanceIssuer = "internal-release",
+            provenanceSignature = "",
+            runtimeCompatibility = store.expectedRuntimeCompatibilityTag(),
+            fileSizeBytes = source.length(),
+            makeActive = false,
+        )
+
+        val expectedDisplayName = "qwen3.5-0.8b-q4-$version.gguf"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val mirroredUri = findMirroredDownloadsUri(expectedDisplayName)
+            assertNotNull("Expected mirrored model entry in MediaStore Downloads.", mirroredUri)
+            val mirroredBytes = appContext.contentResolver.openInputStream(mirroredUri!!)?.use { stream ->
+                stream.readBytes()
+            }
+            assertNotNull("Expected mirrored model bytes to be readable from Downloads.", mirroredBytes)
+            val installedBytes = File(installed.absolutePath).readBytes()
+            assertTrue(
+                "Expected mirrored Downloads model bytes to match installed model bytes.",
+                installedBytes.contentEquals(mirroredBytes),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            val downloadsRoot = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val mirroredFile = File(downloadsRoot, "${appContext.packageName}/models/$expectedDisplayName")
+            assertTrue(
+                "Expected mirrored model file in public Downloads path.",
+                mirroredFile.exists() && mirroredFile.isFile,
+            )
+        }
     }
 
     @Test
@@ -345,12 +394,58 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
         appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit().clear().commit()
         File(appContext.filesDir, "runtime-models").deleteRecursively()
         File(appContext.filesDir, "runtime-model-downloads").deleteRecursively()
+        File("/sdcard/Download/${appContext.packageName}/models").deleteRecursively()
+        File("/storage/emulated/0/Download/${appContext.packageName}/models").deleteRecursively()
         appContext.externalMediaDirs
             .filterNotNull()
             .forEach { mediaDir ->
                 File(mediaDir, "models").deleteRecursively()
                 File(mediaDir, "runtime-model-downloads").deleteRecursively()
             }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = appContext.contentResolver
+            val selection = "${MediaStore.Downloads.RELATIVE_PATH} = ?"
+            val selectionArgs = arrayOf("${Environment.DIRECTORY_DOWNLOADS}/${appContext.packageName}/models/")
+            resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Downloads._ID),
+                selection,
+                selectionArgs,
+                null,
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idIndex)
+                    val uri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+                    resolver.delete(uri, null, null)
+                }
+            }
+        }
+    }
+
+    private fun findMirroredDownloadsUri(displayName: String): android.net.Uri? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return null
+        }
+        val resolver = appContext.contentResolver
+        val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/${appContext.packageName}/models/"
+        val selection = "${MediaStore.Downloads.DISPLAY_NAME} = ? AND ${MediaStore.Downloads.RELATIVE_PATH} = ?"
+        val selectionArgs = arrayOf(displayName, relativePath)
+        resolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Downloads._ID),
+            selection,
+            selectionArgs,
+            null,
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) {
+                return null
+            }
+            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+            val id = cursor.getLong(idIndex)
+            return ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+        }
+        return null
     }
 
     private fun sha256Hex(file: File): String {

@@ -407,18 +407,20 @@ object AppRuntimeDependencies {
         val loaded = graph.runtimeFacade.loadedModel()
         val activeGenerationCount = graph.runtimeFacade.activeGenerationCount()
         val normalizedLoaded = if (loaded != null) {
+            val installedVersions = runCatching {
+                graph.provisioningStore.listInstalledVersions(loaded.modelId)
+            }.getOrElse {
+                emptyList()
+            }
             val resolvedVersion = loaded.modelVersion
-                ?: graph.provisioningStore
-                    .listInstalledVersions(loaded.modelId)
+                ?: installedVersions
                     .firstOrNull { descriptor -> descriptor.isActive }
                     ?.version
             if (resolvedVersion == null) {
                 graph.runtimeFacade.offloadModel(reason = "reconcile_missing_version")
                 null
             } else {
-                val installed = graph.provisioningStore
-                    .listInstalledVersions(loaded.modelId)
-                    .firstOrNull { descriptor -> descriptor.version == resolvedVersion }
+                val installed = installedVersions.firstOrNull { descriptor -> descriptor.version == resolvedVersion }
                 val fileExists = installed?.absolutePath
                     ?.let { path -> java.io.File(path).let { it.exists() && it.isFile } }
                     ?: false

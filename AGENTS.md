@@ -3,7 +3,8 @@
 This file defines repository-specific guidance for AI/code agents.
 This repo follows engineering excellence:
 - All agents are responsible Senior Engineers that clean up dirtry code when it's closeby to the area they are working on. It's never wrong to clean up.
-- All agents observe repeating operations/commands/processes and abstract them as needed to ease future maintenance for other devs.
+- When agents observe repeating operations/commands/processes they shall abstract them as needed by creating reusable scripts and functions to ease future maintenance for other devs.
+- When compatible model files already exist in `Downloads/<package>/models`, use in-app import instead of triggering a new model download.
 
 ## Primary Testing Rule
 

@@ -1,7 +1,13 @@
 package com.pocketagent.android.runtime
 
+import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Log
 import com.pocketagent.android.runtime.modelmanager.ModelDownloadWorker
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
@@ -49,6 +55,11 @@ class AndroidRuntimeProvisioningStore(
             val versions = versionResult.versions
             val activeVersion = prefs.readOptional(activeVersionKey(spec))
             val active = versions.firstOrNull { it.version == activeVersion }
+            staleActiveVersionSignal(
+                modelId = spec.modelId,
+                activeVersion = activeVersion,
+                installedVersions = versions,
+            )?.let { signal -> corruptionSignals += signal }
             val activePath = active?.absolutePath?.trim().orEmpty()
             val activeFile = activePath.takeIf { it.isNotBlank() }?.let(::File)
             val localFileMissing = activeFile
@@ -80,10 +91,19 @@ class AndroidRuntimeProvisioningStore(
                     activeFile = activeFile,
                 )
             }
-            val pathOrigin = resolvePathOrigin(
-                activeVersion = activeVersion,
+            val versionPathOrigins = versions.associate { descriptor ->
+                descriptor.version to resolvePathOriginForVersion(
+                    version = descriptor.version,
+                    absolutePath = descriptor.absolutePath,
+                )
+            }
+            val pathOrigin = active?.let { descriptor ->
+                versionPathOrigins[descriptor.version]
+            } ?: resolvePathOriginForVersion(
+                version = activeVersion,
                 absolutePath = activePath,
             )
+            val resolvedPathOrigin = pathOrigin ?: ModelPathOrigin.MANAGED
             ProvisionedModelState(
                 modelId = spec.modelId,
                 displayName = spec.displayName,
@@ -93,8 +113,9 @@ class AndroidRuntimeProvisioningStore(
                 importedAtEpochMs = active?.importedAtEpochMs,
                 activeVersion = activeVersion,
                 installedVersions = versions,
-                pathOrigin = pathOrigin,
-                storageRootLabel = if (pathOrigin == ModelPathOrigin.MANAGED) storageRootLabel else null,
+                pathOrigin = resolvedPathOrigin,
+                versionPathOrigins = versionPathOrigins,
+                storageRootLabel = if (resolvedPathOrigin == ModelPathOrigin.MANAGED) storageRootLabel else null,
                 localFileMissing = localFileMissing,
             )
         }
@@ -234,6 +255,25 @@ class AndroidRuntimeProvisioningStore(
                 fileSizeBytes = fileSizeBytes.coerceAtLeast(0L),
                 makeActive = makeActive,
             )
+            val mirrored = runCatching {
+                mirrorInstalledModelToDownloads(
+                    spec = spec,
+                    version = result.version,
+                    sourceFile = File(result.absolutePath),
+                )
+            }.getOrElse { error ->
+                Log.w(
+                    LOG_TAG,
+                    "Failed to mirror downloaded model into Downloads for ${spec.modelId}@${result.version}: ${error.message}",
+                )
+                false
+            }
+            if (!mirrored) {
+                Log.w(
+                    LOG_TAG,
+                    "Skipping Downloads mirror for ${spec.modelId}@${result.version}; install remains available in managed storage.",
+                )
+            }
             result
         }
     }
@@ -743,11 +783,11 @@ class AndroidRuntimeProvisioningStore(
         return candidatePath == rootPath || candidatePath.startsWith("$rootPath${File.separator}")
     }
 
-    private fun resolvePathOrigin(
-        activeVersion: String?,
+    private fun resolvePathOriginForVersion(
+        version: String?,
         absolutePath: String,
     ): String {
-        if (activeVersion == PROVISIONING_DISCOVERED_VERSION_FALLBACK) {
+        if (version == PROVISIONING_DISCOVERED_VERSION_FALLBACK) {
             return ModelPathOrigin.DISCOVERED_RECOVERED
         }
         if (absolutePath.isBlank()) {
@@ -887,6 +927,130 @@ class AndroidRuntimeProvisioningStore(
         return root
     }
 
+    private fun mirrorInstalledModelToDownloads(
+        spec: ModelSpec,
+        version: String,
+        sourceFile: File,
+    ): Boolean {
+        if (!sourceFile.exists() || !sourceFile.isFile) {
+            return false
+        }
+        val fileName = fileNameForVersion(spec = spec, version = version)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (mirrorToPublicDownloadsViaMediaStore(fileName = fileName, sourceFile = sourceFile)) {
+                return true
+            }
+        }
+        return mirrorToLegacyDownloadsPath(fileName = fileName, sourceFile = sourceFile)
+    }
+
+    private fun mirrorToPublicDownloadsViaMediaStore(fileName: String, sourceFile: File): Boolean {
+        val resolver = context.contentResolver
+        val relativePath = "$DOWNLOADS_ROOT_DIR/${context.packageName}/models/"
+        val existingUri = findDownloadsMediaStoreUri(fileName = fileName, relativePath = relativePath)
+        var insertedUri: Uri? = null
+        val targetUri = existingUri ?: resolver.insert(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
+                put(MediaStore.Downloads.SIZE, sourceFile.length().coerceAtLeast(0L))
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            },
+        )?.also { uri -> insertedUri = uri } ?: return false
+
+        return runCatching {
+            val outputStream = resolver.openOutputStream(targetUri, "w")
+            if (outputStream == null) {
+                throw IllegalStateException("Unable to open destination stream for Downloads mirror.")
+            }
+            outputStream.use { output ->
+                sourceFile.inputStream().buffered().use { input ->
+                    val buffer = ByteArray(PROVISIONING_COPY_BUFFER_SIZE_BYTES)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) {
+                            break
+                        }
+                        output.write(buffer, 0, read)
+                    }
+                    output.flush()
+                }
+            }
+            resolver.update(
+                targetUri,
+                ContentValues().apply {
+                    put(MediaStore.Downloads.IS_PENDING, 0)
+                    put(MediaStore.Downloads.SIZE, sourceFile.length().coerceAtLeast(0L))
+                },
+                null,
+                null,
+            )
+            true
+        }.getOrElse {
+            insertedUri?.let { uri ->
+                runCatching { resolver.delete(uri, null, null) }
+            }
+            false
+        }
+    }
+
+    private fun findDownloadsMediaStoreUri(fileName: String, relativePath: String): Uri? {
+        val resolver = context.contentResolver
+        val projection = arrayOf(MediaStore.Downloads._ID)
+        val selection = "${MediaStore.Downloads.DISPLAY_NAME} = ? AND ${MediaStore.Downloads.RELATIVE_PATH} = ?"
+        val selectionArgs = arrayOf(fileName, relativePath)
+        resolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            projection,
+            selection,
+            selectionArgs,
+            null,
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) {
+                return null
+            }
+            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+            val id = cursor.getLong(idIndex)
+            return ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+        }
+        return null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun mirrorToLegacyDownloadsPath(fileName: String, sourceFile: File): Boolean {
+        val downloadsRoot = Environment.getExternalStoragePublicDirectory(DOWNLOADS_ROOT_DIR) ?: return false
+        val modelDir = File(downloadsRoot, "${context.packageName}/models")
+        if (!modelDir.exists() && !modelDir.mkdirs()) {
+            return false
+        }
+        val destinationFile = File(modelDir, fileName)
+        val tempFile = File(modelDir, ".${fileName}.tmp")
+        return runCatching {
+            sourceFile.inputStream().buffered().use { input ->
+                tempFile.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(PROVISIONING_COPY_BUFFER_SIZE_BYTES)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) {
+                            break
+                        }
+                        output.write(buffer, 0, read)
+                    }
+                    output.flush()
+                }
+            }
+            if (destinationFile.exists()) {
+                destinationFile.delete()
+            }
+            tempFile.renameTo(destinationFile)
+        }.getOrElse {
+            tempFile.takeIf { it.exists() }?.delete()
+            false
+        }
+    }
+
     private fun lockForModel(modelId: String): Any {
         return synchronized(modelLocks) {
             modelLocks.getOrPut(modelId) { Any() }
@@ -901,6 +1065,8 @@ class AndroidRuntimeProvisioningStore(
     }
 
     companion object {
+        private const val LOG_TAG = "RuntimeProvisioningStore"
+        private val DOWNLOADS_ROOT_DIR = Environment.DIRECTORY_DOWNLOADS
         private val SHA256_HEX_REGEX = Regex("^[a-fA-F0-9]{64}$")
 
         internal fun baselineModelIdsForTesting(): Set<String> {
@@ -911,4 +1077,23 @@ class AndroidRuntimeProvisioningStore(
             return provisioningLegacyPathKeyForTesting(modelId)
         }
     }
+}
+
+internal fun staleActiveVersionSignal(
+    modelId: String,
+    activeVersion: String?,
+    installedVersions: List<ModelVersionDescriptor>,
+): ProvisioningRecoverySignal? {
+    val normalizedActiveVersion = activeVersion?.trim().orEmpty()
+    if (normalizedActiveVersion.isEmpty()) {
+        return null
+    }
+    if (installedVersions.any { descriptor -> descriptor.version == normalizedActiveVersion }) {
+        return null
+    }
+    return ProvisioningRecoverySignal(
+        code = "MODEL_ACTIVE_VERSION_STALE",
+        message = "Active model version pointer is stale for $modelId. Re-activate an installed version.",
+        technicalDetail = "model=$modelId;active_version=$normalizedActiveVersion;installed_versions=${installedVersions.joinToString(separator = ",") { version -> version.version }}",
+    )
 }
