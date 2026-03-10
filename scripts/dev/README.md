@@ -203,6 +203,19 @@ Common options:
 3. `--pattern "<regex>"` to tune crash/runtime signature detection.
 4. `-- --format junit` to pass extra flags through to `maestro test`.
 
+GPU probe reason check (log-based, reason-disambiguated):
+
+```bash
+bash scripts/dev/gpu-probe-reason-check.sh --expect PROBE_PROCESS_DIED,MODEL_UNAVAILABLE
+```
+
+Notes:
+
+1. This command reads `RuntimeGateway` `GPU_OFFLOAD|eligibility` log lines and asserts `probe_reason`, instead of relying on fragile UI text variants.
+2. Add `--clear-state` when you want a clean first-run expectation (for example `MODEL_UNAVAILABLE` before model provisioning).
+3. `scoped-repro` may still report crash signatures (exit `86`) for `PROBE_PROCESS_DIED`; this wrapper treats that as expected when the parsed reason matches expectations.
+4. Add `--strict-maestro-exit` if you also want to fail on scoped Maestro run exit codes (default behavior is reason-first validation).
+
 Screenshot pack workflow:
 
 ```bash

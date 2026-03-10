@@ -5,7 +5,8 @@ Real Android app module for instrumentation-ready execution (`test` + `androidTe
 ## Source of truth
 
 - Dev/test commands: `scripts/dev/README.md`
-- Android workflow details: `docs/testing/android-dx-and-test-playbook.md`
+- Android workflow details: `docs/testing/runbooks.md`
+- Runtime diagnostics and tuning debug guide: `docs/testing/runtime-tuning-debugging.md`
 
 ## Role
 

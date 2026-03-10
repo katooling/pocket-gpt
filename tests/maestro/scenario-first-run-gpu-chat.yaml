@@ -98,6 +98,11 @@ appId: com.pocketagent.android
       visible: "GPU acceleration unavailable on this build/device"
     commands:
       - assertVisible: "GPU acceleration unavailable on this build/device"
+- runFlow:
+    when:
+      visible: "GPU acceleration unavailable ("
+    commands:
+      - assertVisible: "GPU acceleration unavailable ("
 - back
 - tapOn: "Message"
 - eraseText

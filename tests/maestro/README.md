@@ -17,6 +17,7 @@ Source of truth for execution commands and cloud guidance:
 5. `scenario-activation-send-smoke.yaml`: activation + send recovery smoke
 6. `scenario-first-run-download-chat.yaml`: clean install -> first-run download -> runtime ready -> send smoke
 7. `scenario-first-run-gpu-chat.yaml`: clean install -> first-run setup -> enable GPU acceleration -> send smoke
+8. `scenario-gpu-probe-status.yaml`: open Advanced controls and drive GPU probe status updates for log-based reason validation
 
 ## Contract Notes
 
@@ -29,5 +30,7 @@ Source of truth for execution commands and cloud guidance:
 ## Scoped Debug Flows
 
 1. For short-lived bug investigations, create minimal one-path flows in `tmp/` and pair them with explicit logcat capture (see `docs/testing/runbooks.md` "Scoped Device Crash Repro").
-2. Keep `tests/maestro/` for stable, repeatable contract flows that are expected to run in lanes/CI and during release validation.
-3. If a scoped debug flow proves a recurring product risk, promote it into `tests/maestro/` and keep selectors/assertions deterministic.
+2. Scoped `tmp/` flows should start with two YAML comment lines (`title` and `description`) so intent is obvious in reruns/artifacts.
+3. GPU qualification UI strings can be reason-specific (for example `GPU acceleration unavailable (<reason>)`) or generic build/device text; scoped assertions should account for both when validating compatibility outcomes.
+4. Keep `tests/maestro/` for stable, repeatable contract flows that are expected to run in lanes/CI and during release validation.
+5. If a scoped debug flow proves a recurring product risk, promote it into `tests/maestro/` and keep selectors/assertions deterministic.

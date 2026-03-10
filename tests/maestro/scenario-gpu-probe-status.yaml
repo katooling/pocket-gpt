@@ -1,0 +1,49 @@
+appId: com.pocketagent.android
+---
+- launchApp:
+    clearState: false
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- runFlow:
+    when:
+      visible: "Get started"
+    commands:
+      - tapOn: "Get started"
+- runFlow:
+    when:
+      visible: "Runtime: Error"
+    commands:
+      - tapOn: "Refresh runtime checks"
+- runFlow:
+    when:
+      visible: "Open advanced controls"
+    commands:
+      - tapOn: "Open advanced controls"
+- runFlow:
+    when:
+      visible: "Advanced"
+    commands:
+      - tapOn: "Advanced"
+- assertVisible: "Advanced controls"
+- runFlow:
+    when:
+      visible: "Validating GPU support..."
+    commands:
+      - extendedWaitUntil:
+          notVisible: "Validating GPU support..."
+          timeout: 300000
+- runFlow:
+    when:
+      visible: "Enable GPU acceleration"
+    commands:
+      - tapOn: "Enable GPU acceleration"
+- runFlow:
+    when:
+      visible: "Validating GPU support..."
+    commands:
+      - extendedWaitUntil:
+          notVisible: "Validating GPU support..."
+          timeout: 300000
