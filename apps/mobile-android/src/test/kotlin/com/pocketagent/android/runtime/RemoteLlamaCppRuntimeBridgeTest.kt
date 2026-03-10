@@ -76,10 +76,30 @@ class RemoteLlamaCppRuntimeBridgeTest {
     }
 
     @Test
-    fun `runtime mode defaults to remote and honors in process override`() {
-        assertEquals("remote", resolveAndroidRuntimeMode(emptyMap()))
-        assertEquals("in_process", resolveAndroidRuntimeMode(mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "in_process")))
-        assertEquals("remote", resolveAndroidRuntimeMode(mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "unexpected")))
+    fun `runtime mode defaults to in process for debug and honors explicit override`() {
+        assertEquals("in_process", resolveAndroidRuntimeMode(emptyMap(), debugBuild = true))
+        assertEquals("remote", resolveAndroidRuntimeMode(emptyMap(), debugBuild = false))
+        assertEquals(
+            "in_process",
+            resolveAndroidRuntimeMode(
+                mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "in_process"),
+                debugBuild = false,
+            ),
+        )
+        assertEquals(
+            "remote",
+            resolveAndroidRuntimeMode(
+                mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "remote"),
+                debugBuild = true,
+            ),
+        )
+        assertEquals(
+            "in_process",
+            resolveAndroidRuntimeMode(
+                mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "unexpected"),
+                debugBuild = true,
+            ),
+        )
     }
 }
 

@@ -41,7 +41,12 @@ class GatewayAdaptersTest {
     @Test
     fun `mvp runtime gateway delegates typed calls to facade`() = runTest {
         val facade = RecordingMvpRuntimeFacade()
-        val gateway = MvpRuntimeGateway(facade)
+        val gateway = MvpRuntimeGateway(
+            facade = facade,
+            runtimeTuning = object : RuntimeTuning {
+                override fun diagnosticsReport(): String = "RUNTIME_TUNING|model=qwen|benchmark_win_count=2"
+            },
+        )
         val sessionId = gateway.createSession()
         gateway.setRoutingMode(RoutingMode.QWEN_2B)
 
@@ -80,6 +85,7 @@ class GatewayAdaptersTest {
         assertEquals(listOf("ok"), checks)
         assertTrue(diagnostics.startsWith("diag=ok"))
         assertTrue(diagnostics.contains("GPU_OFFLOAD|runtime_supported="))
+        assertTrue(diagnostics.contains("RUNTIME_TUNING|model=qwen|benchmark_win_count=2"))
         assertEquals("calculator", facade.lastToolName)
         assertEquals("/tmp/a.jpg", facade.lastImagePath)
     }

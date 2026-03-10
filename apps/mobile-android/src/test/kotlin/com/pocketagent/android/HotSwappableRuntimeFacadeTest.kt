@@ -5,7 +5,10 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.RuntimeResourceControl
+import com.pocketagent.runtime.RuntimeWarmupSupport
 import com.pocketagent.runtime.StreamChatRequestV2
+import com.pocketagent.runtime.WarmupResult
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -50,6 +53,25 @@ class HotSwappableRuntimeFacadeTest {
             executor.shutdownNow()
         }
     }
+
+    @Test
+    fun `eviction delegates to resource-control facade`() {
+        val hotSwap = HotSwappableRuntimeFacade(ResourceControlStubFacade())
+
+        val evicted = (hotSwap as RuntimeResourceControl).evictResidentModel("trim_memory")
+
+        assertTrue(evicted)
+    }
+
+    @Test
+    fun `warmup delegates to warmup-capable facade`() {
+        val hotSwap = HotSwappableRuntimeFacade(WarmupStubFacade())
+
+        val result = (hotSwap as RuntimeWarmupSupport).warmupActiveModel()
+
+        assertTrue(result.warmed)
+        assertTrue(result.attempted)
+    }
 }
 
 private open class StubFacade(
@@ -93,5 +115,21 @@ private class BlockingFacade(
         callStarted.countDown()
         releaseCall.await(2, TimeUnit.SECONDS)
         return super.createSession()
+    }
+}
+
+private class ResourceControlStubFacade : StubFacade(), RuntimeResourceControl {
+    override fun evictResidentModel(reason: String): Boolean = true
+}
+
+private class WarmupStubFacade : StubFacade(), RuntimeWarmupSupport {
+    override fun warmupActiveModel(): WarmupResult {
+        return WarmupResult(
+            attempted = true,
+            warmed = true,
+            residentHit = false,
+            loadDurationMs = 5L,
+            warmupDurationMs = 5L,
+        )
     }
 }
