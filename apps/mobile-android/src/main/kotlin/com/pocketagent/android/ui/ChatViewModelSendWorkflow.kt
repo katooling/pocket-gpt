@@ -28,22 +28,10 @@ internal fun ChatViewModel.sendMessageInternal() {
 
     if (!sendFlow.isRuntimeReadyForSend(snapshot.runtime)) {
         val uiError = startupFlow.startupBlockError(snapshot.runtime)
-        appendSystemMessage(
+        applyBlockedRuntimeGuardrail(
             sessionId = activeSession.id,
-            content = formatUserFacingError(uiError),
+            uiError = uiError,
         )
-        _uiState.update { state ->
-            state.copy(
-                runtime = state.runtime.copy(
-                    modelRuntimeStatus = if (state.runtime.startupProbeState == StartupProbeState.RUNNING) {
-                        ModelRuntimeStatus.LOADING
-                    } else {
-                        ModelRuntimeStatus.NOT_READY
-                    },
-                ).withUiError(uiError),
-            )
-        }
-        persistState()
         return
     }
     val performancePlan = sendFlow.resolvePerformancePlan(
@@ -201,6 +189,7 @@ internal fun ChatViewModel.sendMessageInternal() {
             runCatching { runtimeFacade.gpuOffloadStatus() }
                 .getOrNull()
                 ?.let { probe -> updateRuntimeGpuProbeState(probe) }
+            refreshRuntimeDiagnostics()
             persistState()
         }
 
@@ -292,6 +281,7 @@ internal fun ChatViewModel.sendMessageInternal() {
                 runtimeStats = resolvedRuntimeStats,
                 thermalThrottled = deviceStateProvider.current().thermalLevel >= 5,
             )
+            refreshRuntimeDiagnostics()
             persistState()
             maybeAdvanceAfterAssistantResponse()
         }

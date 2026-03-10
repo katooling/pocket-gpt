@@ -5,15 +5,18 @@ import androidx.lifecycle.ViewModelProvider
 import com.pocketagent.android.runtime.RuntimeGateway
 import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.controllers.DeviceStateProvider
+import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.FirstSessionTelemetryEvent
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
+import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.state.UiError
 import java.time.Instant
 import java.util.UUID
 import com.pocketagent.runtime.RuntimePerformanceProfile
+import kotlinx.coroutines.flow.update
 
 internal const val LOG_TAG = "ChatViewModel"
 internal const val TITLE_MAX_CHARS = 42
@@ -64,6 +67,28 @@ internal fun RuntimeUiState.withUiError(error: UiError?): RuntimeUiState {
 
 internal fun formatUserFacingError(error: UiError): String {
     return "${error.userMessage} (${error.code})"
+}
+
+internal fun ChatViewModel.applyBlockedRuntimeGuardrail(
+    sessionId: String,
+    uiError: UiError,
+) {
+    appendSystemMessage(
+        sessionId = sessionId,
+        content = formatUserFacingError(uiError),
+    )
+    _uiState.update { state ->
+        state.copy(
+            runtime = state.runtime.copy(
+                modelRuntimeStatus = if (state.runtime.startupProbeState == StartupProbeState.RUNNING) {
+                    ModelRuntimeStatus.LOADING
+                } else {
+                    ModelRuntimeStatus.NOT_READY
+                },
+            ).withUiError(uiError),
+        )
+    }
+    persistState()
 }
 
 internal fun performanceProfileStatusDetail(

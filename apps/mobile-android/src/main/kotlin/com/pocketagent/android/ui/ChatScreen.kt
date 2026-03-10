@@ -59,9 +59,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.ui.state.ChatGatePrimaryAction
+import com.pocketagent.android.ui.state.ChatGateState
+import com.pocketagent.android.ui.state.ChatGateStatus
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.MessageRole
+import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
@@ -75,6 +79,8 @@ internal fun ChatScreenBody(
     canLoadLastUsedModel: Boolean,
     lastUsedModelLabel: String?,
     onLoadLastUsedModel: () -> Unit,
+    activeRuntimeModelLabel: String?,
+    activeRuntimeModelSourceLabel: String?,
     onOpenAdvanced: () -> Unit,
     onRefreshRuntimeChecks: () -> Unit,
     modifier: Modifier = Modifier,
@@ -91,12 +97,15 @@ internal fun ChatScreenBody(
             canLoadLastUsedModel = canLoadLastUsedModel,
             lastUsedModelLabel = lastUsedModelLabel,
             onLoadLastUsedModel = onLoadLastUsedModel,
+            activeRuntimeModelLabel = activeRuntimeModelLabel,
+            activeRuntimeModelSourceLabel = activeRuntimeModelSourceLabel,
             onOpenAdvanced = onOpenAdvanced,
             onRefreshRuntimeChecks = onRefreshRuntimeChecks,
         )
         Spacer(modifier = Modifier.height(8.dp))
         MessageList(
             activeSession = state.activeSession,
+            runtimeStatusDetail = state.runtime.modelStatusDetail,
             onSuggestedPrompt = onSuggestedPrompt,
             modifier = Modifier
                 .fillMaxWidth()
@@ -115,6 +124,8 @@ private fun OfflineAndStatusHeader(
     canLoadLastUsedModel: Boolean,
     lastUsedModelLabel: String?,
     onLoadLastUsedModel: () -> Unit,
+    activeRuntimeModelLabel: String?,
+    activeRuntimeModelSourceLabel: String?,
     onOpenAdvanced: () -> Unit,
     onRefreshRuntimeChecks: () -> Unit,
 ) {
@@ -128,6 +139,8 @@ private fun OfflineAndStatusHeader(
         ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
     }
     val backendLabel = state.runtime.runtimeBackend?.trim().orEmpty()
+    val backendProfileLabel = resolveBackendProfileLabel(state.runtime.backendProfile)
+    val compiledBackendsLabel = state.runtime.compiledBackend?.trim().orEmpty()
 
     @Composable
     fun StatusChips() {
@@ -188,6 +201,32 @@ private fun OfflineAndStatusHeader(
                     },
                 )
             }
+            if (!activeRuntimeModelLabel.isNullOrBlank()) {
+                AssistChip(
+                    onClick = { },
+                    label = {
+                        StatusChipLabel(
+                            text = stringResource(
+                                id = R.string.ui_active_runtime_model_chip,
+                                activeRuntimeModelLabel,
+                            ),
+                        )
+                    },
+                )
+            }
+            if (!activeRuntimeModelSourceLabel.isNullOrBlank()) {
+                AssistChip(
+                    onClick = { },
+                    label = {
+                        StatusChipLabel(
+                            text = stringResource(
+                                id = R.string.ui_active_runtime_source_chip,
+                                activeRuntimeModelSourceLabel,
+                            ),
+                        )
+                    },
+                )
+            }
         }
     }
 
@@ -215,6 +254,81 @@ private fun OfflineAndStatusHeader(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+        }
+    }
+    val showBackendDiagnostics = backendProfileLabel.isNotEmpty() ||
+        compiledBackendsLabel.isNotEmpty() ||
+        state.runtime.nativeRuntimeSupported != null ||
+        state.runtime.strictAcceleratorFailFast != null ||
+        state.runtime.autoBackendCpuFallback != null
+    if (showBackendDiagnostics) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Card(modifier = Modifier.testTag("runtime_backend_diagnostics_card")) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.ui_runtime_technical_details_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                if (backendProfileLabel.isNotEmpty()) {
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_runtime_technical_backend_profile,
+                            backendProfileLabel,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (compiledBackendsLabel.isNotEmpty()) {
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_runtime_technical_compiled_backends,
+                            compiledBackendsLabel,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                state.runtime.nativeRuntimeSupported?.let { supported ->
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_runtime_technical_native_support,
+                            if (supported) {
+                                stringResource(id = R.string.ui_runtime_technical_yes)
+                            } else {
+                                stringResource(id = R.string.ui_runtime_technical_no)
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                state.runtime.strictAcceleratorFailFast?.let { strict ->
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_runtime_technical_strict_policy,
+                            if (strict) {
+                                stringResource(id = R.string.ui_runtime_technical_yes)
+                            } else {
+                                stringResource(id = R.string.ui_runtime_technical_no)
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                state.runtime.autoBackendCpuFallback?.let { fallback ->
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_runtime_technical_auto_fallback,
+                            if (fallback) {
+                                stringResource(id = R.string.ui_runtime_technical_yes)
+                            } else {
+                                stringResource(id = R.string.ui_runtime_technical_no)
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         }
     }
 
@@ -279,11 +393,16 @@ private fun OfflineAndStatusHeader(
                         }
                         if (canLoadLastUsedModel) {
                             OutlinedButton(onClick = onLoadLastUsedModel) {
+                                val label = lastUsedModelLabel?.takeIf { it.isNotBlank() }
                                 Text(
-                                    stringResource(
-                                        id = R.string.ui_model_runtime_load_last_used_short,
-                                        lastUsedModelLabel.orEmpty(),
-                                    ),
+                                    if (label != null) {
+                                        stringResource(
+                                            id = R.string.ui_model_runtime_load_last_used_short,
+                                            label,
+                                        )
+                                    } else {
+                                        stringResource(id = R.string.ui_model_runtime_load_last_used)
+                                    },
                                 )
                             }
                         }
@@ -357,6 +476,21 @@ private fun OfflineAndStatusHeader(
     }
 }
 
+@Composable
+private fun resolveBackendProfileLabel(profile: String?): String {
+    val normalized = profile?.trim()?.lowercase().orEmpty()
+    if (normalized.isEmpty()) {
+        return ""
+    }
+    return when (normalized) {
+        "auto" -> stringResource(id = R.string.ui_gpu_backend_auto)
+        "hexagon" -> stringResource(id = R.string.ui_gpu_backend_hexagon)
+        "opencl" -> stringResource(id = R.string.ui_gpu_backend_opencl)
+        "cpu" -> stringResource(id = R.string.ui_gpu_backend_cpu)
+        else -> profile.orEmpty()
+    }
+}
+
 private fun RuntimeUiState.recoveryHintTextResId(): Int {
     val nativeRuntimeMissing = lastErrorTechnicalDetail
         ?.contains("libpocket_llama.so", ignoreCase = true) == true ||
@@ -386,6 +520,7 @@ private fun StatusChipLabel(text: String) {
 @Composable
 private fun MessageList(
     activeSession: ChatSessionUiModel?,
+    runtimeStatusDetail: String?,
     onSuggestedPrompt: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -498,7 +633,11 @@ private fun MessageList(
                         } else {
                             message.content
                         }
-                        MarkdownMessageContent(content = content)
+                        if (shouldRenderInThreadLoadingPlaceholder(message)) {
+                            InThreadLoadingPlaceholder(runtimeStatusDetail = runtimeStatusDetail)
+                        } else {
+                            MarkdownMessageContent(content = content)
+                        }
                         if (message.content.isNotBlank()) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(
@@ -521,6 +660,28 @@ private fun MessageList(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun InThreadLoadingPlaceholder(runtimeStatusDetail: String?) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = stringResource(id = R.string.ui_chat_loading_placeholder_title),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        runtimeStatusDetail
+            ?.takeIf { detail -> detail.isNotBlank() }
+            ?.let { detail ->
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
     }
 }
 
@@ -615,63 +776,158 @@ private fun renderInlineBold(text: String): AnnotatedString {
 internal fun ComposerBar(
     text: String,
     isSending: Boolean,
-    isSendAllowed: Boolean,
-    isModelActionsReady: Boolean,
+    chatGateState: ChatGateState,
     onTextChanged: (String) -> Unit,
     onSend: () -> Unit,
     onCancelSend: () -> Unit,
     onAttachImage: () -> Unit,
+    onBlockedAction: (ChatGatePrimaryAction) -> Unit,
 ) {
+    val canTriggerBlockedAction = hasChatGatePrimaryAction(chatGateState)
+    val canTriggerUserAction = chatGateState.isReady || canTriggerBlockedAction
     val sendStateDescription = when {
         isSending -> stringResource(id = R.string.a11y_send_state_sending)
-        !isSendAllowed -> stringResource(id = R.string.a11y_send_state_runtime_not_ready)
+        !chatGateState.isReady -> stringResource(id = R.string.a11y_send_state_runtime_not_ready)
         text.isBlank() -> stringResource(id = R.string.a11y_send_state_disabled)
         else -> stringResource(id = R.string.a11y_send_state_enabled)
     }
     val attachImageDescription = stringResource(id = R.string.a11y_attach_image)
     val sendButtonDescription = stringResource(id = R.string.a11y_send_button)
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(
-            onClick = onAttachImage,
-            enabled = !isSending && isModelActionsReady,
-        ) {
-            Icon(Icons.Default.Image, contentDescription = attachImageDescription)
+        if (shouldShowChatGateInlineCard(chatGateState)) {
+            ChatGateInlineCard(
+                chatGateState = chatGateState,
+                onPrimaryAction = onBlockedAction,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
         }
-        OutlinedTextField(
-            value = text,
-            onValueChange = onTextChanged,
-            modifier = Modifier
-                .weight(1f)
-                .testTag("composer_input"),
-            label = { Text(stringResource(id = R.string.ui_composer_label)) },
-            enabled = !isSending,
-            maxLines = 4,
-        )
-        Button(
-            modifier = Modifier
-                .testTag("send_button")
-                .semantics {
-                    contentDescription = sendButtonDescription
-                    stateDescription = sendStateDescription
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            IconButton(
+                onClick = {
+                    if (chatGateState.isReady) {
+                        onAttachImage()
+                    } else {
+                        onBlockedAction(chatGateState.primaryAction)
+                    }
                 },
-            onClick = if (isSending) onCancelSend else onSend,
-            enabled = if (isSending) true else text.isNotBlank() && isSendAllowed,
+                enabled = !isSending && canTriggerUserAction,
+            ) {
+                Icon(Icons.Default.Image, contentDescription = attachImageDescription)
+            }
+            OutlinedTextField(
+                value = text,
+                onValueChange = onTextChanged,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("composer_input"),
+                label = { Text(stringResource(id = R.string.ui_composer_label)) },
+                enabled = !isSending,
+                maxLines = 4,
+            )
+            Button(
+                modifier = Modifier
+                    .testTag("send_button")
+                    .semantics {
+                        contentDescription = sendButtonDescription
+                        stateDescription = sendStateDescription
+                    },
+                onClick = {
+                    if (isSending) {
+                        onCancelSend()
+                    } else if (chatGateState.isReady) {
+                        onSend()
+                    } else {
+                        onBlockedAction(chatGateState.primaryAction)
+                    }
+                },
+                enabled = if (isSending) true else text.isNotBlank() && canTriggerUserAction,
+            ) {
+                Text(
+                    stringResource(
+                        id = if (isSending) {
+                            R.string.ui_cancel_button
+                        } else {
+                            R.string.ui_send_button
+                        },
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatGateInlineCard(
+    chatGateState: ChatGateState,
+    onPrimaryAction: (ChatGatePrimaryAction) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("chat_gate_inline_card"),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                stringResource(
-                    id = if (isSending) {
-                        R.string.ui_cancel_button
-                    } else {
-                        R.string.ui_send_button
-                    },
-                ),
+                text = chatGateInlineMessage(chatGateState = chatGateState),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            chatGatePrimaryActionLabelResId(chatGateState.primaryAction)?.let { labelId ->
+                OutlinedButton(
+                    onClick = { onPrimaryAction(chatGateState.primaryAction) },
+                ) {
+                    Text(stringResource(id = labelId))
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun chatGateInlineMessage(chatGateState: ChatGateState): String {
+    return when (chatGateState.status) {
+        ChatGateStatus.READY -> ""
+        ChatGateStatus.BLOCKED_MODEL_MISSING -> stringResource(id = R.string.ui_chat_gate_blocked_model_missing)
+        ChatGateStatus.BLOCKED_RUNTIME_CHECK -> stringResource(id = R.string.ui_chat_gate_blocked_runtime_check)
+        ChatGateStatus.LOADING_MODEL -> chatGateState.detail
+            ?.takeIf { detail -> detail.isNotBlank() }
+            ?: stringResource(id = R.string.ui_chat_gate_loading)
+        ChatGateStatus.ERROR_RECOVERABLE -> chatGateState.detail
+            ?.takeIf { detail -> detail.isNotBlank() }
+            ?: stringResource(id = R.string.ui_chat_gate_recoverable)
+    }
+}
+
+internal fun shouldShowChatGateInlineCard(chatGateState: ChatGateState): Boolean {
+    return chatGateState.status != ChatGateStatus.READY
+}
+
+internal fun shouldRenderInThreadLoadingPlaceholder(message: MessageUiModel): Boolean {
+    return message.role == MessageRole.ASSISTANT &&
+        message.isStreaming &&
+        message.content.isBlank()
+}
+
+internal fun hasChatGatePrimaryAction(chatGateState: ChatGateState): Boolean {
+    return chatGateState.primaryAction != ChatGatePrimaryAction.NONE
+}
+
+internal fun chatGatePrimaryActionLabelResId(action: ChatGatePrimaryAction): Int? {
+    return when (action) {
+        ChatGatePrimaryAction.NONE -> null
+        ChatGatePrimaryAction.GET_READY -> R.string.ui_get_ready
+        ChatGatePrimaryAction.OPEN_MODEL_SETUP -> R.string.ui_open_model_setup
+        ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS -> R.string.ui_refresh_runtime_checks
     }
 }

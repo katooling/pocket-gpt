@@ -125,7 +125,10 @@ class ChatViewModel(
         startupReadinessCoordinator = startupReadinessCoordinator,
         updateState = { transform -> _uiState.update(transform) },
         onPersist = { persistState() },
-        onProbeApplied = { refreshGpuProbeStatusIfPending() },
+        onProbeApplied = {
+            refreshGpuProbeStatusIfPending()
+            refreshRuntimeDiagnostics()
+        },
         log = { phase, probeToken, detail, error ->
             logStartupProbe(
                 phase = phase,
@@ -223,14 +226,10 @@ class ChatViewModel(
         val activeSession = snapshot.activeSession ?: return
         if (!sendFlow.isRuntimeReadyForSend(snapshot.runtime)) {
             val uiError = startupFlow.startupBlockError(snapshot.runtime)
-            appendSystemMessage(
+            applyBlockedRuntimeGuardrail(
                 sessionId = activeSession.id,
-                content = formatUserFacingError(uiError),
+                uiError = uiError,
             )
-            _uiState.update { state ->
-                state.copy(runtime = state.runtime.withUiError(uiError))
-            }
-            persistState()
             return
         }
         val imageMessage = createMessage(
@@ -599,6 +598,7 @@ class ChatViewModel(
         val loadedState = persistenceFlow.loadBootstrapState()
         val bootstrapResult = startupFlow.bootstrap(loadedState)
         _uiState.value = bootstrapResult.state
+        refreshRuntimeDiagnostics()
         refreshGpuProbeStatusIfPending()
         ensureSimpleFirstEnteredTelemetryIfNeeded()
         if (bootstrapResult.shouldPersist) {
@@ -663,6 +663,27 @@ class ChatViewModel(
             }
         }
         return changed
+    }
+
+    internal fun refreshRuntimeDiagnostics() {
+        viewModelScope.launch(ioDispatcher) {
+            val diagnostics = runCatching { runtimeFacade.runtimeDiagnosticsSnapshot() }
+                .getOrDefault(com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshot())
+            _uiState.update { state ->
+                state.copy(
+                    runtime = state.runtime.copy(
+                        backendProfile = diagnostics.backendProfile ?: state.runtime.backendProfile,
+                        compiledBackend = diagnostics.compiledBackend ?: state.runtime.compiledBackend,
+                        nativeRuntimeSupported = diagnostics.nativeRuntimeSupported
+                            ?: state.runtime.nativeRuntimeSupported,
+                        strictAcceleratorFailFast = diagnostics.strictAcceleratorFailFast
+                            ?: state.runtime.strictAcceleratorFailFast,
+                        autoBackendCpuFallback = diagnostics.autoBackendCpuFallback
+                            ?: state.runtime.autoBackendCpuFallback,
+                    ),
+                )
+            }
+        }
     }
 
     private fun logStartupProbe(

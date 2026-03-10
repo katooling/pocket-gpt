@@ -46,13 +46,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.R
+import com.pocketagent.android.runtime.ModelPathOrigin
+import com.pocketagent.android.runtime.MODEL_OFFLOAD_REASON_MANUAL
+import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
-import com.pocketagent.android.ui.state.ModelRuntimeStatus
-import com.pocketagent.android.ui.state.StartupProbeState
+import com.pocketagent.android.ui.state.ChatGatePrimaryAction
+import com.pocketagent.android.ui.state.resolveChatGateState
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.launch
 
@@ -70,13 +73,23 @@ fun PocketAgentApp(
     val modelDistributionManifest = provisioningState.manifest
     val modelImportInProgress = provisioningState.isImporting
     val modelProvisioningStatus = provisioningState.statusMessage
+    val chatGateState = resolveChatGateState(
+        runtime = state.runtime,
+        provisioningSnapshot = provisioningSnapshot,
+        advancedUnlocked = state.advancedUnlocked,
+    )
+    val activeRuntimeModelLabel = provisioningState.lifecycle.loadedModel?.let { model ->
+        "${model.modelId} ${model.modelVersion.orEmpty()}".trim()
+    }
+    val activeRuntimeModelSourceLabel = resolveLoadedModelSourceLabel(
+        context = context,
+        snapshot = provisioningSnapshot,
+        loadedModelId = provisioningState.lifecycle.loadedModel?.modelId,
+        loadedModelVersion = provisioningState.lifecycle.loadedModel?.modelVersion,
+    )
     val drawerState = rememberDrawerState(
         initialValue = if (state.isSessionDrawerOpen) DrawerValue.Open else DrawerValue.Closed,
     )
-    val runtimeReadyForSend = state.runtime.startupProbeState == StartupProbeState.READY &&
-        state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
-    val runtimeReadyForModelActions = state.runtime.startupProbeState == StartupProbeState.READY &&
-        state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
     val canLoadLastUsedModel = provisioningState.lifecycle.loadedModel == null &&
         provisioningState.lifecycle.lastUsedModel != null &&
         provisioningState.lifecycle.state != com.pocketagent.nativebridge.ModelLifecycleState.LOADING
@@ -91,6 +104,72 @@ fun PocketAgentApp(
     var readinessRefreshSequence by remember { mutableStateOf(0L) }
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
     val defaultGetReadyModelId = remember { resolveDefaultGetReadyModelId(isDebugBuild = BuildConfig.DEBUG) }
+    val openModelSetupAction: () -> Unit = {
+        provisioningViewModel.refreshSnapshot()
+        modelSheetOpen = true
+    }
+    val refreshRuntimeChecksAction: () -> Unit = {
+        viewModel.refreshRuntimeReadiness()
+        provisioningViewModel.refreshSnapshot()
+        provisioningViewModel.setStatusMessage(
+            context.getString(R.string.ui_model_refresh_runtime_feedback),
+        )
+    }
+    val runGetReadyFlow: () -> Unit = {
+        scope.launch {
+            viewModel.onGetReadyTapped()
+            provisioningViewModel.setStatusMessage(context.getString(R.string.ui_get_ready_started_status))
+            provisioningViewModel.refreshManifest()
+            val manifest = provisioningViewModel.uiState.value.manifest
+            val defaultVersion = resolveDefaultGetReadyVersion(
+                manifest = manifest,
+                defaultModelId = defaultGetReadyModelId,
+            )
+            if (defaultVersion == null) {
+                provisioningViewModel.setStatusMessage(
+                    context.getString(R.string.ui_model_downloads_manifest_empty),
+                )
+                modelSheetOpen = true
+                return@launch
+            }
+
+            val existingVersion = provisioningViewModel.listInstalledVersionsAsync(
+                modelId = defaultVersion.modelId,
+            ).firstOrNull { it.version == defaultVersion.version }
+
+            if (existingVersion != null) {
+                provisioningViewModel.setActiveVersionAsync(
+                    modelId = defaultVersion.modelId,
+                    version = defaultVersion.version,
+                )
+                val activatedMessage = context.getString(
+                    R.string.ui_model_version_activated,
+                    defaultVersion.modelId,
+                    defaultVersion.version,
+                )
+                provisioningViewModel.setStatusMessage(activatedMessage)
+                viewModel.refreshRuntimeReadiness(statusDetailOverride = activatedMessage)
+                return@launch
+            }
+
+            pendingGetReadyActivation = defaultVersion.modelId to defaultVersion.version
+            startModelDownload(
+                context = context,
+                version = defaultVersion,
+                enqueueDownload = provisioningViewModel::enqueueDownload,
+                onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
+            )
+            modelSheetOpen = true
+        }
+    }
+    val onBlockedAction: (ChatGatePrimaryAction) -> Unit = { action ->
+        when (action) {
+            ChatGatePrimaryAction.GET_READY -> runGetReadyFlow()
+            ChatGatePrimaryAction.OPEN_MODEL_SETUP -> openModelSetupAction()
+            ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS -> refreshRuntimeChecksAction()
+            ChatGatePrimaryAction.NONE -> Unit
+        }
+    }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { viewModel.attachImage(it.toString()) }
     }
@@ -295,74 +374,33 @@ fun PocketAgentApp(
                 ComposerBar(
                     text = state.composer.text,
                     isSending = state.composer.isSending,
-                    isSendAllowed = runtimeReadyForSend,
-                    isModelActionsReady = runtimeReadyForModelActions,
+                    chatGateState = chatGateState,
                     onTextChanged = viewModel::onComposerChanged,
                     onSend = viewModel::sendMessage,
                     onCancelSend = viewModel::cancelActiveSend,
-                    onAttachImage = { imagePicker.launch("image/*") },
+                    onAttachImage = {
+                        imagePicker.launch("image/*")
+                    },
+                    onBlockedAction = onBlockedAction,
                 )
             },
         ) { innerPadding ->
             ChatScreenBody(
                 state = state,
                 onSuggestedPrompt = viewModel::prefillComposer,
-                onGetReadyTapped = {
-                    scope.launch {
-                        viewModel.onGetReadyTapped()
-                        provisioningViewModel.setStatusMessage(context.getString(R.string.ui_get_ready_started_status))
-                        provisioningViewModel.refreshManifest()
-                        val manifest = provisioningViewModel.uiState.value.manifest
-                        val defaultVersion = resolveDefaultGetReadyVersion(
-                            manifest = manifest,
-                            defaultModelId = defaultGetReadyModelId,
-                        )
-                        if (defaultVersion == null) {
-                            provisioningViewModel.setStatusMessage(
-                                context.getString(R.string.ui_model_downloads_manifest_empty),
-                            )
-                            modelSheetOpen = true
-                            return@launch
-                        }
-
-                        val existingVersion = provisioningViewModel.listInstalledVersionsAsync(
-                            modelId = defaultVersion.modelId,
-                        ).firstOrNull { it.version == defaultVersion.version }
-
-                        if (existingVersion != null) {
-                            provisioningViewModel.setActiveVersionAsync(
-                                modelId = defaultVersion.modelId,
-                                version = defaultVersion.version,
-                            )
-                            val activatedMessage = context.getString(
-                                R.string.ui_model_version_activated,
-                                defaultVersion.modelId,
-                                defaultVersion.version,
-                            )
-                            provisioningViewModel.setStatusMessage(activatedMessage)
-                            viewModel.refreshRuntimeReadiness(statusDetailOverride = activatedMessage)
-                            return@launch
-                        }
-
-                        pendingGetReadyActivation = defaultVersion.modelId to defaultVersion.version
-                        startModelDownload(
-                            context = context,
-                            version = defaultVersion,
-                            enqueueDownload = provisioningViewModel::enqueueDownload,
-                            onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
-                        )
-                        modelSheetOpen = true
-                    }
-                },
-                onOpenModelSetup = {
-                    provisioningViewModel.refreshSnapshot()
-                    modelSheetOpen = true
-                },
+                onGetReadyTapped = runGetReadyFlow,
+                onOpenModelSetup = openModelSetupAction,
                 canLoadLastUsedModel = canLoadLastUsedModel,
                 lastUsedModelLabel = lastUsedModelLabel,
                 onLoadLastUsedModel = {
                     scope.launch {
                         val result = provisioningViewModel.loadLastUsedModel()
+                        if (result.success && !result.queued) {
+                            val loaded = result.loadedModel
+                            viewModel.refreshRuntimeReadiness(
+                                statusDetailOverride = "Runtime model loaded (${loaded?.modelId.orEmpty()}@${loaded?.modelVersion.orEmpty()})",
+                            )
+                        }
                         provisioningViewModel.setStatusMessage(
                             lifecycleStatusMessage(
                                 context = context,
@@ -373,14 +411,10 @@ fun PocketAgentApp(
                         )
                     }
                 },
+                activeRuntimeModelLabel = activeRuntimeModelLabel,
+                activeRuntimeModelSourceLabel = activeRuntimeModelSourceLabel,
                 onOpenAdvanced = { viewModel.setAdvancedSheetOpen(true) },
-                onRefreshRuntimeChecks = {
-                    viewModel.refreshRuntimeReadiness()
-                    provisioningViewModel.refreshSnapshot()
-                    provisioningViewModel.setStatusMessage(
-                        context.getString(R.string.ui_model_refresh_runtime_feedback),
-                    )
-                },
+                onRefreshRuntimeChecks = refreshRuntimeChecksAction,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -504,6 +538,11 @@ fun PocketAgentApp(
                 onLoadVersion = { modelId, version ->
                     scope.launch {
                         val result = provisioningViewModel.loadInstalledModel(modelId = modelId, version = version)
+                        if (result.success && !result.queued) {
+                            viewModel.refreshRuntimeReadiness(
+                                statusDetailOverride = "Runtime model loaded ($modelId@$version)",
+                            )
+                        }
                         provisioningViewModel.setStatusMessage(
                             lifecycleStatusMessage(
                                 context = context,
@@ -517,6 +556,12 @@ fun PocketAgentApp(
                 onLoadLastUsedModel = {
                     scope.launch {
                         val result = provisioningViewModel.loadLastUsedModel()
+                        if (result.success && !result.queued) {
+                            val loaded = result.loadedModel
+                            viewModel.refreshRuntimeReadiness(
+                                statusDetailOverride = "Runtime model loaded (${loaded?.modelId.orEmpty()}@${loaded?.modelVersion.orEmpty()})",
+                            )
+                        }
                         provisioningViewModel.setStatusMessage(
                             lifecycleStatusMessage(
                                 context = context,
@@ -527,9 +572,14 @@ fun PocketAgentApp(
                         )
                     }
                 },
-                onOffloadModel = { reason ->
+                onOffloadModel = {
                     scope.launch {
-                        val result = provisioningViewModel.offloadModel(reason = reason)
+                        val result = provisioningViewModel.offloadModel(reason = MODEL_OFFLOAD_REASON_MANUAL)
+                        if (result.success && !result.queued) {
+                            viewModel.refreshRuntimeReadiness(
+                                statusDetailOverride = "Runtime model offloaded",
+                            )
+                        }
                         provisioningViewModel.setStatusMessage(
                             lifecycleStatusMessage(
                                 context = context,
@@ -634,6 +684,34 @@ private fun lifecycleStatusMessage(
             R.string.ui_model_runtime_error_unknown,
             result.detail ?: "unknown",
         )
+    }
+}
+
+private fun resolveLoadedModelSourceLabel(
+    context: android.content.Context,
+    snapshot: RuntimeProvisioningSnapshot,
+    loadedModelId: String?,
+    loadedModelVersion: String?,
+): String? {
+    if (loadedModelId.isNullOrBlank()) {
+        return null
+    }
+    val matched = snapshot.models.firstOrNull { model ->
+        if (model.modelId != loadedModelId) {
+            return@firstOrNull false
+        }
+        if (loadedModelVersion.isNullOrBlank()) {
+            return@firstOrNull true
+        }
+        model.activeVersion == loadedModelVersion || model.installedVersions.any { version ->
+            version.version == loadedModelVersion
+        }
+    } ?: return null
+    return when (matched.pathOrigin) {
+        ModelPathOrigin.MANAGED -> context.getString(R.string.ui_model_source_managed)
+        ModelPathOrigin.IMPORTED_EXTERNAL -> context.getString(R.string.ui_model_source_imported_external)
+        ModelPathOrigin.DISCOVERED_RECOVERED -> context.getString(R.string.ui_model_source_discovered_recovered)
+        else -> matched.pathOrigin
     }
 }
 

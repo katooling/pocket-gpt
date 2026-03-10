@@ -1,6 +1,10 @@
 package com.pocketagent.android.ui
 
 import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshot
+import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
+import com.pocketagent.android.runtime.ProvisioningRecoverySignal
+import com.pocketagent.android.runtime.ProvisionedModelState
 import com.pocketagent.android.ui.controllers.ChatSendFlow
 import com.pocketagent.android.ui.controllers.DeviceStateProvider
 import com.pocketagent.android.ui.controllers.StartupProbeController
@@ -11,10 +15,14 @@ import com.pocketagent.android.ui.state.FirstSessionStage
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
+import com.pocketagent.android.ui.state.ChatGatePrimaryAction
+import com.pocketagent.android.ui.state.ChatGateStatus
 import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
+import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.SessionStateLoadResult
+import com.pocketagent.android.ui.state.resolveChatGateState
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
@@ -29,6 +37,7 @@ import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.runtime.ToolFailure
+import com.pocketagent.android.runtime.modelmanager.StorageSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineDispatcher
@@ -148,6 +157,32 @@ class ChatViewModelTest {
 
         assertTrue(viewModel.uiState.value.isAdvancedSheetOpen)
         assertTrue(viewModel.uiState.value.isToolDialogOpen)
+    }
+
+    @Test
+    fun `runtime diagnostics snapshot is reflected in ui runtime state`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            runtimeDiagnostics = RuntimeDiagnosticsSnapshot(
+                backendProfile = "opencl",
+                compiledBackend = "hexagon,opencl",
+                nativeRuntimeSupported = true,
+                strictAcceleratorFailFast = true,
+                autoBackendCpuFallback = true,
+            ),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value.runtime
+        assertEquals("opencl", state.backendProfile)
+        assertEquals("hexagon,opencl", state.compiledBackend)
+        assertTrue(state.nativeRuntimeSupported == true)
+        assertTrue(state.strictAcceleratorFailFast == true)
+        assertTrue(state.autoBackendCpuFallback == true)
     }
 
     @Test
@@ -476,6 +511,138 @@ class ChatViewModelTest {
         assertFalse(active.messages.any { it.role == MessageRole.USER && it.content == "hello while blocked" })
         assertTrue(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-STARTUP-001") })
         assertEquals("UI-STARTUP-001", viewModel.uiState.value.runtime.lastErrorCode)
+    }
+
+    @Test
+    fun `chat gate resolves model-missing state to expected primary actions`() {
+        val runtime = RuntimeUiState(
+            startupProbeState = com.pocketagent.android.ui.state.StartupProbeState.BLOCKED,
+            modelRuntimeStatus = com.pocketagent.android.ui.state.ModelRuntimeStatus.NOT_READY,
+        )
+        val snapshot = RuntimeProvisioningSnapshot(
+            models = emptyList(),
+            storageSummary = StorageSummary(
+                totalBytes = 0L,
+                freeBytes = 0L,
+                usedByModelsBytes = 0L,
+                tempDownloadBytes = 0L,
+            ),
+            requiredModelIds = setOf("qwen3.5-0.8b-q4"),
+        )
+
+        val simpleFirstGate = resolveChatGateState(
+            runtime = runtime,
+            provisioningSnapshot = snapshot,
+            advancedUnlocked = false,
+        )
+        assertEquals(ChatGateStatus.BLOCKED_MODEL_MISSING, simpleFirstGate.status)
+        assertEquals(ChatGatePrimaryAction.GET_READY, simpleFirstGate.primaryAction)
+
+        val advancedGate = resolveChatGateState(
+            runtime = runtime,
+            provisioningSnapshot = snapshot,
+            advancedUnlocked = true,
+        )
+        assertEquals(ChatGateStatus.BLOCKED_MODEL_MISSING, advancedGate.status)
+        assertEquals(ChatGatePrimaryAction.OPEN_MODEL_SETUP, advancedGate.primaryAction)
+    }
+
+    @Test
+    fun `chat gate surfaces recoverable provisioning signal with refresh action`() {
+        val snapshot = RuntimeProvisioningSnapshot(
+            models = listOf(
+                ProvisionedModelState(
+                    modelId = "qwen3.5-0.8b-q4",
+                    displayName = "Qwen",
+                    fileName = "qwen.gguf",
+                    absolutePath = null,
+                    sha256 = null,
+                    importedAtEpochMs = null,
+                    activeVersion = null,
+                    installedVersions = emptyList(),
+                ),
+            ),
+            storageSummary = StorageSummary(
+                totalBytes = 0L,
+                freeBytes = 0L,
+                usedByModelsBytes = 0L,
+                tempDownloadBytes = 0L,
+            ),
+            requiredModelIds = setOf("qwen3.5-0.8b-q4"),
+            recoverableCorruptions = listOf(
+                ProvisioningRecoverySignal(
+                    code = "MODEL_PATH_ALIAS_STALE",
+                    message = "Model path alias is stale. Refresh runtime checks.",
+                    technicalDetail = "model=qwen3.5-0.8b-q4",
+                ),
+            ),
+        )
+        val gate = resolveChatGateState(
+            runtime = RuntimeUiState(
+                startupProbeState = com.pocketagent.android.ui.state.StartupProbeState.READY,
+                modelRuntimeStatus = com.pocketagent.android.ui.state.ModelRuntimeStatus.READY,
+            ),
+            provisioningSnapshot = snapshot,
+            advancedUnlocked = true,
+        )
+
+        assertEquals(ChatGateStatus.ERROR_RECOVERABLE, gate.status)
+        assertEquals(ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS, gate.primaryAction)
+        assertEquals("Model path alias is stale. Refresh runtime checks.", gate.detail)
+    }
+
+    @Test
+    fun `send and attach blocked guardrails emit consistent user guidance`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupChecks = listOf("Missing runtime model(s): qwen"),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("blocked send")
+        viewModel.sendMessage()
+        viewModel.attachImage("/tmp/blocked-image.jpg")
+        advanceUntilIdle()
+
+        val systemMessages = viewModel.uiState.value.activeSession!!
+            .messages
+            .filter { it.role == MessageRole.SYSTEM }
+            .takeLast(2)
+        assertEquals(2, systemMessages.size)
+        assertEquals(systemMessages[0].content, systemMessages[1].content)
+        assertTrue(systemMessages[0].content.contains("UI-STARTUP-001"))
+    }
+
+    @Test
+    fun `cancelled send clears transient loading placeholder message state`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            streamDelayMs = 500L,
+            streamTokens = emptyList(),
+            streamTerminal = StreamTerminal.CANCELLED_MANUAL,
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+            runtimeGenerationTimeoutMs = 2_000L,
+        )
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("cancel placeholder")
+        viewModel.sendMessage()
+        val beforeCancelMessages = viewModel.uiState.value.activeSession!!.messages
+        assertTrue(beforeCancelMessages.any(::shouldRenderInThreadLoadingPlaceholder))
+
+        viewModel.cancelActiveSend()
+        advanceUntilIdle()
+
+        val afterCancelMessages = viewModel.uiState.value.activeSession!!.messages
+        assertFalse(afterCancelMessages.any(::shouldRenderInThreadLoadingPlaceholder))
+        assertFalse(viewModel.uiState.value.composer.isSending)
     }
 
     @Test
@@ -977,6 +1144,7 @@ private class RecordingRuntimeFacade(
     private val streamDelayMs: Long = 0L,
     private val streamTerminal: StreamTerminal = StreamTerminal.COMPLETED,
     private val runtimeBackend: String? = null,
+    private val runtimeDiagnostics: RuntimeDiagnosticsSnapshot = RuntimeDiagnosticsSnapshot(),
     private val gpuStatusSequence: MutableList<com.pocketagent.android.runtime.GpuProbeResult> = mutableListOf(),
 ) : RuntimeGateway {
     private var sessionCounter = 0
@@ -1136,6 +1304,8 @@ private class RecordingRuntimeFacade(
     override fun deleteSession(sessionId: SessionId): Boolean = true
 
     override fun runtimeBackend(): String? = runtimeBackend
+
+    override fun runtimeDiagnosticsSnapshot(): RuntimeDiagnosticsSnapshot = runtimeDiagnostics
 
     override fun supportsGpuOffload(): Boolean {
         val current = gpuStatusSequence.firstOrNull() ?: return false
