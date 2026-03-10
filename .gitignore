@@ -2,6 +2,11 @@
 .DS_Store
 *.log
 !docs/operations/evidence/**/*.log
+tmp/
+.claude/
+.kotlin/
+.idea/
+.vscode/
 
 # Build
 build/
@@ -30,3 +35,13 @@ scripts/benchmarks/runs/
 scripts/benchmarks/device-env/
 
 .env*
+
+# Root-level ad-hoc media captures (keep canonical screenshots under tests/ui-screenshots/)
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.gif
+/*.mp4
+/*.mov
+/*.heic
