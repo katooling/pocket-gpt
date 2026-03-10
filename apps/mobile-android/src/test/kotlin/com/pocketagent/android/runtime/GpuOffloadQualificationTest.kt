@@ -104,7 +104,7 @@ class GpuOffloadQualificationTest {
         val qualifier = buildQualifier(
             probeClient = probeClient,
             probeRequestResolver = { testProbeRequest() },
-            diagnosticsReader = NativeVulkanDiagnosticsReader(payloadProvider = { diagnosticsPayload }),
+            diagnosticsReader = NativeBackendDiagnosticsReader(payloadProvider = { diagnosticsPayload }),
             scope = TestScope(dispatcher),
         )
 
@@ -239,7 +239,7 @@ class GpuOffloadQualificationTest {
         val qualifier = buildQualifier(
             probeClient = probeClient,
             probeRequestResolver = { testProbeRequest() },
-            diagnosticsReader = NativeVulkanDiagnosticsReader(
+            diagnosticsReader = NativeBackendDiagnosticsReader(
                 payloadProvider = { diagnosticsJson(driverVersion = 1L, shaderFloat16 = false) },
             ),
             scope = TestScope(dispatcher),
@@ -252,6 +252,45 @@ class GpuOffloadQualificationTest {
         assertEquals(8, result.maxStableGpuLayers)
         assertEquals(4, probeClient.callCount)
         assertEquals(listOf(1, 2, 4, 8), probeClient.layerHistory)
+    }
+
+    @Test
+    fun `qualification keeps full ladder for non-vulkan backends even when legacy feature flags are absent`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = { request ->
+                val layer = request.layerLadder.singleOrNull() ?: 0
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = layer,
+                    detail = "probe_success",
+                )
+            },
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            diagnosticsReader = NativeBackendDiagnosticsReader(
+                payloadProvider = {
+                    diagnosticsJson(
+                        driverVersion = 1L,
+                        compiledBackend = "opencl",
+                        shaderFloat16 = false,
+                        storageBuffer16BitAccess = false,
+                        selectedDeviceApiVersion = 0L,
+                    )
+                },
+            ),
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        val result = qualifier.evaluate(runtimeSupported = true)
+        assertEquals(GpuProbeStatus.QUALIFIED, result.status)
+        assertEquals(32, result.maxStableGpuLayers)
+        assertEquals(6, probeClient.callCount)
+        assertEquals(listOf(1, 2, 4, 8, 16, 32), probeClient.layerHistory)
     }
 
     @Test
@@ -275,7 +314,7 @@ class GpuOffloadQualificationTest {
                     modelFileSizeBytes = 3_072L * 1024L * 1024L,
                 )
             },
-            diagnosticsReader = NativeVulkanDiagnosticsReader(
+            diagnosticsReader = NativeBackendDiagnosticsReader(
                 payloadProvider = {
                     diagnosticsJson(
                         driverVersion = 1L,
@@ -389,7 +428,7 @@ class GpuOffloadQualificationTest {
 private fun buildQualifier(
     probeClient: GpuProbeClient,
     probeRequestResolver: () -> GpuProbeRequest?,
-    diagnosticsReader: NativeVulkanDiagnosticsReader = NativeVulkanDiagnosticsReader(
+    diagnosticsReader: NativeBackendDiagnosticsReader = NativeBackendDiagnosticsReader(
         payloadProvider = { diagnosticsJson(driverVersion = 1L) },
     ),
     scope: TestScope = TestScope(),
@@ -398,7 +437,7 @@ private fun buildQualifier(
     return InternalAndroidGpuOffloadQualifier(
         probeClient = probeClient,
         probeRequestResolver = probeRequestResolver,
-        nativeDiagnosticsReader = diagnosticsReader,
+        backendDiagnosticsReader = diagnosticsReader,
         now = { clock.now() },
         appBuildSignature = "1:100",
         deviceFingerprint = "fingerprint-1",
@@ -424,6 +463,7 @@ private fun testProbeRequest(
 
 private fun diagnosticsJson(
     driverVersion: Long,
+    compiledBackend: String = "vulkan",
     shaderFloat16: Boolean = true,
     storageBuffer16BitAccess: Boolean = true,
     selectedDeviceApiVersion: Long = 4202496L,
@@ -431,6 +471,7 @@ private fun diagnosticsJson(
 ): String {
     return """
         {
+          "compiled_backend": "$compiledBackend",
           "runtime_supported": true,
           "driver_name": "test-driver",
           "driver_version": $driverVersion,

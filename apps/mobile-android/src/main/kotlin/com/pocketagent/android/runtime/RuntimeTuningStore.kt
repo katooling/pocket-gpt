@@ -126,7 +126,9 @@ class RuntimeTuningDecider(
             normalizedError.contains("oom")
         val gpuRegression = appliedConfig.gpuEnabled && appliedConfig.gpuLayers > 0 && (
             normalizedError.contains("gpu") ||
-                normalizedError.contains("vulkan") ||
+                normalizedError.contains("opencl") ||
+                normalizedError.contains("hexagon") ||
+                normalizedError.contains("backend") ||
                 normalizedError.contains("jni") ||
                 normalizedError.contains("remote_process_died")
             )

@@ -30,6 +30,18 @@ class LlamaCppInferenceModule(
     }
 
     override fun loadModel(modelId: String): Boolean {
+        return loadModel(
+            modelId = modelId,
+            modelVersion = null,
+            strictGpuOffload = runtimeGenerationConfig.strictGpuOffload,
+        )
+    }
+
+    fun loadModel(
+        modelId: String,
+        modelVersion: String?,
+        strictGpuOffload: Boolean = runtimeGenerationConfig.strictGpuOffload,
+    ): Boolean {
         if (!runtimeBridge.listAvailableModels().contains(modelId)) {
             return false
         }
@@ -52,7 +64,14 @@ class LlamaCppInferenceModule(
         runtimeBridge.setRuntimeGenerationConfig(resolvedConfig)
         val reloadReason = resolveReloadReason(loadedRuntimeKey)
         val startedAtMs = System.currentTimeMillis()
-        val loaded = runtimeBridge.loadModel(modelId, modelPathById[modelId])
+        val loaded = runtimeBridge.loadModel(
+            modelId = modelId,
+            modelPath = modelPathById[modelId],
+            options = ModelLoadOptions(
+                modelVersion = modelVersion,
+                strictGpuOffload = strictGpuOffload,
+            ),
+        )
         val completedAtMs = System.currentTimeMillis()
         if (loaded) {
             modelMetadataById[modelId] = CachedModelRuntimeMetadata(
@@ -116,7 +135,7 @@ class LlamaCppInferenceModule(
     }
 
     override fun unloadModel() {
-        runtimeBridge.unloadModel()
+        runtimeBridge.offloadModel(reason = "explicit_unload")
         activeModelId = null
         activeRuntimeKey = null
         runtimeResidencyState = runtimeResidencyState.copy(
@@ -127,6 +146,23 @@ class LlamaCppInferenceModule(
             lastAccessAtEpochMs = System.currentTimeMillis(),
         )
         requiresReloadForConfigChange = false
+    }
+
+    fun offloadModel(reason: String): Boolean {
+        val unloaded = runtimeBridge.offloadModel(reason)
+        if (unloaded) {
+            activeModelId = null
+            activeRuntimeKey = null
+            runtimeResidencyState = runtimeResidencyState.copy(
+                key = null,
+                resident = false,
+                residentHit = false,
+                reloadReason = RuntimeReloadReason.EXPLICIT_UNLOAD,
+                lastAccessAtEpochMs = System.currentTimeMillis(),
+            )
+            requiresReloadForConfigChange = false
+        }
+        return unloaded
     }
 
     fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
@@ -159,6 +195,14 @@ class LlamaCppInferenceModule(
     fun runtimeBackend(): RuntimeBackend = runtimeBridge.runtimeBackend()
 
     fun lastBridgeError(): BridgeError? = runtimeBridge.lastError()
+
+    fun loadedModel(): LoadedModelInfo? = runtimeBridge.getLoadedModel()
+
+    fun currentModelLifecycleState(): ModelLifecycleEvent = runtimeBridge.currentModelLifecycleState()
+
+    fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        return runtimeBridge.observeModelLifecycleState(listener)
+    }
 
     fun registerModelPath(modelId: String, absolutePath: String) {
         val normalizedPath = absolutePath.trim()

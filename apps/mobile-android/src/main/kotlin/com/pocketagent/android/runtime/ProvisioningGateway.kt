@@ -6,16 +6,22 @@ import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.flow.StateFlow
 
 interface ProvisioningGateway {
     fun currentSnapshot(): RuntimeProvisioningSnapshot
     fun observeDownloads(): StateFlow<List<DownloadTaskState>>
+    fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot>
+    fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot
     suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult
     suspend fun loadModelDistributionManifest(): ModelDistributionManifest
     fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor>
     fun setActiveVersion(modelId: String, version: String): Boolean
     fun removeVersion(modelId: String, version: String): Boolean
+    suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult
+    suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult
+    suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult
     fun enqueueDownload(version: ModelDistributionVersion): String
     fun pauseDownload(taskId: String)
     fun resumeDownload(taskId: String)
@@ -36,6 +42,14 @@ class DefaultProvisioningGateway(
 
     override fun observeDownloads(): StateFlow<List<DownloadTaskState>> {
         return dependencies.observeDownloads()
+    }
+
+    override fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot> {
+        return dependencies.observeModelLifecycle()
+    }
+
+    override fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot {
+        return dependencies.currentModelLifecycle()
     }
 
     override suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult {
@@ -59,6 +73,18 @@ class DefaultProvisioningGateway(
 
     override fun removeVersion(modelId: String, version: String): Boolean {
         return dependencies.removeVersion(modelId = modelId, version = version)
+    }
+
+    override suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult {
+        return dependencies.loadInstalledModel(modelId = modelId, version = version)
+    }
+
+    override suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult {
+        return dependencies.loadLastUsedModel()
+    }
+
+    override suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        return dependencies.offloadModel(reason = reason)
     }
 
     override fun enqueueDownload(version: ModelDistributionVersion): String {
@@ -85,6 +111,8 @@ class DefaultProvisioningGateway(
 interface ProvisioningDependencyAccess {
     fun currentProvisioningSnapshot(): RuntimeProvisioningSnapshot
     fun observeDownloads(): StateFlow<List<DownloadTaskState>>
+    fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot>
+    fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot
     suspend fun importModelFromUri(
         modelId: String,
         sourceUri: Uri,
@@ -95,6 +123,9 @@ interface ProvisioningDependencyAccess {
     ): List<ModelVersionDescriptor>
     fun setActiveVersion(modelId: String, version: String): Boolean
     fun removeVersion(modelId: String, version: String): Boolean
+    suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult
+    suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult
+    suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult
     fun enqueueDownload(version: ModelDistributionVersion): String
     fun pauseDownload(taskId: String)
     fun resumeDownload(taskId: String)
@@ -111,6 +142,14 @@ class AppProvisioningDependencyAccess(
 
     override fun observeDownloads(): StateFlow<List<DownloadTaskState>> {
         return AppRuntimeDependencies.observeDownloads(context)
+    }
+
+    override fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot> {
+        return AppRuntimeDependencies.observeModelLifecycle(context)
+    }
+
+    override fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot {
+        return AppRuntimeDependencies.currentModelLifecycle(context)
     }
 
     override suspend fun importModelFromUri(
@@ -136,6 +175,22 @@ class AppProvisioningDependencyAccess(
 
     override fun removeVersion(modelId: String, version: String): Boolean {
         return AppRuntimeDependencies.removeVersion(context = context, modelId = modelId, version = version)
+    }
+
+    override suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult {
+        return AppRuntimeDependencies.loadInstalledModel(
+            context = context,
+            modelId = modelId,
+            version = version,
+        )
+    }
+
+    override suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult {
+        return AppRuntimeDependencies.loadLastUsedModel(context = context)
+    }
+
+    override suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        return AppRuntimeDependencies.offloadModel(context = context, reason = reason)
     }
 
     override fun enqueueDownload(version: ModelDistributionVersion): String {

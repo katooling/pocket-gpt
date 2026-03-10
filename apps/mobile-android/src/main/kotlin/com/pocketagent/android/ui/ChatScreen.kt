@@ -72,6 +72,9 @@ internal fun ChatScreenBody(
     onSuggestedPrompt: (String) -> Unit,
     onGetReadyTapped: () -> Unit,
     onOpenModelSetup: () -> Unit,
+    canLoadLastUsedModel: Boolean,
+    lastUsedModelLabel: String?,
+    onLoadLastUsedModel: () -> Unit,
     onOpenAdvanced: () -> Unit,
     onRefreshRuntimeChecks: () -> Unit,
     modifier: Modifier = Modifier,
@@ -85,6 +88,9 @@ internal fun ChatScreenBody(
             state = state,
             onGetReadyTapped = onGetReadyTapped,
             onOpenModelSetup = onOpenModelSetup,
+            canLoadLastUsedModel = canLoadLastUsedModel,
+            lastUsedModelLabel = lastUsedModelLabel,
+            onLoadLastUsedModel = onLoadLastUsedModel,
             onOpenAdvanced = onOpenAdvanced,
             onRefreshRuntimeChecks = onRefreshRuntimeChecks,
         )
@@ -106,6 +112,9 @@ private fun OfflineAndStatusHeader(
     state: ChatUiState,
     onGetReadyTapped: () -> Unit,
     onOpenModelSetup: () -> Unit,
+    canLoadLastUsedModel: Boolean,
+    lastUsedModelLabel: String?,
+    onLoadLastUsedModel: () -> Unit,
     onOpenAdvanced: () -> Unit,
     onRefreshRuntimeChecks: () -> Unit,
 ) {
@@ -267,6 +276,16 @@ private fun OfflineAndStatusHeader(
                         }
                         OutlinedButton(onClick = onRefreshRuntimeChecks) {
                             Text(stringResource(id = R.string.ui_refresh_runtime_checks))
+                        }
+                        if (canLoadLastUsedModel) {
+                            OutlinedButton(onClick = onLoadLastUsedModel) {
+                                Text(
+                                    stringResource(
+                                        id = R.string.ui_model_runtime_load_last_used_short,
+                                        lastUsedModelLabel.orEmpty(),
+                                    ),
+                                )
+                            }
                         }
                     }
                     TextButton(

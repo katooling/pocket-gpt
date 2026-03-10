@@ -22,11 +22,14 @@ import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.PerformanceRuntimeConfig
+import com.pocketagent.runtime.RuntimeLoadedModel
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.android.testutil.fakeUri
+import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -405,6 +408,7 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
             ),
         ),
     )
+    private val lifecycle = MutableStateFlow(RuntimeModelLifecycleSnapshot.initial())
 
     var lastPausedTaskId: String? = null
     var lastResumedTaskId: String? = null
@@ -451,6 +455,10 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
 
     override fun observeDownloads() = downloads
 
+    override fun observeModelLifecycle() = lifecycle
+
+    override fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot = lifecycle.value
+
     override suspend fun importModelFromUri(
         modelId: String,
         sourceUri: Uri,
@@ -484,6 +492,26 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
     override fun setActiveVersion(modelId: String, version: String): Boolean = true
 
     override fun removeVersion(modelId: String, version: String): Boolean = true
+
+    override suspend fun loadInstalledModel(
+        modelId: String,
+        version: String,
+    ): RuntimeModelLifecycleCommandResult {
+        return RuntimeModelLifecycleCommandResult.applied(
+            loadedModel = RuntimeLoadedModel(modelId = modelId, modelVersion = version),
+        )
+    }
+
+    override suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult {
+        return RuntimeModelLifecycleCommandResult.rejected(
+            code = ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE,
+            detail = "last_loaded_model_missing",
+        )
+    }
+
+    override suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        return RuntimeModelLifecycleCommandResult.applied()
+    }
 
     override fun enqueueDownload(version: ModelDistributionVersion): String = "task-1"
 

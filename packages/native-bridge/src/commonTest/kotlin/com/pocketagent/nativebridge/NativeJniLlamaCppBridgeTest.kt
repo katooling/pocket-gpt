@@ -165,13 +165,13 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `gpu load failure retries once with cpu layers`() {
+    fun `gpu load failure does not retry on cpu when strict offload is enabled`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
             loadOk = false,
             generatedText = "native hello",
             supportsGpuOffload = true,
-            loadResults = mutableListOf(false, true),
+            backendDiagnosticsJson = "{\"compiled_backend\":\"opencl\"}",
         )
         val bridge = NativeJniLlamaCppBridge(
             nativeApi = nativeApi,
@@ -184,16 +184,17 @@ class NativeJniLlamaCppBridgeTest {
             RuntimeGenerationConfig.default().copy(
                 gpuEnabled = true,
                 gpuLayers = 32,
+                gpuBackend = GpuExecutionBackend.OPENCL,
                 speculativeEnabled = true,
                 speculativeDraftGpuLayers = 2,
             ),
         )
 
         assertTrue(bridge.isReady())
-        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
-        assertEquals(listOf(32, 0), nativeApi.loadGpuLayers)
-        assertEquals(listOf(2, 0), nativeApi.loadDraftGpuLayers)
-        assertEquals(null, bridge.lastError())
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(listOf(32), nativeApi.loadGpuLayers)
+        assertEquals(listOf(2), nativeApi.loadDraftGpuLayers)
+        assertEquals("GPU_BACKEND_LOAD_FAILED", bridge.lastError()?.code)
     }
 
     @Test
@@ -247,7 +248,7 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `gpu layers are clamped to cpu path when gpu offload is not allowed`() {
+    fun `explicit gpu backend fails fast when offload is disabled`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
             loadOk = true,
@@ -265,13 +266,44 @@ class NativeJniLlamaCppBridgeTest {
             RuntimeGenerationConfig.default().copy(
                 gpuEnabled = true,
                 gpuLayers = 32,
+                gpuBackend = GpuExecutionBackend.OPENCL,
             ),
         )
 
         assertTrue(bridge.isReady())
         assertFalse(bridge.supportsGpuOffload())
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals("GPU_BACKEND_UNAVAILABLE", bridge.lastError()?.code)
+        assertTrue(nativeApi.loadGpuLayers.isEmpty())
+    }
+
+    @Test
+    fun `auto backend can downgrade to cpu when gpu offload is disabled`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = false,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 32,
+                gpuBackend = GpuExecutionBackend.AUTO,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         assertEquals(listOf(0), nativeApi.loadGpuLayers)
+        assertEquals(null, bridge.lastError())
     }
 
     @Test
@@ -291,13 +323,13 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `vulkan diagnostics are returned when native runtime is active`() {
+    fun `backend diagnostics are returned when native runtime is active`() {
         val bridge = NativeJniLlamaCppBridge(
             nativeApi = FakeNativeApi(
                 initializeOk = true,
                 loadOk = true,
                 generatedText = "ok",
-                vulkanDiagnosticsJson = "{\"compiled_backend\":\"vulkan\"}",
+                backendDiagnosticsJson = "{\"compiled_backend\":\"opencl\"}",
             ),
             libraryLoader = { _ -> },
             fallbackBridge = FakeFallbackBridge(),
@@ -305,7 +337,7 @@ class NativeJniLlamaCppBridgeTest {
         )
 
         assertTrue(bridge.isReady())
-        assertEquals("{\"compiled_backend\":\"vulkan\"}", bridge.vulkanDiagnosticsJson())
+        assertEquals("{\"compiled_backend\":\"opencl\"}", bridge.backendDiagnosticsJson())
     }
 
     @Test
@@ -337,7 +369,7 @@ private class FakeNativeApi(
     private val throwOnLoad: Boolean = false,
     private val supportsGpuOffload: Boolean = false,
     private val loadResults: MutableList<Boolean>? = null,
-    private val vulkanDiagnosticsJson: String = "{}",
+    private val backendDiagnosticsJson: String = "{}",
     private val peakRssMb: Double? = null,
     private val modelLayerCount: Int? = null,
     private val modelSizeBytes: Long? = null,
@@ -445,7 +477,7 @@ private class FakeNativeApi(
 
     override fun supportsGpuOffload(): Boolean = supportsGpuOffload
 
-    override fun vulkanDiagnosticsJson(): String = vulkanDiagnosticsJson
+    override fun backendDiagnosticsJson(): String = backendDiagnosticsJson
 
     override fun peakRssMb(): Double? = peakRssMb
 

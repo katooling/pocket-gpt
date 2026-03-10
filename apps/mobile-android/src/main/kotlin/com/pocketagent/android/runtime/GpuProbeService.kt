@@ -14,6 +14,7 @@ import android.os.Messenger
 import android.os.RemoteException
 import android.util.Log
 import com.pocketagent.nativebridge.CachePolicy
+import com.pocketagent.nativebridge.GpuExecutionBackend
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import java.util.concurrent.atomic.AtomicBoolean
@@ -31,7 +32,7 @@ import kotlin.math.max
 internal interface GpuProbeBridge {
     fun isReady(): Boolean
     fun supportsGpuOffload(): Boolean
-    fun setVulkanProfile(profile: String)
+    fun setBackendProfile(profile: String)
     fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig)
     fun loadModel(modelId: String, modelPath: String): Boolean
     fun generateSyncProbe(prompt: String, maxTokens: Int, cachePolicy: CachePolicy): Boolean
@@ -48,8 +49,8 @@ internal class NativeGpuProbeBridge : GpuProbeBridge {
 
     override fun supportsGpuOffload(): Boolean = delegate.supportsGpuOffload()
 
-    override fun setVulkanProfile(profile: String) {
-        delegate.setVulkanProfile(profile)
+    override fun setBackendProfile(profile: String) {
+        delegate.setBackendProfile(profile)
     }
 
     override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
@@ -103,7 +104,7 @@ internal class GpuProbeRunner(
             )
         }
 
-        bridge.setVulkanProfile(request.vulkanProfile)
+        bridge.setBackendProfile(request.backendProfile)
 
         var maxStableLayers = 0
         val ladder = request.layerLadder.filter { it > 0 }.distinct().sorted()
@@ -111,6 +112,7 @@ internal class GpuProbeRunner(
             val config = RuntimeGenerationConfig.default().copy(
                 gpuEnabled = true,
                 gpuLayers = layer,
+                gpuBackend = request.backendProfile.toGpuExecutionBackend(),
                 nBatch = safeBatch,
                 nUbatch = safeBatch,
             )
@@ -198,7 +200,7 @@ internal object GpuProbeIpc {
     const val EXTRA_MODEL_PATH = "model_path"
     const val EXTRA_LAYER_LADDER = "layer_ladder"
 
-    const val EXTRA_VULKAN_PROFILE = "vulkan_profile"
+    const val EXTRA_BACKEND_PROFILE = "backend_profile"
 
     const val EXTRA_RESULT_STATUS = "result_status"
     const val EXTRA_RESULT_MAX_LAYERS = "result_max_layers"
@@ -255,7 +257,7 @@ class GpuProbeService : Service() {
             ?.filter { it > 0 }
             ?.distinct()
             .orEmpty()
-        val vulkanProfile = source.getString(GpuProbeIpc.EXTRA_VULKAN_PROFILE)?.trim()?.ifEmpty { null } ?: "safe"
+        val backendProfile = source.getString(GpuProbeIpc.EXTRA_BACKEND_PROFILE)?.trim()?.ifEmpty { null } ?: "auto"
         if (modelId.isEmpty() || modelPath.isEmpty() || ladder.isEmpty()) {
             return null
         }
@@ -264,7 +266,7 @@ class GpuProbeService : Service() {
             modelVersion = modelVersion,
             modelPath = modelPath,
             layerLadder = ladder,
-            vulkanProfile = vulkanProfile,
+            backendProfile = backendProfile,
         )
     }
 }
@@ -277,5 +279,14 @@ internal class AndroidGpuProbeClient internal constructor(
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             transport.runGpuProbe(request = request, timeoutMs = timeoutMs)
         }
+    }
+}
+
+private fun String.toGpuExecutionBackend(): GpuExecutionBackend {
+    return when (trim().lowercase()) {
+        "hexagon" -> GpuExecutionBackend.HEXAGON
+        "opencl" -> GpuExecutionBackend.OPENCL
+        "cpu" -> GpuExecutionBackend.CPU
+        else -> GpuExecutionBackend.AUTO
     }
 }

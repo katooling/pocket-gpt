@@ -11,6 +11,7 @@ import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.AdaptiveRoutingPolicy
+import com.pocketagent.inference.ArtifactVerificationStatus
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.RuntimeImageInputModule
@@ -18,6 +19,7 @@ import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
 import com.pocketagent.tools.SafeLocalToolRuntime
@@ -309,6 +311,107 @@ class RuntimeOrchestrator(
         return true
     }
 
+    override fun loadModel(modelId: String, modelVersion: String?): RuntimeModelLifecycleCommandResult {
+        val availableModels = inferenceModule.listAvailableModels().toSet()
+        if (!availableModels.contains(modelId)) {
+            return RuntimeModelLifecycleCommandResult.rejected(
+                code = ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE,
+                detail = "model_not_available:$modelId",
+            )
+        }
+        if (!artifactVerifier.manager().setActiveModel(modelId)) {
+            return RuntimeModelLifecycleCommandResult.rejected(
+                code = ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE,
+                detail = "model_unregistered:$modelId",
+            )
+        }
+        val verification = artifactVerifier.verifyArtifactForModel(modelId)
+        if (!verification.passed) {
+            val detail = artifactVerifier.artifactVerificationFailureMessage(verification)
+            val code = if (verification.status == ArtifactVerificationStatus.RUNTIME_INCOMPATIBLE) {
+                ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE
+            } else {
+                ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE
+            }
+            return RuntimeModelLifecycleCommandResult.rejected(
+                code = code,
+                detail = detail.ifBlank { "artifact_verification_failed" },
+            )
+        }
+        interactionPlanner.ensureTemplateAvailable(modelId)?.let { templateError ->
+            return RuntimeModelLifecycleCommandResult.rejected(
+                code = ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE,
+                detail = templateError,
+            )
+        }
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule
+            ?: return RuntimeModelLifecycleCommandResult.rejected(
+                code = ModelLifecycleErrorCode.BACKEND_INIT_FAILED,
+                detail = "runtime_load_requires_native_bridge",
+            )
+        val performanceConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.BALANCED,
+            availableCpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
+            gpuEnabled = nativeInference.supportsGpuOffload(),
+        )
+        val runtimePlan = runtimePlanResolver.resolve(
+            sessionId = "manual-load",
+            modelId = modelId,
+            taskType = "manual_load",
+            stopSequences = emptyList(),
+            requestConfig = performanceConfig,
+            residencyPolicy = ModelResidencyPolicy(),
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            nativeInference = nativeInference,
+        )
+        nativeInference.setRuntimeGenerationConfig(runtimePlan.generationConfig)
+        val loaded = nativeInference.loadModel(
+            modelId = modelId,
+            modelVersion = modelVersion,
+            strictGpuOffload = runtimePlan.generationConfig.strictGpuOffload,
+        )
+        if (!loaded) {
+            val bridgeError = nativeInference.lastBridgeError()
+            return RuntimeModelLifecycleCommandResult.rejected(
+                code = mapBridgeLifecycleCode(bridgeError?.code),
+                detail = bridgeError?.detail,
+                loadedModel = loadedModel(),
+            )
+        }
+        runtimeResidencyManager.attachResidentSlot(
+            modelId = modelId,
+            slotId = runtimePlan.prefixCacheSlotId,
+            keepAliveMs = runtimePlan.keepAliveMs,
+        )
+        return RuntimeModelLifecycleCommandResult.applied(
+            loadedModel = RuntimeLoadedModel(
+                modelId = modelId,
+                modelVersion = modelVersion,
+            ),
+        )
+    }
+
+    override fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        val currentlyLoaded = loadedModel()
+        return when (runtimeResidencyManager.requestUnload(reason = reason)) {
+            RuntimeUnloadDisposition.UNLOADED,
+            RuntimeUnloadDisposition.NO_RESIDENT_MODEL,
+            -> RuntimeModelLifecycleCommandResult.applied(loadedModel = null)
+
+            RuntimeUnloadDisposition.QUEUED -> RuntimeModelLifecycleCommandResult.queued(
+                loadedModel = currentlyLoaded,
+                detail = "offload_queued_while_generation_active",
+            )
+        }
+    }
+
+    override fun loadedModel(): RuntimeLoadedModel? {
+        val modelId = runtimeResidencyManager.loadedModelId() ?: return null
+        return RuntimeLoadedModel(modelId = modelId, modelVersion = artifactVerifier.manager().getActiveModelVersion())
+    }
+
+    override fun activeGenerationCount(): Int = runtimeResidencyManager.queueDepth()
+
     override fun touchKeepAlive(): Boolean = runtimeResidencyManager.touchKeepAlive()
 
     override fun shortenKeepAlive(ttlMs: Long): Boolean = runtimeResidencyManager.shortenKeepAlive(ttlMs)
@@ -347,6 +450,29 @@ class RuntimeOrchestrator(
 
     companion object {
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
+    }
+}
+
+private fun mapBridgeLifecycleCode(errorCode: String?): ModelLifecycleErrorCode {
+    val normalized = errorCode?.trim()?.uppercase().orEmpty()
+    return when {
+        normalized.contains("MODEL") || normalized.contains("FILE") || normalized.contains("PATH") ->
+            ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE
+
+        normalized.contains("COMPAT") || normalized.contains("PROVENANCE") || normalized.contains("CHECKSUM") ->
+            ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE
+
+        normalized.contains("BUSY") -> ModelLifecycleErrorCode.BUSY_GENERATION
+
+        normalized.contains("CANCELLED_NEWER_REQUEST") ->
+            ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST
+
+        normalized.contains("JNI") ||
+            normalized.contains("RUNTIME") ||
+            normalized.contains("BACKEND") ->
+            ModelLifecycleErrorCode.BACKEND_INIT_FAILED
+
+        else -> ModelLifecycleErrorCode.UNKNOWN
     }
 }
 

@@ -24,7 +24,9 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#if defined(GGML_USE_VULKAN)
 #include <vulkan/vulkan.h>
+#endif
 
 #include "llama.h"
 #if defined(GGML_USE_VULKAN)
@@ -108,6 +110,7 @@ bool g_last_flash_attn_requested = false;
 bool g_last_flash_attn_gpu_ops = false;
 bool g_last_flash_attn_active = false;
 bool g_last_quantized_kv_cache = false;
+std::string g_backend_profile = "auto";
 float g_speculative_acceptance_rate = 0.65f;
 bool g_speculative_enabled = false;
 int32_t g_speculative_max_draft_tokens = 6;
@@ -116,6 +119,8 @@ int32_t g_speculative_min_draft_tokens = 2;
 int32_t clamp_i32(int32_t value, int32_t min_value, int32_t max_value) {
     return std::max(min_value, std::min(value, max_value));
 }
+
+const char * compiled_gpu_backends();
 
 int32_t resolve_threads(jint requested_threads) {
     const auto hardware_threads = std::thread::hardware_concurrency();
@@ -393,16 +398,17 @@ bool gpu_offload_supported() {
     return supported;
 }
 
-void apply_android_vulkan_safety_env_once() {
+void apply_android_backend_profile_env_once() {
     static std::atomic<bool> applied{false};
     bool expected = false;
     if (!applied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         return;
     }
 #if defined(GGML_USE_VULKAN)
-    const std::string profile = lowercase_copy(std::getenv("POCKETGPT_VULKAN_PROFILE") != nullptr
-        ? std::getenv("POCKETGPT_VULKAN_PROFILE")
-        : "balanced");
+    const std::string profile = lowercase_copy(std::getenv("POCKETGPT_BACKEND_PROFILE") != nullptr
+        ? std::getenv("POCKETGPT_BACKEND_PROFILE")
+        : "auto");
+    g_backend_profile = profile;
     const bool safe_profile = profile == "safe";
     const bool aggressive_profile = profile == "aggressive";
 
@@ -428,20 +434,33 @@ void apply_android_vulkan_safety_env_once() {
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|vulkan_profile=%s|safe=%s|aggressive=%s",
+        "GPU_OFFLOAD|backend_profile=%s|safe=%s|aggressive=%s",
         profile.c_str(),
         safe_profile ? "true" : "false",
         aggressive_profile ? "true" : "false");
+#else
+    const std::string profile = lowercase_copy(std::getenv("POCKETGPT_BACKEND_PROFILE") != nullptr
+        ? std::getenv("POCKETGPT_BACKEND_PROFILE")
+        : "auto");
+    g_backend_profile = profile;
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "GPU_OFFLOAD|backend_profile=%s|compiled_backend=%s",
+        profile.c_str(),
+        compiled_gpu_backends());
 #endif
 }
 
 const char * compiled_gpu_backends() {
-#if defined(GGML_USE_VULKAN)
-    return "vulkan";
+#if defined(GGML_USE_HEXAGON) && defined(GGML_USE_OPENCL)
+    return "hexagon,opencl";
 #elif defined(GGML_USE_HEXAGON)
     return "hexagon";
 #elif defined(GGML_USE_OPENCL)
     return "opencl";
+#elif defined(GGML_USE_VULKAN)
+    return "vulkan";
 #elif defined(GGML_USE_CUDA)
     return "cuda";
 #elif defined(GGML_USE_METAL)
@@ -479,6 +498,7 @@ std::string json_escape(const std::string & value) {
     return escaped;
 }
 
+#if defined(GGML_USE_VULKAN)
 std::string format_api_version(uint32_t version) {
     if (version == 0) {
         return "0.0.0";
@@ -491,8 +511,13 @@ std::string format_api_version(uint32_t version) {
         << VK_API_VERSION_PATCH(version);
     return out.str();
 }
+#else
+std::string format_api_version(uint32_t /*version*/) {
+    return "n/a";
+}
+#endif
 
-struct VulkanDiagnostics {
+struct BackendDiagnosticsSnapshot {
     bool loader_available = false;
     uint32_t instance_api_version = 0;
     uint32_t selected_device_api_version = 0;
@@ -504,8 +529,8 @@ struct VulkanDiagnostics {
     uint64_t device_local_heap_bytes = 0;
 };
 
-VulkanDiagnostics collect_vulkan_diagnostics() {
-    VulkanDiagnostics info;
+BackendDiagnosticsSnapshot collect_backend_diagnostics() {
+    BackendDiagnosticsSnapshot info;
 #if defined(GGML_USE_VULKAN)
     void * handle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
     if (handle == nullptr) {
@@ -629,7 +654,7 @@ VulkanDiagnostics collect_vulkan_diagnostics() {
     return info;
 }
 
-std::string vulkan_diagnostics_json() {
+std::string backend_diagnostics_json() {
     const bool runtime_supported = gpu_offload_supported();
     int vk_device_count = -1;
 #if defined(GGML_USE_VULKAN)
@@ -639,10 +664,11 @@ std::string vulkan_diagnostics_json() {
         vk_device_count = -1;
     }
 #endif
-    const VulkanDiagnostics diag = collect_vulkan_diagnostics();
+    const BackendDiagnosticsSnapshot diag = collect_backend_diagnostics();
     std::ostringstream out;
     out << "{"
         << "\"compiled_backend\":\"" << json_escape(compiled_gpu_backends()) << "\","
+        << "\"backend_profile\":\"" << json_escape(g_backend_profile) << "\","
         << "\"runtime_supported\":" << (runtime_supported ? "true" : "false") << ","
         << "\"vk_device_count\":" << vk_device_count << ","
         << "\"loader_available\":" << (diag.loader_available ? "true" : "false") << ","
@@ -675,9 +701,20 @@ int32_t estimate_max_gpu_layers_locked(int32_t requested_n_ctx) {
     if (model_size == 0) {
         return -1;
     }
-    const VulkanDiagnostics diag = collect_vulkan_diagnostics();
+    const BackendDiagnosticsSnapshot diag = collect_backend_diagnostics();
     if (diag.device_local_heap_bytes == 0) {
+#if !defined(GGML_USE_VULKAN)
+        const int32_t heuristic = clamp_i32(layer_count / 2, 1, layer_count);
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "GPU_OFFLOAD|estimate_layers=%d|strategy=heuristic_non_vulkan|layer_count=%d",
+            static_cast<int>(heuristic),
+            static_cast<int>(layer_count));
+        return heuristic;
+#else
         return -1;
+#endif
     }
     const int32_t n_ctx = std::max<int32_t>(1, requested_n_ctx > 0 ? requested_n_ctx : g_runtime_context_size);
     const int32_t n_embd = std::max(1, llama_model_n_embd(g_model));
@@ -905,7 +942,7 @@ void release_runtime_locked() {
 
 bool ensure_backend_initialized_locked(bool require_gpu_backend) {
     if (require_gpu_backend) {
-        apply_android_vulkan_safety_env_once();
+        apply_android_backend_profile_env_once();
     }
     if (g_backend_init_mode == BackendInitMode::GPU_ENABLED) {
         return true;
@@ -916,7 +953,7 @@ bool ensure_backend_initialized_locked(bool require_gpu_backend) {
 
     if (require_gpu_backend && g_backend_init_mode == BackendInitMode::CPU_ONLY) {
         // Promote CPU-only backend init to GPU-enabled without tearing down the backend.
-        // Full backend free/re-init has been unstable on some Android Vulkan drivers.
+        // Full backend free/re-init has been unstable on some Android GPU drivers.
         ggml_backend_load_all();
         g_backend_init_mode = BackendInitMode::GPU_ENABLED;
         __android_log_print(ANDROID_LOG_INFO, TAG, "GPU_OFFLOAD|backend_init_mode=gpu-enabled");
@@ -2050,8 +2087,8 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     // regressions from aggressive overrides.
     if (!use_gpu_ops) {
         // Force strict CPU-only placement for non-GPU runs.
-        // On some Vulkan-capable devices, default split policy can still allocate Vulkan buffers
-        // even with n_gpu_layers=0, which can trigger driver crashes.
+        // On some accelerator-capable devices, default split policy can still allocate
+        // backend buffers even with n_gpu_layers=0, which can trigger driver crashes.
         model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
         model_params.main_gpu = -1;
     }
@@ -2521,10 +2558,10 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeVulkanDiagnosticsJson(
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeBackendDiagnosticsJson(
     JNIEnv * env,
     jobject /*thiz*/) {
-    const std::string payload = vulkan_diagnostics_json();
+    const std::string payload = backend_diagnostics_json();
     return env->NewStringUTF(payload.c_str());
 }
 
@@ -2566,10 +2603,10 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeVulkanDiagnosticsJson(
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeBackendDiagnosticsJson(
     JNIEnv * env,
     jobject thiz) {
-    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeVulkanDiagnosticsJson(
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeBackendDiagnosticsJson(
         env,
         thiz);
 }
@@ -2609,17 +2646,18 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeSetVulkanProfile(
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeSetBackendProfile(
     JNIEnv * env,
     jobject /*thiz*/,
     jstring profile) {
     const char * profileChars = env->GetStringUTFChars(profile, nullptr);
     if (profileChars) {
-        setenv("POCKETGPT_VULKAN_PROFILE", profileChars, 1);
+        setenv("POCKETGPT_BACKEND_PROFILE", profileChars, 1);
+        g_backend_profile = lowercase_copy(profileChars);
         __android_log_print(
             ANDROID_LOG_INFO,
             TAG,
-            "GPU_OFFLOAD|set_vulkan_profile=%s",
+            "GPU_OFFLOAD|set_backend_profile=%s",
             profileChars);
         env->ReleaseStringUTFChars(profile, profileChars);
     }

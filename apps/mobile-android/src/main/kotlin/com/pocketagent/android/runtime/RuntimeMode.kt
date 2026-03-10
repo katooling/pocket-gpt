@@ -1,7 +1,6 @@
 package com.pocketagent.android.runtime
 
 import android.content.Context
-import com.pocketagent.android.BuildConfig
 import com.pocketagent.nativebridge.LlamaCppRuntimeBridge
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 
@@ -26,9 +25,8 @@ fun createDefaultAndroidInferenceModule(
 
 internal fun resolveAndroidRuntimeMode(
     environment: Map<String, String> = System.getenv(),
-    debugBuild: Boolean = BuildConfig.DEBUG,
 ): String {
-    val defaultMode = if (debugBuild) ANDROID_RUNTIME_MODE_IN_PROCESS else ANDROID_RUNTIME_MODE_REMOTE
+    val defaultMode = ANDROID_RUNTIME_MODE_IN_PROCESS
     return environment[ANDROID_RUNTIME_MODE_ENV]
         ?.trim()
         ?.lowercase()

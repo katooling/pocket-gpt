@@ -10,7 +10,7 @@ internal object LlamaRuntimeIpc {
     const val MSG_GENERATE_START = 7
     const val MSG_GENERATE_CANCEL = 8
     const val MSG_SUPPORTS_GPU = 9
-    const val MSG_GET_VULKAN_DIAGNOSTICS = 10
+    const val MSG_GET_BACKEND_DIAGNOSTICS = 10
     const val MSG_RUN_GPU_PROBE = 11
     const val MSG_LAST_ERROR = 12
 
@@ -35,6 +35,8 @@ internal object LlamaRuntimeIpc {
     const val EXTRA_CTX = "n_ctx"
     const val EXTRA_GPU_ENABLED = "gpu_enabled"
     const val EXTRA_GPU_LAYERS = "gpu_layers"
+    const val EXTRA_GPU_BACKEND = "gpu_backend"
+    const val EXTRA_STRICT_GPU_OFFLOAD = "strict_gpu_offload"
     const val EXTRA_KV_QUANTIZED = "kv_quantized"
     const val EXTRA_SAMPLING_TEMPERATURE = "sampling_temperature"
     const val EXTRA_SAMPLING_TOP_K = "sampling_top_k"
@@ -69,7 +71,7 @@ internal object LlamaRuntimeIpc {
     const val EXTRA_RUNTIME_SUPPORTED = "runtime_supported"
     const val EXTRA_DRIVER_NAME = "driver_name"
     const val EXTRA_DRIVER_VERSION = "driver_version"
-    const val EXTRA_VULKAN_DIAGNOSTICS_JSON = "vulkan_diagnostics_json"
+    const val EXTRA_BACKEND_DIAGNOSTICS_JSON = "backend_diagnostics_json"
     const val EXTRA_AVAILABLE_MODELS = "available_models"
     const val EXTRA_LAST_ERROR_CODE = "last_error_code"
     const val EXTRA_LAST_ERROR_DETAIL = "last_error_detail"
@@ -78,5 +80,5 @@ internal object LlamaRuntimeIpc {
     const val EXTRA_PROBE_MAX_LAYERS = "probe_max_layers"
     const val EXTRA_PROBE_REASON = "probe_reason"
     const val EXTRA_PROBE_DETAIL = "probe_detail"
-    const val EXTRA_VULKAN_PROFILE = "vulkan_profile"
+    const val EXTRA_BACKEND_PROFILE = "backend_profile"
 }

@@ -58,7 +58,7 @@ data class GpuProbeRequest(
     val layerLadder: List<Int>,
     val modelContentFingerprint: String? = null,
     val modelFileSizeBytes: Long = 0L,
-    val vulkanProfile: String = "safe",
+    val backendProfile: String = "auto",
 )
 
 interface GpuProbeClient {
@@ -111,7 +111,7 @@ private const val PROBE_MAX_LAYER_TIMEOUT_MS = 45_000L
 private const val PROBE_STALE_PENDING_TIMEOUT_MS = PROBE_TOTAL_TIMEOUT_MS + 30_000L
 private const val PROBE_BUSY_RETRY_DELAY_MS = 5_000L
 private const val PROBE_BUSY_MAX_RETRIES = 12
-private const val VULKAN_API_1_2 = (1L shl 22) or (2L shl 12)
+private const val ACCELERATOR_API_VERSION_1_2 = (1L shl 22) or (2L shl 12)
 private const val MIB = 1024L * 1024L
 private const val MIN_GPU_HEADROOM_BYTES = 256L * MIB
 private val PROBE_RETRIABLE_REASONS: Set<GpuProbeFailureReason> = setOf(
@@ -126,15 +126,19 @@ private val PROBE_LAYER_LADDER_PRE_12: List<Int> = listOf(1, 2, 4, 8, 16)
 private data class GpuProbePolicy(
     val layerLadder: List<Int>,
     val totalTimeoutMs: Long,
-    val vulkanProfile: String = "safe",
+    val backendProfile: String = "auto",
+    val applyLegacyApiHeuristics: Boolean = false,
 ) {
-    fun timeoutForLayer(layer: Int, nativeDiagnostics: NativeVulkanDiagnostics): Long {
+    fun timeoutForLayer(layer: Int, nativeDiagnostics: NativeBackendDiagnostics): Long {
         val layerTimeout = when {
             layer <= 2 -> 20_000L
             layer <= 4 -> 25_000L
             layer <= 8 -> 30_000L
             layer <= 16 -> 38_000L
             else -> 45_000L
+        }
+        if (!applyLegacyApiHeuristics) {
+            return layerTimeout.coerceIn(PROBE_MIN_LAYER_TIMEOUT_MS, PROBE_MAX_LAYER_TIMEOUT_MS)
         }
         val halfPrecisionSlowdownPenalty = if (
             !nativeDiagnostics.storageBuffer16BitAccess || !nativeDiagnostics.shaderFloat16
@@ -144,7 +148,7 @@ private data class GpuProbePolicy(
             0L
         }
         val apiVersionPenalty = if (
-            nativeDiagnostics.selectedDeviceApiVersion in 1L until VULKAN_API_1_2
+            nativeDiagnostics.selectedDeviceApiVersion in 1L until ACCELERATOR_API_VERSION_1_2
         ) {
             8_000L
         } else {
@@ -155,9 +159,19 @@ private data class GpuProbePolicy(
     }
 }
 
-private fun resolveProbePolicy(nativeDiagnostics: NativeVulkanDiagnostics): GpuProbePolicy {
+private fun resolveProbePolicy(nativeDiagnostics: NativeBackendDiagnostics): GpuProbePolicy {
+    val compiledBackend = nativeDiagnostics.compiledBackend.trim().lowercase()
+    val usesLegacyApiHeuristics = compiledBackend.contains("vulkan")
+    if (!usesLegacyApiHeuristics) {
+        return GpuProbePolicy(
+            layerLadder = PROBE_LAYER_LADDER_FULL,
+            totalTimeoutMs = PROBE_TOTAL_TIMEOUT_MS,
+            backendProfile = "auto",
+            applyLegacyApiHeuristics = false,
+        )
+    }
     val hasHalfPrecision = nativeDiagnostics.storageBuffer16BitAccess && nativeDiagnostics.shaderFloat16
-    val apiAtLeast12 = nativeDiagnostics.selectedDeviceApiVersion >= VULKAN_API_1_2
+    val apiAtLeast12 = nativeDiagnostics.selectedDeviceApiVersion >= ACCELERATOR_API_VERSION_1_2
     val ladder = when {
         !hasHalfPrecision -> PROBE_LAYER_LADDER_NO_HALF
         !apiAtLeast12 -> PROBE_LAYER_LADDER_PRE_12
@@ -166,7 +180,8 @@ private fun resolveProbePolicy(nativeDiagnostics: NativeVulkanDiagnostics): GpuP
     return GpuProbePolicy(
         layerLadder = ladder,
         totalTimeoutMs = PROBE_TOTAL_TIMEOUT_MS,
-        vulkanProfile = "safe",
+        backendProfile = "auto",
+        applyLegacyApiHeuristics = true,
     )
 }
 
@@ -199,7 +214,7 @@ private fun resolveProbeRequestFromStore(store: AndroidRuntimeProvisioningStore)
         layerLadder = PROBE_LAYER_LADDER_FULL,
         modelContentFingerprint = modelFingerprint,
         modelFileSizeBytes = modelFileSizeBytes,
-        vulkanProfile = "safe",
+        backendProfile = "auto",
     )
 }
 
@@ -209,9 +224,9 @@ class AndroidGpuOffloadQualifier(
     probeRequestResolver: () -> GpuProbeRequest? = AndroidRuntimeProvisioningStore(context.applicationContext).let { store ->
         { resolveProbeRequestFromStore(store) }
     },
-    nativeDiagnosticsReader: NativeVulkanDiagnosticsReader = NativeVulkanDiagnosticsReader(
+    backendDiagnosticsReader: NativeBackendDiagnosticsReader = NativeBackendDiagnosticsReader(
         payloadProvider = {
-            createDefaultAndroidRuntimeBridge(context.applicationContext).vulkanDiagnosticsJson()
+            createDefaultAndroidRuntimeBridge(context.applicationContext).backendDiagnosticsJson()
         },
     ),
     now: () -> Long = { System.currentTimeMillis() },
@@ -225,7 +240,7 @@ class AndroidGpuOffloadQualifier(
     private val delegate = InternalAndroidGpuOffloadQualifier(
         probeClient = probeClient,
         probeRequestResolver = probeRequestResolver,
-        nativeDiagnosticsReader = nativeDiagnosticsReader,
+        backendDiagnosticsReader = backendDiagnosticsReader,
         now = now,
         appBuildSignature = appBuildSignature,
         deviceFingerprint = Build.FINGERPRINT,
@@ -246,7 +261,7 @@ class AndroidGpuOffloadQualifier(
 internal class InternalAndroidGpuOffloadQualifier(
     private val probeClient: GpuProbeClient,
     private val probeRequestResolver: () -> GpuProbeRequest?,
-    private val nativeDiagnosticsReader: NativeVulkanDiagnosticsReader,
+    private val backendDiagnosticsReader: NativeBackendDiagnosticsReader,
     private val now: () -> Long,
     private val appBuildSignature: String,
     private val deviceFingerprint: String,
@@ -264,7 +279,7 @@ internal class InternalAndroidGpuOffloadQualifier(
     @Volatile
     private var inFlightCacheKey: String? = null
     @Volatile
-    private var latestNativeDiagnosticsPayload: String = ""
+    private var latestBackendDiagnosticsPayload: String = ""
 
     override fun evaluate(runtimeSupported: Boolean): GpuProbeResult {
         val request = probeRequestResolver()
@@ -285,8 +300,8 @@ internal class InternalAndroidGpuOffloadQualifier(
             ).also { latestResult = it }
         }
 
-        val nativeDiag = nativeDiagnosticsReader.read()
-        latestNativeDiagnosticsPayload = nativeDiag.rawPayload
+        val nativeDiag = backendDiagnosticsReader.read()
+        latestBackendDiagnosticsPayload = nativeDiag.rawPayload
         val cacheKey = computeCacheKey(request = request, nativeDiagnostics = nativeDiag)
         readCachedResult(cacheKey = cacheKey)?.let { cached ->
             latestResult = cached
@@ -355,8 +370,8 @@ internal class InternalAndroidGpuOffloadQualifier(
         detail: String?,
     ) {
         val request = probeRequestResolver()
-        val nativeDiag = nativeDiagnosticsReader.read()
-        latestNativeDiagnosticsPayload = nativeDiag.rawPayload
+        val nativeDiag = backendDiagnosticsReader.read()
+        latestBackendDiagnosticsPayload = nativeDiag.rawPayload
         val cacheKey = when {
             request != null -> computeCacheKey(request = request, nativeDiagnostics = nativeDiag)
             !latestResult.cacheKey.isNullOrBlank() -> latestResult.cacheKey.orEmpty()
@@ -400,7 +415,7 @@ internal class InternalAndroidGpuOffloadQualifier(
 
     private suspend fun runLayerQualification(
         request: GpuProbeRequest,
-        nativeDiagnostics: NativeVulkanDiagnostics,
+        nativeDiagnostics: NativeBackendDiagnostics,
     ): GpuProbeResult {
         val policy = resolveProbePolicy(nativeDiagnostics)
         val requestLadder = request.layerLadder.filter { it > 0 }.distinct().sorted()
@@ -448,7 +463,7 @@ internal class InternalAndroidGpuOffloadQualifier(
                 )
                 safeLogInfo("GPU_PROBE|layer_probe_start|layer=$layer|timeout_ms=$timeoutMs|attempt=$attempt")
                 layerResult = probeClient.runProbe(
-                    request = request.copy(layerLadder = listOf(layer), vulkanProfile = policy.vulkanProfile),
+                    request = request.copy(layerLadder = listOf(layer), backendProfile = policy.backendProfile),
                     timeoutMs = timeoutMs,
                 )
                 safeLogInfo("GPU_PROBE|layer_probe_done|layer=$layer|status=${layerResult!!.status}|reason=${layerResult.failureReason}")
@@ -507,7 +522,7 @@ internal class InternalAndroidGpuOffloadQualifier(
 
     private fun estimateLayerCapForProbe(
         request: GpuProbeRequest,
-        nativeDiagnostics: NativeVulkanDiagnostics,
+        nativeDiagnostics: NativeBackendDiagnostics,
         maxCandidateLayer: Int,
     ): Int? {
         val modelBytes = request.modelFileSizeBytes.takeIf { it > 0L } ?: return null
@@ -536,26 +551,27 @@ internal class InternalAndroidGpuOffloadQualifier(
     override fun diagnosticsLine(): String {
         val result = latestResult
         return "GPU_PROBE|status=${result.status}|max_layers=${result.maxStableGpuLayers}|reason=${result.failureReason ?: "none"}|" +
-            "detail=${result.detail.orEmpty()}|cache_key=${result.cacheKey.orEmpty()}|native_vulkan_payload=${latestNativeDiagnosticsPayload}"
+            "detail=${result.detail.orEmpty()}|cache_key=${result.cacheKey.orEmpty()}|native_backend_payload=${latestBackendDiagnosticsPayload}"
     }
 
     private fun computeCacheKey(
         request: GpuProbeRequest,
-        nativeDiagnostics: NativeVulkanDiagnostics,
+        nativeDiagnostics: NativeBackendDiagnostics,
     ): String {
         val policy = resolveProbePolicy(nativeDiagnostics)
         val raw = listOf(
             "policy=$PROBE_POLICY_VERSION",
             "fingerprint=$deviceFingerprint",
+            "compiledBackend=${nativeDiagnostics.compiledBackend}",
             "driverName=${nativeDiagnostics.driverName}",
             "driverVersion=${nativeDiagnostics.driverVersion}",
-            "vkApi=${nativeDiagnostics.selectedDeviceApiVersion}",
+            "apiVersion=${nativeDiagnostics.selectedDeviceApiVersion}",
             "vramBytes=${nativeDiagnostics.deviceLocalHeapBytes}",
             "half16=${nativeDiagnostics.storageBuffer16BitAccess && nativeDiagnostics.shaderFloat16}",
             "build=$appBuildSignature",
             "model=${request.cacheIdentity()}",
             "ladder=${policy.layerLadder.joinToString(",")}",
-            "vulkanProfile=${policy.vulkanProfile}",
+            "backendProfile=${policy.backendProfile}",
         ).joinToString(separator = "|")
         return sha256(raw)
     }
@@ -621,8 +637,9 @@ private class SharedPrefsGpuProbeResultStore(
     }
 }
 
-data class NativeVulkanDiagnostics(
+data class NativeBackendDiagnostics(
     val runtimeSupported: Boolean,
+    val compiledBackend: String,
     val driverName: String,
     val driverVersion: Long,
     val instanceApiVersion: Long,
@@ -634,17 +651,18 @@ data class NativeVulkanDiagnostics(
     val rawPayload: String,
 )
 
-class NativeVulkanDiagnosticsReader(
+class NativeBackendDiagnosticsReader(
     private val payloadProvider: () -> String? = { null },
 ) {
-    fun read(): NativeVulkanDiagnostics {
+    fun read(): NativeBackendDiagnostics {
         val payload = runCatching { payloadProvider() }
             .getOrNull()
             ?.trim()
             .orEmpty()
         val root = runCatching { Json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: JsonObject(emptyMap())
-        return NativeVulkanDiagnostics(
+        return NativeBackendDiagnostics(
             runtimeSupported = root.booleanOrDefault("runtime_supported", false),
+            compiledBackend = root.stringOrDefault("compiled_backend", ""),
             driverName = root.stringOrDefault("driver_name", ""),
             driverVersion = root.longOrDefault("driver_version", 0L),
             instanceApiVersion = root.longOrDefault("instance_api_version", 0L),

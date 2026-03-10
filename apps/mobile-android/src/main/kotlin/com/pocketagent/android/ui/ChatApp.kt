@@ -46,12 +46,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.R
+import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.StartupProbeState
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +77,12 @@ fun PocketAgentApp(
         state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
     val runtimeReadyForModelActions = state.runtime.startupProbeState == StartupProbeState.READY &&
         state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
+    val canLoadLastUsedModel = provisioningState.lifecycle.loadedModel == null &&
+        provisioningState.lifecycle.lastUsedModel != null &&
+        provisioningState.lifecycle.state != com.pocketagent.nativebridge.ModelLifecycleState.LOADING
+    val lastUsedModelLabel = provisioningState.lifecycle.lastUsedModel?.let { model ->
+        "${model.modelId} ${model.modelVersion.orEmpty()}".trim()
+    }
     val scope = rememberCoroutineScope()
     var modelSheetOpen by remember { mutableStateOf(false) }
     var selectedModelIdForImport by remember { mutableStateOf<String?>(null) }
@@ -350,6 +358,21 @@ fun PocketAgentApp(
                     provisioningViewModel.refreshSnapshot()
                     modelSheetOpen = true
                 },
+                canLoadLastUsedModel = canLoadLastUsedModel,
+                lastUsedModelLabel = lastUsedModelLabel,
+                onLoadLastUsedModel = {
+                    scope.launch {
+                        val result = provisioningViewModel.loadLastUsedModel()
+                        provisioningViewModel.setStatusMessage(
+                            lifecycleStatusMessage(
+                                context = context,
+                                result = result,
+                                fallbackModelId = provisioningState.lifecycle.lastUsedModel?.modelId,
+                                fallbackVersion = provisioningState.lifecycle.lastUsedModel?.modelVersion,
+                            ),
+                        )
+                    }
+                },
                 onOpenAdvanced = { viewModel.setAdvancedSheetOpen(true) },
                 onRefreshRuntimeChecks = {
                     viewModel.refreshRuntimeReadiness()
@@ -411,6 +434,7 @@ fun PocketAgentApp(
         ) {
             ModelProvisioningSheet(
                 snapshot = provisioningSnapshot,
+                lifecycle = provisioningState.lifecycle,
                 manifest = modelDistributionManifest,
                 downloads = downloads,
                 isImporting = modelImportInProgress,
@@ -477,6 +501,45 @@ fun PocketAgentApp(
                         }
                     }
                 },
+                onLoadVersion = { modelId, version ->
+                    scope.launch {
+                        val result = provisioningViewModel.loadInstalledModel(modelId = modelId, version = version)
+                        provisioningViewModel.setStatusMessage(
+                            lifecycleStatusMessage(
+                                context = context,
+                                result = result,
+                                fallbackModelId = modelId,
+                                fallbackVersion = version,
+                            ),
+                        )
+                    }
+                },
+                onLoadLastUsedModel = {
+                    scope.launch {
+                        val result = provisioningViewModel.loadLastUsedModel()
+                        provisioningViewModel.setStatusMessage(
+                            lifecycleStatusMessage(
+                                context = context,
+                                result = result,
+                                fallbackModelId = provisioningState.lifecycle.lastUsedModel?.modelId,
+                                fallbackVersion = provisioningState.lifecycle.lastUsedModel?.modelVersion,
+                            ),
+                        )
+                    }
+                },
+                onOffloadModel = { reason ->
+                    scope.launch {
+                        val result = provisioningViewModel.offloadModel(reason = reason)
+                        provisioningViewModel.setStatusMessage(
+                            lifecycleStatusMessage(
+                                context = context,
+                                result = result,
+                                fallbackModelId = provisioningState.lifecycle.loadedModel?.modelId,
+                                fallbackVersion = provisioningState.lifecycle.loadedModel?.modelVersion,
+                            ),
+                        )
+                    }
+                },
                 onRemoveVersion = { modelId, version ->
                     scope.launch {
                         val removed = provisioningViewModel.removeVersionAsync(modelId, version)
@@ -520,6 +583,56 @@ fun PocketAgentApp(
             onNext = viewModel::nextOnboardingPage,
             onSkip = viewModel::skipOnboarding,
             onFinish = viewModel::completeOnboarding,
+        )
+    }
+}
+
+private fun lifecycleStatusMessage(
+    context: android.content.Context,
+    result: RuntimeModelLifecycleCommandResult,
+    fallbackModelId: String?,
+    fallbackVersion: String?,
+): String {
+    if (result.success) {
+        if (result.queued) {
+            return context.getString(R.string.ui_model_runtime_offload_queued)
+        }
+        val loaded = result.loadedModel
+        if (loaded != null) {
+            return context.getString(
+                R.string.ui_model_runtime_loaded_message,
+                loaded.modelId,
+                loaded.modelVersion.orEmpty(),
+            )
+        }
+        return context.getString(R.string.ui_model_runtime_offloaded_message)
+    }
+    val modelId = fallbackModelId.orEmpty()
+    val version = fallbackVersion.orEmpty()
+    return when (result.errorCode) {
+        ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE -> context.getString(
+            R.string.ui_model_runtime_error_model_file_unavailable,
+            modelId,
+            version,
+        )
+        ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE -> context.getString(
+            R.string.ui_model_runtime_error_incompatible,
+            modelId,
+            version,
+        )
+        ModelLifecycleErrorCode.BACKEND_INIT_FAILED -> context.getString(
+            R.string.ui_model_runtime_error_backend_init,
+            result.detail ?: "backend_init_failed",
+        )
+        ModelLifecycleErrorCode.BUSY_GENERATION -> context.getString(R.string.ui_model_runtime_error_busy_generation)
+        ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST -> context.getString(
+            R.string.ui_model_runtime_error_cancelled_newer_request,
+        )
+        ModelLifecycleErrorCode.UNKNOWN,
+        null,
+        -> context.getString(
+            R.string.ui_model_runtime_error_unknown,
+            result.detail ?: "unknown",
         )
     }
 }

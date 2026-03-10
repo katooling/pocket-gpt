@@ -6,6 +6,7 @@ import android.util.Log
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
 import com.pocketagent.android.runtime.createDefaultAndroidInferenceModule
 import com.pocketagent.android.runtime.RuntimeModelImportResult
+import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
@@ -22,6 +23,8 @@ import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.RuntimeCompositionRoot
+import com.pocketagent.runtime.RuntimeLoadedModel
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.RuntimeResourceControl
 import com.pocketagent.runtime.RuntimeWarmupSupport
 import com.pocketagent.runtime.StreamChatRequestV2
@@ -33,7 +36,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import com.pocketagent.nativebridge.ModelLifecycleErrorCode
+import com.pocketagent.nativebridge.ModelLifecycleState
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -46,6 +55,10 @@ object AppRuntimeDependencies {
     private var sharedConversationModule: ConversationModule? = null
     private var sharedMemoryModule: MemoryModule? = null
     private var runtimeGraph: AppRuntimeGraph? = null
+    private val lifecycleCommandMutex = Mutex()
+    private val lifecycleState = MutableStateFlow(RuntimeModelLifecycleSnapshot.initial())
+    @Volatile
+    private var lifecycleActionToken: Long = 0L
     private val warmupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val warmupOrchestrator = RuntimeWarmupOrchestrator(
         scope = warmupScope,
@@ -65,6 +78,8 @@ object AppRuntimeDependencies {
     fun resetRuntimeFacadeFactoryForTests() {
         runtimeFacadeFactory = productionRuntimeFacadeFactory
         warmupOrchestrator.cancelActiveWarmup()
+        lifecycleState.value = RuntimeModelLifecycleSnapshot.initial()
+        lifecycleActionToken = 0L
         synchronized(lock) {
             runtimeGraph = null
         }
@@ -88,6 +103,7 @@ object AppRuntimeDependencies {
                 inferenceModule = createDefaultAndroidInferenceModule(context.applicationContext),
             )
             graph.runtimeFacade.replace(newFacade)
+            reconcileLifecycleState(graph)
             if (startupWarmupEnabled()) {
                 scheduleWarmupIfSupported(newFacade)
             } else {
@@ -148,10 +164,12 @@ object AppRuntimeDependencies {
         modelId: String,
         version: String,
     ): Boolean {
-        val changed = getOrCreateRuntimeGraph(context).provisioningStore.setActiveVersion(modelId, version)
+        val graph = getOrCreateRuntimeGraph(context)
+        val changed = graph.provisioningStore.setActiveVersion(modelId, version)
         if (changed) {
             installProductionRuntime(context)
         }
+        reconcileLifecycleState(graph)
         return changed
     }
 
@@ -161,11 +179,16 @@ object AppRuntimeDependencies {
         version: String,
     ): Boolean {
         val graph = getOrCreateRuntimeGraph(context)
+        val loaded = graph.runtimeFacade.loadedModel()
+        if (loaded != null && loaded.modelId == modelId && (loaded.modelVersion == null || loaded.modelVersion == version)) {
+            return false
+        }
         val removed = graph.provisioningStore.removeVersion(modelId, version)
         if (removed) {
             installProductionRuntime(context)
             graph.modelDownloadManager.refresh()
         }
+        reconcileLifecycleState(graph)
         return removed
     }
 
@@ -204,10 +227,239 @@ object AppRuntimeDependencies {
         return getOrCreateRuntimeGraph(context).modelDownloadManager.observeDownloads()
     }
 
-    private fun getOrCreateRuntimeGraph(context: Context): AppRuntimeGraph {
-        return synchronized(lock) {
-            runtimeGraph ?: createRuntimeGraph(context.applicationContext).also { runtimeGraph = it }
+    fun observeModelLifecycle(context: Context): StateFlow<RuntimeModelLifecycleSnapshot> {
+        reconcileLifecycleState(getOrCreateRuntimeGraph(context))
+        return lifecycleState.asStateFlow()
+    }
+
+    fun currentModelLifecycle(context: Context): RuntimeModelLifecycleSnapshot {
+        reconcileLifecycleState(getOrCreateRuntimeGraph(context))
+        return lifecycleState.value
+    }
+
+    suspend fun loadInstalledModel(
+        context: Context,
+        modelId: String,
+        version: String,
+    ): RuntimeModelLifecycleCommandResult {
+        val token = nextLifecycleActionToken()
+        val requestedModel = RuntimeLoadedModel(modelId = modelId, modelVersion = version)
+        lifecycleState.value = lifecycleState.value.copy(
+            state = ModelLifecycleState.LOADING,
+            requestedModel = requestedModel,
+            errorCode = null,
+            errorDetail = null,
+            queuedOffload = false,
+            updatedAtEpochMs = System.currentTimeMillis(),
+        )
+        return lifecycleCommandMutex.withLock {
+            if (token != lifecycleActionToken) {
+                val cancelled = cancelledByNewerRequestResult(detail = "load:$modelId@$version")
+                applyLifecycleCommandResult(cancelled, requestedModel = requestedModel)
+                return@withLock cancelled
+            }
+            val graph = getOrCreateRuntimeGraph(context)
+            val installed = graph.provisioningStore
+                .listInstalledVersions(modelId)
+                .firstOrNull { descriptor -> descriptor.version == version }
+            if (installed == null) {
+                val missing = RuntimeModelLifecycleCommandResult.rejected(
+                    code = ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE,
+                    detail = "installed_version_not_found:$modelId@$version",
+                )
+                applyLifecycleCommandResult(missing, requestedModel = requestedModel)
+                return@withLock missing
+            }
+            val file = java.io.File(installed.absolutePath)
+            if (!file.exists() || !file.isFile) {
+                val missing = RuntimeModelLifecycleCommandResult.rejected(
+                    code = ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE,
+                    detail = "installed_file_missing:${installed.absolutePath}",
+                )
+                applyLifecycleCommandResult(missing, requestedModel = requestedModel)
+                return@withLock missing
+            }
+            val activated = graph.provisioningStore.setActiveVersion(modelId = modelId, version = version)
+            if (!activated) {
+                val failed = RuntimeModelLifecycleCommandResult.rejected(
+                    code = ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE,
+                    detail = "activation_failed:$modelId@$version",
+                )
+                applyLifecycleCommandResult(failed, requestedModel = requestedModel)
+                return@withLock failed
+            }
+            installProductionRuntime(context)
+            val result = graph.runtimeFacade.loadModel(modelId = modelId, modelVersion = version)
+            if (token != lifecycleActionToken) {
+                if (result.success) {
+                    graph.runtimeFacade.offloadModel(reason = "cancelled_by_newer_request")
+                }
+                val cancelled = cancelledByNewerRequestResult(detail = "load:$modelId@$version")
+                applyLifecycleCommandResult(cancelled, requestedModel = requestedModel)
+                return@withLock cancelled
+            }
+            if (result.success) {
+                graph.provisioningStore.recordLastLoadedModel(modelId = modelId, version = version)
+            }
+            applyLifecycleCommandResult(result, requestedModel = requestedModel)
+            result
         }
+    }
+
+    suspend fun loadLastUsedModel(context: Context): RuntimeModelLifecycleCommandResult {
+        val graph = getOrCreateRuntimeGraph(context)
+        val lastUsed = graph.provisioningStore.lastLoadedModel()
+            ?: return RuntimeModelLifecycleCommandResult.rejected(
+                code = ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE,
+                detail = "last_loaded_model_missing",
+            )
+        return loadInstalledModel(
+            context = context,
+            modelId = lastUsed.modelId,
+            version = lastUsed.version,
+        )
+    }
+
+    suspend fun offloadModel(context: Context, reason: String): RuntimeModelLifecycleCommandResult {
+        val token = nextLifecycleActionToken()
+        val requestedModel = lifecycleState.value.loadedModel
+        lifecycleState.value = lifecycleState.value.copy(
+            state = ModelLifecycleState.OFFLOADING,
+            requestedModel = requestedModel,
+            errorCode = null,
+            errorDetail = null,
+            queuedOffload = false,
+            updatedAtEpochMs = System.currentTimeMillis(),
+        )
+        return lifecycleCommandMutex.withLock {
+            if (token != lifecycleActionToken) {
+                val cancelled = cancelledByNewerRequestResult(detail = "offload:$reason")
+                applyLifecycleCommandResult(cancelled, requestedModel = requestedModel)
+                return@withLock cancelled
+            }
+            val graph = getOrCreateRuntimeGraph(context)
+            val result = graph.runtimeFacade.offloadModel(reason = reason)
+            applyLifecycleCommandResult(result, requestedModel = requestedModel)
+            result
+        }
+    }
+
+    private fun nextLifecycleActionToken(): Long {
+        synchronized(lock) {
+            lifecycleActionToken += 1L
+            return lifecycleActionToken
+        }
+    }
+
+    private fun cancelledByNewerRequestResult(detail: String): RuntimeModelLifecycleCommandResult {
+        return RuntimeModelLifecycleCommandResult.rejected(
+            code = ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST,
+            detail = detail,
+            loadedModel = lifecycleState.value.loadedModel,
+        )
+    }
+
+    private fun applyLifecycleCommandResult(
+        result: RuntimeModelLifecycleCommandResult,
+        requestedModel: RuntimeLoadedModel?,
+    ) {
+        val graph = runtimeGraph
+        val resolvedLastUsed = graph?.provisioningStore?.lastLoadedModel()?.let { ref ->
+            RuntimeLoadedModel(modelId = ref.modelId, modelVersion = ref.version)
+        } ?: lifecycleState.value.lastUsedModel
+        val updated = when {
+            result.success && result.queued -> lifecycleState.value.copy(
+                state = ModelLifecycleState.OFFLOADING,
+                loadedModel = result.loadedModel ?: lifecycleState.value.loadedModel,
+                requestedModel = requestedModel,
+                queuedOffload = true,
+                errorCode = null,
+                errorDetail = result.detail,
+                lastUsedModel = resolvedLastUsed,
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+
+            result.success -> lifecycleState.value.copy(
+                state = if (result.loadedModel == null) ModelLifecycleState.UNLOADED else ModelLifecycleState.LOADED,
+                loadedModel = result.loadedModel,
+                requestedModel = null,
+                queuedOffload = false,
+                errorCode = null,
+                errorDetail = result.detail,
+                lastUsedModel = resolvedLastUsed,
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+
+            else -> lifecycleState.value.copy(
+                state = ModelLifecycleState.FAILED,
+                requestedModel = requestedModel,
+                queuedOffload = false,
+                errorCode = result.errorCode ?: ModelLifecycleErrorCode.UNKNOWN,
+                errorDetail = result.detail,
+                lastUsedModel = resolvedLastUsed,
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+        }
+        lifecycleState.value = updated
+    }
+
+    private fun reconcileLifecycleState(graph: AppRuntimeGraph) {
+        val loaded = graph.runtimeFacade.loadedModel()
+        val activeGenerationCount = graph.runtimeFacade.activeGenerationCount()
+        val normalizedLoaded = if (loaded != null) {
+            val resolvedVersion = loaded.modelVersion
+                ?: graph.provisioningStore
+                    .listInstalledVersions(loaded.modelId)
+                    .firstOrNull { descriptor -> descriptor.isActive }
+                    ?.version
+            if (resolvedVersion == null) {
+                graph.runtimeFacade.offloadModel(reason = "reconcile_missing_version")
+                null
+            } else {
+                val installed = graph.provisioningStore
+                    .listInstalledVersions(loaded.modelId)
+                    .firstOrNull { descriptor -> descriptor.version == resolvedVersion }
+                val fileExists = installed?.absolutePath
+                    ?.let { path -> java.io.File(path).let { it.exists() && it.isFile } }
+                    ?: false
+                if (!fileExists) {
+                    graph.runtimeFacade.offloadModel(reason = "reconcile_missing_file")
+                    null
+                } else {
+                    RuntimeLoadedModel(
+                        modelId = loaded.modelId,
+                        modelVersion = resolvedVersion,
+                    )
+                }
+            }
+        } else {
+            null
+        }
+        val lastUsed = graph.provisioningStore.lastLoadedModel()?.let { ref ->
+            RuntimeLoadedModel(modelId = ref.modelId, modelVersion = ref.version)
+        }
+        lifecycleState.value = lifecycleState.value.copy(
+            state = when {
+                normalizedLoaded != null -> ModelLifecycleState.LOADED
+                lifecycleState.value.queuedOffload && activeGenerationCount > 0 -> ModelLifecycleState.OFFLOADING
+                else -> ModelLifecycleState.UNLOADED
+            },
+            loadedModel = normalizedLoaded,
+            requestedModel = null,
+            lastUsedModel = lastUsed,
+            queuedOffload = lifecycleState.value.queuedOffload && activeGenerationCount > 0,
+            updatedAtEpochMs = System.currentTimeMillis(),
+        )
+    }
+
+    private fun getOrCreateRuntimeGraph(context: Context): AppRuntimeGraph {
+        val graph = synchronized(lock) {
+            runtimeGraph ?: createRuntimeGraph(context.applicationContext).also { created ->
+                runtimeGraph = created
+            }
+        }
+        reconcileLifecycleState(graph)
+        return graph
     }
 
     private fun createRuntimeGraph(context: Context): AppRuntimeGraph {
@@ -320,6 +572,47 @@ internal class HotSwappableRuntimeFacade(
     override fun evictResidentModel(reason: String): Boolean {
         return withDelegate { facade ->
             (facade as? RuntimeResourceControl)?.evictResidentModel(reason) ?: false
+        }
+    }
+
+    override fun loadModel(modelId: String, modelVersion: String?): RuntimeModelLifecycleCommandResult {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.loadModel(modelId = modelId, modelVersion = modelVersion)
+                ?: RuntimeModelLifecycleCommandResult.rejected(
+                    code = com.pocketagent.nativebridge.ModelLifecycleErrorCode.UNKNOWN,
+                    detail = "runtime_model_load_unsupported",
+                )
+        }
+    }
+
+    override fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.offloadModel(reason = reason)
+                ?: RuntimeModelLifecycleCommandResult.applied()
+        }
+    }
+
+    override fun loadedModel(): RuntimeLoadedModel? {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.loadedModel()
+        }
+    }
+
+    override fun activeGenerationCount(): Int {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.activeGenerationCount() ?: 0
+        }
+    }
+
+    override fun touchKeepAlive(): Boolean {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.touchKeepAlive() ?: false
+        }
+    }
+
+    override fun shortenKeepAlive(ttlMs: Long): Boolean {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.shortenKeepAlive(ttlMs) ?: false
         }
     }
 

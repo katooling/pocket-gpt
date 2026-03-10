@@ -128,7 +128,7 @@ private class FakeGpuProbeBridge(
 
     override fun supportsGpuOffload(): Boolean = gpuSupported
 
-    override fun setVulkanProfile(profile: String) = Unit
+    override fun setBackendProfile(profile: String) = Unit
 
     override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
         generationConfigs += config

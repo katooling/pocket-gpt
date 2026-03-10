@@ -105,28 +105,25 @@ class RemoteLlamaCppRuntimeBridgeTest {
     }
 
     @Test
-    fun `runtime mode defaults to in process for debug and honors explicit override`() {
-        assertEquals("in_process", resolveAndroidRuntimeMode(emptyMap(), debugBuild = true))
-        assertEquals("remote", resolveAndroidRuntimeMode(emptyMap(), debugBuild = false))
+    fun `runtime mode defaults to in process and honors explicit override`() {
+        assertEquals("in_process", resolveAndroidRuntimeMode(emptyMap()))
+        assertEquals("in_process", resolveAndroidRuntimeMode(emptyMap()))
         assertEquals(
             "in_process",
             resolveAndroidRuntimeMode(
                 mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "in_process"),
-                debugBuild = false,
             ),
         )
         assertEquals(
             "remote",
             resolveAndroidRuntimeMode(
                 mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "remote"),
-                debugBuild = true,
             ),
         )
         assertEquals(
             "in_process",
             resolveAndroidRuntimeMode(
                 mapOf("POCKETGPT_ANDROID_RUNTIME_MODE" to "unexpected"),
-                debugBuild = true,
             ),
         )
     }
@@ -188,7 +185,7 @@ private class FakeRemoteRuntimeTransport(
 
     override fun supportsGpuOffload(): Boolean = gpuSupported
 
-    override fun vulkanDiagnosticsJson(): String? = nextDiagnosticsJson
+    override fun backendDiagnosticsJson(): String? = nextDiagnosticsJson
 
     override fun lastError(): BridgeError? = nextLastError
 

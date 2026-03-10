@@ -7,6 +7,8 @@ import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.RuntimeLoadedModel
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.RuntimeResourceControl
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
@@ -37,6 +39,15 @@ interface RuntimeGateway {
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String?
     fun supportsGpuOffload(): Boolean
+    fun loadModel(modelId: String, modelVersion: String? = null): RuntimeModelLifecycleCommandResult =
+        RuntimeModelLifecycleCommandResult.rejected(
+            code = com.pocketagent.nativebridge.ModelLifecycleErrorCode.UNKNOWN,
+            detail = "runtime_model_load_unsupported",
+        )
+    fun offloadModel(reason: String = "manual"): RuntimeModelLifecycleCommandResult =
+        RuntimeModelLifecycleCommandResult.applied()
+    fun loadedModel(): RuntimeLoadedModel? = null
+    fun activeGenerationCount(): Int = 0
     fun reportGpuRuntimeFailure(reason: GpuProbeFailureReason, detail: String? = null) = Unit
     fun evictResidentModel(reason: String = "manual"): Boolean = false
     fun touchKeepAlive(): Boolean = false
@@ -142,6 +153,27 @@ class MvpRuntimeGateway(
 
     override fun runtimeBackend(): String? = facade.runtimeBackend()
 
+    override fun loadModel(modelId: String, modelVersion: String?): RuntimeModelLifecycleCommandResult {
+        return (facade as? RuntimeResourceControl)?.loadModel(modelId = modelId, modelVersion = modelVersion)
+            ?: RuntimeModelLifecycleCommandResult.rejected(
+                code = com.pocketagent.nativebridge.ModelLifecycleErrorCode.UNKNOWN,
+                detail = "runtime_model_load_unsupported",
+            )
+    }
+
+    override fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        return (facade as? RuntimeResourceControl)?.offloadModel(reason = reason)
+            ?: RuntimeModelLifecycleCommandResult.applied()
+    }
+
+    override fun loadedModel(): RuntimeLoadedModel? {
+        return (facade as? RuntimeResourceControl)?.loadedModel()
+    }
+
+    override fun activeGenerationCount(): Int {
+        return (facade as? RuntimeResourceControl)?.activeGenerationCount() ?: 0
+    }
+
     override fun evictResidentModel(reason: String): Boolean {
         return (facade as? RuntimeResourceControl)?.evictResidentModel(reason) ?: false
     }
@@ -232,7 +264,9 @@ class MvpRuntimeGateway(
         if (
             code.contains("jni") ||
             code.contains("gpu") ||
-            code.contains("vulkan") ||
+            code.contains("opencl") ||
+            code.contains("hexagon") ||
+            code.contains("backend") ||
             code.contains("remote_process_died") ||
             code.contains("remote_runtime")
         ) {
@@ -241,7 +275,9 @@ class MvpRuntimeGateway(
         val normalizedMessage = message.lowercase()
         if (
             normalizedMessage.contains("gpu") ||
-            normalizedMessage.contains("vulkan") ||
+            normalizedMessage.contains("opencl") ||
+            normalizedMessage.contains("hexagon") ||
+            normalizedMessage.contains("backend") ||
             normalizedMessage.contains("n_gpu_layers") ||
             normalizedMessage.contains("native load")
         ) {

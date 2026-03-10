@@ -210,6 +210,17 @@ interface RuntimeContainer {
     fun runStartupChecks(): List<String>
     fun warmupActiveModel(): WarmupResult = WarmupResult.skipped("warmup_unsupported")
     fun evictResidentModel(reason: String = "manual"): Boolean = false
+    fun loadModel(modelId: String, modelVersion: String? = null): RuntimeModelLifecycleCommandResult {
+        return RuntimeModelLifecycleCommandResult.rejected(
+            code = com.pocketagent.nativebridge.ModelLifecycleErrorCode.UNKNOWN,
+            detail = "runtime_model_load_unsupported",
+        )
+    }
+    fun offloadModel(reason: String = "manual"): RuntimeModelLifecycleCommandResult {
+        return RuntimeModelLifecycleCommandResult.applied()
+    }
+    fun loadedModel(): RuntimeLoadedModel? = null
+    fun activeGenerationCount(): Int = 0
     fun touchKeepAlive(): Boolean = false
     fun shortenKeepAlive(ttlMs: Long): Boolean = false
     fun onTrimMemory(level: Int): Boolean = false
@@ -417,6 +428,18 @@ class DefaultMvpRuntimeFacade(
 
     override fun evictResidentModel(reason: String): Boolean = container.evictResidentModel(reason)
 
+    override fun loadModel(modelId: String, modelVersion: String?): RuntimeModelLifecycleCommandResult {
+        return container.loadModel(modelId = modelId, modelVersion = modelVersion)
+    }
+
+    override fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        return container.offloadModel(reason = reason)
+    }
+
+    override fun loadedModel(): RuntimeLoadedModel? = container.loadedModel()
+
+    override fun activeGenerationCount(): Int = container.activeGenerationCount()
+
     override fun touchKeepAlive(): Boolean = container.touchKeepAlive()
 
     override fun shortenKeepAlive(ttlMs: Long): Boolean = container.shortenKeepAlive(ttlMs)
@@ -539,6 +562,18 @@ class DefaultRuntimeContainer(
     override fun warmupActiveModel(): WarmupResult = orchestrator.warmupActiveModel()
 
     override fun evictResidentModel(reason: String): Boolean = orchestrator.evictResidentModel(reason)
+
+    override fun loadModel(modelId: String, modelVersion: String?): RuntimeModelLifecycleCommandResult {
+        return orchestrator.loadModel(modelId = modelId, modelVersion = modelVersion)
+    }
+
+    override fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        return orchestrator.offloadModel(reason = reason)
+    }
+
+    override fun loadedModel(): RuntimeLoadedModel? = orchestrator.loadedModel()
+
+    override fun activeGenerationCount(): Int = orchestrator.activeGenerationCount()
 
     override fun touchKeepAlive(): Boolean = orchestrator.touchKeepAlive()
 

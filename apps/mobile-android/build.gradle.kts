@@ -73,7 +73,7 @@ android {
                     arguments += listOf(
                         "-DANDROID_STL=c++_shared",
                         "-DPOCKETGPT_ENABLE_HEXAGON=${if (nativeHexagonEnabled) "ON" else "OFF"}",
-                        "-DPOCKETGPT_ENABLE_ARM_I8MM=${if (nativeArmI8mmEnabled) "ON" else "OFF"}",
+                        "-DPOCKETGPT_FORCE_ARM_I8MM=${if (nativeArmI8mmEnabled) "ON" else "OFF"}",
                     )
                     cppFlags += listOf("-std=c++17", "-fexceptions", "-frtti")
                     targets += listOf("pocket_llama")

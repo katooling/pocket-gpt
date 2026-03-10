@@ -6,17 +6,29 @@ import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.GenerationFinishReason
 import com.pocketagent.nativebridge.GenerationResult
 import com.pocketagent.nativebridge.LlamaCppRuntimeBridge
+import com.pocketagent.nativebridge.LoadedModelInfo
+import com.pocketagent.nativebridge.ModelLifecycleError
+import com.pocketagent.nativebridge.ModelLifecycleErrorCode
+import com.pocketagent.nativebridge.ModelLifecycleEvent
+import com.pocketagent.nativebridge.ModelLifecycleState
+import com.pocketagent.nativebridge.ModelLoadOptions
 import com.pocketagent.nativebridge.RuntimeBackend
 import com.pocketagent.nativebridge.RuntimeGenerationConfig
 
 internal class RemoteLlamaCppRuntimeBridge internal constructor(
     private val transport: RemoteRuntimeTransport,
 ) : LlamaCppRuntimeBridge {
+    private val lifecycleLock = Any()
+    private val lifecycleObserverLock = Any()
+    private var nextLifecycleObserverId: Int = 1
+    private val lifecycleObservers: MutableMap<Int, (ModelLifecycleEvent) -> Unit> = mutableMapOf()
+
     constructor(context: Context) : this(MessengerRemoteRuntimeTransport(context.applicationContext))
 
     private data class LoadedModelState(
         val modelId: String,
         val modelPath: String?,
+        val modelVersion: String? = null,
     )
 
     @Volatile
@@ -27,6 +39,8 @@ internal class RemoteLlamaCppRuntimeBridge internal constructor(
     private var loadedModelState: LoadedModelState? = null
     @Volatile
     private var preparedEpoch: Long = Long.MIN_VALUE
+    @Volatile
+    private var lifecycleEvent: ModelLifecycleEvent = ModelLifecycleEvent(state = ModelLifecycleState.UNLOADED)
 
     override fun isReady(): Boolean {
         val ready = transport.ping()
@@ -41,7 +55,24 @@ internal class RemoteLlamaCppRuntimeBridge internal constructor(
     override fun listAvailableModels(): List<String> = transport.listAvailableModels()
 
     override fun loadModel(modelId: String, modelPath: String?): Boolean {
+        return loadModel(modelId = modelId, modelPath = modelPath, options = ModelLoadOptions())
+    }
+
+    override fun loadModel(modelId: String, modelPath: String?, options: ModelLoadOptions): Boolean {
+        emitLifecycleEvent(
+            ModelLifecycleEvent(
+                state = ModelLifecycleState.LOADING,
+                modelId = modelId,
+                modelVersion = options.modelVersion,
+            ),
+        )
         if (!syncConfigToRemote()) {
+            emitLifecycleFailure(
+                modelId = modelId,
+                modelVersion = options.modelVersion,
+                errorCode = ModelLifecycleErrorCode.BACKEND_INIT_FAILED,
+                detail = lastBridgeError?.detail,
+            )
             return false
         }
         val loaded = transport.loadModel(modelId = modelId, modelPath = modelPath)
@@ -51,11 +82,28 @@ internal class RemoteLlamaCppRuntimeBridge internal constructor(
                 remoteError?.code ?: REMOTE_ERROR_RUNTIME,
                 remoteError?.detail ?: "remote load failed:modelId=$modelId",
             )
+            emitLifecycleFailure(
+                modelId = modelId,
+                modelVersion = options.modelVersion,
+                errorCode = mapRemoteErrorToLifecycleCode(remoteError?.code),
+                detail = remoteError?.detail,
+            )
             return false
         }
-        loadedModelState = LoadedModelState(modelId = modelId, modelPath = modelPath)
+        loadedModelState = LoadedModelState(
+            modelId = modelId,
+            modelPath = modelPath,
+            modelVersion = options.modelVersion,
+        )
         preparedEpoch = transport.epoch()
         clearError()
+        emitLifecycleEvent(
+            ModelLifecycleEvent(
+                state = ModelLifecycleState.LOADED,
+                modelId = modelId,
+                modelVersion = options.modelVersion,
+            ),
+        )
         return true
     }
 
@@ -133,9 +181,29 @@ internal class RemoteLlamaCppRuntimeBridge internal constructor(
     }
 
     override fun unloadModel() {
+        offloadModel(reason = "legacy_unload")
+    }
+
+    override fun offloadModel(reason: String): Boolean {
+        val loaded = loadedModelState
+        emitLifecycleEvent(
+            ModelLifecycleEvent(
+                state = ModelLifecycleState.OFFLOADING,
+                modelId = loaded?.modelId,
+                modelVersion = loaded?.modelVersion,
+            ),
+        )
         transport.unloadModel()
         loadedModelState = null
         preparedEpoch = transport.epoch()
+        emitLifecycleEvent(
+            ModelLifecycleEvent(
+                state = ModelLifecycleState.UNLOADED,
+                modelId = loaded?.modelId,
+                modelVersion = loaded?.modelVersion,
+            ),
+        )
+        return true
     }
 
     override fun runtimeBackend(): RuntimeBackend {
@@ -144,7 +212,32 @@ internal class RemoteLlamaCppRuntimeBridge internal constructor(
 
     override fun lastError(): BridgeError? = lastBridgeError ?: transport.lastError()
 
-    override fun vulkanDiagnosticsJson(): String? = transport.vulkanDiagnosticsJson()
+    override fun backendDiagnosticsJson(): String? = transport.backendDiagnosticsJson()
+
+    override fun getLoadedModel(): LoadedModelInfo? {
+        val loaded = loadedModelState ?: return null
+        return LoadedModelInfo(
+            modelId = loaded.modelId,
+            modelPath = loaded.modelPath,
+            modelVersion = loaded.modelVersion,
+        )
+    }
+
+    override fun currentModelLifecycleState(): ModelLifecycleEvent = lifecycleEvent
+
+    override fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        val id = synchronized(lifecycleObserverLock) {
+            val observerId = nextLifecycleObserverId++
+            lifecycleObservers[observerId] = listener
+            observerId
+        }
+        listener(lifecycleEvent)
+        return AutoCloseable {
+            synchronized(lifecycleObserverLock) {
+                lifecycleObservers.remove(id)
+            }
+        }
+    }
 
     private fun prepareRuntimeState(): Boolean {
         if (!syncConfigToRemote()) {
@@ -186,5 +279,54 @@ internal class RemoteLlamaCppRuntimeBridge internal constructor(
 
     private fun clearError() {
         lastBridgeError = null
+    }
+
+    private fun emitLifecycleFailure(
+        modelId: String?,
+        modelVersion: String?,
+        errorCode: ModelLifecycleErrorCode,
+        detail: String?,
+    ) {
+        emitLifecycleEvent(
+            ModelLifecycleEvent(
+                state = ModelLifecycleState.FAILED,
+                modelId = modelId,
+                modelVersion = modelVersion,
+                error = ModelLifecycleError(code = errorCode, detail = detail),
+            ),
+        )
+    }
+
+    private fun emitLifecycleEvent(event: ModelLifecycleEvent) {
+        synchronized(lifecycleLock) {
+            lifecycleEvent = event
+        }
+        val observers = synchronized(lifecycleObserverLock) {
+            lifecycleObservers.values.toList()
+        }
+        observers.forEach { observer ->
+            runCatching { observer(event) }
+        }
+    }
+
+    private fun mapRemoteErrorToLifecycleCode(errorCode: String?): ModelLifecycleErrorCode {
+        val normalized = errorCode?.trim()?.uppercase().orEmpty()
+        return when {
+            normalized.contains("MODEL_NOT_LOADED") ||
+                normalized.contains("MODEL_UNAVAILABLE")
+            -> ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE
+
+            normalized.contains("RUNTIME_INCOMPATIBLE") ||
+                normalized.contains("COMPAT")
+            -> ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE
+
+            normalized.contains("BUSY") -> ModelLifecycleErrorCode.BUSY_GENERATION
+            normalized.contains("CANCELLED_NEWER_REQUEST") -> ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST
+            normalized.contains("REMOTE") ||
+                normalized.contains("RUNTIME")
+            -> ModelLifecycleErrorCode.BACKEND_INIT_FAILED
+
+            else -> ModelLifecycleErrorCode.UNKNOWN
+        }
     }
 }

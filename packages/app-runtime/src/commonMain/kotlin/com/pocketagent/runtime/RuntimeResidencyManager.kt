@@ -22,6 +22,7 @@ internal class RuntimeResidencyManager(
     private var timer: Timer? = null
     private var residentSlot: ResidentRuntimeSlot? = null
     private var activeRequestCount: Int = 0
+    private var pendingUnloadReason: String? = null
     private var lastUnloadReason: String = "none"
 
     fun ensureLoaded(modelId: String, slotId: String, keepAliveMs: Long): Boolean {
@@ -29,22 +30,18 @@ internal class RuntimeResidencyManager(
         val loaded = inferenceModule.loadModel(modelId)
         synchronized(lock) {
             if (loaded) {
-                residentSlot = ResidentRuntimeSlot(
-                    modelId = modelId,
-                    slotId = slotId,
-                    keepAliveMs = safeKeepAliveMs,
-                    expiresAtEpochMs = nowMs() + safeKeepAliveMs,
-                    lastTouchedAtEpochMs = nowMs(),
-                )
-                updateNativeResidencyLocked()
-                if (activeRequestCount == 0) {
-                    scheduleExpiryLocked(safeKeepAliveMs)
-                } else {
-                    cancelTimerLocked()
-                }
+                attachResidentSlotLocked(modelId = modelId, slotId = slotId, keepAliveMs = safeKeepAliveMs)
             }
         }
         return loaded
+    }
+
+    fun attachResidentSlot(modelId: String, slotId: String, keepAliveMs: Long): Boolean {
+        val safeKeepAliveMs = keepAliveMs.coerceAtLeast(1L)
+        synchronized(lock) {
+            attachResidentSlotLocked(modelId = modelId, slotId = slotId, keepAliveMs = safeKeepAliveMs)
+        }
+        return true
     }
 
     fun touch(slotId: String, keepAliveMs: Long): Boolean {
@@ -82,9 +79,37 @@ internal class RuntimeResidencyManager(
     }
 
     fun unload(reason: String): Boolean {
-        cancelAndClear(reason)
-        inferenceModule.unloadModel()
+        when (requestUnload(reason)) {
+            RuntimeUnloadDisposition.UNLOADED,
+            RuntimeUnloadDisposition.NO_RESIDENT_MODEL,
+            RuntimeUnloadDisposition.QUEUED,
+            -> Unit
+        }
         return true
+    }
+
+    fun requestUnload(reason: String): RuntimeUnloadDisposition {
+        val unloadNow: Boolean
+        synchronized(lock) {
+            val hasResident = residentSlot != null
+            if (!hasResident) {
+                return RuntimeUnloadDisposition.NO_RESIDENT_MODEL
+            }
+            if (activeRequestCount > 0) {
+                pendingUnloadReason = sanitizeReason(reason)
+                return RuntimeUnloadDisposition.QUEUED
+            }
+            pendingUnloadReason = null
+            lastUnloadReason = sanitizeReason(reason)
+            cancelTimerLocked()
+            residentSlot = null
+            updateNativeResidencyLocked()
+            unloadNow = true
+        }
+        if (unloadNow) {
+            inferenceModule.unloadModel()
+        }
+        return RuntimeUnloadDisposition.UNLOADED
     }
 
     fun onTrimMemory(level: Int): Boolean {
@@ -107,6 +132,7 @@ internal class RuntimeResidencyManager(
     }
 
     fun onGenerationFinished(slotId: String?, keepAliveMs: Long?) {
+        var queuedReason: String? = null
         synchronized(lock) {
             activeRequestCount = (activeRequestCount - 1).coerceAtLeast(0)
             if (slotId != null && keepAliveMs != null) {
@@ -115,6 +141,18 @@ internal class RuntimeResidencyManager(
                     refreshSlotLocked(current, keepAliveMs.coerceAtLeast(1L))
                 }
             }
+            if (activeRequestCount == 0) {
+                queuedReason = pendingUnloadReason
+                pendingUnloadReason = null
+            }
+        }
+        val reason = queuedReason ?: return
+        requestUnload(reason)
+    }
+
+    fun loadedModelId(): String? {
+        synchronized(lock) {
+            return residentSlot?.modelId
         }
     }
 
@@ -151,6 +189,12 @@ internal class RuntimeResidencyManager(
             append(queueDepth)
             append("|last_unload_reason=")
             append(lastUnloadReason)
+            append("|pending_unload=")
+            append(
+                synchronized(lock) {
+                    if (pendingUnloadReason == null) "none" else pendingUnloadReason
+                },
+            )
         }
     }
 
@@ -166,11 +210,28 @@ internal class RuntimeResidencyManager(
         }
     }
 
+    private fun attachResidentSlotLocked(modelId: String, slotId: String, keepAliveMs: Long) {
+        residentSlot = ResidentRuntimeSlot(
+            modelId = modelId,
+            slotId = slotId,
+            keepAliveMs = keepAliveMs,
+            expiresAtEpochMs = nowMs() + keepAliveMs,
+            lastTouchedAtEpochMs = nowMs(),
+        )
+        updateNativeResidencyLocked()
+        if (activeRequestCount == 0) {
+            scheduleExpiryLocked(keepAliveMs)
+        } else {
+            cancelTimerLocked()
+        }
+    }
+
     private fun cancelAndClear(reason: String) {
         synchronized(lock) {
             lastUnloadReason = sanitizeReason(reason)
             cancelTimerLocked()
             residentSlot = null
+            pendingUnloadReason = null
             updateNativeResidencyLocked()
         }
     }
@@ -226,4 +287,10 @@ internal class RuntimeResidencyManager(
     private fun sanitizeReason(reason: String): String {
         return reason.trim().lowercase().replace(Regex("[^a-z0-9_]+"), "_").ifBlank { "manual" }
     }
+}
+
+internal enum class RuntimeUnloadDisposition {
+    UNLOADED,
+    QUEUED,
+    NO_RESIDENT_MODEL,
 }

@@ -1,17 +1,17 @@
 package com.pocketagent.android.runtime
 
-import android.content.pm.PackageManager
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AndroidGpuOffloadSupportTest {
     @Test
-    fun `reports supported for probe when vulkan compute and version 1_2 are present`() {
+    fun `reports supported when adreno and cpu features are present`() {
         val support = AndroidGpuOffloadSupport(
-            featureProbe = FakeFeatureProbe(
-                supportedFeatures = setOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE),
-                featureVersions = mapOf(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION to VULKAN_1_2),
+            deviceProbe = FakeDeviceProbe(
+                adreno = true,
+                dotProd = true,
+                i8mm = true,
             ),
         )
 
@@ -19,88 +19,53 @@ class AndroidGpuOffloadSupportTest {
     }
 
     @Test
-    fun `reports supported for probe when vulkan compute is present and version feature exists below 1_2`() {
+    fun `reports unsupported when adreno family is missing`() {
         val support = AndroidGpuOffloadSupport(
-            featureProbe = FakeFeatureProbe(
-                supportedFeatures = setOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE),
-                featureVersions = mapOf(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION to VULKAN_1_1),
+            deviceProbe = FakeDeviceProbe(
+                adreno = false,
+                dotProd = true,
+                i8mm = true,
             ),
-        )
-
-        assertTrue(support.isSupported())
-    }
-
-    @Test
-    fun `reports unsupported when vulkan feature signals are absent`() {
-        val support = AndroidGpuOffloadSupport(
-            featureProbe = FakeFeatureProbe(),
         )
 
         assertFalse(support.isSupported())
     }
 
     @Test
-    fun `reports unsupported when feature query throws`() {
+    fun `reports unsupported when required cpu features are missing`() {
         val support = AndroidGpuOffloadSupport(
-            featureProbe = object : AndroidGpuOffloadSupport.FeatureProbe {
-                override fun hasSystemFeature(name: String, version: Int): Boolean {
-                    error("feature query failed")
-                }
+            deviceProbe = FakeDeviceProbe(
+                adreno = true,
+                dotProd = true,
+                i8mm = false,
+            ),
+        )
+
+        assertFalse(support.isSupported())
+    }
+
+    @Test
+    fun `reports unsupported when probing throws`() {
+        val support = AndroidGpuOffloadSupport(
+            deviceProbe = object : AndroidGpuOffloadSupport.DeviceProbe {
+                override fun isAdrenoFamily(): Boolean = error("probe failed")
+                override fun hasArmDotProd(): Boolean = true
+                override fun hasArmI8mm(): Boolean = true
             },
         )
 
         assertFalse(support.isSupported())
     }
-
-    @Test
-    fun `reports unsupported when vulkan version 1_2 is present but compute feature is absent`() {
-        val support = AndroidGpuOffloadSupport(
-            featureProbe = FakeFeatureProbe(
-                featureVersions = mapOf(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION to VULKAN_1_2),
-            ),
-        )
-
-        assertFalse(support.isSupported())
-    }
-
-    @Test
-    fun `reports unsupported when vulkan compute is present but version feature is absent`() {
-        val support = AndroidGpuOffloadSupport(
-            featureProbe = FakeFeatureProbe(
-                supportedFeatures = setOf(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE),
-            ),
-        )
-
-        assertFalse(support.isSupported())
-    }
-
-    @Test
-    fun `reports supported when vulkan compute and any version metadata are present`() {
-        val support = AndroidGpuOffloadSupport(
-            featureProbe = FakeFeatureProbe(
-                supportedFeatures = setOf(
-                    PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE,
-                    PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
-                ),
-            ),
-        )
-
-        assertTrue(support.isSupported())
-    }
 }
 
-private class FakeFeatureProbe(
-    private val supportedFeatures: Set<String> = emptySet(),
-    private val featureVersions: Map<String, Int> = emptyMap(),
-) : AndroidGpuOffloadSupport.FeatureProbe {
-    override fun hasSystemFeature(name: String, version: Int): Boolean {
-        if (version <= 0) {
-            return supportedFeatures.contains(name) || featureVersions.containsKey(name)
-        }
-        val maxVersion = featureVersions[name] ?: return false
-        return maxVersion >= version
-    }
-}
+private class FakeDeviceProbe(
+    private val adreno: Boolean,
+    private val dotProd: Boolean,
+    private val i8mm: Boolean,
+) : AndroidGpuOffloadSupport.DeviceProbe {
+    override fun isAdrenoFamily(): Boolean = adreno
 
-private const val VULKAN_1_1 = (1 shl 22) or (1 shl 12)
-private const val VULKAN_1_2 = (1 shl 22) or (2 shl 12)
+    override fun hasArmDotProd(): Boolean = dotProd
+
+    override fun hasArmI8mm(): Boolean = i8mm
+}

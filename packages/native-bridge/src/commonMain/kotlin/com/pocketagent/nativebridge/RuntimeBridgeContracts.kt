@@ -10,6 +10,13 @@ enum class RuntimeBackend {
     UNAVAILABLE,
 }
 
+enum class GpuExecutionBackend {
+    AUTO,
+    HEXAGON,
+    OPENCL,
+    CPU,
+}
+
 enum class CachePolicy(val code: Int) {
     OFF(0),
     PREFIX_KV_REUSE(1),
@@ -30,6 +37,8 @@ data class RuntimeLoadConfig(
     val nCtx: Int = 2048,
     val gpuEnabled: Boolean = false,
     val gpuLayers: Int = 0,
+    val gpuBackend: GpuExecutionBackend = GpuExecutionBackend.AUTO,
+    val strictGpuOffload: Boolean = true,
     val quantizedKvCache: Boolean = true,
     val speculativeEnabled: Boolean = false,
     val speculativeDraftModelId: String? = null,
@@ -49,6 +58,8 @@ data class RuntimeGenerationConfig(
     val nCtx: Int = 2048,
     val gpuEnabled: Boolean = false,
     val gpuLayers: Int = 0,
+    val gpuBackend: GpuExecutionBackend = GpuExecutionBackend.AUTO,
+    val strictGpuOffload: Boolean = true,
     val quantizedKvCache: Boolean = true,
     val sampling: RuntimeSamplingConfig = RuntimeSamplingConfig(),
     val speculativeEnabled: Boolean = false,
@@ -76,6 +87,8 @@ data class RuntimeGenerationConfig(
             nCtx = nCtx,
             gpuEnabled = gpuEnabled,
             gpuLayers = gpuLayers,
+            gpuBackend = gpuBackend,
+            strictGpuOffload = strictGpuOffload,
             quantizedKvCache = quantizedKvCache,
             speculativeEnabled = speculativeEnabled,
             speculativeDraftModelId = speculativeDraftModelId,
@@ -119,6 +132,47 @@ data class RuntimeResidencyState(
     val lastAccessAtEpochMs: Long? = null,
 )
 
+enum class ModelLifecycleState {
+    UNLOADED,
+    LOADING,
+    LOADED,
+    OFFLOADING,
+    FAILED,
+}
+
+enum class ModelLifecycleErrorCode {
+    MODEL_FILE_UNAVAILABLE,
+    RUNTIME_INCOMPATIBLE,
+    BACKEND_INIT_FAILED,
+    BUSY_GENERATION,
+    CANCELLED_BY_NEWER_REQUEST,
+    UNKNOWN,
+}
+
+data class ModelLifecycleError(
+    val code: ModelLifecycleErrorCode,
+    val detail: String? = null,
+)
+
+data class ModelLoadOptions(
+    val modelVersion: String? = null,
+    val strictGpuOffload: Boolean = true,
+)
+
+data class LoadedModelInfo(
+    val modelId: String,
+    val modelPath: String?,
+    val modelVersion: String? = null,
+)
+
+data class ModelLifecycleEvent(
+    val state: ModelLifecycleState,
+    val modelId: String? = null,
+    val modelVersion: String? = null,
+    val timestampEpochMs: Long = System.currentTimeMillis(),
+    val error: ModelLifecycleError? = null,
+)
+
 enum class GenerationFinishReason {
     COMPLETED,
     MAX_TOKENS,
@@ -147,8 +201,10 @@ data class GenerationResult(
 interface LlamaCppRuntimeBridge {
     fun isReady(): Boolean
     fun listAvailableModels(): List<String>
-    fun loadModel(modelId: String): Boolean = loadModel(modelId, null)
+    fun loadModel(modelId: String): Boolean = loadModel(modelId, null, ModelLoadOptions())
     fun loadModel(modelId: String, modelPath: String?): Boolean
+    fun loadModel(modelId: String, modelPath: String?, options: ModelLoadOptions): Boolean =
+        loadModel(modelId, modelPath)
     fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {}
     fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = RuntimeGenerationConfig.default()
     fun supportsGpuOffload(): Boolean = false
@@ -175,9 +231,31 @@ interface LlamaCppRuntimeBridge {
     fun cancelGeneration(): Boolean = false
     fun cancelGeneration(requestId: String): Boolean = cancelGeneration()
     fun unloadModel()
+    fun offloadModel(reason: String): Boolean {
+        unloadModel()
+        return true
+    }
+    fun getLoadedModel(): LoadedModelInfo? = null
+    fun currentModelLifecycleState(): ModelLifecycleEvent {
+        val loaded = getLoadedModel()
+        return if (loaded != null) {
+            ModelLifecycleEvent(
+                state = ModelLifecycleState.LOADED,
+                modelId = loaded.modelId,
+                modelVersion = loaded.modelVersion,
+            )
+        } else {
+            ModelLifecycleEvent(state = ModelLifecycleState.UNLOADED)
+        }
+    }
+    fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        listener(currentModelLifecycleState())
+        return AutoCloseable { }
+    }
     fun runtimeBackend(): RuntimeBackend
     fun lastError(): BridgeError? = null
-    fun vulkanDiagnosticsJson(): String? = null
+    fun backendDiagnosticsJson(): String? = null
+    fun setBackendProfile(profile: String) {}
     fun prefixCacheDiagnosticsLine(): String? = null
 }
 

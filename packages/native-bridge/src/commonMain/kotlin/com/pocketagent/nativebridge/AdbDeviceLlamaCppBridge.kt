@@ -10,6 +10,8 @@ class AdbDeviceLlamaCppBridge(
     private var activeSerial: String? = null
     private var activeModelId: String? = null
     private var runtimeGenerationConfig: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
+    @Volatile
+    private var loadedModel: LoadedModelInfo? = null
 
     override fun isReady(): Boolean = resolveSerial() != null
 
@@ -35,6 +37,11 @@ class AdbDeviceLlamaCppBridge(
         val serial = resolveSerial() ?: return false
         activeSerial = serial
         activeModelId = modelId
+        loadedModel = LoadedModelInfo(
+            modelId = modelId,
+            modelPath = validation.normalizedModelPath,
+            modelVersion = null,
+        )
         return true
     }
 
@@ -136,6 +143,12 @@ class AdbDeviceLlamaCppBridge(
 
     override fun unloadModel() {
         activeModelId = null
+        loadedModel = null
+    }
+
+    override fun offloadModel(reason: String): Boolean {
+        unloadModel()
+        return true
     }
 
     override fun cancelGeneration(): Boolean {
@@ -148,6 +161,8 @@ class AdbDeviceLlamaCppBridge(
     override fun runtimeBackend(): RuntimeBackend {
         return if (isReady()) RuntimeBackend.ADB_FALLBACK else RuntimeBackend.UNAVAILABLE
     }
+
+    override fun getLoadedModel(): LoadedModelInfo? = loadedModel
 
     private fun resolveSerial(): String? {
         val preferred = env["ADB_SERIAL"]?.trim()?.takeIf { it.isNotEmpty() }

@@ -1,41 +1,36 @@
 package com.pocketagent.android.runtime
 
 import android.content.Context
-import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import java.io.File
+import java.util.Locale
 
 class AndroidGpuOffloadSupport : DeviceGpuOffloadSupport {
     private val tag = "AndroidGpuSupport"
-    private val featureProbe: FeatureProbe
+    private val deviceProbe: DeviceProbe
 
     constructor(context: Context) {
-        featureProbe = PackageManagerFeatureProbe(context.applicationContext.packageManager)
+        deviceProbe = SystemDeviceProbe(context.applicationContext)
     }
 
     internal constructor(
-        featureProbe: FeatureProbe,
+        deviceProbe: DeviceProbe,
     ) {
-        this.featureProbe = featureProbe
+        this.deviceProbe = deviceProbe
     }
 
     override fun isSupported(): Boolean {
         return runCatching {
-            // Vulkan features are versioned features and should be queried via hasSystemFeature(name, version).
-            val hasCompute = featureProbe.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_COMPUTE, 0)
-            val hasLevel = featureProbe.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_LEVEL, 0)
-            val hasVersionAny = featureProbe.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION, 0)
-            val hasVersion12 = featureProbe.hasSystemFeature(
-                PackageManager.FEATURE_VULKAN_HARDWARE_VERSION,
-                MIN_VULKAN_VERSION_1_2,
-            )
-            // Advisory-only signal for policy diagnostics. Final eligibility is runtime + crash-safe probe.
-            val supportedForProbe = hasCompute && hasVersionAny
-            val strict12Eligible = hasCompute && hasVersion12
+            // Advisory-only signal; final eligibility remains runtime + probe validation.
+            val hasAdreno = deviceProbe.isAdrenoFamily()
+            val hasDotProd = deviceProbe.hasArmDotProd()
+            val hasI8mm = deviceProbe.hasArmI8mm()
+            val supportedForProbe = hasAdreno && hasDotProd && hasI8mm
             safeLogInfo(
                 tag,
-                "GPU_OFFLOAD|has_compute=$hasCompute|has_level=$hasLevel|has_version_any=$hasVersionAny|" +
-                    "has_version_1_2=$hasVersion12|supported_for_probe=$supportedForProbe|" +
-                    "strict_1_2_eligible=$strict12Eligible",
+                "GPU_OFFLOAD|has_adreno=$hasAdreno|has_dotprod=$hasDotProd|has_i8mm=$hasI8mm|" +
+                    "supported_for_probe=$supportedForProbe",
             )
             supportedForProbe
         }.getOrElse {
@@ -52,20 +47,55 @@ class AndroidGpuOffloadSupport : DeviceGpuOffloadSupport {
         runCatching { Log.w(tag, message, throwable) }
     }
 
-    internal interface FeatureProbe {
-        fun hasSystemFeature(name: String, version: Int): Boolean
+    internal interface DeviceProbe {
+        fun isAdrenoFamily(): Boolean
+        fun hasArmDotProd(): Boolean
+        fun hasArmI8mm(): Boolean
     }
 
-    private class PackageManagerFeatureProbe(
-        private val packageManager: PackageManager,
-    ) : FeatureProbe {
-        override fun hasSystemFeature(name: String, version: Int): Boolean {
-            return packageManager.hasSystemFeature(name, version)
+    private class SystemDeviceProbe(
+        private val context: Context,
+    ) : DeviceProbe {
+        private val cachedCpuInfoFeatures: String by lazy(LazyThreadSafetyMode.PUBLICATION) {
+            runCatching {
+                File("/proc/cpuinfo")
+                    .readText()
+                    .lowercase(Locale.ROOT)
+            }.getOrDefault("")
         }
-    }
 
-    private companion object {
-        // Encoded via VK_MAKE_API_VERSION variant used by PackageManager feature versions.
-        private const val MIN_VULKAN_VERSION_1_2 = (1 shl 22) or (2 shl 12)
+        private val cachedDeviceSignature: String by lazy(LazyThreadSafetyMode.PUBLICATION) {
+            listOf(
+                Build.HARDWARE,
+                Build.BOARD,
+                Build.DEVICE,
+                Build.MODEL,
+                Build.PRODUCT,
+                readBuildField("SOC_MODEL"),
+                readBuildField("SOC_MANUFACTURER"),
+                context.packageManager.systemAvailableFeatures?.joinToString(separator = ",") { it.name.orEmpty() },
+            ).joinToString(separator = " ").lowercase(Locale.ROOT)
+        }
+
+        override fun isAdrenoFamily(): Boolean {
+            val raw = cachedDeviceSignature
+            return raw.contains("adreno") || raw.contains("qcom") || raw.contains("qualcomm")
+        }
+
+        override fun hasArmDotProd(): Boolean {
+            val raw = cachedCpuInfoFeatures
+            return raw.contains("dotprod") || raw.contains("asimddp")
+        }
+
+        override fun hasArmI8mm(): Boolean {
+            val raw = cachedCpuInfoFeatures
+            return raw.contains("i8mm")
+        }
+
+        private fun readBuildField(fieldName: String): String {
+            return runCatching {
+                Build::class.java.getDeclaredField(fieldName).get(null)?.toString().orEmpty()
+            }.getOrDefault("")
+        }
     }
 }

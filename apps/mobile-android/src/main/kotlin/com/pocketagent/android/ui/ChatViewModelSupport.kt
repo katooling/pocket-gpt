@@ -74,7 +74,7 @@ internal fun performanceProfileStatusDetail(
     val profileLabel = profile.name.lowercase().replaceFirstChar { it.uppercase() }
     val gpuLabel = when {
         gpuEnabled && gpuSupported -> "GPU enabled"
-        gpuEnabled && !gpuSupported -> "GPU unavailable, using CPU"
+        gpuEnabled && !gpuSupported -> "GPU unavailable (fails fast)"
         else -> "GPU off"
     }
     return "Speed & Battery: $profileLabel ($gpuLabel)"

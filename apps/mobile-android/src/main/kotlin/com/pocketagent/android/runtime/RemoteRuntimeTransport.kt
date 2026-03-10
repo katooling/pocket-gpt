@@ -53,7 +53,7 @@ internal interface RemoteRuntimeTransport {
     ): GenerationResult
     fun cancelGeneration(requestId: String?): Boolean
     fun supportsGpuOffload(): Boolean
-    fun vulkanDiagnosticsJson(): String?
+    fun backendDiagnosticsJson(): String?
     fun lastError(): BridgeError?
     fun runGpuProbe(request: GpuProbeRequest, timeoutMs: Long): GpuProbeResult
 }
@@ -228,13 +228,13 @@ internal class MessengerRemoteRuntimeTransport(
         return reply.getBoolean(LlamaRuntimeIpc.EXTRA_RUNTIME_SUPPORTED, false)
     }
 
-    override fun vulkanDiagnosticsJson(): String? {
+    override fun backendDiagnosticsJson(): String? {
         val reply = sendCommand(
-            what = LlamaRuntimeIpc.MSG_GET_VULKAN_DIAGNOSTICS,
+            what = LlamaRuntimeIpc.MSG_GET_BACKEND_DIAGNOSTICS,
             payload = Bundle(),
             timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
         ) ?: return null
-        return reply.getString(LlamaRuntimeIpc.EXTRA_VULKAN_DIAGNOSTICS_JSON)
+        return reply.getString(LlamaRuntimeIpc.EXTRA_BACKEND_DIAGNOSTICS_JSON)
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
     }
@@ -263,7 +263,7 @@ internal class MessengerRemoteRuntimeTransport(
                 putString(LlamaRuntimeIpc.EXTRA_MODEL_VERSION, request.modelVersion)
                 putString(LlamaRuntimeIpc.EXTRA_MODEL_PATH, request.modelPath)
                 putIntegerArrayList(LlamaRuntimeIpc.EXTRA_LAYER_LADDER, ArrayList(request.layerLadder))
-                putString(LlamaRuntimeIpc.EXTRA_VULKAN_PROFILE, request.vulkanProfile)
+                putString(LlamaRuntimeIpc.EXTRA_BACKEND_PROFILE, request.backendProfile)
             },
             timeoutMs = timeoutMs,
         ) ?: return GpuProbeResult(

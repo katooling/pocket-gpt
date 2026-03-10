@@ -92,9 +92,9 @@ class LlamaRuntimeService : Service() {
                 }
             }
 
-            LlamaRuntimeIpc.MSG_GET_VULKAN_DIAGNOSTICS -> handleNonStreaming(correlationId, replyTo) {
+            LlamaRuntimeIpc.MSG_GET_BACKEND_DIAGNOSTICS -> handleNonStreaming(correlationId, replyTo) {
                 okReply().apply {
-                    putString(LlamaRuntimeIpc.EXTRA_VULKAN_DIAGNOSTICS_JSON, primaryBridge.vulkanDiagnosticsJson())
+                    putString(LlamaRuntimeIpc.EXTRA_BACKEND_DIAGNOSTICS_JSON, primaryBridge.backendDiagnosticsJson())
                 }
             }
 
