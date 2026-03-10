@@ -6,6 +6,7 @@ import sys
 from typing import Sequence
 
 from tools.devctl.doctor import print_doctor_report, run_doctor
+from tools.devctl.gates import dispatch_gate
 from tools.devctl.governance import (
     docs_accuracy_check,
     docs_health_check,
@@ -28,6 +29,9 @@ def _build_parser() -> argparse.ArgumentParser:
     lane_parser = subparsers.add_parser("lane", help="run a named lane")
     lane_parser.add_argument("name", help="lane name")
     lane_parser.add_argument("args", nargs=argparse.REMAINDER, help="lane-specific args")
+
+    gate_parser = subparsers.add_parser("gate", help="run a named gate")
+    gate_parser.add_argument("args", nargs=argparse.REMAINDER, help="gate-specific args")
 
     gov_parser = subparsers.add_parser("governance", help="run governance checks")
     gov_sub = gov_parser.add_subparsers(dest="name", required=True)
@@ -118,6 +122,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if parsed.command == "lane":
             _handle_lane(parsed.name, parsed.args)
+            return 0
+
+        if parsed.command == "gate":
+            dispatch_gate(parsed.args)
             return 0
 
         if parsed.command == "governance":

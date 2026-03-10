@@ -268,6 +268,13 @@ class LanesTest(unittest.TestCase):
     def test_screenshot_pack_parser_supports_update_reference_flag(self) -> None:
         parsed = _parse_screenshot_pack_args(["--update-reference"])
         self.assertTrue(parsed.update_reference)
+        self.assertFalse(parsed.product_signal_only)
+        self.assertFalse(parsed.deterministic_only)
+
+    def test_screenshot_pack_parser_supports_product_signal_and_deterministic_flags(self) -> None:
+        parsed = _parse_screenshot_pack_args(["--product-signal-only", "--deterministic-only"])
+        self.assertTrue(parsed.product_signal_only)
+        self.assertTrue(parsed.deterministic_only)
 
     def test_build_screenshot_inventory_report_marks_missing_ids(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -308,6 +315,10 @@ class LanesTest(unittest.TestCase):
             )
 
             self.assertEqual(["ui-02-onboarding-page-2"], payload["missing_ids"])
+            self.assertEqual("ui-screenshot-inventory-report-v2", payload["schema"])
+            self.assertEqual("ui-screenshot-inventory-v1", payload["inventory_schema"])
+            self.assertEqual("SER123", payload["device_serial"])
+            self.assertIn("generated_at_utc", payload)
             self.assertTrue((combined_dir / "ui-01-onboarding-page-1.png").exists())
             self.assertFalse((combined_dir / "ui-02-onboarding-page-2.png").exists())
             self.assertTrue(report_json_path.exists())
@@ -553,6 +564,69 @@ class LanesTest(unittest.TestCase):
         self.assertIn("=== attempt 1 ===", output)
         self.assertIn("=== attempt 2 ===", output)
         self.assertIn("Unable to launch app", output)
+
+    def test_send_capture_kickoff_failure_populates_required_qa13_fields(self) -> None:
+        configs = load_devctl_configs(REPO_ROOT)
+
+        class Result:
+            def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        def fake_run(command, **_kwargs):
+            cmd = list(command)
+            if cmd and cmd[0] == "maestro":
+                return Result(returncode=1, stdout="", stderr="send-capture-kickoff: launch failed")
+            return Result(returncode=0, stdout="", stderr="")
+
+        context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+        kickoff_snapshot = SendCaptureSnapshot(
+            second=0,
+            screenshot=None,
+            window_dump=None,
+            chat_state_snapshot=None,
+            runtime_status=None,
+            backend=None,
+            active_model_id=None,
+            placeholder_visible=False,
+            runtime_error_visible=False,
+            timeout_message_visible=False,
+            streaming_text_visible=False,
+            response_visible=False,
+            response_role=None,
+            response_non_empty=False,
+            first_token_seen=False,
+            request_id=None,
+            finish_reason=None,
+            terminal_event_seen=False,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch(
+            "tools.devctl.lanes._capture_send_snapshot", return_value=kickoff_snapshot
+        ), mock.patch(
+            "tools.devctl.lanes._capture_logcat", return_value=None
+        ), mock.patch(
+            "tools.devctl.lanes._collect_maestro_screenshots", return_value=[]
+        ):
+            result = _run_send_capture_stage(
+                context=context,
+                maestro_bin="maestro",
+                serial="SER123",
+                app_package="com.pocketagent.android",
+                run_root=Path(tmpdir),
+                prompt="hello",
+                reply_timeout_seconds=60,
+                capture_intervals=[0],
+                mode="strict",
+            )
+
+        self.assertEqual("failed", result.status)
+        self.assertEqual("error", result.phase)
+        self.assertEqual("unknown", result.runtime_status)
+        self.assertEqual("unknown", result.backend)
+        self.assertEqual("unknown", result.active_model_id)
+        self.assertFalse(result.placeholder_visible)
 
     def test_run_maestro_flow_retries_once_on_transient_launch_failure(self) -> None:
         configs = load_devctl_configs(REPO_ROOT)

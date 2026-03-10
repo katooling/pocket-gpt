@@ -15,7 +15,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, MutableMapping, Sequence
 
@@ -142,11 +142,28 @@ _FORCE_MODEL_SYNC_ENV = "POCKETGPT_FORCE_MODEL_SYNC"
 _SCREENSHOT_INVENTORY_SCHEMA = "ui-screenshot-inventory-v1"
 _SCREENSHOT_INVENTORY_PATH = REPO_ROOT / "tests/ui-screenshots/inventory.yaml"
 _SCREENSHOT_REFERENCE_DIR = REPO_ROOT / "tests/ui-screenshots/reference/sm-a515f-android13"
+_SCREENSHOT_REPORT_SCHEMA = "ui-screenshot-inventory-report-v2"
+_QA13_UNKNOWN_VALUE = "unknown"
 _MAESTRO_TRANSIENT_FAILURE_MARKERS = (
     "Unable to launch app",
     "TimeoutException",
     "timed out while waiting for FUNCTIONFS_BIND",
     "TcpForwarder",
+)
+_SCREENSHOT_PACK_HARNESS_NOISE_MARKERS = (
+    "No compose hierarchies found in the app",
+    "Command timed out after",
+)
+_SCREENSHOT_PACK_BASE_TEST_CLASS = "com.pocketagent.android.MainActivityUiSmokeTest"
+_SCREENSHOT_PACK_DETERMINISTIC_METHODS: tuple[str, ...] = (
+    "onboardingFlowCanProgressAndComplete",
+    "launchShowsComposerAndOfflineIndicator",
+    "sendMessageShowsUserAndAssistantBubbles",
+    "sessionDrawerOpensFromTopBar",
+    "privacySheetOpensWithExpectedCopy",
+    "toolAndDiagnosticsActionsRenderResults",
+    "advancedControlsAreVisibleWithoutFollowUp",
+    "runtimeLoadingAndRuntimeErrorStatesRenderExpectedRecovery",
 )
 
 _SERIALIZED_GRADLE_INSTALLS: dict[str, tuple[str, str, bool]] = {
@@ -1553,7 +1570,31 @@ def _copy_pngs_flat(source_dir: Path, target_dir: Path) -> list[Path]:
 def _parse_screenshot_pack_args(raw_args: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="devctl lane screenshot-pack")
     parser.add_argument("--update-reference", action="store_true")
+    parser.add_argument(
+        "--product-signal-only",
+        action="store_true",
+        help="Downgrade known harness-noise failures to warnings for screenshot-pack orchestration lanes.",
+    )
+    parser.add_argument(
+        "--deterministic-only",
+        action="store_true",
+        help="Run deterministic screenshot subset only (skip full instrumentation expansion).",
+    )
     return parser.parse_args(list(raw_args))
+
+
+def _is_screenshot_pack_harness_noise(message: str) -> bool:
+    lowered = message.lower()
+    return any(marker.lower() in lowered for marker in _SCREENSHOT_PACK_HARNESS_NOISE_MARKERS)
+
+
+def _screenshot_pack_selector(*, deterministic: bool) -> str:
+    if not deterministic:
+        return _SCREENSHOT_PACK_BASE_TEST_CLASS
+    return ",".join(
+        f"{_SCREENSHOT_PACK_BASE_TEST_CLASS}#{method_name}"
+        for method_name in _SCREENSHOT_PACK_DETERMINISTIC_METHODS
+    )
 
 
 def _load_screenshot_inventory(path: Path = _SCREENSHOT_INVENTORY_PATH) -> list[ScreenshotInventoryItem]:
@@ -1651,6 +1692,22 @@ def _build_screenshot_inventory_report(
     combined_dir.mkdir(parents=True, exist_ok=True)
     entries: list[dict[str, Any]] = []
     missing_ids: list[str] = []
+    inventory_digest = hashlib.sha256(
+        json.dumps(
+            [
+                {
+                    "id": item.id,
+                    "filename": item.filename,
+                    "candidates": list(item.candidates),
+                }
+                for item in inventory
+            ],
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    run_id = artifact_root.name
 
     for item in inventory:
         selected_path: Path | None = None
@@ -1688,7 +1745,13 @@ def _build_screenshot_inventory_report(
         )
 
     payload = {
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "schema": _SCREENSHOT_REPORT_SCHEMA,
+        "inventory_schema": _SCREENSHOT_INVENTORY_SCHEMA,
+        "inventory_digest": inventory_digest,
+        "generated_at_utc": generated_at,
+        "generated_at": generated_at,
+        "run_id": run_id,
+        "device_serial": serial,
         "serial": serial,
         "artifact_root": _report_path(artifact_root),
         "missing_ids": missing_ids,
@@ -1708,7 +1771,7 @@ def _build_screenshot_inventory_report(
         "",
         f"- Device: `{serial}`",
         f"- Artifact root: `{_report_path(artifact_root)}`",
-        f"- Generated: `{payload['generated_at']}`",
+        f"- Generated: `{generated_at}`",
         f"- Required: `{payload['summary']['total_required']}`",
         f"- Passed: `{payload['summary']['passed']}`",
         f"- Missing: `{payload['summary']['missing']}`",
@@ -2202,6 +2265,22 @@ def _capture_send_snapshot(
     )
 
 
+def _normalize_qa13_text(value: str | None) -> str:
+    normalized = (value or "").strip()
+    return normalized if normalized else _QA13_UNKNOWN_VALUE
+
+
+def _build_qa13_defaults_from_snapshot(snapshot: SendCaptureSnapshot | None) -> tuple[str, str, str, bool]:
+    if snapshot is None:
+        return (_QA13_UNKNOWN_VALUE, _QA13_UNKNOWN_VALUE, _QA13_UNKNOWN_VALUE, False)
+    return (
+        _normalize_qa13_text(snapshot.runtime_status),
+        _normalize_qa13_text(snapshot.backend),
+        _normalize_qa13_text(snapshot.active_model_id),
+        bool(snapshot.placeholder_visible),
+    )
+
+
 def _run_send_capture_stage(
     *,
     context: RuntimeContext,
@@ -2369,10 +2448,27 @@ def _run_send_capture_stage(
         failure_capture = capture_root / "screenshots" / "send-kickoff-failure.png"
         if _capture_device_screenshot(context=context, serial=serial, local_path=failure_capture):
             screenshots.append(_report_path(failure_capture))
+        kickoff_snapshot: SendCaptureSnapshot | None = None
+        try:
+            kickoff_snapshot = _capture_send_snapshot(
+                context=context,
+                serial=serial,
+                app_package=app_package,
+                capture_root=capture_root,
+                second=0,
+                prompt=prompt,
+            )
+            if kickoff_snapshot.screenshot:
+                screenshots.append(kickoff_snapshot.screenshot)
+        except Exception:  # noqa: BLE001 - kickoff diagnostics should not mask the original failure.
+            kickoff_snapshot = None
         _capture_logcat(context, serial, logcat_path)
         combined = ((kickoff_result.stdout or "") + "\n" + (kickoff_result.stderr or "")).strip()
         failure_signature = combined.splitlines()[-1] if combined else f"kickoff_exit={kickoff_result.returncode}"
         elapsed_ms = int((time.monotonic() - started) * 1000)
+        qa13_runtime_status, qa13_backend, qa13_model_id, qa13_placeholder = _build_qa13_defaults_from_snapshot(
+            kickoff_snapshot
+        )
         return JourneyStepResult(
             name="send-capture",
             status="failed",
@@ -2383,6 +2479,10 @@ def _run_send_capture_stage(
             logcat=_report_path(logcat_path),
             phase="error",
             elapsed_ms=elapsed_ms,
+            runtime_status=qa13_runtime_status,
+            backend=qa13_backend,
+            active_model_id=qa13_model_id,
+            placeholder_visible=qa13_placeholder,
             mode=mode,
         )
 
@@ -2623,9 +2723,9 @@ def _run_send_capture_stage(
         logcat=_report_path(logcat_path),
         phase=phase,
         elapsed_ms=elapsed_ms,
-        runtime_status=final.runtime_status,
-        backend=final.backend,
-        active_model_id=final.active_model_id,
+        runtime_status=_normalize_qa13_text(final.runtime_status),
+        backend=_normalize_qa13_text(final.backend),
+        active_model_id=_normalize_qa13_text(final.active_model_id),
         placeholder_visible=final.placeholder_visible,
         response_visible=completion is not None or final.response_visible,
         response_role=completion.response_role if completion is not None else final.response_role,
@@ -3494,79 +3594,98 @@ def _lane_screenshot_pack_impl(raw_args: Sequence[str], context: RuntimeContext)
         device_screenshot_app_external_dir = f"/sdcard/Android/data/{real_runtime_cfg.app_package}/files/screenshot-pack"
         runner_args["screenshot_pack_dir"] = device_screenshot_dir
         runner_args["screenshot_pack_fallback_dir"] = device_screenshot_fallback_dir
-        _run_remote_shell_script(
-            context=context,
-            serial=serial,
-            script=(
-                f"rm -rf {_shell_single_quote(screenshot_pack_root)} "
-                f"{_shell_single_quote(device_screenshot_app_external_dir)}"
-            ),
-        )
-        context.run(
-            ["adb", "-s", serial, "shell", "pm", "clear", real_runtime_cfg.app_package],
-            check=False,
-            env=context.env,
-        )
-        _run_instrumentation_class(
-            context=context,
-            serial=serial,
-            test_class="com.pocketagent.android.MainActivityUiSmokeTest",
-            runner=preflight.instrumentation_runner or real_runtime_cfg.instrumentation_runner,
-            args=runner_args,
-            timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
-        )
+        instrumentation_warnings: list[str] = []
 
-        pulled_remote_dirs: list[str] = []
-        instrumented_pull_dir.mkdir(parents=True, exist_ok=True)
-        for remote_dir in (
-            device_screenshot_dir,
-            device_screenshot_fallback_dir,
-            device_screenshot_app_external_dir,
-        ):
-            if not _remote_path_exists(context, serial, remote_dir):
-                continue
-            context.run(
-                ["adb", "-s", serial, "pull", remote_dir, str(instrumented_pull_dir)],
-                check=False,
-                env=context.env,
-            )
-            pulled_remote_dirs.append(remote_dir)
-
-        if not pulled_remote_dirs:
-            fallback_root = "/sdcard/Download/pocketgpt-screenshot-pack"
-            find_result = _run_remote_shell_script(
+        def _clear_device_screenshot_outputs() -> None:
+            _run_remote_shell_script(
                 context=context,
                 serial=serial,
                 script=(
-                    f"if [ -d {_shell_single_quote(fallback_root)} ]; then "
-                    f"find {_shell_single_quote(fallback_root)} -type f -name '*.png' | head -n 1; "
-                    "fi"
+                    f"rm -rf {_shell_single_quote(screenshot_pack_root)} "
+                    f"{_shell_single_quote(device_screenshot_app_external_dir)}"
                 ),
             )
-            if (find_result.stdout or "").strip():
+
+        def _pull_instrumented_outputs(phase: str, *, required: bool) -> list[str]:
+            pulled_remote_dirs: list[str] = []
+            phase_pull_dir = instrumented_pull_dir / phase
+            phase_pull_dir.mkdir(parents=True, exist_ok=True)
+            for remote_dir in (
+                device_screenshot_dir,
+                device_screenshot_fallback_dir,
+                device_screenshot_app_external_dir,
+            ):
+                if not _remote_path_exists(context, serial, remote_dir):
+                    continue
                 context.run(
-                    ["adb", "-s", serial, "pull", fallback_root, str(instrumented_pull_dir)],
+                    ["adb", "-s", serial, "pull", remote_dir, str(phase_pull_dir)],
                     check=False,
                     env=context.env,
                 )
-                pulled_remote_dirs.append(fallback_root)
+                pulled_remote_dirs.append(remote_dir)
 
-        if not pulled_remote_dirs:
-            raise DevctlError(
-                "DEVICE_ERROR",
-                "Instrumentation screenshot output directory not found on device. "
-                "Checked: "
-                f"{device_screenshot_dir}, {device_screenshot_fallback_dir}, {device_screenshot_app_external_dir}",
+            if not pulled_remote_dirs:
+                fallback_root = "/sdcard/Download/pocketgpt-screenshot-pack"
+                find_result = _run_remote_shell_script(
+                    context=context,
+                    serial=serial,
+                    script=(
+                        f"if [ -d {_shell_single_quote(fallback_root)} ]; then "
+                        f"find {_shell_single_quote(fallback_root)} -type f -name '*.png' | head -n 1; "
+                        "fi"
+                    ),
+                )
+                if (find_result.stdout or "").strip():
+                    context.run(
+                        ["adb", "-s", serial, "pull", fallback_root, str(phase_pull_dir)],
+                        check=False,
+                        env=context.env,
+                    )
+                    pulled_remote_dirs.append(fallback_root)
+
+            if not pulled_remote_dirs and required:
+                raise DevctlError(
+                    "DEVICE_ERROR",
+                    "Instrumentation screenshot output directory not found on device. "
+                    "Checked: "
+                    f"{device_screenshot_dir}, {device_screenshot_fallback_dir}, {device_screenshot_app_external_dir}",
+                )
+
+            _copy_pngs_flat(phase_pull_dir, instrumented_dir)
+            return pulled_remote_dirs
+
+        def _run_screenshot_instrumentation(*, deterministic: bool, required_outputs: bool) -> None:
+            phase_label = "deterministic-subset" if deterministic else "full-expansion"
+            selector = _screenshot_pack_selector(deterministic=deterministic)
+            _clear_device_screenshot_outputs()
+            context.run(
+                ["adb", "-s", serial, "shell", "pm", "clear", real_runtime_cfg.app_package],
+                check=False,
+                env=context.env,
             )
-        _run_remote_shell_script(
-            context=context,
-            serial=serial,
-            script=(
-                f"rm -rf {_shell_single_quote(screenshot_pack_root)} "
-                f"{_shell_single_quote(device_screenshot_app_external_dir)}"
-            ),
-        )
-        _copy_pngs_flat(instrumented_pull_dir, instrumented_dir)
+            try:
+                _run_instrumentation_class(
+                    context=context,
+                    serial=serial,
+                    test_class=selector,
+                    runner=preflight.instrumentation_runner or real_runtime_cfg.instrumentation_runner,
+                    args=runner_args,
+                    timeout_seconds=real_runtime_cfg.startup_probe_timeout_seconds,
+                )
+            except DevctlError as exc:
+                if args.product_signal_only and _is_screenshot_pack_harness_noise(exc.message):
+                    warning = f"{phase_label} instrumentation harness noise: {exc.message.splitlines()[-1]}"
+                    print_step(f"Screenshot-pack warning: {warning}")
+                    instrumentation_warnings.append(warning)
+                    _pull_instrumented_outputs(phase_label, required=False)
+                    _clear_device_screenshot_outputs()
+                    return
+                raise
+            _pull_instrumented_outputs(phase_label, required=required_outputs)
+            _clear_device_screenshot_outputs()
+
+        instrumented_pull_dir.mkdir(parents=True, exist_ok=True)
+        _run_screenshot_instrumentation(deterministic=True, required_outputs=not args.product_signal_only)
 
         lane_cfg = context.configs.lanes.lanes.maestro
         maestro_failures: list[str] = []
@@ -3600,6 +3719,25 @@ def _lane_screenshot_pack_impl(raw_args: Sequence[str], context: RuntimeContext)
             report_json_path=report_json_path,
             report_md_path=report_md_path,
         )
+        missing_ids = report_payload.get("missing_ids", [])
+        if missing_ids and not args.deterministic_only:
+            print_step(
+                "Screenshot-pack deterministic subset did not satisfy full inventory; "
+                "running full instrumentation expansion before final verdict."
+            )
+            _run_screenshot_instrumentation(deterministic=False, required_outputs=not args.product_signal_only)
+            report_payload = _build_screenshot_inventory_report(
+                inventory=inventory,
+                serial=serial,
+                artifact_root=artifact_root,
+                instrumented_dir=instrumented_dir,
+                maestro_dir=maestro_dir,
+                combined_dir=combined_dir,
+                report_json_path=report_json_path,
+                report_md_path=report_md_path,
+            )
+            missing_ids = report_payload.get("missing_ids", [])
+
         _capture_logcat(context, serial, artifact_root / real_runtime_cfg.logcat_file_name)
 
         if args.update_reference:
@@ -3608,8 +3746,9 @@ def _lane_screenshot_pack_impl(raw_args: Sequence[str], context: RuntimeContext)
 
         if maestro_failures:
             print_step("Maestro flow failures during screenshot-pack: " + ", ".join(maestro_failures))
+        if instrumentation_warnings:
+            print_step("Instrumentation warnings during screenshot-pack: " + " | ".join(instrumentation_warnings))
 
-        missing_ids = report_payload.get("missing_ids", [])
         if missing_ids:
             raise DevctlError(
                 "DEVICE_ERROR",

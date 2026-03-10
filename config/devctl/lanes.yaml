@@ -103,6 +103,7 @@ lanes:
         - --no-daemon
         - :apps:mobile-android:installDebug
     flows:
+      - tests/maestro/scenario-onboarding.yaml
       - tests/maestro/scenario-a.yaml
       - tests/maestro/scenario-b.yaml
       - tests/maestro/scenario-c.yaml
