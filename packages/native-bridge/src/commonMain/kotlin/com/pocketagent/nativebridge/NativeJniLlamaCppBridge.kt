@@ -125,7 +125,16 @@ class NativeJniLlamaCppBridge(
                 nThreadsBatch = config.nThreadsBatch,
                 nBatch = config.nBatch,
                 nUbatch = config.nUbatch,
+                nCtx = config.nCtx,
                 nGpuLayers = requestedGpuLayers,
+                quantizedKvCache = config.quantizedKvCache,
+                temperature = config.sampling.temperature,
+                topK = config.sampling.topK,
+                topP = config.sampling.topP,
+                speculativeEnabled = config.speculativeEnabled,
+                speculativeDraftModelPath = config.speculativeDraftModelPath,
+                speculativeMaxDraftTokens = config.speculativeMaxDraftTokens,
+                speculativeMinDraftTokens = config.speculativeMinDraftTokens,
             )
         }
         if (primaryAttempt.getOrNull() == true) {
@@ -142,7 +151,16 @@ class NativeJniLlamaCppBridge(
                     nThreadsBatch = config.nThreadsBatch,
                     nBatch = config.nBatch,
                     nUbatch = config.nUbatch,
+                    nCtx = config.nCtx,
                     nGpuLayers = 0,
+                    quantizedKvCache = config.quantizedKvCache,
+                    temperature = config.sampling.temperature,
+                    topK = config.sampling.topK,
+                    topP = config.sampling.topP,
+                    speculativeEnabled = config.speculativeEnabled,
+                    speculativeDraftModelPath = config.speculativeDraftModelPath,
+                    speculativeMaxDraftTokens = config.speculativeMaxDraftTokens,
+                    speculativeMinDraftTokens = config.speculativeMinDraftTokens,
                 )
             }
             if (cpuFallbackAttempt.getOrNull() == true) {
@@ -199,6 +217,7 @@ class NativeJniLlamaCppBridge(
         }
         var tokenCount = 0
         var firstTokenMs = -1L
+        var peakRssMb: Double? = null
         activeRequestId = requestId
         return try {
             val status = runCatching {
@@ -228,6 +247,7 @@ class NativeJniLlamaCppBridge(
                     errorCode = "JNI_GENERATE_EXCEPTION",
                 )
             }
+            peakRssMb = nativeApi.peakRssMb()
             val finishReason = status.finishReason
             val statusErrorCode = status.errorCode?.trim()?.takeIf { it.isNotEmpty() }
             if (
@@ -260,6 +280,7 @@ class NativeJniLlamaCppBridge(
                 } else {
                     null
                 },
+                peakRssMb = peakRssMb,
                 errorCode = statusErrorCode,
             )
         } finally {
@@ -387,7 +408,16 @@ class NativeJniLlamaCppBridge(
             nThreadsBatch: Int,
             nBatch: Int,
             nUbatch: Int,
+            nCtx: Int,
             nGpuLayers: Int,
+            quantizedKvCache: Boolean,
+            temperature: Float,
+            topK: Int,
+            topP: Float,
+            speculativeEnabled: Boolean,
+            speculativeDraftModelPath: String?,
+            speculativeMaxDraftTokens: Int,
+            speculativeMinDraftTokens: Int,
         ): Boolean
         fun generateStream(
             requestId: String,
@@ -402,6 +432,7 @@ class NativeJniLlamaCppBridge(
         fun unloadModel()
         fun supportsGpuOffload(): Boolean
         fun vulkanDiagnosticsJson(): String
+        fun peakRssMb(): Double? = null
     }
 
     private class JniNativeApi : NativeApi {
@@ -413,7 +444,16 @@ class NativeJniLlamaCppBridge(
             nThreadsBatch: Int,
             nBatch: Int,
             nUbatch: Int,
+            nCtx: Int,
             nGpuLayers: Int,
+            quantizedKvCache: Boolean,
+            temperature: Float,
+            topK: Int,
+            topP: Float,
+            speculativeEnabled: Boolean,
+            speculativeDraftModelPath: String?,
+            speculativeMaxDraftTokens: Int,
+            speculativeMinDraftTokens: Int,
         ): Boolean
         external fun nativeGenerateStream(
             requestId: String,
@@ -428,6 +468,7 @@ class NativeJniLlamaCppBridge(
         external fun nativeUnloadModel()
         external fun nativeSupportsGpuOffload(): Boolean
         external fun nativeVulkanDiagnosticsJson(): String
+        external fun nativePeakRssMb(): Double
 
         override fun initialize(): Boolean = nativeInitialize()
 
@@ -438,9 +479,35 @@ class NativeJniLlamaCppBridge(
             nThreadsBatch: Int,
             nBatch: Int,
             nUbatch: Int,
+            nCtx: Int,
             nGpuLayers: Int,
+            quantizedKvCache: Boolean,
+            temperature: Float,
+            topK: Int,
+            topP: Float,
+            speculativeEnabled: Boolean,
+            speculativeDraftModelPath: String?,
+            speculativeMaxDraftTokens: Int,
+            speculativeMinDraftTokens: Int,
         ): Boolean {
-            return nativeLoadModel(modelId, modelPath, nThreads, nThreadsBatch, nBatch, nUbatch, nGpuLayers)
+            return nativeLoadModel(
+                modelId,
+                modelPath,
+                nThreads,
+                nThreadsBatch,
+                nBatch,
+                nUbatch,
+                nCtx,
+                nGpuLayers,
+                quantizedKvCache,
+                temperature,
+                topK,
+                topP,
+                speculativeEnabled,
+                speculativeDraftModelPath,
+                speculativeMaxDraftTokens,
+                speculativeMinDraftTokens,
+            )
         }
 
         override fun generateStream(
@@ -473,6 +540,11 @@ class NativeJniLlamaCppBridge(
         override fun supportsGpuOffload(): Boolean = nativeSupportsGpuOffload()
 
         override fun vulkanDiagnosticsJson(): String = nativeVulkanDiagnosticsJson()
+
+        override fun peakRssMb(): Double? {
+            val value = nativePeakRssMb()
+            return value.takeIf { !it.isNaN() && it >= 0.0 }
+        }
     }
 
     companion object {

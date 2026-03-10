@@ -37,6 +37,20 @@ class LlamaCppInferenceModuleTest {
     }
 
     @Test
+    fun `same loaded runtime key reuses resident model without bridge reload`() {
+        val bridge = FakeBridge()
+        val module = LlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+
+        assertEquals(1, bridge.loadCalls)
+        assertTrue(module.residencyState().residentHit)
+        assertEquals(1L, module.residencyState().residentHitCount)
+    }
+
+    @Test
     fun `load fails for unknown model and runtime generation failure throws`() {
         val bridge = FakeBridge(generateOk = false)
         val module = LlamaCppInferenceModule(bridge)
@@ -102,7 +116,7 @@ class LlamaCppInferenceModuleTest {
         assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
 
         assertEquals(2, bridge.loadCalls)
-        assertEquals(1, bridge.unloadCalls)
+        assertEquals(0, bridge.unloadCalls)
     }
 }
 

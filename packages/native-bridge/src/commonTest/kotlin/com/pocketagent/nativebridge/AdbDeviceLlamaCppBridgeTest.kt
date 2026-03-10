@@ -23,7 +23,10 @@ class AdbDeviceLlamaCppBridgeTest {
                 ),
             ),
         )
-        val bridge = AdbDeviceLlamaCppBridge(commandRunner = runner)
+        val bridge = AdbDeviceLlamaCppBridge(
+            commandRunner = runner,
+            env = emptyMap(),
+        )
 
         assertTrue(bridge.isReady())
         assertEquals(RuntimeBackend.ADB_FALLBACK, bridge.runtimeBackend())
@@ -47,7 +50,10 @@ class AdbDeviceLlamaCppBridgeTest {
                 ),
             ),
         )
-        val bridge = AdbDeviceLlamaCppBridge(commandRunner = runner)
+        val bridge = AdbDeviceLlamaCppBridge(
+            commandRunner = runner,
+            env = emptyMap(),
+        )
 
         assertFalse(bridge.isReady())
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())
@@ -56,7 +62,10 @@ class AdbDeviceLlamaCppBridgeTest {
 
     @Test
     fun `command execution failure degrades to unavailable without crash`() {
-        val bridge = AdbDeviceLlamaCppBridge(commandRunner = ThrowingCommandRunner())
+        val bridge = AdbDeviceLlamaCppBridge(
+            commandRunner = ThrowingCommandRunner(),
+            env = emptyMap(),
+        )
 
         assertFalse(bridge.isReady())
         assertEquals(RuntimeBackend.UNAVAILABLE, bridge.runtimeBackend())

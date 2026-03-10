@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 class NativeJniLlamaCppBridgeTest {
     @Test
     fun `uses native runtime when library is available`() {
-        val nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello")
+        val nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello", peakRssMb = 1536.0)
         val fallback = FakeFallbackBridge()
         val bridge = NativeJniLlamaCppBridge(
             nativeApi = nativeApi,
@@ -30,6 +30,7 @@ class NativeJniLlamaCppBridgeTest {
             onToken = { tokens.add(it) },
         )
         assertTrue(result.success)
+        assertEquals(1536.0, result.peakRssMb)
         bridge.unloadModel()
 
         assertTrue(nativeApi.loadCalled)
@@ -231,6 +232,7 @@ private class FakeNativeApi(
     private val supportsGpuOffload: Boolean = false,
     private val loadResults: MutableList<Boolean>? = null,
     private val vulkanDiagnosticsJson: String = "{}",
+    private val peakRssMb: Double? = null,
 ) : NativeJniLlamaCppBridge.NativeApi {
     var loadCalled = false
     var generateCalled = false
@@ -249,7 +251,16 @@ private class FakeNativeApi(
         nThreadsBatch: Int,
         nBatch: Int,
         nUbatch: Int,
+        nCtx: Int,
         nGpuLayers: Int,
+        quantizedKvCache: Boolean,
+        temperature: Float,
+        topK: Int,
+        topP: Float,
+        speculativeEnabled: Boolean,
+        speculativeDraftModelPath: String?,
+        speculativeMaxDraftTokens: Int,
+        speculativeMinDraftTokens: Int,
     ): Boolean {
         if (throwOnLoad) {
             error("simulated native load exception")
@@ -300,6 +311,8 @@ private class FakeNativeApi(
     override fun supportsGpuOffload(): Boolean = supportsGpuOffload
 
     override fun vulkanDiagnosticsJson(): String = vulkanDiagnosticsJson
+
+    override fun peakRssMb(): Double? = peakRssMb
 }
 
 private class FakeFallbackBridge(
