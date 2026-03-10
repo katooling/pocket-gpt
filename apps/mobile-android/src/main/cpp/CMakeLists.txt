@@ -15,10 +15,20 @@ if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
     message(FATAL_ERROR "ENG-13 closure build is pinned to arm64-v8a. Found ABI=${ANDROID_ABI}")
 endif()
 
+option(POCKETGPT_ENABLE_HEXAGON "Enable experimental Hexagon backend" OFF)
+option(POCKETGPT_ENABLE_ARM_I8MM "Enable ARM i8mm/dotprod compile flags" ON)
+
 # Path from apps/mobile-android/src/main/cpp -> repo root -> third_party/llama.cpp
 set(LLAMA_CPP_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../third_party/llama.cpp")
 if(NOT EXISTS "${LLAMA_CPP_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "Missing vendored llama.cpp source at ${LLAMA_CPP_ROOT}.")
+endif()
+
+if(POCKETGPT_ENABLE_ARM_I8MM AND ANDROID_ABI STREQUAL "arm64-v8a")
+    add_compile_options(
+        "$<$<COMPILE_LANGUAGE:C>:-march=armv8.2-a+dotprod+i8mm>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-march=armv8.2-a+dotprod+i8mm>"
+    )
 endif()
 
 include(FetchContent)
@@ -33,7 +43,13 @@ set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
 set(GGML_CPU ON CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
-set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+if(POCKETGPT_ENABLE_HEXAGON AND EXISTS "${LLAMA_CPP_ROOT}/ggml/src/ggml-hexagon/CMakeLists.txt")
+    set(GGML_HEXAGON ON CACHE BOOL "" FORCE)
+    set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+else()
+    set(GGML_HEXAGON OFF CACHE BOOL "" FORCE)
+    set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+endif()
 set(GGML_VULKAN_CHECK_RESULTS OFF CACHE BOOL "" FORCE)
 set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA OFF CACHE BOOL "" FORCE)

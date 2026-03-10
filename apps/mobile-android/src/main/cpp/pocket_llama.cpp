@@ -3,11 +3,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <dlfcn.h>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <mutex>
 #include <sstream>
@@ -23,9 +25,9 @@
 
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
-constexpr int DEFAULT_CONTEXT_SIZE = 512;
+constexpr int DEFAULT_CONTEXT_SIZE = 2048;
 constexpr int DEFAULT_BATCH_SIZE = 512;
-constexpr int PROMPT_DECODE_BATCH_SIZE = 64;
+constexpr int DEFAULT_PROMPT_DECODE_BATCH_SIZE = 512;
 constexpr int CACHE_POLICY_OFF = 0;
 constexpr int CACHE_POLICY_PREFIX_REUSE = 1;
 constexpr int CACHE_POLICY_PREFIX_REUSE_STRICT = 2;
@@ -46,9 +48,17 @@ BackendInitMode g_backend_init_mode = BackendInitMode::NONE;
 llama_model * g_model = nullptr;
 llama_context * g_context = nullptr;
 llama_sampler * g_sampler = nullptr;
+llama_model * g_draft_model = nullptr;
+llama_context * g_draft_context = nullptr;
+llama_sampler * g_draft_sampler = nullptr;
 std::atomic<bool> g_cancel_requested{false};
 std::vector<llama_token> g_cached_prompt_tokens;
 std::string g_cached_cache_key;
+int32_t g_prompt_decode_batch_size = DEFAULT_PROMPT_DECODE_BATCH_SIZE;
+int32_t g_runtime_context_size = DEFAULT_CONTEXT_SIZE;
+bool g_speculative_enabled = false;
+int32_t g_speculative_max_draft_tokens = 6;
+int32_t g_speculative_min_draft_tokens = 2;
 
 int32_t clamp_i32(int32_t value, int32_t min_value, int32_t max_value) {
     return std::max(min_value, std::min(value, max_value));
@@ -69,6 +79,21 @@ int32_t resolve_batch(jint requested_batch) {
         return DEFAULT_BATCH_SIZE;
     }
     return clamp_i32(static_cast<int32_t>(requested_batch), 32, 2048);
+}
+
+int32_t resolve_context_size(jint requested_ctx) {
+    if (requested_ctx <= 0) {
+        return DEFAULT_CONTEXT_SIZE;
+    }
+    return clamp_i32(static_cast<int32_t>(requested_ctx), 512, 32768);
+}
+
+std::string lowercase_copy(const std::string & value) {
+    std::string lower(value.size(), '\0');
+    std::transform(value.begin(), value.end(), lower.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return lower;
 }
 
 bool gpu_offload_supported() {
@@ -120,26 +145,47 @@ void apply_android_vulkan_safety_env_once() {
         return;
     }
 #if defined(GGML_USE_VULKAN)
-    // Conservative defaults for fragile mobile Vulkan drivers.
-    // These map to upstream ggml-vulkan runtime switches.
-    setenv("GGML_VK_DISABLE_COOPMAT", "1", 1);
-    setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
-    setenv("GGML_VK_DISABLE_INTEGER_DOT_PRODUCT", "1", 1);
-    setenv("GGML_VK_DISABLE_ASYNC", "1", 1);
+    const std::string profile = lowercase_copy(std::getenv("POCKETGPT_VULKAN_PROFILE") != nullptr
+        ? std::getenv("POCKETGPT_VULKAN_PROFILE")
+        : "balanced");
+    const bool safe_profile = profile == "safe";
+    const bool aggressive_profile = profile == "aggressive";
+
     setenv("GGML_VK_ALLOW_SYSMEM_FALLBACK", "1", 1);
     setenv("GGML_VK_PREFER_HOST_MEMORY", "1", 1);
-    setenv("GGML_VK_DISABLE_BUFFER_DEVICE_ADDRESS", "1", 1);
-    setenv("GGML_VK_DISABLE_F16", "1", 1);
-    setenv("GGML_VK_DISABLE_FUSION", "1", 1);
-    setenv("GGML_VK_DISABLE_MMVQ", "1", 1);
-    setenv("GGML_VK_DISABLE_GRAPH_OPTIMIZE", "1", 1);
-    __android_log_print(ANDROID_LOG_INFO, TAG, "GPU_OFFLOAD|vulkan_safety_env=applied");
+    if (safe_profile) {
+        setenv("GGML_VK_DISABLE_COOPMAT", "1", 1);
+        setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
+        setenv("GGML_VK_DISABLE_INTEGER_DOT_PRODUCT", "1", 1);
+        setenv("GGML_VK_DISABLE_ASYNC", "1", 1);
+        setenv("GGML_VK_DISABLE_BUFFER_DEVICE_ADDRESS", "1", 1);
+        setenv("GGML_VK_DISABLE_F16", "1", 1);
+        setenv("GGML_VK_DISABLE_FUSION", "1", 1);
+        setenv("GGML_VK_DISABLE_MMVQ", "1", 1);
+        setenv("GGML_VK_DISABLE_GRAPH_OPTIMIZE", "1", 1);
+    } else if (aggressive_profile) {
+        setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
+    } else {
+        // Balanced mode keeps core safety rails but allows high-impact optimizations.
+        setenv("GGML_VK_DISABLE_COOPMAT", "1", 1);
+        setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
+        setenv("GGML_VK_DISABLE_BUFFER_DEVICE_ADDRESS", "1", 1);
+    }
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "GPU_OFFLOAD|vulkan_profile=%s|safe=%s|aggressive=%s",
+        profile.c_str(),
+        safe_profile ? "true" : "false",
+        aggressive_profile ? "true" : "false");
 #endif
 }
 
 const char * compiled_gpu_backends() {
 #if defined(GGML_USE_VULKAN)
     return "vulkan";
+#elif defined(GGML_USE_HEXAGON)
+    return "hexagon";
 #elif defined(GGML_USE_OPENCL)
     return "opencl";
 #elif defined(GGML_USE_CUDA)
@@ -496,16 +542,33 @@ void release_runtime_locked() {
         llama_sampler_free(g_sampler);
         g_sampler = nullptr;
     }
+    if (g_draft_sampler != nullptr) {
+        llama_sampler_free(g_draft_sampler);
+        g_draft_sampler = nullptr;
+    }
     if (g_context != nullptr) {
         llama_free(g_context);
         g_context = nullptr;
+    }
+    if (g_draft_context != nullptr) {
+        llama_free(g_draft_context);
+        g_draft_context = nullptr;
     }
     if (g_model != nullptr) {
         llama_model_free(g_model);
         g_model = nullptr;
     }
+    if (g_draft_model != nullptr) {
+        llama_model_free(g_draft_model);
+        g_draft_model = nullptr;
+    }
     g_cached_prompt_tokens.clear();
     g_cached_cache_key.clear();
+    g_prompt_decode_batch_size = DEFAULT_PROMPT_DECODE_BATCH_SIZE;
+    g_runtime_context_size = DEFAULT_CONTEXT_SIZE;
+    g_speculative_enabled = false;
+    g_speculative_max_draft_tokens = 6;
+    g_speculative_min_draft_tokens = 2;
     g_cancel_requested.store(false, std::memory_order_release);
 }
 
@@ -588,14 +651,15 @@ bool decode_tokens_from_offset(
     if (offset >= tokens.size()) {
         return true;
     }
-    for (size_t idx = offset; idx < tokens.size(); idx += static_cast<size_t>(PROMPT_DECODE_BATCH_SIZE)) {
+    const int32_t prompt_decode_batch_size = std::max(1, g_prompt_decode_batch_size);
+    for (size_t idx = offset; idx < tokens.size(); idx += static_cast<size_t>(prompt_decode_batch_size)) {
         if (g_cancel_requested.load(std::memory_order_acquire)) {
             log_error("nativeGenerate cancelled during prompt decode");
             return false;
         }
         const size_t remaining = tokens.size() - idx;
         const int32_t chunk_size = static_cast<int32_t>(
-            std::min(remaining, static_cast<size_t>(PROMPT_DECODE_BATCH_SIZE)));
+            std::min(remaining, static_cast<size_t>(prompt_decode_batch_size)));
         llama_batch prompt_batch = llama_batch_get_one(const_cast<llama_token *>(tokens.data() + idx), chunk_size);
         __android_log_print(
             ANDROID_LOG_INFO,
@@ -614,6 +678,255 @@ bool decode_tokens_from_offset(
             static_cast<int>(chunk_size));
     }
     return true;
+}
+
+llama_sampler * build_sampler_chain(float temperature, int32_t top_k, float top_p) {
+    const auto sampler_params = llama_sampler_chain_default_params();
+    llama_sampler * sampler = llama_sampler_chain_init(sampler_params);
+    if (sampler == nullptr) {
+        return nullptr;
+    }
+    if (temperature <= 0.0f) {
+        llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
+        return sampler;
+    }
+    if (top_k > 0) {
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_k(top_k));
+    }
+    if (top_p > 0.0f && top_p < 1.0f) {
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(top_p, 1));
+    }
+    llama_sampler_chain_add(sampler, llama_sampler_init_temp(temperature));
+    llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    return sampler;
+}
+
+bool decode_single_token(llama_context * ctx, llama_token token) {
+    llama_token next_token = token;
+    llama_batch batch = llama_batch_get_one(&next_token, 1);
+    return llama_decode(ctx, batch) == 0;
+}
+
+bool speculative_vocabs_compatible(const llama_model * target_model, const llama_model * draft_model) {
+    const llama_vocab * target_vocab = llama_model_get_vocab(target_model);
+    const llama_vocab * draft_vocab = llama_model_get_vocab(draft_model);
+    if (target_vocab == nullptr || draft_vocab == nullptr) {
+        return false;
+    }
+    if (llama_vocab_type(target_vocab) != llama_vocab_type(draft_vocab)) {
+        return false;
+    }
+    if (llama_vocab_get_add_bos(target_vocab) != llama_vocab_get_add_bos(draft_vocab) ||
+        llama_vocab_get_add_eos(target_vocab) != llama_vocab_get_add_eos(draft_vocab) ||
+        llama_vocab_bos(target_vocab) != llama_vocab_bos(draft_vocab) ||
+        llama_vocab_eos(target_vocab) != llama_vocab_eos(draft_vocab)) {
+        return false;
+    }
+    const int target_n_vocab = llama_vocab_n_tokens(target_vocab);
+    const int draft_n_vocab = llama_vocab_n_tokens(draft_vocab);
+    if (std::abs(target_n_vocab - draft_n_vocab) > 128) {
+        return false;
+    }
+    const int sample_vocab = std::min(target_n_vocab, draft_n_vocab);
+    const int max_checks = std::min(sample_vocab, 2048);
+    for (int id = 5; id < max_checks; ++id) {
+        const char * target_piece = llama_vocab_get_text(target_vocab, id);
+        const char * draft_piece = llama_vocab_get_text(draft_vocab, id);
+        if (target_piece == nullptr || draft_piece == nullptr) {
+            return false;
+        }
+        if (std::string(target_piece) != std::string(draft_piece)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+struct SpeculativeStepResult {
+    jint status = STREAM_STATUS_COMPLETED;
+    bool reached_eog = false;
+    std::vector<llama_token> emitted_tokens;
+};
+
+SpeculativeStepResult run_speculative_step(
+    const llama_vocab * vocab,
+    int remaining_tokens,
+    llama_pos * target_context_tokens,
+    llama_pos * draft_context_tokens) {
+    SpeculativeStepResult result{};
+    result.status = STREAM_STATUS_COMPLETED;
+    if (remaining_tokens <= 0) {
+        return result;
+    }
+    if (g_context == nullptr || g_sampler == nullptr || g_draft_context == nullptr || g_draft_sampler == nullptr) {
+        result.status = STREAM_STATUS_RUNTIME_ERROR;
+        return result;
+    }
+
+    const int max_draft = std::max(0, std::min(g_speculative_max_draft_tokens, remaining_tokens - 1));
+    if (max_draft < g_speculative_min_draft_tokens) {
+        const llama_token token = llama_sampler_sample(g_sampler, g_context, -1);
+        if (llama_vocab_is_eog(vocab, token)) {
+            result.reached_eog = true;
+            return result;
+        }
+        llama_sampler_accept(g_sampler, token);
+        if (!decode_single_token(g_context, token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *target_context_tokens += 1;
+        if (!decode_single_token(g_draft_context, token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *draft_context_tokens += 1;
+        result.emitted_tokens.push_back(token);
+        return result;
+    }
+
+    const llama_pos base_target_tokens = *target_context_tokens;
+    const llama_pos base_draft_tokens = *draft_context_tokens;
+
+    std::vector<llama_token> draft_tokens;
+    draft_tokens.reserve(static_cast<size_t>(max_draft));
+    for (int i = 0; i < max_draft; ++i) {
+        if (g_cancel_requested.load(std::memory_order_acquire)) {
+            result.status = STREAM_STATUS_CANCELLED;
+            return result;
+        }
+        const llama_token draft_token = llama_sampler_sample(g_draft_sampler, g_draft_context, -1);
+        if (llama_vocab_is_eog(vocab, draft_token)) {
+            break;
+        }
+        llama_sampler_accept(g_draft_sampler, draft_token);
+        draft_tokens.push_back(draft_token);
+        if (!decode_single_token(g_draft_context, draft_token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *draft_context_tokens += 1;
+    }
+
+    if (static_cast<int>(draft_tokens.size()) < g_speculative_min_draft_tokens) {
+        llama_memory_seq_rm(llama_get_memory(g_draft_context), -1, base_draft_tokens, -1);
+        *draft_context_tokens = base_draft_tokens;
+        llama_sampler_reset(g_draft_sampler);
+        const llama_token token = llama_sampler_sample(g_sampler, g_context, -1);
+        if (llama_vocab_is_eog(vocab, token)) {
+            result.reached_eog = true;
+            return result;
+        }
+        llama_sampler_accept(g_sampler, token);
+        if (!decode_single_token(g_context, token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *target_context_tokens += 1;
+        if (!decode_single_token(g_draft_context, token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *draft_context_tokens += 1;
+        result.emitted_tokens.push_back(token);
+        return result;
+    }
+
+    const llama_token first_token = llama_sampler_sample(g_sampler, g_context, -1);
+    if (llama_vocab_is_eog(vocab, first_token)) {
+        result.reached_eog = true;
+        return result;
+    }
+    llama_sampler_accept(g_sampler, first_token);
+
+    if (first_token != draft_tokens[0]) {
+        llama_memory_seq_rm(llama_get_memory(g_draft_context), -1, base_draft_tokens, -1);
+        *draft_context_tokens = base_draft_tokens;
+        llama_sampler_reset(g_draft_sampler);
+        if (!decode_single_token(g_context, first_token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *target_context_tokens += 1;
+        if (!decode_single_token(g_draft_context, first_token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *draft_context_tokens += 1;
+        result.emitted_tokens.push_back(first_token);
+        return result;
+    }
+
+    llama_batch target_batch = llama_batch_get_one(draft_tokens.data(), static_cast<int32_t>(draft_tokens.size()));
+    if (llama_decode(g_context, target_batch) != 0) {
+        result.status = STREAM_STATUS_RUNTIME_ERROR;
+        return result;
+    }
+    *target_context_tokens += static_cast<llama_pos>(draft_tokens.size());
+
+    size_t accepted_drafts = 1;
+    llama_token next_token = 0;
+    bool mismatch = false;
+    for (size_t i = 1; i < draft_tokens.size(); ++i) {
+        const llama_token sampled = llama_sampler_sample(g_sampler, g_context, static_cast<int32_t>(i - 1));
+        if (llama_vocab_is_eog(vocab, sampled)) {
+            result.reached_eog = true;
+            next_token = sampled;
+            mismatch = true;
+            break;
+        }
+        llama_sampler_accept(g_sampler, sampled);
+        if (sampled != draft_tokens[i]) {
+            next_token = sampled;
+            mismatch = true;
+            break;
+        }
+        accepted_drafts += 1;
+    }
+
+    if (!mismatch) {
+        next_token = llama_sampler_sample(
+            g_sampler,
+            g_context,
+            static_cast<int32_t>(draft_tokens.size() - 1));
+        if (llama_vocab_is_eog(vocab, next_token)) {
+            result.reached_eog = true;
+        } else {
+            llama_sampler_accept(g_sampler, next_token);
+        }
+    }
+
+    const llama_pos keep_target_tokens = base_target_tokens + static_cast<llama_pos>(accepted_drafts);
+    llama_memory_seq_rm(llama_get_memory(g_context), -1, keep_target_tokens, -1);
+    *target_context_tokens = keep_target_tokens;
+
+    result.emitted_tokens.insert(
+        result.emitted_tokens.end(),
+        draft_tokens.begin(),
+        draft_tokens.begin() + static_cast<std::ptrdiff_t>(accepted_drafts));
+
+    if (!result.reached_eog) {
+        result.emitted_tokens.push_back(next_token);
+        if (!decode_single_token(g_context, next_token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *target_context_tokens += 1;
+    }
+
+    const llama_pos keep_draft_tokens = base_draft_tokens + static_cast<llama_pos>(accepted_drafts);
+    llama_memory_seq_rm(llama_get_memory(g_draft_context), -1, keep_draft_tokens, -1);
+    *draft_context_tokens = keep_draft_tokens;
+    llama_sampler_reset(g_draft_sampler);
+    if (!result.reached_eog) {
+        if (!decode_single_token(g_draft_context, next_token)) {
+            result.status = STREAM_STATUS_RUNTIME_ERROR;
+            return result;
+        }
+        *draft_context_tokens += 1;
+    }
+
+    return result;
 }
 
 void log_prefix_cache_event(
@@ -662,6 +975,9 @@ jint generate_locked(
     }
 
     llama_sampler_reset(g_sampler);
+    if (g_speculative_enabled && g_draft_sampler != nullptr) {
+        llama_sampler_reset(g_draft_sampler);
+    }
 
     const int safe_max_tokens = std::max(1, max_tokens);
     std::vector<llama_token> prompt_tokens = tokenize_prompt(vocab, prompt_text);
@@ -670,7 +986,9 @@ jint generate_locked(
         return STREAM_STATUS_RUNTIME_ERROR;
     }
 
-    const int max_prompt_tokens = std::max(1, DEFAULT_CONTEXT_SIZE - safe_max_tokens - 1);
+    const int runtime_context_size = static_cast<int>(
+        llama_n_ctx(g_context) > 0 ? llama_n_ctx(g_context) : static_cast<uint32_t>(g_runtime_context_size));
+    const int max_prompt_tokens = std::max(1, runtime_context_size - safe_max_tokens - 1);
     if (static_cast<int>(prompt_tokens.size()) > max_prompt_tokens) {
         const size_t trim_count = prompt_tokens.size() - static_cast<size_t>(max_prompt_tokens);
         prompt_tokens.erase(prompt_tokens.begin(), prompt_tokens.begin() + static_cast<std::ptrdiff_t>(trim_count));
@@ -715,62 +1033,109 @@ jint generate_locked(
     g_cached_cache_key = cache_key;
     log_prefix_cache_event(cache_policy, cache_hit, reused_tokens, prompt_tokens.size(), strict_key_match);
 
+    const bool speculative_ready = g_speculative_enabled &&
+        g_draft_model != nullptr &&
+        g_draft_context != nullptr &&
+        g_draft_sampler != nullptr;
+    llama_pos target_context_tokens = static_cast<llama_pos>(prompt_tokens.size());
+    llama_pos draft_context_tokens = static_cast<llama_pos>(prompt_tokens.size());
+    if (speculative_ready) {
+        llama_memory_clear(llama_get_memory(g_draft_context), false);
+        if (!decode_tokens_from_offset(g_draft_context, prompt_tokens, 0)) {
+            log_error("nativeGenerate failed: draft prompt decode failed");
+            g_cancel_requested.store(false, std::memory_order_release);
+            return STREAM_STATUS_RUNTIME_ERROR;
+        }
+    }
+
     llama_batch batch{};
     std::string utf8_pending;
     bool reached_max_tokens = true;
-    for (int index = 0; index < safe_max_tokens; ++index) {
+    int emitted_token_count = 0;
+    while (emitted_token_count < safe_max_tokens) {
         if (g_cancel_requested.load(std::memory_order_acquire)) {
             log_error("nativeGenerate cancelled while sampling");
             g_cancel_requested.store(false, std::memory_order_release);
             return STREAM_STATUS_CANCELLED;
         }
-        const llama_token token = llama_sampler_sample(g_sampler, g_context, -1);
-        if (llama_vocab_is_eog(vocab, token)) {
-            reached_max_tokens = false;
-            break;
+        std::vector<llama_token> emitted_tokens;
+        const int remaining_tokens = safe_max_tokens - emitted_token_count;
+        if (speculative_ready && remaining_tokens > 1) {
+            SpeculativeStepResult step = run_speculative_step(
+                vocab,
+                remaining_tokens,
+                &target_context_tokens,
+                &draft_context_tokens);
+            if (step.status != STREAM_STATUS_COMPLETED) {
+                g_cancel_requested.store(false, std::memory_order_release);
+                return step.status;
+            }
+            if (step.reached_eog) {
+                reached_max_tokens = false;
+                break;
+            }
+            emitted_tokens = std::move(step.emitted_tokens);
+        } else {
+            const llama_token token = llama_sampler_sample(g_sampler, g_context, -1);
+            if (llama_vocab_is_eog(vocab, token)) {
+                reached_max_tokens = false;
+                break;
+            }
+            emitted_tokens.push_back(token);
+            llama_sampler_accept(g_sampler, token);
+
+            llama_token next_token = token;
+            batch = llama_batch_get_one(&next_token, 1);
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "GPU_PROBE_DIAG|stage=sample_decode_before|index=%d",
+                emitted_token_count);
+            if (llama_decode(g_context, batch) != 0) {
+                log_error("nativeGenerate failed: llama_decode failed on sampled token");
+                g_cancel_requested.store(false, std::memory_order_release);
+                return STREAM_STATUS_RUNTIME_ERROR;
+            }
+            target_context_tokens += 1;
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "GPU_PROBE_DIAG|stage=sample_decode_after|index=%d",
+                emitted_token_count);
+            if (speculative_ready) {
+                if (!decode_single_token(g_draft_context, token)) {
+                    g_cancel_requested.store(false, std::memory_order_release);
+                    return STREAM_STATUS_RUNTIME_ERROR;
+                }
+                draft_context_tokens += 1;
+            }
+            if (g_cancel_requested.load(std::memory_order_acquire)) {
+                log_error("nativeGenerate cancelled after decode");
+                g_cancel_requested.store(false, std::memory_order_release);
+                return STREAM_STATUS_CANCELLED;
+            }
         }
 
-        std::string piece;
-        if (!token_to_piece_dynamic(vocab, token, &piece)) {
-            log_error("nativeGenerate failed: llama_token_to_piece dynamic sizing failed");
-            g_cancel_requested.store(false, std::memory_order_release);
-            return STREAM_STATUS_RUNTIME_ERROR;
+        for (const llama_token token : emitted_tokens) {
+            std::string piece;
+            if (!token_to_piece_dynamic(vocab, token, &piece)) {
+                log_error("nativeGenerate failed: llama_token_to_piece dynamic sizing failed");
+                g_cancel_requested.store(false, std::memory_order_release);
+                return STREAM_STATUS_RUNTIME_ERROR;
+            }
+            const EmitUtf8Status emit_status = emit_utf8_buffered(piece, &utf8_pending, emit_piece);
+            if (emit_status == EmitUtf8Status::CALLBACK_REJECTED) {
+                log_error("nativeGenerate failed: token callback rejected piece");
+                g_cancel_requested.store(false, std::memory_order_release);
+                return STREAM_STATUS_CALLBACK_ERROR;
+            }
+            if (emit_status == EmitUtf8Status::UTF8_ERROR) {
+                log_error("nativeGenerate failed: utf8 stream validation failed");
+                g_cancel_requested.store(false, std::memory_order_release);
+                return STREAM_STATUS_UTF8_STREAM_ERROR;
+            }
         }
-        const EmitUtf8Status emit_status = emit_utf8_buffered(piece, &utf8_pending, emit_piece);
-        if (emit_status == EmitUtf8Status::CALLBACK_REJECTED) {
-            log_error("nativeGenerate failed: token callback rejected piece");
-            g_cancel_requested.store(false, std::memory_order_release);
-            return STREAM_STATUS_CALLBACK_ERROR;
-        }
-        if (emit_status == EmitUtf8Status::UTF8_ERROR) {
-            log_error("nativeGenerate failed: utf8 stream validation failed");
-            g_cancel_requested.store(false, std::memory_order_release);
-            return STREAM_STATUS_UTF8_STREAM_ERROR;
-        }
-        llama_sampler_accept(g_sampler, token);
-
-        llama_token next_token = token;
-        batch = llama_batch_get_one(&next_token, 1);
-        __android_log_print(
-            ANDROID_LOG_INFO,
-            TAG,
-            "GPU_PROBE_DIAG|stage=sample_decode_before|index=%d",
-            index);
-        if (llama_decode(g_context, batch) != 0) {
-            log_error("nativeGenerate failed: llama_decode failed on sampled token");
-            g_cancel_requested.store(false, std::memory_order_release);
-            return STREAM_STATUS_RUNTIME_ERROR;
-        }
-        __android_log_print(
-            ANDROID_LOG_INFO,
-            TAG,
-            "GPU_PROBE_DIAG|stage=sample_decode_after|index=%d",
-            index);
-        if (g_cancel_requested.load(std::memory_order_acquire)) {
-            log_error("nativeGenerate cancelled after decode");
-            g_cancel_requested.store(false, std::memory_order_release);
-            return STREAM_STATUS_CANCELLED;
-        }
+        emitted_token_count += static_cast<int>(emitted_tokens.size());
     }
 
     if (!utf8_pending.empty()) {
@@ -810,8 +1175,18 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     jint nThreadsBatch,
     jint nBatch,
     jint nUbatch,
-    jint nGpuLayers) {
+    jint nCtx,
+    jint nGpuLayers,
+    jboolean quantizedKvCache,
+    jfloat temperature,
+    jint topK,
+    jfloat topP,
+    jboolean speculativeEnabled,
+    jstring speculativeDraftModelPath,
+    jint speculativeMaxDraftTokens,
+    jint speculativeMinDraftTokens) {
     const std::string model_path = to_std_string(env, modelPath);
+    const std::string draft_model_path = to_std_string(env, speculativeDraftModelPath);
     if (model_path.empty()) {
         log_error("nativeLoadModel failed: empty model path");
         return JNI_FALSE;
@@ -855,25 +1230,24 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     }
 
     llama_context_params context_params = llama_context_default_params();
-    context_params.n_ctx = DEFAULT_CONTEXT_SIZE;
+    context_params.n_ctx = static_cast<uint32_t>(resolve_context_size(nCtx));
     context_params.n_batch = resolve_batch(nBatch);
     context_params.n_ubatch = resolve_batch(nUbatch);
     context_params.n_threads = resolve_threads(nThreads);
     context_params.n_threads_batch = resolve_threads(nThreadsBatch);
-    // Keep CPU path fully CPU-only and use conservative Vulkan context toggles by default.
-    // We avoid aggressive op/KV offload until a device has shown stable generation behavior.
-    const bool conservative_gpu_context = use_gpu_ops;
-    context_params.offload_kqv = use_gpu_ops && !conservative_gpu_context;
-    context_params.op_offload = use_gpu_ops && !conservative_gpu_context;
-    context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    context_params.offload_kqv = use_gpu_ops;
+    context_params.op_offload = use_gpu_ops;
+    context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    context_params.type_k = quantizedKvCache == JNI_TRUE ? GGML_TYPE_Q8_0 : context_params.type_k;
+    context_params.type_v = quantizedKvCache == JNI_TRUE ? GGML_TYPE_Q8_0 : context_params.type_v;
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|offload_kqv=%s|op_offload=%s|flash_attn_type=%d|conservative_gpu_context=%s",
+        "GPU_OFFLOAD|offload_kqv=%s|op_offload=%s|flash_attn_type=%d|quantized_kv=%s",
         context_params.offload_kqv ? "true" : "false",
         context_params.op_offload ? "true" : "false",
         static_cast<int>(context_params.flash_attn_type),
-        conservative_gpu_context ? "true" : "false");
+        quantizedKvCache == JNI_TRUE ? "true" : "false");
     g_context = llama_init_from_model(g_model, context_params);
     if (g_context == nullptr) {
         log_error("nativeLoadModel failed: llama_init_from_model returned null");
@@ -881,15 +1255,80 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         return JNI_FALSE;
     }
 
-    const auto sampler_params = llama_sampler_chain_default_params();
-    g_sampler = llama_sampler_chain_init(sampler_params);
+    const float resolved_temperature = std::max(0.0f, static_cast<float>(temperature));
+    const float resolved_top_p = std::max(0.0f, std::min(1.0f, static_cast<float>(topP)));
+    const int32_t resolved_top_k = clamp_i32(static_cast<int32_t>(topK), 0, 1024);
+    g_sampler = build_sampler_chain(
+        resolved_temperature,
+        resolved_top_k,
+        resolved_top_p);
     if (g_sampler == nullptr) {
-        log_error("nativeLoadModel failed: llama_sampler_chain_init returned null");
+        log_error("nativeLoadModel failed: sampler init returned null");
         release_runtime_locked();
         return JNI_FALSE;
     }
-    llama_sampler_chain_add(g_sampler, llama_sampler_init_greedy());
     llama_sampler_reset(g_sampler);
+    g_prompt_decode_batch_size = resolve_batch(nBatch);
+    g_runtime_context_size = static_cast<int32_t>(context_params.n_ctx);
+    g_speculative_enabled = false;
+    g_speculative_max_draft_tokens = clamp_i32(static_cast<int32_t>(speculativeMaxDraftTokens), 1, 16);
+    g_speculative_min_draft_tokens = clamp_i32(static_cast<int32_t>(speculativeMinDraftTokens), 1, 16);
+    if (g_speculative_min_draft_tokens > g_speculative_max_draft_tokens) {
+        g_speculative_min_draft_tokens = g_speculative_max_draft_tokens;
+    }
+
+    if (speculativeEnabled == JNI_TRUE &&
+        !draft_model_path.empty() &&
+        draft_model_path != model_path) {
+        llama_model_params draft_model_params = llama_model_default_params();
+        draft_model_params.n_gpu_layers = 0;
+        draft_model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
+        draft_model_params.main_gpu = -1;
+        g_draft_model = llama_model_load_from_file(draft_model_path.c_str(), draft_model_params);
+        if (g_draft_model != nullptr && speculative_vocabs_compatible(g_model, g_draft_model)) {
+            llama_context_params draft_context_params = llama_context_default_params();
+            draft_context_params.n_ctx = context_params.n_ctx;
+            draft_context_params.n_batch = context_params.n_batch;
+            draft_context_params.n_ubatch = context_params.n_ubatch;
+            draft_context_params.n_threads = resolve_threads(nThreadsBatch);
+            draft_context_params.n_threads_batch = resolve_threads(nThreadsBatch);
+            draft_context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+            draft_context_params.type_k = context_params.type_k;
+            draft_context_params.type_v = context_params.type_v;
+            g_draft_context = llama_init_from_model(g_draft_model, draft_context_params);
+            if (g_draft_context != nullptr) {
+                g_draft_sampler = build_sampler_chain(
+                    std::max(0.0f, resolved_temperature),
+                    std::max(1, resolved_top_k / 2),
+                    std::min(0.98f, std::max(0.5f, resolved_top_p)));
+                if (g_draft_sampler != nullptr) {
+                    g_speculative_enabled = true;
+                }
+            }
+        }
+        if (!g_speculative_enabled) {
+            if (g_draft_sampler != nullptr) {
+                llama_sampler_free(g_draft_sampler);
+                g_draft_sampler = nullptr;
+            }
+            if (g_draft_context != nullptr) {
+                llama_free(g_draft_context);
+                g_draft_context = nullptr;
+            }
+            if (g_draft_model != nullptr) {
+                llama_model_free(g_draft_model);
+                g_draft_model = nullptr;
+            }
+            __android_log_print(ANDROID_LOG_WARN, TAG, "SPECULATIVE|disabled|reason=draft_init_failed");
+        } else {
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "SPECULATIVE|enabled=true|max=%d|min=%d",
+                static_cast<int>(g_speculative_max_draft_tokens),
+                static_cast<int>(g_speculative_min_draft_tokens));
+        }
+    }
     g_cancel_requested.store(false, std::memory_order_release);
 
     return JNI_TRUE;
@@ -983,6 +1422,28 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     return status;
 }
 
+double read_peak_rss_mb() {
+    std::ifstream status("/proc/self/status");
+    if (!status.is_open()) {
+        return -1.0;
+    }
+    std::string line;
+    while (std::getline(status, line)) {
+        const bool is_peak = line.rfind("VmHWM:", 0) == 0;
+        const bool is_current = line.rfind("VmRSS:", 0) == 0;
+        if (!is_peak && !is_current) {
+            continue;
+        }
+        std::istringstream parser(line.substr(line.find(':') + 1));
+        long value_kb = 0;
+        parser >> value_kb;
+        if (value_kb > 0) {
+            return static_cast<double>(value_kb) / 1024.0;
+        }
+    }
+    return -1.0;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeUnloadModel(
     JNIEnv * /*env*/,
@@ -1016,7 +1477,16 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     jint nThreadsBatch,
     jint nBatch,
     jint nUbatch,
-    jint nGpuLayers) {
+    jint nCtx,
+    jint nGpuLayers,
+    jboolean quantizedKvCache,
+    jfloat temperature,
+    jint topK,
+    jfloat topP,
+    jboolean speculativeEnabled,
+    jstring speculativeDraftModelPath,
+    jint speculativeMaxDraftTokens,
+    jint speculativeMinDraftTokens) {
     return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeLoadModel(
         env,
         thiz,
@@ -1026,7 +1496,16 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
         nThreadsBatch,
         nBatch,
         nUbatch,
-        nGpuLayers);
+        nCtx,
+        nGpuLayers,
+        quantizedKvCache,
+        temperature,
+        topK,
+        topP,
+        speculativeEnabled,
+        speculativeDraftModelPath,
+        speculativeMaxDraftTokens,
+        speculativeMinDraftTokens);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -1113,6 +1592,22 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     JNIEnv * env,
     jobject thiz) {
     return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeVulkanDiagnosticsJson(
+        env,
+        thiz);
+}
+
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativePeakRssMb(
+    JNIEnv * /*env*/,
+    jobject /*thiz*/) {
+    return static_cast<jdouble>(read_peak_rss_mb());
+}
+
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativePeakRssMb(
+    JNIEnv * env,
+    jobject thiz) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativePeakRssMb(
         env,
         thiz);
 }
