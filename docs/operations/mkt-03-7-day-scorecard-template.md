@@ -1,6 +1,6 @@
 # MKT-03 7-Day Channel Scorecard Template
 
-Last updated: 2026-03-04
+Last updated: 2026-03-10
 Owner: Growth Lead
 Lifecycle: Ready
 
@@ -48,6 +48,7 @@ Lifecycle: Ready
 
 ## References
 
-1. `docs/operations/mkt-03-launch-channel-test-plan-draft.md`
-2. `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md`
-3. `docs/operations/wp-09-ux-feedback-taxonomy-intake-policy.md`
+1. `docs/operations/tickets/mkt-09-channel-scorecard-run-01.md`
+2. `docs/operations/tickets/mkt-10-claim-freeze-v1.md`
+3. `docs/operations/tickets/prod-10-launch-gate-matrix.md`
+4. `docs/operations/wp-09-ux-feedback-taxonomy-intake-policy.md`

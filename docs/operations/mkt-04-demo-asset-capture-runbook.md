@@ -1,6 +1,6 @@
 # MKT-04 Demo Asset Capture Runbook (Real Screenshots + Video)
 
-Last updated: 2026-03-04
+Last updated: 2026-03-10
 Owner: Marketing + QA support
 Lifecycle: Ready to execute
 
@@ -13,8 +13,9 @@ Produce real app screenshots/video for launch assets using physical-device captu
 1. Connected Android device with adb authorization.
 2. App build installed and runnable on the test device.
 3. Claim-safe storyboard prepared from:
-   - `docs/operations/mkt-01-messaging-architecture-draft.md`
-   - `docs/operations/mkt-04-landing-page-launch-copy-v1-draft.md`
+   - `docs/operations/tickets/mkt-10-claim-freeze-v1.md`
+   - `docs/operations/tickets/prod-10-launch-gate-matrix.md`
+   - `docs/ux/play-store-listing-spec.md`
 
 ## Capture Command
 
@@ -45,7 +46,7 @@ If `--serial` is omitted, the script uses the first connected `adb` device.
 1. No iOS-now or voice-now claims.
 2. No universal device-performance guarantees.
 3. No unsourced competitor comparisons.
-4. Every caption line maps to a `Validated` claim ID in MKT-01/MKT-02.
+4. Every caption line maps to a `PROD-10` row and allowed claim set in `MKT-10`.
 
 ## Output Handling
 

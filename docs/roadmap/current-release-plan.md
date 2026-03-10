@@ -1,12 +1,8 @@
 # Current Release Plan
 
-Last updated: 2026-03-08
+Last updated: 2026-03-10
 
-This is the single current-release planning document. It replaces:
-
-- `docs/roadmap/phase-1-mvp-plan.md`
-- `docs/roadmap/next-steps-execution-plan.md`
-- `docs/operations/rebased-release-plan-2026-03-05.md`
+This is the single current-release planning document.
 
 Mutable status is tracked only in `docs/operations/execution-board.md`.
 

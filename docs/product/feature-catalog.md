@@ -1,6 +1,6 @@
 # Feature Catalog and Feasibility Bands
 
-Last updated: 2026-03-08
+Last updated: 2026-03-10
 
 This catalog lists current and possible features based on known technical constraints (mobile RAM/thermal limits, model/runtime maturity, and privacy requirements).
 
@@ -14,7 +14,7 @@ This catalog lists current and possible features based on known technical constr
 | Model routing (`0.8B`/`2B` + optional fast-tier) | battery and thermal control | device-state signal quality | Implemented | Implemented (advanced controls + routing override validated) |
 | Runtime performance profiles (`BATTERY`/`BALANCED`/`FAST`) | explicit speed vs battery control with deterministic runtime presets | profile tuning must not break timeout/recovery UX | Implemented (`PerformanceRuntimeConfig` contract) | Implemented (advanced controls profile selector + persisted restore) |
 | GPU acceleration toggle (capability-gated) | allows supported devices to opt into faster decode path | Vulkan backend packaging + runtime capability detection on device | Implemented | Implemented (toggle disabled when unsupported, persisted when supported) |
-| Runtime telemetry readout labels | faster triage for regressions and support | label correctness and user-facing clarity | Implemented | Implemented (first-token/total/prefill/decode/decode-rate in advanced details) |
+| Runtime telemetry readout labels | faster triage for regressions and support | label correctness and user-facing clarity | Implemented | Implemented (first-token/total/prefill/decode/decode-rate/peak-rss in advanced details) |
 | Simple-first first-session lane | improves first-run clarity and reduces setup/control overload | must keep deterministic recovery + no dead-end setup path | Implemented | Implemented (`Get ready` default 0.8B path, advanced/tools available by default) |
 | Local tool runtime (3-5 tools) | practical daily utility | strict validation/sandboxing | Implemented (WP-05 closed) | Implemented (UI action + success/failure paths validated) |
 | Memory v1 | continuity across sessions | retrieval quality + retention policy | Implemented (file-backed + pruning) | Implemented (session restore/switch continuity validated) |

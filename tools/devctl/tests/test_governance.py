@@ -174,6 +174,18 @@ class GovernanceTest(unittest.TestCase):
                 governance.docs_health_check(root)
             self.assertEqual("CONFIG_ERROR", raised.exception.code)
 
+    def test_docs_health_rejects_broken_local_backtick_path_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_docs_health_repo(root)
+            (root / "docs/README.md").write_text(
+                "- start-here/new-joiner.md\n- bad ref: `docs/missing/path.md`\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(DevctlError) as raised:
+                governance.docs_health_check(root)
+            self.assertEqual("CONFIG_ERROR", raised.exception.code)
+
     def _seed_docs_accuracy_repo(self, root: Path) -> None:
         (root / "docs/architecture").mkdir(parents=True, exist_ok=True)
         (root / "docs/ux").mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,6 @@
 # WP-13 Usability Gate Run 01 (Operational Packet)
 
-Last updated: 2026-03-08  
+Last updated: 2026-03-10  
 Owner: Product  
 Support: QA, Design, Engineering
 
@@ -81,10 +81,11 @@ Execution rule:
    - attach user-session notes and listing proof set.
 5. Decision date (UTC): `2026-03-05`
 
-## Addendum (2026-03-08 rerun checkpoint)
+## Addendum (2026-03-10 rerun checkpoint)
 
-1. Required automation rerun after P0 parser hardening is recorded in:
-   - `docs/operations/evidence/wp-13/2026-03-08-qa-lane-rerun-post-p0-parser.md`
-2. Moderated `QA-WP13-RUN02` packet remains blocked because required lanes did not clear provisioning preflight on this rerun.
+1. Required automation reruns and latest gate validation are recorded in:
+   - `docs/operations/evidence/wp-13/2026-03-09-qa-lane-rerun-eng22-a51-revalidation.md`
+   - `docs/operations/evidence/wp-13/2026-03-10-qa-gate-policy-validation-and-a51-rerun.md`
+2. Moderated `QA-WP13-RUN02` packet remains blocked because required lanes still fail provisioning/runtime preflight.
 3. Blocking ticket:
    - `docs/operations/tickets/eng-22-provisioning-startup-check-lane-blocker.md`

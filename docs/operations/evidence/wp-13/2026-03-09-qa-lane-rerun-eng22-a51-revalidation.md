@@ -115,7 +115,7 @@ Date: 2026-03-09 (later same day)
    - `MainActivityUiSmokeTest` still fails in connected instrumentation (`modelSetupSheetOpensFromAdvancedControls`, `naturalLanguageReminderPromptRendersToolResult`, `gpuToggleAndModelActivationStressDoesNotCrash`, `modelSetupSheetCanScrollToBottomWithoutCrash`, `toolAndDiagnosticsActionsRenderResults`).
    - `scenario-b` fails under runtime startup degradation (`UI-STARTUP-001`) with `MODEL_ARTIFACT_CONFIG_MISSING:model=qwen3.5-0.8b-q4;field=payload_or_path`.
 3. Device inspection during failure window showed stale runtime metadata in app prefs:
-   - `shared_prefs/pocketagent_runtime_models.xml` had active `q4_0` entry for 0.8b pointing to missing `.../qwen3.5-0.8b-q4-q4_0.gguf`.
+   - `/data/data/com.pocketagent.android/shared_prefs/pocketagent_runtime_models.xml` had active `q4_0` entry for 0.8b pointing to missing `.../qwen3.5-0.8b-q4-q4_0.gguf`.
    - 2B version list was empty at that point.
 
 ### Priority Update

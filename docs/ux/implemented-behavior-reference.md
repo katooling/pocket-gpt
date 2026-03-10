@@ -1,6 +1,6 @@
 # Implemented UX Behavior Reference
 
-Last updated: 2026-03-08  
+Last updated: 2026-03-10  
 Owner: Product + Android
 
 ## Purpose
@@ -40,16 +40,20 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - `Loading`: active runtime work in progress
    - `Ready`: runtime path healthy for current request flow
    - `Error`: runtime/startup failure that requires retry or recovery action
-2. Backend identity is shown as `Backend: <value>` (`NATIVE_JNI`, `ADB_FALLBACK`, `UNAVAILABLE`) for support triage.
-3. Stream event phase labels map to UI detail copy:
+2. Backend identity is shown as `Backend: <value>` (`NATIVE_JNI`, `REMOTE_ANDROID_SERVICE`, `ADB_FALLBACK`, `UNAVAILABLE`) for support triage.
+3. Android runtime mode contract:
+   - `POCKETGPT_ANDROID_RUNTIME_MODE=remote` uses the remote Android runtime service bridge.
+   - `POCKETGPT_ANDROID_RUNTIME_MODE=in_process` uses in-process JNI bridge.
+   - Default is `remote` on non-debug builds and `in_process` on debug builds.
+4. Stream event phase labels map to UI detail copy:
    - `CHAT_START` -> `Preparing request...`
    - `MODEL_LOAD` -> `Loading model...`
    - `PROMPT_PROCESSING` -> `Prefill...`
    - `TOKEN_STREAM` -> `Generating...`
    - `CHAT_END` -> `Finalizing...`
    - `ERROR` -> `Runtime error`
-4. Runtime error banner includes deterministic code + user message.
-5. Error banner CTA hierarchy is fixed:
+5. Runtime error banner includes deterministic code + user message.
+6. Error banner CTA hierarchy is fixed:
    - primary: `Fix model setup`
    - secondary: `Refresh runtime checks`
    - tertiary: `Show technical details`
@@ -97,13 +101,28 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - last prefill latency
    - last decode latency
    - last decode rate (tokens/sec)
+   - last peak RSS (MB)
 2. These labels are support-facing transparency signals and should be captured in QA evidence when triaging performance regressions.
 
 ## Model Residency Defaults
 
 1. Runtime keeps model loaded while app is foreground by default.
-2. Idle unload TTL defaults to 10 minutes.
+2. Idle unload TTL defaults to 15 minutes (`DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS`).
 3. Warmup-on-startup defaults to enabled unless overridden by runtime/test lane controls.
+
+## Keep-Alive Preference Surface
+
+1. Advanced controls expose exactly six keep-alive preferences:
+   - `AUTO`
+   - `ALWAYS`
+   - `ONE_MINUTE`
+   - `FIVE_MINUTES`
+   - `FIFTEEN_MINUTES`
+   - `UNLOAD_IMMEDIATELY`
+2. `AUTO` keeps foreground residency and uses adaptive idle TTL behavior with a 15-minute base TTL.
+3. `ALWAYS` maps to long-lived residency while app is foreground.
+4. `ONE_MINUTE`, `FIVE_MINUTES`, and `FIFTEEN_MINUTES` map to fixed idle unload windows.
+5. `UNLOAD_IMMEDIATELY` disables foreground residency and unloads near-immediately after idle.
 
 ## Send Timeout and Cancel Semantics
 

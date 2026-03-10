@@ -1,6 +1,6 @@
 # System Context
 
-Last updated: 2026-03-08
+Last updated: 2026-03-10
 
 ## Product Context
 
@@ -46,6 +46,16 @@ AndroidUI -. explicit_opt_in_only .-> RemoteModelCatalog
    - `ERROR`
 4. UI status copy is phase-driven (`Preparing request`, `Loading model`, `Prefill`, `Generating`, `Finalizing`, `Runtime error`).
 5. Terminal stream outcomes are explicit: `Completed`, `Cancelled`, `Failed`.
+
+## Android Runtime Mode Contract
+
+1. Runtime mode is resolved by `POCKETGPT_ANDROID_RUNTIME_MODE` (`remote` or `in_process`).
+2. Default mode is `in_process` for debug builds and `remote` for non-debug builds.
+3. Backend labels surfaced in app/runtime include:
+   - `NATIVE_JNI`
+   - `REMOTE_ANDROID_SERVICE`
+   - `ADB_FALLBACK`
+   - `UNAVAILABLE`
 
 ## Interaction and Transcript Contract
 

@@ -40,11 +40,10 @@ Validate the new gate structure and evidence model:
    - Report: `scripts/benchmarks/runs/2026-03-10/192.168.1.43:40281/gates/promotion-report.json`
 6. `python3 tools/devctl/main.py gate merge-unblock --serial 192.168.1.43:40281`
    - Result: FAIL (`android-instrumented`, `lifecycle-e2e-first-run`)
-   - Report: `build/devctl/gates/merge-unblock-20260310-094203.json` (transient build folder report)
+   - Report: transient local `build/devctl/gates/` output (non-retained) plus retained gate artifact below.
 7. `python3 tools/devctl/main.py gate merge-unblock --serial 192.168.1.43:40281 --skip-lifecycle`
    - Result: FAIL (`android-instrumented`)
    - Reports:
-     - `build/devctl/gates/merge-unblock-20260310-095211.json` (transient build folder report)
      - `scripts/benchmarks/runs/2026-03-10/192.168.1.43:40281/gates/merge-unblock-report.json` (retained)
 
 ## Blocker classification (today)

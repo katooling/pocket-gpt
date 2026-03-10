@@ -1,6 +1,6 @@
 # WP-09 UX Feedback Taxonomy + Intake Policy
 
-Last updated: 2026-03-04  
+Last updated: 2026-03-10  
 Owner: Product Ops (`PROD-08`)  
 Lifecycle: Active
 
@@ -60,7 +60,8 @@ Standardize UX feedback intake so beta signals are categorized consistently, rou
 ## Board and Workflow Mapping
 
 1. Intake enters QA triage process aligned with:
-   - `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-incident-triage-template.md`
+   - `docs/operations/tickets/qa-13-send-capture-gate-operationalization.md`
+   - `docs/operations/evidence/wp-09/2026-03-04-qa-wp09-release-promotion-checklist.md`
 2. Product owner confirms taxonomy/severity and assigns execution queue.
 3. QA validates fix/regression impact and updates promotion checklist.
 4. Weekly synthesis is published for Product/Engineering/QA/Marketing.

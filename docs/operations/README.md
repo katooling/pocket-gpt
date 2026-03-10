@@ -30,3 +30,4 @@ This section is the cross-functional execution system.
 - `role-playbooks/marketing-playbook.md`
 - `role-playbooks/qa-playbook.md`
 - `evidence/index.md`
+- `assets/README.md`

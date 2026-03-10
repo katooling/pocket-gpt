@@ -26,6 +26,7 @@ Use this map to jump to the right source quickly.
 
 - System context: `docs/architecture/system-context.md`
 - Modular monolith contracts: `docs/architecture/modular-monolith.md`
+- Error-code registry: `docs/architecture/error-code-registry.md`
 - ADR history: `docs/architecture/adrs/`
 
 ## Operations and launch governance

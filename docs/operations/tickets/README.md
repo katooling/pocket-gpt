@@ -16,7 +16,6 @@ Current tickets include:
 - `qa-13-send-capture-gate-operationalization.md`
 - `sec-02-privacy-claim-parity-audit.md`
 - `ux-13-stuck-send-timeout-recovery.md`
-- `prod-04-monetization-hypothesis-v0.md`
 - `prod-09-soft-gate-pilot-policy.md`
 - `prod-10-launch-gate-matrix.md`
 - `prod-11-pilot-support-incident-playbook.md`

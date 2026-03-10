@@ -36,9 +36,7 @@ All non-canonical docs should link back to these where process commands or polic
 - `architecture/system-context.md`
 - `architecture/modular-monolith.md`
 - `architecture/tech-stack-decision.md`
+- `architecture/error-code-registry.md`
 - `architecture/adrs/`
-- `feasibility/device-matrix.md`
-- `feasibility/benchmark-protocol.md`
-- `feasibility/spike-results.md`
 - `security/privacy-model.md`
 - `security/risk-register.md`

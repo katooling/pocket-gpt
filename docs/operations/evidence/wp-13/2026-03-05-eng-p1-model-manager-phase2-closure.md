@@ -15,7 +15,7 @@ Close P1 implementation scope for:
 
 1. Flavor-gated download channel:
    - `apps/mobile-android/build.gradle.kts`
-   - `apps/mobile-android/src/internalDownload/AndroidManifest.xml`
+   - `apps/mobile-android/src/main/AndroidManifest.xml`
    - `apps/mobile-android/src/test/kotlin/com/pocketagent/android/NetworkPolicyManifestConfigTest.kt`
 2. Versioned provisioning + activation/store controls:
    - `apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/AndroidRuntimeProvisioningStore.kt`
@@ -59,4 +59,3 @@ Results:
    - `stage2_enable_provisioning_test`
    - `stage2_enable_journey_test`
 2. Download resume path integrity was corrected to append partial bytes on HTTP range-resume in `ModelDownloadWorker`.
-

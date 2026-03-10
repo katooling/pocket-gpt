@@ -1,6 +1,6 @@
 # Model Management and Runtime Readiness Flow
 
-Last updated: 2026-03-08
+Last updated: 2026-03-10
 Owner: Runtime + Android
 Lifecycle: Phase-2 implemented (versioned install + downloads + activation control)
 
@@ -20,14 +20,22 @@ Lifecycle: Phase-2 implemented (versioned install + downloads + activation contr
 4. GPU toggle is capability-gated and persisted only when supported.
 5. Model residency defaults:
    - keep loaded in foreground: enabled
-   - idle unload TTL: `10m`
+   - idle unload TTL: `15m` (`DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS`)
    - warmup on startup: enabled
-6. Runtime detail labels after generation:
+6. Keep-alive options:
+   - `AUTO` (adaptive base TTL: `15m`)
+   - `ALWAYS`
+   - `ONE_MINUTE`
+   - `FIVE_MINUTES`
+   - `FIFTEEN_MINUTES`
+   - `UNLOAD_IMMEDIATELY`
+7. Runtime detail labels after generation:
    - first-token latency
    - total latency
    - prefill latency
    - decode latency
    - decode rate
+   - peak RSS
 
 ## Runtime Status Model
 
@@ -41,8 +49,17 @@ Runtime status shown in-app:
 Runtime backend labels:
 
 1. `NATIVE_JNI`
-2. `ADB_FALLBACK`
-3. `UNAVAILABLE`
+2. `REMOTE_ANDROID_SERVICE`
+3. `ADB_FALLBACK`
+4. `UNAVAILABLE`
+
+Android runtime mode selection:
+
+1. `POCKETGPT_ANDROID_RUNTIME_MODE=remote` -> remote Android runtime service bridge.
+2. `POCKETGPT_ANDROID_RUNTIME_MODE=in_process` -> in-process JNI bridge.
+3. Default mode:
+   - debug builds: `in_process`
+   - non-debug builds: `remote`
 
 Send unlock rule:
 

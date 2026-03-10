@@ -1,6 +1,6 @@
 # Evidence Index
 
-Last updated: 2026-03-08
+Last updated: 2026-03-10
 
 This index is the canonical retained evidence inventory after prune.
 
@@ -16,7 +16,7 @@ This index is the canonical retained evidence inventory after prune.
 ### WP-09 (`docs/operations/evidence/wp-09/`)
 
 - Retained notes support active QA rollout and UX evidence references.
-- Superseded draft/duplicate notes were pruned in this sync pass.
+- Template-only triage/summary notes were pruned in this sync pass; canonical templates now live in `docs/operations/wp-09-*.md`.
 
 ### WP-12 (`docs/operations/evidence/wp-12/`)
 
@@ -25,7 +25,7 @@ This index is the canonical retained evidence inventory after prune.
 ### WP-13 (`docs/operations/evidence/wp-13/`)
 
 - Retained notes support active UX-quality, runtime journey, and launch-gate references.
-- Superseded engineering intermediary notes were pruned where not referenced by active artifacts.
+- Superseded rerun notes were pruned where newer rerun/gate notes carry the same decision signal.
 
 ## Historical Summaries (Pruned)
 

@@ -1,6 +1,6 @@
 # UX Error Recovery Guide
 
-Last updated: 2026-03-05  
+Last updated: 2026-03-10  
 Owner: Product + Android + QA
 
 ## Purpose
@@ -15,7 +15,7 @@ Map deterministic UI error codes to user-facing guidance and support actions so 
 | Checksum mismatch | `CHECKSUM_MISMATCH` | Re-import/re-download model from trusted source | Capture checksum details and source artifact info |
 | Provenance mismatch | `PROVENANCE_*_MISMATCH` | Use trusted source and retry provisioning | Capture issuer/signature details and verification logs |
 | Runtime incompatible | `RUNTIME_INCOMPATIBLE` | Install compatible model version and refresh checks | Confirm runtime compatibility tag match |
-| Backend not native | `Runtime backend is ADB_FALLBACK/UNAVAILABLE` | Validate device/runtime setup, then rerun checks | Capture backend label and startup detail in evidence |
+| Backend not native | `Runtime backend is ADB_FALLBACK/UNAVAILABLE` | Validate device/runtime setup, then rerun checks | Capture backend label and startup detail in evidence (`REMOTE_ANDROID_SERVICE` is a valid native backend in remote mode) |
 | Template unavailable | `TEMPLATE_UNAVAILABLE` / `model profile missing` | Reinstall/update model package and refresh checks | Confirm required model ids have template profile mappings |
 
 ## Other Deterministic Codes

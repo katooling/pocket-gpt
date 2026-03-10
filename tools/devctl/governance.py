@@ -60,6 +60,7 @@ STAGE_EVIDENCE_PATTERN = (
 
 RUN_PATH_REGEX = r"scripts/benchmarks/runs/[^\s)`\"]+"
 MARKDOWN_LINK_REGEX = re.compile(r"\[[^]]+\]\(([^)]+)\)")
+BACKTICK_SPAN_REGEX = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
 STATUS_LINE_REGEX = re.compile(r"^Status:\s*", re.MULTILINE)
 
 DOCS_GOVERNANCE_CONFIG_PATH = Path("config/devctl/docs-governance.json")
@@ -89,7 +90,6 @@ DEFAULT_DOCS_GOVERNANCE_CONFIG: dict[str, object] = {
                 "2026-03-04-eng-13-native-runtime-proof.md",
                 "2026-03-04-eng-17-network-policy-wiring.md",
                 "2026-03-04-prod-eng-12-model-distribution-decision.md",
-                "2026-03-04-qa-wp12-closeout.md",
                 "2026-03-05-eng-13-native-runtime-rerun.md",
                 "2026-03-05-qa-wp12-closeout-rerun.md",
             ]
@@ -212,9 +212,66 @@ def _normalize_link_target(raw_target: str) -> str:
     return target.strip()
 
 
+def _resolve_local_target(repo_root: Path, file_path: Path, target: str) -> Path:
+    if target.startswith("/"):
+        return Path(target)
+    if target.startswith("./") or target.startswith("../"):
+        return (file_path.parent / target).resolve()
+
+    rel_candidate = (file_path.parent / target).resolve()
+    repo_candidate = (repo_root / target).resolve()
+    if repo_candidate.exists():
+        return repo_candidate
+    return rel_candidate
+
+
+def _iter_backtick_path_refs(text: str) -> list[str]:
+    refs: set[str] = set()
+    for span in BACKTICK_SPAN_REGEX.findall(text):
+        for raw_token in span.split():
+            candidate = raw_token.strip().strip("()[]{}:,;\"'")
+            if candidate.endswith(".") and "/" in candidate:
+                candidate = candidate[:-1]
+            if "/" not in candidate:
+                continue
+            refs.add(candidate)
+    return sorted(refs)
+
+
+def _is_likely_repo_backtick_target(target: str) -> bool:
+    if target.startswith("/"):
+        return False
+    if target.startswith("tmp/"):
+        return False
+    if target.startswith("scripts/benchmarks/runs/"):
+        return False
+
+    normalized = target[2:] if target.startswith("./") else target
+    first = normalized.split("/", 1)[0]
+    known_roots = {"docs", "scripts", "apps", "packages", "tools", "tests", "config", ".github"}
+    if first in known_roots:
+        return True
+
+    return normalized.endswith(
+        (
+            ".md",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".kt",
+            ".kts",
+            ".py",
+            ".sh",
+            ".xml",
+        )
+    )
+
+
 def _docs_health_broken_links(repo_root: Path) -> list[str]:
     violations: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
     for file_path in _iter_docs_health_files(repo_root):
+        rel_file = file_path.relative_to(repo_root).as_posix()
         text = file_path.read_text(encoding="utf-8")
         for match in MARKDOWN_LINK_REGEX.finditer(text):
             raw_target = match.group(1)
@@ -227,15 +284,41 @@ def _docs_health_broken_links(repo_root: Path) -> list[str]:
                 continue
             if _is_placeholder_target(target):
                 continue
+            if "*" in target:
+                continue
 
-            if target.startswith("/"):
-                resolved = Path(target)
-            else:
-                resolved = (file_path.parent / target).resolve()
+            resolved = _resolve_local_target(repo_root=repo_root, file_path=file_path, target=target)
+            if resolved.exists():
+                continue
 
-            if not resolved.exists():
-                rel_file = file_path.relative_to(repo_root).as_posix()
+            key = ("markdown", rel_file, raw_target)
+            if key not in seen:
+                seen.add(key)
                 violations.append(f"Broken local markdown link in {rel_file}: {raw_target}")
+
+        for raw_target in _iter_backtick_path_refs(text):
+            target = _normalize_link_target(raw_target)
+            if not target:
+                continue
+            if target.startswith(("#", "mailto:", "http://", "https://")):
+                continue
+            if "://" in target:
+                continue
+            if _is_placeholder_target(target):
+                continue
+            if "*" in target:
+                continue
+            if not _is_likely_repo_backtick_target(target):
+                continue
+
+            resolved = _resolve_local_target(repo_root=repo_root, file_path=file_path, target=target)
+            if resolved.exists():
+                continue
+
+            key = ("backtick", rel_file, raw_target)
+            if key not in seen:
+                seen.add(key)
+                violations.append(f"Broken local backtick path reference in {rel_file}: {raw_target}")
     return violations
 
 

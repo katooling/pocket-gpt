@@ -1,6 +1,6 @@
 # Modular Monolith Architecture
 
-Last updated: 2026-03-08
+Last updated: 2026-03-10
 
 ## Why Modular Monolith
 
@@ -18,7 +18,7 @@ Current scope favors fast iteration with strict contracts in one repository/runt
 | `packages/inference-adapters` | inference/routing interfaces and model catalog contracts | `InferenceModule`, `RoutingModule`, `ModelCatalog`, `ModelArtifactManager` |
 | `packages/tool-runtime` | safe local tool runtime and schema validation | `ToolModule`, `SafeLocalToolRuntime`, `ToolContracts` |
 | `packages/memory` | persisted memory chunks and retrieval | `MemoryModule`, file/sqlite-backed implementations |
-| `packages/native-bridge` | runtime backend wiring (JNI primary, ADB fallback) | `LlamaCppInferenceModule`, `NativeJniLlamaCppBridge`, runtime bridge contracts |
+| `packages/native-bridge` | runtime backend wiring (JNI + remote Android service + ADB fallback) | `LlamaCppInferenceModule`, `NativeJniLlamaCppBridge`, `RemoteLlamaCppRuntimeBridge`, runtime bridge contracts |
 | `packages/app-runtime` | orchestration use cases and runtime composition root | `RuntimeOrchestrator`, `SendMessageUseCase`, `StartupChecksUseCase`, `MvpRuntimeFacade` |
 | `apps/mobile-android` | Android UI/state/controllers and provisioning UX | `ChatViewModel`, controllers, Compose surfaces |
 | `tools/devctl` | lane orchestration + governance automation | lane dispatcher, governance checks |

@@ -39,11 +39,17 @@
           ]
         },
         {
-          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt",
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModelSendWorkflow.kt",
           "must_contain": [
-            "latestAssistantRequestId",
-            "buildStreamChatRequest",
+            "timelineProjector.latestAssistantRequestId",
+            "sendFlow.buildStreamChatRequest(",
             "previousResponseId = previousResponseId"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/TimelineProjector.kt",
+          "must_contain": [
+            "fun latestAssistantRequestId"
           ]
         }
       ]
@@ -111,6 +117,184 @@
           "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/SettingsSheet.kt",
           "must_contain": [
             "internal fun PrivacyInfoSheet"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runtime-backend-surface",
+      "description": "Docs reflect runtime backend labels and Android runtime mode selection contract",
+      "docs": [
+        {
+          "path": "docs/ux/implemented-behavior-reference.md",
+          "must_contain": [
+            "REMOTE_ANDROID_SERVICE",
+            "POCKETGPT_ANDROID_RUNTIME_MODE=remote",
+            "POCKETGPT_ANDROID_RUNTIME_MODE=in_process"
+          ]
+        },
+        {
+          "path": "docs/ux/model-management-flow.md",
+          "must_contain": [
+            "REMOTE_ANDROID_SERVICE",
+            "POCKETGPT_ANDROID_RUNTIME_MODE=remote",
+            "POCKETGPT_ANDROID_RUNTIME_MODE=in_process"
+          ]
+        }
+      ],
+      "code": [
+        {
+          "glob": "packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/RuntimeBridgeContracts.kt",
+          "must_contain": [
+            "enum class RuntimeBackend",
+            "REMOTE_ANDROID_SERVICE"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/RuntimeMode.kt",
+          "must_contain": [
+            "ANDROID_RUNTIME_MODE_REMOTE",
+            "ANDROID_RUNTIME_MODE_IN_PROCESS",
+            "defaultMode = if (debugBuild) ANDROID_RUNTIME_MODE_IN_PROCESS else ANDROID_RUNTIME_MODE_REMOTE"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/RemoteLlamaCppRuntimeBridge.kt",
+          "must_contain": [
+            "RuntimeBackend.REMOTE_ANDROID_SERVICE"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "keep-alive-surface",
+      "description": "Docs reflect keep-alive options and 15-minute default idle unload TTL",
+      "docs": [
+        {
+          "path": "docs/ux/implemented-behavior-reference.md",
+          "must_contain": [
+            "AUTO",
+            "ALWAYS",
+            "ONE_MINUTE",
+            "FIVE_MINUTES",
+            "FIFTEEN_MINUTES",
+            "UNLOAD_IMMEDIATELY",
+            "15 minutes"
+          ]
+        },
+        {
+          "path": "docs/ux/model-management-flow.md",
+          "must_contain": [
+            "AUTO",
+            "ALWAYS",
+            "ONE_MINUTE",
+            "FIVE_MINUTES",
+            "FIFTEEN_MINUTES",
+            "UNLOAD_IMMEDIATELY",
+            "`15m`"
+          ]
+        }
+      ],
+      "code": [
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/state/ChatUiState.kt",
+          "must_contain": [
+            "enum class RuntimeKeepAlivePreference",
+            "AUTO",
+            "ALWAYS",
+            "ONE_MINUTE",
+            "FIVE_MINUTES",
+            "FIFTEEN_MINUTES",
+            "UNLOAD_IMMEDIATELY"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/controllers/ChatSendFlow.kt",
+          "must_contain": [
+            "RuntimeKeepAlivePreference.AUTO",
+            "RuntimeKeepAlivePreference.ALWAYS",
+            "RuntimeKeepAlivePreference.ONE_MINUTE",
+            "RuntimeKeepAlivePreference.FIVE_MINUTES",
+            "RuntimeKeepAlivePreference.FIFTEEN_MINUTES",
+            "RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY",
+            "DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS"
+          ]
+        },
+        {
+          "glob": "packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/PerformanceProfiles.kt",
+          "must_contain": [
+            "DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS: Long = 15 * 60 * 1000L"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "error-code-registry-parity",
+      "description": "Error-code registry includes implemented UI/runtime/provisioning codes",
+      "docs": [
+        {
+          "path": "docs/architecture/error-code-registry.md",
+          "must_contain": [
+            "UI-STARTUP-001",
+            "UI-IMG-VAL-001",
+            "UI-TOOL-SCHEMA-001",
+            "UI-RUNTIME-001",
+            "PROVISIONING_IMPORT_SOURCE_UNREADABLE",
+            "MODEL_MANIFEST_HTTP_ERROR",
+            "REMOTE_PROCESS_DIED",
+            "REMOTE_TIMEOUT",
+            "MODEL_LOCAL_FILE_MISSING",
+            "PROVISIONING_VERSIONS_JSON_CORRUPT",
+            "PROVISIONING_DYNAMIC_MODEL_IDS_CORRUPT"
+          ]
+        }
+      ],
+      "code": [
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/state/UiErrorMapper.kt",
+          "must_contain": [
+            "UI-STARTUP-001",
+            "UI-IMG-VAL-001",
+            "UI-TOOL-SCHEMA-001",
+            "UI-RUNTIME-001"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/RuntimeErrorCodes.kt",
+          "must_contain": [
+            "PROVISIONING_IMPORT_SOURCE_UNREADABLE",
+            "PROVISIONING_IMPORT_PERSIST_FAILED",
+            "MODEL_MANIFEST_HTTP_ERROR"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/RemoteRuntimeTransport.kt",
+          "must_contain": [
+            "REMOTE_ERROR_PROCESS_DIED = \"REMOTE_PROCESS_DIED\"",
+            "REMOTE_ERROR_TIMEOUT = \"REMOTE_TIMEOUT\"",
+            "REMOTE_ERROR_BIND_FAILED = \"REMOTE_BIND_FAILED\"",
+            "REMOTE_ERROR_BUSY = \"REMOTE_BUSY\"",
+            "REMOTE_ERROR_RUNTIME = \"REMOTE_RUNTIME_ERROR\"",
+            "REMOTE_ERROR_MODEL_NOT_LOADED = \"REMOTE_MODEL_NOT_LOADED\""
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/AndroidRuntimeProvisioningStore.kt",
+          "must_contain": [
+            "MODEL_LOCAL_FILE_MISSING",
+            "PROVISIONING_VERSIONS_ROW_CORRUPT",
+            "PROVISIONING_ACTIVE_VERSION_ORPHANED",
+            "PROVISIONING_VERSIONS_JSON_CORRUPT",
+            "PROVISIONING_VERSIONS_RECOVERED_FROM_DISCOVERY"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/RuntimeProvisioningStoreMigrationDiscovery.kt",
+          "must_contain": [
+            "PROVISIONING_DYNAMIC_MODEL_IDS_CORRUPT",
+            "PROVISIONING_DISCOVERY_FILES_SKIPPED",
+            "PROVISIONING_METADATA_JSON_CORRUPT",
+            "PROVISIONING_DISCOVERY_METADATA_SKIPPED"
           ]
         }
       ]

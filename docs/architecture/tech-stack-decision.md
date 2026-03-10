@@ -1,10 +1,10 @@
 # Tech Stack Decision
 
-Last updated: 2026-03-08
+Last updated: 2026-03-10
 
 ## Decision Summary
 
-1. Baseline runtime: `llama.cpp` via native JNI bridge on Android.
+1. Baseline runtime: `llama.cpp` via Android native bridge, with runtime mode selecting remote Android service (`remote`) or in-process JNI (`in_process`).
 2. Packaging/runtime optimization: optional Vulkan GPU offload in packaged runtime when device/backend support exists.
 3. Shared architecture: Kotlin packages + Compose Android app shell.
 4. Runtime orchestration: `packages/app-runtime` composition/use-case layer.
@@ -13,7 +13,7 @@ Last updated: 2026-03-08
 
 ## Why This Stack
 
-1. Delivers local-first behavior now with production runtime path (`NATIVE_JNI`) and deterministic fallback labeling.
+1. Delivers local-first behavior now with production runtime path (`REMOTE_ANDROID_SERVICE` by default in non-debug) and deterministic backend labeling.
 2. Keeps platform-specific performance controls available (profile + GPU capability gating) without changing product contracts.
 3. Preserves testability through package boundaries and host/JVM lanes.
 
