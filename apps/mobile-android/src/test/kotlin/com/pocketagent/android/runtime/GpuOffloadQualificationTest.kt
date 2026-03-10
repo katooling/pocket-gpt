@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -355,6 +356,33 @@ class GpuOffloadQualificationTest {
 
         assertEquals(GpuProbeStatus.PENDING, secondPending.status)
         assertTrue(secondPending.checkedAtEpochMs > firstPending.checkedAtEpochMs)
+    }
+
+    @Test
+    fun `retriable probe failures do not add final unnecessary retry delay`() = runTest {
+        val probeClient = RecordingProbeClient {
+            GpuProbeResult(
+                status = GpuProbeStatus.FAILED,
+                failureReason = GpuProbeFailureReason.SERVICE_BUSY,
+                detail = "service_busy",
+            )
+        }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        val result = qualifier.evaluate(runtimeSupported = true)
+
+        assertEquals(GpuProbeStatus.FAILED, result.status)
+        assertEquals(GpuProbeFailureReason.SERVICE_BUSY, result.failureReason)
+        assertEquals(13, probeClient.callCount)
+        assertEquals(12 * 5_000L, testScheduler.currentTime)
+        assertFalse(result.detail.isNullOrBlank())
     }
 }
 

@@ -302,7 +302,11 @@ internal class MessengerRemoteRuntimeTransport(
         payload: Bundle,
         timeoutMs: Long,
     ): Bundle? {
-        val remote = ensureConnected() ?: return remoteFailureReply(REMOTE_ERROR_BIND_FAILED)
+        val remote = ensureConnected()
+        if (remote == null) {
+            android.util.Log.w("RemoteTransport", "IPC_REMOTE|bind_failed|what=$what")
+            return remoteFailureReply(REMOTE_ERROR_BIND_FAILED)
+        }
         val correlationId = nextCorrelationId.getAndIncrement()
         val queue = LinkedBlockingQueue<Bundle>(1)
         synchronized(transportLock) {
@@ -322,6 +326,9 @@ internal class MessengerRemoteRuntimeTransport(
         }
         val reply = queue.poll(timeoutMs, TimeUnit.MILLISECONDS)
         synchronized(transportLock) { pendingReplies.remove(correlationId) }
+        if (reply == null) {
+            android.util.Log.w("RemoteTransport", "IPC_REMOTE|poll_timeout|what=$what|timeout_ms=$timeoutMs")
+        }
         return reply ?: remoteFailureReply(REMOTE_ERROR_TIMEOUT)
     }
 

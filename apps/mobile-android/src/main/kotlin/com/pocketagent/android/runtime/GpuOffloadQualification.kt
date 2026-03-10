@@ -38,6 +38,7 @@ enum class GpuProbeFailureReason {
     NATIVE_LOAD_FAILED,
     NATIVE_GENERATE_FAILED,
     NATIVE_RUNTIME_UNAVAILABLE,
+    SERVICE_BUSY,
     UNKNOWN,
 }
 
@@ -108,9 +109,16 @@ private const val PROBE_TOTAL_TIMEOUT_MS = 2 * 60_000L
 private const val PROBE_MIN_LAYER_TIMEOUT_MS = 12_000L
 private const val PROBE_MAX_LAYER_TIMEOUT_MS = 45_000L
 private const val PROBE_STALE_PENDING_TIMEOUT_MS = PROBE_TOTAL_TIMEOUT_MS + 30_000L
+private const val PROBE_BUSY_RETRY_DELAY_MS = 5_000L
+private const val PROBE_BUSY_MAX_RETRIES = 12
 private const val VULKAN_API_1_2 = (1L shl 22) or (2L shl 12)
 private const val MIB = 1024L * 1024L
 private const val MIN_GPU_HEADROOM_BYTES = 256L * MIB
+private val PROBE_RETRIABLE_REASONS: Set<GpuProbeFailureReason> = setOf(
+    GpuProbeFailureReason.SERVICE_BUSY,
+    GpuProbeFailureReason.PROBE_TIMEOUT,
+    GpuProbeFailureReason.PROBE_BIND_FAILED,
+)
 private val PROBE_LAYER_LADDER_FULL: List<Int> = listOf(1, 2, 4, 8, 16, 32)
 private val PROBE_LAYER_LADDER_NO_HALF: List<Int> = listOf(1, 2, 4, 8)
 private val PROBE_LAYER_LADDER_PRE_12: List<Int> = listOf(1, 2, 4, 8, 16)
@@ -309,6 +317,7 @@ internal class InternalAndroidGpuOffloadQualifier(
         )
         latestResult = pending
         scope.launch {
+            safeLogInfo("GPU_PROBE|coroutine_started|cache_key=$cacheKey")
             try {
                 val result = runCatching {
                     runLayerQualification(
@@ -421,34 +430,53 @@ internal class InternalAndroidGpuOffloadQualifier(
 
         val startedAtMs = now()
         for (layer in cappedOrderedLayers) {
-            val elapsedMs = (now() - startedAtMs).coerceAtLeast(0L)
-            val remainingBudgetMs = (policy.totalTimeoutMs - elapsedMs).coerceAtLeast(0L)
-            if (remainingBudgetMs < PROBE_MIN_LAYER_TIMEOUT_MS) {
-                failure = GpuProbeResult(
-                    status = GpuProbeStatus.FAILED,
-                    failureReason = GpuProbeFailureReason.PROBE_TIMEOUT,
-                    detail = "probe_total_timeout_exhausted:elapsed_ms=$elapsedMs:layer_cap=$layerCapDetail",
+            var layerResult: GpuProbeResult? = null
+            for (attempt in 0..PROBE_BUSY_MAX_RETRIES) {
+                val elapsedMs = (now() - startedAtMs).coerceAtLeast(0L)
+                val remainingBudgetMs = (policy.totalTimeoutMs - elapsedMs).coerceAtLeast(0L)
+                if (remainingBudgetMs < PROBE_MIN_LAYER_TIMEOUT_MS) {
+                    layerResult = GpuProbeResult(
+                        status = GpuProbeStatus.FAILED,
+                        failureReason = GpuProbeFailureReason.PROBE_TIMEOUT,
+                        detail = "probe_total_timeout_exhausted:elapsed_ms=$elapsedMs:layer_cap=$layerCapDetail",
+                    )
+                    break
+                }
+                val timeoutMs = minOf(
+                    policy.timeoutForLayer(layer = layer, nativeDiagnostics = nativeDiagnostics),
+                    remainingBudgetMs,
                 )
-                failedLayer = layer
+                safeLogInfo("GPU_PROBE|layer_probe_start|layer=$layer|timeout_ms=$timeoutMs|attempt=$attempt")
+                layerResult = probeClient.runProbe(
+                    request = request.copy(layerLadder = listOf(layer), vulkanProfile = policy.vulkanProfile),
+                    timeoutMs = timeoutMs,
+                )
+                safeLogInfo("GPU_PROBE|layer_probe_done|layer=$layer|status=${layerResult!!.status}|reason=${layerResult.failureReason}")
+                val retriable = layerResult.failureReason in PROBE_RETRIABLE_REASONS
+                if (retriable) {
+                    if (attempt < PROBE_BUSY_MAX_RETRIES) {
+                        safeLogInfo("GPU_PROBE|transient_retry|layer=$layer|reason=${layerResult.failureReason}|attempt=$attempt|delay_ms=$PROBE_BUSY_RETRY_DELAY_MS")
+                        kotlinx.coroutines.delay(PROBE_BUSY_RETRY_DELAY_MS)
+                        continue
+                    }
+                    safeLogInfo("GPU_PROBE|transient_retry_exhausted|layer=$layer|reason=${layerResult.failureReason}|attempt=$attempt")
+                }
                 break
             }
-            val timeoutMs = minOf(
-                policy.timeoutForLayer(layer = layer, nativeDiagnostics = nativeDiagnostics),
-                remainingBudgetMs,
+            val result = layerResult ?: GpuProbeResult(
+                status = GpuProbeStatus.FAILED,
+                failureReason = GpuProbeFailureReason.PROBE_TIMEOUT,
+                detail = "probe_busy_retries_exhausted:layer_cap=$layerCapDetail",
             )
-            val layerResult = probeClient.runProbe(
-                request = request.copy(layerLadder = listOf(layer), vulkanProfile = policy.vulkanProfile),
-                timeoutMs = timeoutMs,
-            )
-            if (layerResult.status == GpuProbeStatus.QUALIFIED && layerResult.maxStableGpuLayers > 0) {
-                val stableForLayer = layerResult.maxStableGpuLayers.coerceAtMost(layer)
+            if (result.status == GpuProbeStatus.QUALIFIED && result.maxStableGpuLayers > 0) {
+                val stableForLayer = result.maxStableGpuLayers.coerceAtMost(layer)
                 maxStableLayers = max(maxStableLayers, stableForLayer)
                 if (stableForLayer >= layer) {
                     continue
                 }
             }
             failedLayer = layer
-            failure = layerResult
+            failure = result
             break
         }
 
