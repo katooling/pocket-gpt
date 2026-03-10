@@ -1,6 +1,6 @@
 # Test Strategy (Canonical Playbook)
 
-Last updated: 2026-03-09
+Last updated: 2026-03-10
 
 ## Source Of Truth
 
@@ -54,12 +54,29 @@ Last updated: 2026-03-09
 
 1. `bash scripts/dev/test.sh fast` for fast changed-file confidence.
 2. scoped Maestro + logcat loop for device-specific crash/hang debugging only (not merge/release signoff).
-3. `bash scripts/dev/test.sh merge` for merge-gate safety net.
-4. `python3 tools/devctl/main.py lane android-instrumented` for Android smoke.
-5. `python3 tools/devctl/main.py lane maestro` for E2E app workflows.
-6. `python3 tools/devctl/main.py lane journey` for strict send/runtime journey evidence.
-7. `python3 tools/devctl/main.py lane screenshot-pack` for UI screenshot contract.
-8. Stage-2 runtime closure lanes remain physical-device signoff lanes.
+3. `python3 tools/devctl/main.py gate merge-unblock` for day-to-day unblock safety.
+4. `python3 tools/devctl/main.py gate promotion [--include-screenshot-pack]` for promotion readiness.
+5. `bash scripts/dev/test.sh merge` remains the canonical broad merge-equivalent unit/contract lane.
+6. `python3 tools/devctl/main.py lane android-instrumented` for Android smoke.
+7. `python3 tools/devctl/main.py lane maestro` for E2E app workflows (onboarding bootstrap separated from post-onboarding scenario A/B/C).
+8. `python3 tools/devctl/main.py lane journey` for strict send/runtime journey evidence.
+9. `python3 tools/devctl/main.py lane screenshot-pack [--product-signal-only]` for UI screenshot contract.
+10. Stage-2 runtime closure lanes remain physical-device signoff lanes.
+
+## Merge-Unblock vs Promotion Gates
+
+1. Merge-unblock gate contract:
+   - `merge` + `doctor` + `android-instrumented`
+   - risk-triggered lifecycle flow (`tests/maestro/scenario-first-run-download-chat.yaml`)
+2. Promotion gate contract:
+   - `merge` + `doctor` + `android-instrumented` + `maestro` + strict `journey`
+   - optional `screenshot-pack` via `--include-screenshot-pack`
+3. Gate reports are emitted under `build/devctl/gates/` and include:
+   - per-step duration (runtime signal)
+   - per-step correctness classification (`pass`, `product_signal_fail`, `harness_noise_fail`, `infra_fail`)
+   - blocking/non-blocking decision used by the gate
+4. Product-signal-only policy:
+   - known harness-noise failures in selected expensive lanes (currently strict kickoff-harness journey failures and screenshot-pack compose-harness failures) are recorded as caveats, not blockers, in promotion gating.
 
 ## Risk-Based Lifecycle Gate Policy
 

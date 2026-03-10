@@ -10,6 +10,8 @@ Canonical ownership by concern:
 6. Maestro flow assets and lifecycle flow contract: `tests/maestro/`
 7. CI required lifecycle gate job: `lifecycle-e2e-first-run` in `.github/workflows/ci.yml`
 8. Agent-level testing policy and scoped debug loop guardrails: `AGENTS.md`
+9. `devctl gate` wrappers for merge-unblock/promotion policy: `tools/devctl/gates.py`
+10. Runtime tuning debug workflow and diagnostics interpretation: `docs/testing/runtime-tuning-debugging.md`
 
 Consolidation rule:
 

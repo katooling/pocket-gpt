@@ -1,6 +1,6 @@
 # Testing Runbooks
 
-Last updated: 2026-03-09
+Last updated: 2026-03-10
 
 These runbooks are short task guides. Strategy and gates stay in `docs/testing/test-strategy.md`.
 
@@ -19,6 +19,30 @@ Then execute any recommended follow-up lanes from `build/devctl/recommended-lane
 bash scripts/dev/test.sh merge
 python3 tools/devctl/main.py governance docs-health
 python3 tools/devctl/main.py governance docs-accuracy
+```
+
+## Runbook: Merge Unblock Gate
+
+```bash
+python3 tools/devctl/main.py gate merge-unblock
+```
+
+Risk labels can be provided explicitly when triaging PR-equivalent risk locally:
+
+```bash
+python3 tools/devctl/main.py gate merge-unblock --risk-label risk:runtime
+```
+
+## Runbook: Promotion Gate
+
+```bash
+python3 tools/devctl/main.py gate promotion
+```
+
+Include screenshot contract checks when needed:
+
+```bash
+python3 tools/devctl/main.py gate promotion --include-screenshot-pack
 ```
 
 ## Runbook: Android UI/Runtime Smoke
@@ -112,6 +136,32 @@ Single API level:
 bash scripts/dev/maestro-cloud-gpu-benchmark.sh --api-level 34
 ```
 
+## Runbook: Runtime Tuning Analysis
+
+Use this when validating learned runtime recommendations or explaining a regression after a device run.
+
+```bash
+bash scripts/dev/test.sh fast
+python3 tools/devctl/main.py lane journey --repeats 3 --mode strict --reply-timeout-seconds 90
+```
+
+Or run the benchmark sweep:
+
+```bash
+bash scripts/dev/bench.sh stage2 --device <device-id> --profile quick --models 0.8b --scenarios a
+```
+
+Then:
+
+1. Export diagnostics from the app's advanced settings sheet.
+2. In the diagnostic message, inspect `RUNTIME_TUNING|...` and `RUNTIME_TUNING_SAMPLE|...`.
+3. Correlate them with files under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
+   - `summary.json`
+   - `scenario-a.csv` / `scenario-b.csv`
+   - `meminfo-*.txt`
+   - `logcat.txt`
+4. Use `docs/testing/runtime-tuning-debugging.md` to interpret the fields and decide whether a promotion or demotion was correct.
+
 ## Runbook: Send/Runtime Journey Validation
 
 ```bash
@@ -125,6 +175,12 @@ Use `--mode valid-output` for slower devices where terminal output validation is
 ```bash
 python3 tools/devctl/main.py lane screenshot-pack
 python3 tools/devctl/main.py governance screenshot-inventory-check
+```
+
+If the goal is promotion triage and known harness-noise signatures should be treated as non-blocking caveats:
+
+```bash
+python3 tools/devctl/main.py lane screenshot-pack --product-signal-only
 ```
 
 ## Runbook: Stage-2 Runtime Closure
