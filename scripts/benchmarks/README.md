@@ -16,6 +16,7 @@ This directory contains benchmark utilities used by stage-2 and journey evidence
 - `validate_stage2_runtime_evidence.py`: validates required stage-2 runtime artifact contract.
 - `evaluate_thresholds.py`: threshold/schema validation utilities.
 - `aggregate.py`: CSV aggregation helper.
+- `compare_pocketpal_parity.py`: compares Pocket-GPT benchmark CSVs against PocketPal benchmark exports.
 - template fixtures (`result-template.csv`, `stage-scenarios-template.csv`, `mock-run.csv`).
 
 ## Artifact Contract

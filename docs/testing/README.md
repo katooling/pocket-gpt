@@ -12,6 +12,7 @@ Canonical ownership by concern:
 8. Agent-level testing policy and scoped debug loop guardrails: `AGENTS.md`
 9. `devctl gate` wrappers for merge-unblock/promotion policy: `tools/devctl/gates.py`
 10. Runtime tuning debug workflow and diagnostics interpretation: `docs/testing/runtime-tuning-debugging.md`
+11. Pocket-GPT vs PocketPal parity benchmark runbook: `docs/testing/pocketpal-parity-benchmark.md`
 
 Consolidation rule:
 
