@@ -118,6 +118,10 @@ internal object LlamaRuntimeIpc {
     const val EXTRA_SPECULATIVE_DRAFT_MODEL_PATH = "speculative_draft_model_path"
     const val EXTRA_SPECULATIVE_DRAFT_MAX = "speculative_draft_max"
     const val EXTRA_SPECULATIVE_DRAFT_MIN = "speculative_draft_min"
+    const val EXTRA_SPECULATIVE_DRAFT_GPU_LAYERS = "speculative_draft_gpu_layers"
+    const val EXTRA_USE_MMAP = "use_mmap"
+    const val EXTRA_USE_MLOCK = "use_mlock"
+    const val EXTRA_N_KEEP = "n_keep"
 
     const val EXTRA_REQUEST_ID = "request_id"
     const val EXTRA_PROMPT = "prompt"
@@ -1012,6 +1016,10 @@ private fun RuntimeGenerationConfig.toBundle(): Bundle {
         putString(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MODEL_PATH, speculativeDraftModelPath)
         putInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MAX, speculativeMaxDraftTokens)
         putInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MIN, speculativeMinDraftTokens)
+        putInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_GPU_LAYERS, speculativeDraftGpuLayers)
+        putBoolean(LlamaRuntimeIpc.EXTRA_USE_MMAP, useMmap)
+        putBoolean(LlamaRuntimeIpc.EXTRA_USE_MLOCK, useMlock)
+        putInt(LlamaRuntimeIpc.EXTRA_N_KEEP, nKeep)
     }
 }
 
@@ -1035,6 +1043,10 @@ private fun Bundle.toRuntimeGenerationConfig(): RuntimeGenerationConfig {
         speculativeDraftModelPath = getString(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MODEL_PATH),
         speculativeMaxDraftTokens = getInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MAX, 6),
         speculativeMinDraftTokens = getInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MIN, 2),
+        speculativeDraftGpuLayers = getInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_GPU_LAYERS, 0),
+        useMmap = getBoolean(LlamaRuntimeIpc.EXTRA_USE_MMAP, true),
+        useMlock = getBoolean(LlamaRuntimeIpc.EXTRA_USE_MLOCK, false),
+        nKeep = getInt(LlamaRuntimeIpc.EXTRA_N_KEEP, 128),
     )
 }
 

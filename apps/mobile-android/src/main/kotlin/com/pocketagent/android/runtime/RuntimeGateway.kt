@@ -60,6 +60,10 @@ interface RuntimeGateway {
     fun supportsGpuOffload(): Boolean
     fun reportGpuRuntimeFailure(reason: GpuProbeFailureReason, detail: String? = null) = Unit
     fun evictResidentModel(reason: String = "manual"): Boolean = false
+    fun touchKeepAlive(): Boolean = false
+    fun shortenKeepAlive(ttlMs: Long): Boolean = false
+    fun onTrimMemory(level: Int): Boolean = false
+    fun onAppBackground(): Boolean = false
     fun gpuOffloadStatus(): GpuProbeResult = if (supportsGpuOffload()) {
         GpuProbeResult(status = GpuProbeStatus.QUALIFIED, maxStableGpuLayers = 32)
     } else {
@@ -182,6 +186,22 @@ class MvpRuntimeGateway(
 
     override fun evictResidentModel(reason: String): Boolean {
         return (facade as? RuntimeResourceControl)?.evictResidentModel(reason) ?: false
+    }
+
+    override fun touchKeepAlive(): Boolean {
+        return (facade as? RuntimeResourceControl)?.touchKeepAlive() ?: false
+    }
+
+    override fun shortenKeepAlive(ttlMs: Long): Boolean {
+        return (facade as? RuntimeResourceControl)?.shortenKeepAlive(ttlMs) ?: false
+    }
+
+    override fun onTrimMemory(level: Int): Boolean {
+        return (facade as? RuntimeResourceControl)?.onTrimMemory(level) ?: false
+    }
+
+    override fun onAppBackground(): Boolean {
+        return (facade as? RuntimeResourceControl)?.onAppBackground() ?: false
     }
 
     override fun supportsGpuOffload(): Boolean {

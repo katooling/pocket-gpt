@@ -254,6 +254,46 @@ class GpuOffloadQualificationTest {
     }
 
     @Test
+    fun `qualification caps ladder using model file size and device local heap budget`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = { request ->
+                val layer = request.layerLadder.singleOrNull() ?: 0
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = layer,
+                    detail = "probe_success",
+                )
+            },
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = {
+                testProbeRequest(
+                    modelVersion = "large-v1",
+                    modelFileSizeBytes = 3_072L * 1024L * 1024L,
+                )
+            },
+            diagnosticsReader = NativeVulkanDiagnosticsReader(
+                payloadProvider = {
+                    diagnosticsJson(
+                        driverVersion = 1L,
+                        deviceLocalHeapBytes = 1_024L * 1024L * 1024L,
+                    )
+                },
+            ),
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        val result = qualifier.evaluate(runtimeSupported = true)
+        assertEquals(GpuProbeStatus.QUALIFIED, result.status)
+        assertEquals(8, result.maxStableGpuLayers)
+        assertEquals(listOf(1, 2, 4, 8), probeClient.layerHistory)
+    }
+
+    @Test
     fun `runtime failure report demotes previously qualified gpu result`() = runTest {
         val probeClient = RecordingProbeClient(
             responseForRequest = { request ->
@@ -359,6 +399,7 @@ private fun diagnosticsJson(
     shaderFloat16: Boolean = true,
     storageBuffer16BitAccess: Boolean = true,
     selectedDeviceApiVersion: Long = 4202496L,
+    deviceLocalHeapBytes: Long = 0L,
 ): String {
     return """
         {
@@ -367,6 +408,7 @@ private fun diagnosticsJson(
           "driver_version": $driverVersion,
           "instance_api_version": 4202496,
           "selected_device_api_version": $selectedDeviceApiVersion,
+          "device_local_heap_bytes": $deviceLocalHeapBytes,
           "storage_buffer_16bit_access": $storageBuffer16BitAccess,
           "shader_float16": $shaderFloat16
         }

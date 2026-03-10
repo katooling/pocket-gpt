@@ -77,6 +77,7 @@ data class RuntimeUiState(
     val offlineOnly: Boolean = true,
     val routingMode: RoutingMode = RoutingMode.AUTO,
     val performanceProfile: RuntimePerformanceProfile = RuntimePerformanceProfile.BALANCED,
+    val keepAlivePreference: RuntimeKeepAlivePreference = RuntimeKeepAlivePreference.AUTO,
     val gpuAccelerationEnabled: Boolean = false,
     val gpuAccelerationSupported: Boolean = false,
     val gpuProbeStatus: GpuProbeStatus = GpuProbeStatus.PENDING,
@@ -102,6 +103,15 @@ data class RuntimeUiState(
     val sendElapsedMs: Long? = null,
     val sendSlowState: String? = null,
 )
+
+enum class RuntimeKeepAlivePreference {
+    AUTO,
+    ALWAYS,
+    ONE_MINUTE,
+    FIVE_MINUTES,
+    FIFTEEN_MINUTES,
+    UNLOAD_IMMEDIATELY,
+}
 
 enum class ModelRuntimeStatus {
     NOT_READY,

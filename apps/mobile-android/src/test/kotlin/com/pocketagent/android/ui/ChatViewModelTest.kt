@@ -12,6 +12,7 @@ import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.PersistedChatState
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.SessionStateLoadResult
 import com.pocketagent.core.SessionId
@@ -285,6 +286,7 @@ class ChatViewModelTest {
                 sessions = listOf(persistedSession),
                 activeSessionId = persistedSession.id,
                 routingMode = RoutingMode.QWEN_0_8B.name,
+                keepAlivePreference = RuntimeKeepAlivePreference.FIVE_MINUTES.name,
             ),
         )
         val runtime = RecordingRuntimeFacade()
@@ -297,6 +299,7 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         assertEquals(RoutingMode.QWEN_0_8B, viewModel.uiState.value.runtime.routingMode)
+        assertEquals(RuntimeKeepAlivePreference.FIVE_MINUTES, viewModel.uiState.value.runtime.keepAlivePreference)
         assertEquals(1, runtime.restoredTurns.size)
         assertEquals("persisted-1", runtime.restoredTurns.first().first.value)
         assertEquals(3, runtime.restoredTurns.first().second.size)

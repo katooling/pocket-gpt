@@ -38,6 +38,7 @@ class SessionPersistenceCodecTest {
             ),
             activeSessionId = "session-1",
             routingMode = "QWEN_0_8B",
+            keepAlivePreference = RuntimeKeepAlivePreference.FIVE_MINUTES.name,
             onboardingCompleted = true,
             firstSessionStage = FirstSessionStage.ADVANCED_UNLOCKED.name,
             advancedUnlocked = true,
@@ -56,6 +57,7 @@ class SessionPersistenceCodecTest {
 
         assertEquals("session-1", decoded.activeSessionId)
         assertEquals("QWEN_0_8B", decoded.routingMode)
+        assertEquals(RuntimeKeepAlivePreference.FIVE_MINUTES.name, decoded.keepAlivePreference)
         assertTrue(decoded.onboardingCompleted)
         assertEquals(FirstSessionStage.ADVANCED_UNLOCKED.name, decoded.firstSessionStage)
         assertTrue(decoded.advancedUnlocked)
@@ -76,6 +78,7 @@ class SessionPersistenceCodecTest {
         assertEquals(1, decoded.sessions.size)
         assertNull(decoded.activeSessionId)
         assertEquals("AUTO", decoded.routingMode)
+        assertEquals(RuntimeKeepAlivePreference.AUTO.name, decoded.keepAlivePreference)
         assertFalse(decoded.onboardingCompleted)
         assertEquals(FirstSessionStage.ONBOARDING.name, decoded.firstSessionStage)
         assertTrue(decoded.advancedUnlocked)
@@ -249,6 +252,20 @@ class SessionPersistenceCodecTest {
                 """
                 {
                   "performanceProfile": "TURBO_MAX",
+                  "sessions": []
+                }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `decode fails fast for invalid keep alive preference`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PersistedChatStateCodec.decode(
+                """
+                {
+                  "keepAlivePreference": "FOREVER_FOREVER",
                   "sessions": []
                 }
                 """.trimIndent(),

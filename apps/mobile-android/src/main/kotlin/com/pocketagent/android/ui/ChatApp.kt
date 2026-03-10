@@ -392,6 +392,7 @@ fun PocketAgentApp(
                 state = state,
                 onRoutingModeSelected = viewModel::setRoutingMode,
                 onPerformanceProfileSelected = viewModel::setPerformanceProfile,
+                onKeepAlivePreferenceSelected = viewModel::setKeepAlivePreference,
                 onGpuAccelerationEnabledChanged = viewModel::setGpuAccelerationEnabled,
                 onExportDiagnostics = viewModel::exportDiagnostics,
                 onOpenModelSetup = {

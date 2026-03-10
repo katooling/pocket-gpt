@@ -43,10 +43,14 @@ data class RuntimeTuningRecommendation(
     val gpuLayers: Int? = null,
     val quantizedKvCache: Boolean? = null,
     val speculativeEnabled: Boolean? = null,
+    val speculativeDraftGpuLayers: Int? = null,
+    val useMmap: Boolean? = null,
     val nBatch: Int? = null,
     val nUbatch: Int? = null,
     val targetGpuLayers: Int? = null,
     val targetSpeculativeEnabled: Boolean? = null,
+    val targetSpeculativeDraftGpuLayers: Int? = null,
+    val targetUseMmap: Boolean? = null,
     val targetNBatch: Int? = null,
     val targetNUbatch: Int? = null,
     val lastPeakRssMb: Double? = null,
@@ -79,6 +83,8 @@ data class RuntimeTuningSample(
     val errorCode: String? = null,
     val appliedGpuLayers: Int,
     val appliedSpeculativeEnabled: Boolean,
+    val appliedSpeculativeDraftGpuLayers: Int,
+    val appliedUseMmap: Boolean,
     val appliedNBatch: Int,
     val appliedNUbatch: Int,
     val decision: String,
@@ -97,12 +103,16 @@ class RuntimeTuningDecider(
             gpuLayers = appliedConfig.gpuLayers,
             quantizedKvCache = appliedConfig.quantizedKvCache,
             speculativeEnabled = appliedConfig.speculativeEnabled,
+            speculativeDraftGpuLayers = appliedConfig.speculativeDraftGpuLayers,
+            useMmap = appliedConfig.useMmap,
             nBatch = appliedConfig.nBatch,
             nUbatch = appliedConfig.nUbatch,
         )
         var gpuLayers = previous.gpuLayers ?: appliedConfig.gpuLayers
         var quantizedKvCache = previous.quantizedKvCache ?: appliedConfig.quantizedKvCache
         var speculativeEnabled = previous.speculativeEnabled ?: appliedConfig.speculativeEnabled
+        var speculativeDraftGpuLayers = previous.speculativeDraftGpuLayers ?: appliedConfig.speculativeDraftGpuLayers
+        var useMmap = previous.useMmap ?: appliedConfig.useMmap
         var nBatch = previous.nBatch ?: appliedConfig.nBatch
         var nUbatch = previous.nUbatch ?: appliedConfig.nUbatch
         var benchmarkWinCount = previous.benchmarkWinCount
@@ -131,6 +141,10 @@ class RuntimeTuningDecider(
                         (observation.tokensPerSec ?: 0.0) < SLOW_TOKENS_PER_SEC
                     )
             )
+        val mmapRegression = useMmap && (
+            normalizedError.contains("mmap") ||
+                normalizedError.contains("readahead")
+            )
         val benchmarkQualityWin = observation.success &&
             !observation.thermalThrottled &&
             (observation.peakRssMb == null || observation.peakRssMb <= PROMOTION_SAFE_PEAK_RSS_MB) &&
@@ -143,20 +157,29 @@ class RuntimeTuningDecider(
                 nBatch = demotedBatch(nBatch)
                 nUbatch = demotedBatch(nUbatch)
                 gpuLayers = demotedGpuLayers(gpuLayers)
+                speculativeDraftGpuLayers = demotedDraftGpuLayers(speculativeDraftGpuLayers)
                 benchmarkWinCount = 0
                 lastDecision = "demote_memory_pressure"
             }
 
             gpuRegression -> {
                 gpuLayers = demotedGpuLayers(gpuLayers)
+                speculativeDraftGpuLayers = demotedDraftGpuLayers(speculativeDraftGpuLayers)
                 benchmarkWinCount = 0
                 lastDecision = "demote_gpu_regression"
             }
 
             speculativeRegression -> {
                 speculativeEnabled = false
+                speculativeDraftGpuLayers = 0
                 benchmarkWinCount = 0
                 lastDecision = "demote_speculative"
+            }
+
+            mmapRegression -> {
+                useMmap = false
+                benchmarkWinCount = 0
+                lastDecision = "demote_use_mmap"
             }
 
             benchmarkQualityWin -> {
@@ -185,6 +208,23 @@ class RuntimeTuningDecider(
                             lastDecision = "promote_speculative"
                         }
 
+                        speculativeEnabled && speculativeDraftGpuLayers < targetConfig.speculativeDraftGpuLayers -> {
+                            speculativeDraftGpuLayers = promotedDraftGpuLayers(
+                                current = speculativeDraftGpuLayers,
+                                target = targetConfig.speculativeDraftGpuLayers,
+                            )
+                            promotionCount += 1
+                            benchmarkWinCount = 0
+                            lastDecision = "promote_draft_gpu_layers"
+                        }
+
+                        !useMmap && targetConfig.useMmap -> {
+                            useMmap = true
+                            promotionCount += 1
+                            benchmarkWinCount = 0
+                            lastDecision = "promote_use_mmap"
+                        }
+
                         else -> {
                             lastDecision = "benchmark_win_no_change"
                         }
@@ -209,10 +249,14 @@ class RuntimeTuningDecider(
             gpuLayers = gpuLayers.coerceAtLeast(0),
             quantizedKvCache = quantizedKvCache,
             speculativeEnabled = speculativeEnabled,
+            speculativeDraftGpuLayers = speculativeDraftGpuLayers.coerceAtLeast(0),
+            useMmap = useMmap,
             nBatch = nBatch.coerceAtLeast(MIN_TUNED_BATCH),
             nUbatch = nUbatch.coerceAtLeast(MIN_TUNED_BATCH),
             targetGpuLayers = targetConfig.gpuLayers.coerceAtLeast(0),
             targetSpeculativeEnabled = targetConfig.speculativeEnabled,
+            targetSpeculativeDraftGpuLayers = targetConfig.speculativeDraftGpuLayers.coerceAtLeast(0),
+            targetUseMmap = targetConfig.useMmap,
             targetNBatch = targetConfig.nBatch,
             targetNUbatch = targetConfig.nUbatch,
             lastPeakRssMb = observation.peakRssMb ?: previous.lastPeakRssMb,
@@ -236,6 +280,17 @@ class RuntimeTuningDecider(
             return minOf(target, 4)
         }
         return minOf(target, current + maxOf(2, current / 4))
+    }
+
+    private fun demotedDraftGpuLayers(current: Int): Int {
+        return if (current <= 1) 0 else (current * 3 / 4).coerceAtLeast(0)
+    }
+
+    private fun promotedDraftGpuLayers(current: Int, target: Int): Int {
+        if (current <= 0) {
+            return minOf(target, 1)
+        }
+        return minOf(target, current + 1)
     }
 
     private fun demotedBatch(current: Int): Int {
@@ -274,6 +329,7 @@ class AndroidRuntimeTuningStore(
     ): PerformanceRuntimeConfig {
         val modelId = resolveModelId(modelIdHint) ?: return baseConfig
         val recommendation = readRecommendation(prefKeyFor(modelId, baseConfig)) ?: return baseConfig
+        val speculativeEnabled = recommendation.speculativeEnabled ?: baseConfig.speculativeEnabled
         return baseConfig.copy(
             gpuLayers = if (baseConfig.gpuEnabled) {
                 (recommendation.gpuLayers ?: baseConfig.gpuLayers)
@@ -283,7 +339,15 @@ class AndroidRuntimeTuningStore(
                 0
             },
             quantizedKvCache = recommendation.quantizedKvCache ?: baseConfig.quantizedKvCache,
-            speculativeEnabled = recommendation.speculativeEnabled ?: baseConfig.speculativeEnabled,
+            speculativeEnabled = speculativeEnabled,
+            speculativeDraftGpuLayers = if (baseConfig.gpuEnabled && speculativeEnabled) {
+                (recommendation.speculativeDraftGpuLayers ?: baseConfig.speculativeDraftGpuLayers)
+                    .coerceAtLeast(0)
+                    .coerceAtMost(gpuQualifiedLayers.coerceAtLeast(0))
+            } else {
+                0
+            },
+            useMmap = recommendation.useMmap ?: baseConfig.useMmap,
             nBatch = recommendation.nBatch ?: baseConfig.nBatch,
             nUbatch = recommendation.nUbatch ?: baseConfig.nUbatch,
         )
@@ -322,6 +386,8 @@ class AndroidRuntimeTuningStore(
                 thermalThrottled = thermalThrottled,
                 appliedGpuLayers = appliedConfig.gpuLayers,
                 appliedSpeculativeEnabled = appliedConfig.speculativeEnabled,
+                appliedSpeculativeDraftGpuLayers = appliedConfig.speculativeDraftGpuLayers,
+                appliedUseMmap = appliedConfig.useMmap,
                 appliedNBatch = appliedConfig.nBatch,
                 appliedNUbatch = appliedConfig.nUbatch,
                 decision = next.lastDecision,
@@ -362,6 +428,8 @@ class AndroidRuntimeTuningStore(
                 errorCode = normalizedError,
                 appliedGpuLayers = appliedConfig.gpuLayers,
                 appliedSpeculativeEnabled = appliedConfig.speculativeEnabled,
+                appliedSpeculativeDraftGpuLayers = appliedConfig.speculativeDraftGpuLayers,
+                appliedUseMmap = appliedConfig.useMmap,
                 appliedNBatch = appliedConfig.nBatch,
                 appliedNUbatch = appliedConfig.nUbatch,
                 decision = next.lastDecision,
@@ -422,6 +490,10 @@ class AndroidRuntimeTuningStore(
             append("|target_gpu_layers=${payload.optIntOrMinusOne("targetGpuLayers")}")
             append("|recommended_speculative=${payload.optStringOr("speculativeEnabled", "unknown")}")
             append("|target_speculative=${payload.optStringOr("targetSpeculativeEnabled", "unknown")}")
+            append("|recommended_draft_gpu_layers=${payload.optIntOrMinusOne("speculativeDraftGpuLayers")}")
+            append("|target_draft_gpu_layers=${payload.optIntOrMinusOne("targetSpeculativeDraftGpuLayers")}")
+            append("|recommended_use_mmap=${payload.optStringOr("useMmap", "unknown")}")
+            append("|target_use_mmap=${payload.optStringOr("targetUseMmap", "unknown")}")
             append("|recommended_n_batch=${payload.optIntOrMinusOne("nBatch")}")
             append("|target_n_batch=${payload.optIntOrMinusOne("targetNBatch")}")
             append("|recommended_n_ubatch=${payload.optIntOrMinusOne("nUbatch")}")
@@ -454,6 +526,8 @@ class AndroidRuntimeTuningStore(
             append("|error_code=${sanitizeDiagnosticValue(sample.optString("errorCode", "none"))}")
             append("|applied_gpu_layers=${sample.optInt("appliedGpuLayers", 0)}")
             append("|applied_speculative=${sample.optBoolean("appliedSpeculativeEnabled", false)}")
+            append("|applied_draft_gpu_layers=${sample.optInt("appliedSpeculativeDraftGpuLayers", 0)}")
+            append("|applied_use_mmap=${sample.optBoolean("appliedUseMmap", true)}")
             append("|applied_n_batch=${sample.optInt("appliedNBatch", -1)}")
             append("|applied_n_ubatch=${sample.optInt("appliedNUbatch", -1)}")
             append("|timestamp_epoch_ms=${sample.optLong("timestampEpochMs", 0L)}")
@@ -484,10 +558,14 @@ class AndroidRuntimeTuningStore(
             gpuLayers = payload.takeIf { it.has("gpuLayers") }?.getInt("gpuLayers"),
             quantizedKvCache = payload.takeIf { it.has("quantizedKvCache") }?.getBoolean("quantizedKvCache"),
             speculativeEnabled = payload.takeIf { it.has("speculativeEnabled") }?.getBoolean("speculativeEnabled"),
+            speculativeDraftGpuLayers = payload.takeIf { it.has("speculativeDraftGpuLayers") }?.getInt("speculativeDraftGpuLayers"),
+            useMmap = payload.takeIf { it.has("useMmap") }?.getBoolean("useMmap"),
             nBatch = payload.takeIf { it.has("nBatch") }?.getInt("nBatch"),
             nUbatch = payload.takeIf { it.has("nUbatch") }?.getInt("nUbatch"),
             targetGpuLayers = payload.takeIf { it.has("targetGpuLayers") }?.getInt("targetGpuLayers"),
             targetSpeculativeEnabled = payload.takeIf { it.has("targetSpeculativeEnabled") }?.getBoolean("targetSpeculativeEnabled"),
+            targetSpeculativeDraftGpuLayers = payload.takeIf { it.has("targetSpeculativeDraftGpuLayers") }?.getInt("targetSpeculativeDraftGpuLayers"),
+            targetUseMmap = payload.takeIf { it.has("targetUseMmap") }?.getBoolean("targetUseMmap"),
             targetNBatch = payload.takeIf { it.has("targetNBatch") }?.getInt("targetNBatch"),
             targetNUbatch = payload.takeIf { it.has("targetNUbatch") }?.getInt("targetNUbatch"),
             lastPeakRssMb = payload.takeIf { it.has("lastPeakRssMb") }?.getDouble("lastPeakRssMb"),
@@ -516,10 +594,14 @@ class AndroidRuntimeTuningStore(
             recommendation.gpuLayers?.let { put("gpuLayers", it) }
             recommendation.quantizedKvCache?.let { put("quantizedKvCache", it) }
             recommendation.speculativeEnabled?.let { put("speculativeEnabled", it) }
+            recommendation.speculativeDraftGpuLayers?.let { put("speculativeDraftGpuLayers", it) }
+            recommendation.useMmap?.let { put("useMmap", it) }
             recommendation.nBatch?.let { put("nBatch", it) }
             recommendation.nUbatch?.let { put("nUbatch", it) }
             recommendation.targetGpuLayers?.let { put("targetGpuLayers", it) }
             recommendation.targetSpeculativeEnabled?.let { put("targetSpeculativeEnabled", it) }
+            recommendation.targetSpeculativeDraftGpuLayers?.let { put("targetSpeculativeDraftGpuLayers", it) }
+            recommendation.targetUseMmap?.let { put("targetUseMmap", it) }
             recommendation.targetNBatch?.let { put("targetNBatch", it) }
             recommendation.targetNUbatch?.let { put("targetNUbatch", it) }
             recommendation.lastPeakRssMb?.let { put("lastPeakRssMb", it) }

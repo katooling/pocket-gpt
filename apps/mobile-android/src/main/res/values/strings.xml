@@ -46,6 +46,14 @@
     <string name="ui_advanced_controls_title">Advanced controls</string>
     <string name="ui_speed_battery_title">Speed &amp; Battery</string>
     <string name="ui_speed_battery_subtitle">Choose a simple profile. Most users should stay on Balanced.</string>
+    <string name="ui_keep_alive_title">Model keep-alive</string>
+    <string name="ui_keep_alive_subtitle">Control how long the model stays loaded while the app is active.</string>
+    <string name="ui_keep_alive_auto">Auto</string>
+    <string name="ui_keep_alive_always">Always (while app is open)</string>
+    <string name="ui_keep_alive_one_minute">1 minute</string>
+    <string name="ui_keep_alive_five_minutes">5 minutes</string>
+    <string name="ui_keep_alive_fifteen_minutes">15 minutes</string>
+    <string name="ui_keep_alive_unload_immediately">Unload immediately</string>
     <string name="ui_advanced_experimental_title">Advanced (Experimental)</string>
     <string name="ui_gpu_acceleration_toggle">Enable GPU acceleration</string>
     <string name="ui_gpu_acceleration_unavailable">GPU acceleration unavailable on this build/device</string>

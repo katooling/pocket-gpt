@@ -73,17 +73,39 @@ object AppRuntimeDependencies {
                 inferenceModule = createDefaultAndroidInferenceModule(context.applicationContext),
             )
             hotSwappableRuntimeFacade.replace(newFacade)
-            scheduleWarmupIfSupported(newFacade)
+            if (startupWarmupEnabled()) {
+                scheduleWarmupIfSupported(newFacade)
+            } else {
+                Log.i("AppRuntimeDeps", "WARMUP|startup=disabled")
+            }
         }
+    }
+
+    private fun startupWarmupEnabled(): Boolean {
+        val raw = System.getenv("POCKETGPT_WARMUP_ON_STARTUP")
+            ?.trim()
+            ?.lowercase()
+            ?: return false
+        return raw == "1" || raw == "true" || raw == "yes"
     }
 
     private fun scheduleWarmupIfSupported(facade: MvpRuntimeFacade) {
         val warmupSupport = facade as? RuntimeWarmupSupport ?: return
         thread(name = "pocketgpt-runtime-warmup", start = true, isDaemon = true) {
             runCatching { warmupSupport.warmupActiveModel() }
+                .onSuccess { result ->
+                    runCatching {
+                        Log.i(
+                            "AppRuntimeDeps",
+                            "WARMUP|attempted=${result.attempted}|warmed=${result.warmed}|resident_hit=${result.residentHit}|" +
+                                "load_ms=${result.loadDurationMs ?: -1}|warmup_ms=${result.warmupDurationMs ?: -1}|" +
+                                "speculative_path=${result.speculativePath}|error=${result.errorCode ?: "none"}",
+                        )
+                    }
+                }
                 .onFailure { error ->
                     runCatching {
-                        Log.w("AppRuntimeDeps", "RUNTIME_WARMUP|failed|reason=${error.message ?: error::class.simpleName}")
+                        Log.w("AppRuntimeDeps", "WARMUP|failed|reason=${error.message ?: error::class.simpleName}")
                     }
                 }
         }
@@ -290,6 +312,18 @@ internal class HotSwappableRuntimeFacade(
     override fun evictResidentModel(reason: String): Boolean {
         return withDelegate { facade ->
             (facade as? RuntimeResourceControl)?.evictResidentModel(reason) ?: false
+        }
+    }
+
+    override fun onTrimMemory(level: Int): Boolean {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.onTrimMemory(level) ?: false
+        }
+    }
+
+    override fun onAppBackground(): Boolean {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.onAppBackground() ?: false
         }
     }
 

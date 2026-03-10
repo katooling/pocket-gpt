@@ -2,15 +2,17 @@ package com.pocketagent.android.ui.controllers
 
 import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.core.SessionId
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.runtime.DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS
+import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.ModelResidencyPolicy
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.InteractionMessage
 
 fun interface DeviceStateProvider {
     fun current(): DeviceState
@@ -94,7 +96,6 @@ class ChatSendFlow(
         if (!config.gpuEnabled || config.gpuLayers <= 0) {
             return config
         }
-        // Keep GPU execution aligned with probe-safe defaults on mobile Vulkan drivers.
         return config.copy(
             nBatch = minOf(config.nBatch, GPU_SAFE_BATCH),
             nUbatch = minOf(config.nUbatch, GPU_SAFE_BATCH),
@@ -108,6 +109,7 @@ class ChatSendFlow(
         taskTypeHint: String,
         performanceConfig: PerformanceRuntimeConfig,
         requestTimeoutMs: Long,
+        keepAlivePreference: RuntimeKeepAlivePreference,
         previousResponseId: String? = null,
     ): StreamChatRequestV2 {
         return StreamChatRequestV2(
@@ -120,12 +122,49 @@ class ChatSendFlow(
             requestTimeoutMs = requestTimeoutMs,
             previousResponseId = previousResponseId,
             performanceConfig = performanceConfig,
-            residencyPolicy = ModelResidencyPolicy(
-                keepLoadedWhileAppForeground = true,
-                idleUnloadTtlMs = IDLE_MODEL_UNLOAD_TTL_MS,
-                warmupOnStartup = true,
-            ),
+            residencyPolicy = resolveResidencyPolicy(keepAlivePreference),
         )
+    }
+
+    private fun resolveResidencyPolicy(preference: RuntimeKeepAlivePreference): ModelResidencyPolicy {
+        return when (preference) {
+            RuntimeKeepAlivePreference.AUTO -> ModelResidencyPolicy(
+                keepLoadedWhileAppForeground = true,
+                idleUnloadTtlMs = DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS,
+                warmupOnStartup = true,
+                adaptiveIdleTtl = true,
+            )
+            RuntimeKeepAlivePreference.ALWAYS -> ModelResidencyPolicy(
+                keepLoadedWhileAppForeground = true,
+                idleUnloadTtlMs = ALWAYS_KEEP_ALIVE_TTL_MS,
+                warmupOnStartup = true,
+                adaptiveIdleTtl = false,
+            )
+            RuntimeKeepAlivePreference.ONE_MINUTE -> ModelResidencyPolicy(
+                keepLoadedWhileAppForeground = true,
+                idleUnloadTtlMs = 60_000L,
+                warmupOnStartup = true,
+                adaptiveIdleTtl = false,
+            )
+            RuntimeKeepAlivePreference.FIVE_MINUTES -> ModelResidencyPolicy(
+                keepLoadedWhileAppForeground = true,
+                idleUnloadTtlMs = 5 * 60_000L,
+                warmupOnStartup = true,
+                adaptiveIdleTtl = false,
+            )
+            RuntimeKeepAlivePreference.FIFTEEN_MINUTES -> ModelResidencyPolicy(
+                keepLoadedWhileAppForeground = true,
+                idleUnloadTtlMs = 15 * 60_000L,
+                warmupOnStartup = true,
+                adaptiveIdleTtl = false,
+            )
+            RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY -> ModelResidencyPolicy(
+                keepLoadedWhileAppForeground = false,
+                idleUnloadTtlMs = 1L,
+                warmupOnStartup = true,
+                adaptiveIdleTtl = false,
+            )
+        }
     }
 
     private fun resolveTaskType(prompt: String): String {
@@ -145,7 +184,7 @@ class ChatSendFlow(
         private const val LONG_PROMPT_LENGTH = 160
         private const val SHORT_PROMPT_MAX_TOKENS = 32
         private const val LONG_PROMPT_MAX_TOKENS = 96
-        private const val IDLE_MODEL_UNLOAD_TTL_MS = 10 * 60 * 1000L
         private const val GPU_SAFE_BATCH = 256
+        private const val ALWAYS_KEEP_ALIVE_TTL_MS = 24 * 60 * 60 * 1000L
     }
 }

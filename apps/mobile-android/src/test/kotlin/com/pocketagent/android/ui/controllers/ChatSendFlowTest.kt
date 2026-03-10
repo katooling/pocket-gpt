@@ -1,9 +1,12 @@
 package com.pocketagent.android.ui.controllers
 
 import com.pocketagent.android.runtime.RuntimeTuning
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ChatSendFlowTest {
     @Test
@@ -77,5 +80,46 @@ class ChatSendFlowTest {
         )
 
         assertEquals(0, config.gpuLayers)
+    }
+
+    @Test
+    fun `buildStreamChatRequest maps auto keep alive to adaptive residency`() {
+        val flow = ChatSendFlow(runtimeGenerationTimeoutMs = 0L)
+        val request = flow.buildStreamChatRequest(
+            sessionId = "s1",
+            requestId = "r1",
+            messages = emptyList(),
+            taskTypeHint = "hello",
+            performanceConfig = flow.resolvePerformanceConfig(
+                profile = RuntimePerformanceProfile.BALANCED,
+                gpuEnabled = false,
+            ),
+            requestTimeoutMs = 10_000L,
+            keepAlivePreference = RuntimeKeepAlivePreference.AUTO,
+        )
+
+        assertTrue(request.residencyPolicy.keepLoadedWhileAppForeground)
+        assertTrue(request.residencyPolicy.adaptiveIdleTtl)
+    }
+
+    @Test
+    fun `buildStreamChatRequest maps unload immediately to non resident policy`() {
+        val flow = ChatSendFlow(runtimeGenerationTimeoutMs = 0L)
+        val request = flow.buildStreamChatRequest(
+            sessionId = "s1",
+            requestId = "r1",
+            messages = emptyList(),
+            taskTypeHint = "hello",
+            performanceConfig = flow.resolvePerformanceConfig(
+                profile = RuntimePerformanceProfile.BALANCED,
+                gpuEnabled = false,
+            ),
+            requestTimeoutMs = 10_000L,
+            keepAlivePreference = RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY,
+        )
+
+        assertFalse(request.residencyPolicy.keepLoadedWhileAppForeground)
+        assertFalse(request.residencyPolicy.adaptiveIdleTtl)
+        assertEquals(1L, request.residencyPolicy.idleUnloadTtlMs)
     }
 }

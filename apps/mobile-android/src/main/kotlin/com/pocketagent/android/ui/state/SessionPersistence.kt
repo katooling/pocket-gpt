@@ -19,6 +19,7 @@ data class PersistedChatState(
     val activeSessionId: String? = null,
     val routingMode: String = "AUTO",
     val performanceProfile: String = "BALANCED",
+    val keepAlivePreference: String = RuntimeKeepAlivePreference.AUTO.name,
     val gpuAccelerationEnabled: Boolean = false,
     val onboardingCompleted: Boolean = false,
     val firstSessionStage: String = FirstSessionStage.ONBOARDING.name,
@@ -131,6 +132,9 @@ internal object PersistedChatStateCodec {
             activeSessionId = root.stringOrNull("activeSessionId"),
             routingMode = parseRoutingModeName(root.stringOrDefault("routingMode", RoutingMode.AUTO.name)),
             performanceProfile = parsePerformanceProfileName(root.stringOrDefault("performanceProfile", RuntimePerformanceProfile.BALANCED.name)),
+            keepAlivePreference = parseKeepAlivePreferenceName(
+                root.stringOrDefault("keepAlivePreference", RuntimeKeepAlivePreference.AUTO.name),
+            ),
             gpuAccelerationEnabled = root.booleanOrDefault("gpuAccelerationEnabled", false),
             onboardingCompleted = root.booleanOrDefault("onboardingCompleted", false),
             firstSessionStage = parseFirstSessionStageName(root.stringOrDefault("firstSessionStage", FirstSessionStage.ONBOARDING.name)),
@@ -146,6 +150,7 @@ internal object PersistedChatStateCodec {
             state.activeSessionId?.let { put("activeSessionId", JsonPrimitive(it)) }
             put("routingMode", JsonPrimitive(state.routingMode))
             put("performanceProfile", JsonPrimitive(state.performanceProfile))
+            put("keepAlivePreference", JsonPrimitive(state.keepAlivePreference))
             put("gpuAccelerationEnabled", JsonPrimitive(state.gpuAccelerationEnabled))
             put("onboardingCompleted", JsonPrimitive(state.onboardingCompleted))
             put("firstSessionStage", JsonPrimitive(state.firstSessionStage))
@@ -381,6 +386,12 @@ internal object PersistedChatStateCodec {
     private fun parseFirstSessionStageName(raw: String): String {
         return runCatching { FirstSessionStage.valueOf(raw) }
             .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_FIRST_SESSION_STAGE:$raw") }
+            .name
+    }
+
+    private fun parseKeepAlivePreferenceName(raw: String): String {
+        return runCatching { RuntimeKeepAlivePreference.valueOf(raw) }
+            .getOrElse { throw IllegalArgumentException("CHAT_STATE_INVALID_KEEP_ALIVE_PREFERENCE:$raw") }
             .name
     }
 }

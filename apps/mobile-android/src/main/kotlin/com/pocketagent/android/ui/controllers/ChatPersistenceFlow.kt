@@ -40,6 +40,7 @@ class ChatPersistenceFlow(
                 activeSessionId = state.activeSessionId,
                 routingMode = state.runtime.routingMode.name,
                 performanceProfile = state.runtime.performanceProfile.name,
+                keepAlivePreference = state.runtime.keepAlivePreference.name,
                 gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled,
                 onboardingCompleted = !state.showOnboarding,
                 firstSessionStage = state.firstSessionStage.name,

@@ -35,6 +35,7 @@ import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.runtime.RuntimePerformanceProfile
 
@@ -65,6 +66,7 @@ internal fun AdvancedSettingsSheet(
     state: ChatUiState,
     onRoutingModeSelected: (RoutingMode) -> Unit,
     onPerformanceProfileSelected: (RuntimePerformanceProfile) -> Unit,
+    onKeepAlivePreferenceSelected: (RuntimeKeepAlivePreference) -> Unit,
     onGpuAccelerationEnabledChanged: (Boolean) -> Unit,
     onExportDiagnostics: () -> Unit,
     onOpenModelSetup: () -> Unit,
@@ -108,6 +110,33 @@ internal fun AdvancedSettingsSheet(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(profile.name)
+            }
+        }
+
+        HorizontalDivider()
+        Text(stringResource(id = R.string.ui_keep_alive_title), style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = stringResource(id = R.string.ui_keep_alive_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        RuntimeKeepAlivePreference.entries.forEach { preference ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = state.runtime.keepAlivePreference == preference,
+                        onClick = { onKeepAlivePreferenceSelected(preference) },
+                        role = Role.RadioButton,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = state.runtime.keepAlivePreference == preference,
+                    onClick = null,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(keepAlivePreferenceLabel(preference))
             }
         }
 
@@ -273,5 +302,17 @@ private fun gpuProbeFailureReasonLabel(reason: String?): String {
         null, "" ->
             stringResource(id = R.string.ui_gpu_acceleration_reason_unknown)
         else -> reason.lowercase().replace('_', ' ')
+    }
+}
+
+@Composable
+private fun keepAlivePreferenceLabel(preference: RuntimeKeepAlivePreference): String {
+    return when (preference) {
+        RuntimeKeepAlivePreference.AUTO -> stringResource(id = R.string.ui_keep_alive_auto)
+        RuntimeKeepAlivePreference.ALWAYS -> stringResource(id = R.string.ui_keep_alive_always)
+        RuntimeKeepAlivePreference.ONE_MINUTE -> stringResource(id = R.string.ui_keep_alive_one_minute)
+        RuntimeKeepAlivePreference.FIVE_MINUTES -> stringResource(id = R.string.ui_keep_alive_five_minutes)
+        RuntimeKeepAlivePreference.FIFTEEN_MINUTES -> stringResource(id = R.string.ui_keep_alive_fifteen_minutes)
+        RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY -> stringResource(id = R.string.ui_keep_alive_unload_immediately)
     }
 }

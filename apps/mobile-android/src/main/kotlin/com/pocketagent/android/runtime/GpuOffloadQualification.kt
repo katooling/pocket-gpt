@@ -108,6 +108,8 @@ private const val PROBE_MIN_LAYER_TIMEOUT_MS = 12_000L
 private const val PROBE_MAX_LAYER_TIMEOUT_MS = 45_000L
 private const val PROBE_STALE_PENDING_TIMEOUT_MS = PROBE_TOTAL_TIMEOUT_MS + 30_000L
 private const val VULKAN_API_1_2 = (1L shl 22) or (2L shl 12)
+private const val MIB = 1024L * 1024L
+private const val MIN_GPU_HEADROOM_BYTES = 256L * MIB
 private val PROBE_LAYER_LADDER_FULL: List<Int> = listOf(1, 2, 4, 8, 16, 32)
 private val PROBE_LAYER_LADDER_NO_HALF: List<Int> = listOf(1, 2, 4, 8)
 private val PROBE_LAYER_LADDER_PRE_12: List<Int> = listOf(1, 2, 4, 8, 16)
@@ -391,11 +393,21 @@ internal class InternalAndroidGpuOffloadQualifier(
         val requestLadder = request.layerLadder.filter { it > 0 }.distinct().sorted()
         val orderedLayers = requestLadder.filter { candidate -> policy.layerLadder.contains(candidate) }
             .ifEmpty { policy.layerLadder }
-        if (orderedLayers.isEmpty()) {
+        val estimatedLayerCap = estimateLayerCapForProbe(
+            request = request,
+            nativeDiagnostics = nativeDiagnostics,
+            maxCandidateLayer = orderedLayers.maxOrNull() ?: 0,
+        )
+        val cappedOrderedLayers = applyProbeLayerCap(
+            layers = orderedLayers,
+            maxLayers = estimatedLayerCap,
+        )
+        val layerCapDetail = estimatedLayerCap?.toString() ?: "none"
+        if (cappedOrderedLayers.isEmpty()) {
             return GpuProbeResult(
                 status = GpuProbeStatus.FAILED,
                 failureReason = GpuProbeFailureReason.UNKNOWN,
-                detail = "probe_layer_ladder_empty",
+                detail = "probe_layer_ladder_empty:layer_cap=$layerCapDetail",
             )
         }
 
@@ -404,14 +416,14 @@ internal class InternalAndroidGpuOffloadQualifier(
         var failure: GpuProbeResult? = null
 
         val startedAtMs = now()
-        for (layer in orderedLayers) {
+        for (layer in cappedOrderedLayers) {
             val elapsedMs = (now() - startedAtMs).coerceAtLeast(0L)
             val remainingBudgetMs = (policy.totalTimeoutMs - elapsedMs).coerceAtLeast(0L)
             if (remainingBudgetMs < PROBE_MIN_LAYER_TIMEOUT_MS) {
                 failure = GpuProbeResult(
                     status = GpuProbeStatus.FAILED,
                     failureReason = GpuProbeFailureReason.PROBE_TIMEOUT,
-                    detail = "probe_total_timeout_exhausted:elapsed_ms=$elapsedMs",
+                    detail = "probe_total_timeout_exhausted:elapsed_ms=$elapsedMs:layer_cap=$layerCapDetail",
                 )
                 failedLayer = layer
                 break
@@ -438,10 +450,10 @@ internal class InternalAndroidGpuOffloadQualifier(
 
         if (maxStableLayers > 0) {
             val detail = if (failedLayer == null) {
-                "probe_success"
+                "probe_success:layer_cap=$layerCapDetail"
             } else {
                 "probe_partial_success:max_stable=$maxStableLayers:last_failed_layer=$failedLayer:" +
-                    "reason=${failure?.failureReason ?: "unknown"}"
+                    "reason=${failure?.failureReason ?: "unknown"}:layer_cap=$layerCapDetail"
             }
             return GpuProbeResult(
                 status = GpuProbeStatus.QUALIFIED,
@@ -453,12 +465,40 @@ internal class InternalAndroidGpuOffloadQualifier(
         return failure?.copy(
             status = GpuProbeStatus.FAILED,
             maxStableGpuLayers = 0,
-            detail = failure.detail ?: "probe_failed_at_layer=${failedLayer ?: "unknown"}",
+            detail = failure.detail ?: "probe_failed_at_layer=${failedLayer ?: "unknown"}:layer_cap=$layerCapDetail",
         ) ?: GpuProbeResult(
             status = GpuProbeStatus.FAILED,
             failureReason = GpuProbeFailureReason.UNKNOWN,
-            detail = "probe_failed_without_result",
+            detail = "probe_failed_without_result:layer_cap=$layerCapDetail",
         )
+    }
+
+    private fun estimateLayerCapForProbe(
+        request: GpuProbeRequest,
+        nativeDiagnostics: NativeVulkanDiagnostics,
+        maxCandidateLayer: Int,
+    ): Int? {
+        val modelBytes = request.modelFileSizeBytes.takeIf { it > 0L } ?: return null
+        val heapBytes = nativeDiagnostics.deviceLocalHeapBytes.takeIf { it > 0L } ?: return null
+        val maxLayer = maxCandidateLayer.coerceAtLeast(1)
+        val reservedBytes = maxOf(MIN_GPU_HEADROOM_BYTES, heapBytes / 4L)
+        val usableBytes = (heapBytes - reservedBytes).coerceAtLeast(0L)
+        if (usableBytes <= 0L) {
+            return 1
+        }
+        val scaled = (usableBytes.toDouble() * maxLayer.toDouble()) / modelBytes.toDouble()
+        return scaled.toInt().coerceIn(1, maxLayer)
+    }
+
+    private fun applyProbeLayerCap(layers: List<Int>, maxLayers: Int?): List<Int> {
+        if (layers.isEmpty()) {
+            return emptyList()
+        }
+        val cap = maxLayers ?: return layers
+        return layers.filter { layer -> layer <= cap }
+            .ifEmpty { listOf(layers.minOrNull() ?: 1) }
+            .distinct()
+            .sorted()
     }
 
     override fun diagnosticsLine(): String {
@@ -478,6 +518,7 @@ internal class InternalAndroidGpuOffloadQualifier(
             "driverName=${nativeDiagnostics.driverName}",
             "driverVersion=${nativeDiagnostics.driverVersion}",
             "vkApi=${nativeDiagnostics.selectedDeviceApiVersion}",
+            "vramBytes=${nativeDiagnostics.deviceLocalHeapBytes}",
             "half16=${nativeDiagnostics.storageBuffer16BitAccess && nativeDiagnostics.shaderFloat16}",
             "build=$appBuildSignature",
             "model=${request.cacheIdentity()}",
@@ -553,8 +594,10 @@ data class NativeVulkanDiagnostics(
     val driverVersion: Long,
     val instanceApiVersion: Long,
     val selectedDeviceApiVersion: Long,
+    val deviceLocalHeapBytes: Long,
     val storageBuffer16BitAccess: Boolean,
     val shaderFloat16: Boolean,
+    val flashAttnActive: Boolean,
     val rawPayload: String,
 )
 
@@ -573,8 +616,10 @@ class NativeVulkanDiagnosticsReader(
             driverVersion = root.longOrDefault("driver_version", 0L),
             instanceApiVersion = root.longOrDefault("instance_api_version", 0L),
             selectedDeviceApiVersion = root.longOrDefault("selected_device_api_version", 0L),
+            deviceLocalHeapBytes = root.longOrDefault("device_local_heap_bytes", 0L),
             storageBuffer16BitAccess = root.booleanOrDefault("storage_buffer_16bit_access", false),
             shaderFloat16 = root.booleanOrDefault("shader_float16", false),
+            flashAttnActive = root.booleanOrDefault("flashAttnActive", false),
             rawPayload = payload,
         )
     }

@@ -30,7 +30,8 @@ class RuntimeTuningDeciderTest {
 
         assertEquals(12, next.gpuLayers)
         assertEquals(384, next.nBatch)
-        assertEquals(384, next.nUbatch)
+        assertEquals(192, next.nUbatch)
+        assertEquals(1, next.speculativeDraftGpuLayers)
         assertTrue(next.quantizedKvCache == true)
         assertEquals(42L, next.updatedAtEpochMs)
         assertEquals("demote_memory_pressure", next.lastDecision)
@@ -82,6 +83,30 @@ class RuntimeTuningDeciderTest {
 
         assertEquals(6, next.gpuLayers)
         assertEquals("demote_gpu_regression", next.lastDecision)
+    }
+
+    @Test
+    fun `mmap regressions demote mmap usage`() {
+        val decider = RuntimeTuningDecider()
+        val targetConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.BALANCED,
+            availableCpuThreads = 6,
+            gpuEnabled = true,
+            gpuLayers = 8,
+        )
+
+        val next = decider.nextRecommendation(
+            current = null,
+            appliedConfig = targetConfig,
+            targetConfig = targetConfig,
+            observation = RuntimeTuningObservation(
+                success = false,
+                errorCode = "mmap_readahead_failed",
+            ),
+        )
+
+        assertFalse(next.useMmap ?: true)
+        assertEquals("demote_use_mmap", next.lastDecision)
     }
 
     @Test

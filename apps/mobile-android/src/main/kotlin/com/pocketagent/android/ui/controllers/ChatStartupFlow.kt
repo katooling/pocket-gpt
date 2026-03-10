@@ -11,6 +11,7 @@ import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.FirstSessionStage
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
@@ -48,6 +49,7 @@ class ChatStartupFlow(
         val effectiveRoutingMode = coerceSupportedRoutingMode(restoredRoutingMode)
         val routingModeAdjusted = restoredRoutingMode != effectiveRoutingMode
         val restoredPerformanceProfile = RuntimePerformanceProfile.valueOf(persisted.performanceProfile)
+        val restoredKeepAlivePreference = RuntimeKeepAlivePreference.valueOf(persisted.keepAlivePreference)
         val restoredFirstSessionStage = FirstSessionStage.valueOf(persisted.firstSessionStage)
         val restoredAdvancedUnlocked = true
         val initialFirstSessionStage = when {
@@ -64,6 +66,7 @@ class ChatStartupFlow(
             RuntimeUiState(
                 routingMode = effectiveRoutingMode,
                 performanceProfile = restoredPerformanceProfile,
+                keepAlivePreference = restoredKeepAlivePreference,
                 gpuAccelerationEnabled = restoredGpuEnabled,
                 gpuAccelerationSupported = gpuSupported,
                 gpuProbeStatus = gpuProbe.status,
@@ -78,6 +81,7 @@ class ChatStartupFlow(
             RuntimeUiState(
                 routingMode = effectiveRoutingMode,
                 performanceProfile = restoredPerformanceProfile,
+                keepAlivePreference = restoredKeepAlivePreference,
                 gpuAccelerationEnabled = restoredGpuEnabled,
                 gpuAccelerationSupported = gpuSupported,
                 gpuProbeStatus = gpuProbe.status,

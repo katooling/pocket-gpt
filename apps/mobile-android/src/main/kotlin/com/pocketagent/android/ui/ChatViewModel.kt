@@ -37,6 +37,7 @@ import com.pocketagent.android.ui.state.PersistedInteractionMessage
 import com.pocketagent.android.ui.state.PersistedInteractionPart
 import com.pocketagent.android.ui.state.PersistedToolCall
 import com.pocketagent.android.ui.state.PersistedToolCallStatus
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.StartupProbeState
@@ -107,6 +108,8 @@ class ChatViewModel(
     private var inFlightStartupProbeDetail: String? = null
     @Volatile
     private var activeSendRequestId: String? = null
+    @Volatile
+    private var lastKeepAliveTouchAtMs: Long = 0L
 
     init {
         bootstrapState()
@@ -115,6 +118,14 @@ class ChatViewModel(
     fun onComposerChanged(text: String) {
         _uiState.update { state ->
             state.copy(composer = state.composer.copy(text = text))
+        }
+        if (text.isBlank()) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastKeepAliveTouchAtMs >= COMPOSER_KEEP_ALIVE_TOUCH_DEBOUNCE_MS) {
+            lastKeepAliveTouchAtMs = now
+            runtimeFacade.touchKeepAlive()
         }
     }
 
@@ -369,10 +380,26 @@ class ChatViewModel(
                         ).clearError(),
                     )
                 }
+                val runtimeGpuCeiling = listOfNotNull(
+                    resolvedRuntimeStats.estimatedMaxGpuLayers,
+                    resolvedRuntimeStats.modelLayerCount,
+                ).minOrNull()
+                val tunedAppliedConfig = performanceConfig.copy(
+                    gpuLayers = resolvedRuntimeStats.appliedGpuLayers ?: performanceConfig.gpuLayers,
+                    speculativeDraftGpuLayers =
+                        resolvedRuntimeStats.appliedDraftGpuLayers ?: performanceConfig.speculativeDraftGpuLayers,
+                )
+                val tunedTargetConfig = targetPerformanceConfig.copy(
+                    gpuLayers = runtimeGpuCeiling?.let { minOf(targetPerformanceConfig.gpuLayers, it) }
+                        ?: targetPerformanceConfig.gpuLayers,
+                    speculativeDraftGpuLayers = runtimeGpuCeiling?.let {
+                        minOf(targetPerformanceConfig.speculativeDraftGpuLayers, it)
+                    } ?: targetPerformanceConfig.speculativeDraftGpuLayers,
+                )
                 runtimeTuning.recordSuccess(
                     modelId = terminal.responseModelId ?: snapshot.runtime.activeModelId,
-                    appliedConfig = performanceConfig,
-                    targetConfig = targetPerformanceConfig,
+                    appliedConfig = tunedAppliedConfig,
+                    targetConfig = tunedTargetConfig,
                     runtimeStats = resolvedRuntimeStats,
                     thermalThrottled = deviceStateProvider.current().thermalLevel >= 5,
                 )
@@ -389,6 +416,7 @@ class ChatViewModel(
                     taskTypeHint = prompt,
                     performanceConfig = performanceConfig,
                     requestTimeoutMs = requestTimeoutMs,
+                    keepAlivePreference = snapshot.runtime.keepAlivePreference,
                     previousResponseId = previousResponseId,
                 ),
                 requestTimeoutMs = requestTimeoutMs,
@@ -712,6 +740,16 @@ class ChatViewModel(
                     ),
                 ),
             )
+        }
+        persistState()
+    }
+
+    fun setKeepAlivePreference(preference: RuntimeKeepAlivePreference) {
+        if (_uiState.value.runtime.keepAlivePreference == preference) {
+            return
+        }
+        _uiState.update { state ->
+            state.copy(runtime = state.runtime.copy(keepAlivePreference = preference))
         }
         persistState()
     }
@@ -1388,6 +1426,7 @@ class ChatViewModel(
         private const val TITLE_MAX_CHARS = 42
         private const val ONBOARDING_LAST_PAGE = 2
         private const val DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS = 30_000L
+        private const val COMPOSER_KEEP_ALIVE_TOUCH_DEBOUNCE_MS = 30_000L
         private const val GPU_PROBE_REFRESH_INTERVAL_MS = 700L
         private const val STREAM_UI_UPDATE_MIN_INTERVAL_MS = 80L
         private const val TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED = "simple_first_entered"
