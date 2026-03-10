@@ -33,6 +33,22 @@ if(POCKETGPT_FORCE_ARM_I8MM AND ANDROID_ABI STREQUAL "arm64-v8a")
         "$<$<COMPILE_LANGUAGE:C>:-march=armv8.2-a+dotprod+i8mm>"
         "$<$<COMPILE_LANGUAGE:CXX>:-march=armv8.2-a+dotprod+i8mm>"
     )
+elseif(ANDROID_ABI STREQUAL "arm64-v8a")
+    # Keep runtime compatibility for older arm64 cores (e.g., Exynos 9611 class devices).
+    add_compile_options(
+        "$<$<COMPILE_LANGUAGE:C>:-march=armv8-a>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-march=armv8-a>"
+        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_FP16_VECTOR_ARITHMETIC>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_FP16_VECTOR_ARITHMETIC>"
+        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_DOTPROD>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_DOTPROD>"
+        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_MATMUL_INT8>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_MATMUL_INT8>"
+        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_SVE>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_SVE>"
+        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_SME>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_SME>"
+    )
 endif()
 
 include(FetchContent)
@@ -46,6 +62,7 @@ set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
 set(GGML_CPU ON CACHE BOOL "" FORCE)
+set(GGML_CPU_REPACK OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 if(POCKETGPT_ENABLE_HEXAGON AND EXISTS "${LLAMA_CPP_ROOT}/ggml/src/ggml-hexagon/CMakeLists.txt")
     set(GGML_HEXAGON ON CACHE BOOL "" FORCE)
@@ -61,6 +78,7 @@ set(GGML_METAL OFF CACHE BOOL "" FORCE)
 set(GGML_RPC OFF CACHE BOOL "" FORCE)
 set(GGML_SYCL OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "" FORCE)
 
 if(GGML_OPENCL)
     # Provide OpenCL headers + ICD loader for Android builds. This mirrors the

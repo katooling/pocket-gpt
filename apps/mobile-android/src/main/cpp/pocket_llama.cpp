@@ -109,6 +109,7 @@ std::string g_active_backend = "cpu";
 uint64_t g_active_backend_memory_bytes = 0;
 std::string g_last_backend_error_code;
 std::string g_last_backend_error_detail;
+bool g_llama_logging_installed = false;
 float g_speculative_acceptance_rate = 0.65f;
 bool g_speculative_enabled = false;
 int32_t g_speculative_max_draft_tokens = 6;
@@ -235,6 +236,38 @@ bool madvise_model_readahead(const std::string & path, const char * label) {
         static_cast<long long>(info.st_size),
         advise_result);
     return advise_result == 0;
+}
+
+llama_model * load_model_with_mmap_retry(
+    const std::string & path,
+    llama_model_params * params,
+    const char * label) {
+    if (params == nullptr) {
+        return nullptr;
+    }
+    llama_model * model = llama_model_load_from_file(path.c_str(), *params);
+    if (model != nullptr || !params->use_mmap) {
+        return model;
+    }
+    __android_log_print(
+        ANDROID_LOG_WARN,
+        TAG,
+        "MMAP|stage=load_retry_without_mmap|label=%s|main_gpu=%d|gpu_layers=%d",
+        label,
+        static_cast<int>(params->main_gpu),
+        static_cast<int>(params->n_gpu_layers));
+    llama_model_params retry_params = *params;
+    retry_params.use_mmap = false;
+    model = llama_model_load_from_file(path.c_str(), retry_params);
+    if (model != nullptr) {
+        *params = retry_params;
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "MMAP|stage=load_retry_without_mmap_success|label=%s",
+            label);
+    }
+    return model;
 }
 
 void trim_prompt_tokens_for_context(std::vector<llama_token> * prompt_tokens, size_t max_prompt_tokens) {
@@ -665,6 +698,31 @@ void log_error(const std::string & message) {
     __android_log_print(ANDROID_LOG_ERROR, TAG, "%s", message.c_str());
 }
 
+void llama_android_log_callback(ggml_log_level level, const char * text, void * /*user_data*/) {
+    if (text == nullptr) {
+        return;
+    }
+    int priority = ANDROID_LOG_DEBUG;
+    switch (level) {
+        case GGML_LOG_LEVEL_ERROR:
+            priority = ANDROID_LOG_ERROR;
+            break;
+        case GGML_LOG_LEVEL_WARN:
+            priority = ANDROID_LOG_WARN;
+            break;
+        case GGML_LOG_LEVEL_INFO:
+            priority = ANDROID_LOG_INFO;
+            break;
+        case GGML_LOG_LEVEL_DEBUG:
+        case GGML_LOG_LEVEL_CONT:
+        case GGML_LOG_LEVEL_NONE:
+        default:
+            priority = ANDROID_LOG_DEBUG;
+            break;
+    }
+    __android_log_print(priority, "PocketLlamaCore", "%s", text);
+}
+
 struct Utf8PrefixResult {
     size_t valid_prefix_len = 0;
     bool has_invalid = false;
@@ -845,6 +903,10 @@ bool ensure_backend_initialized_locked(bool require_gpu_backend) {
     apply_android_backend_profile_env();
     if (g_backend_init_mode == BackendInitMode::NONE) {
         llama_backend_init();
+    }
+    if (!g_llama_logging_installed) {
+        llama_log_set(llama_android_log_callback, nullptr);
+        g_llama_logging_installed = true;
     }
     // Always load available backends so runtime support and backend selection are deterministic.
     ggml_backend_load_all();
@@ -2023,12 +2085,15 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         model_params.use_mmap ? "true" : "false",
         model_params.use_mlock ? "true" : "false",
         model_params.use_direct_io ? "true" : "false");
-    g_model = llama_model_load_from_file(model_path.c_str(), model_params);
+    g_model = load_model_with_mmap_retry(model_path, &model_params, "target");
+    g_model_use_mmap = model_params.use_mmap;
+    g_model_use_mlock = model_params.use_mlock;
     if (g_model == nullptr) {
         set_backend_error_locked(
             "GPU_BACKEND_LOAD_FAILED",
             std::string("profile=") + g_backend_profile + "|selected_backend=" + g_active_backend + "|target_layers=" +
-                std::to_string(static_cast<int>(model_params.n_gpu_layers)));
+                std::to_string(static_cast<int>(model_params.n_gpu_layers)) + "|use_mmap=" +
+                (model_params.use_mmap ? "true" : "false"));
         log_error("nativeLoadModel failed: llama_model_load_from_file returned null");
         return JNI_FALSE;
     }
@@ -2044,12 +2109,15 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     context_params.n_threads_batch = resolve_threads(nThreadsBatch);
     context_params.offload_kqv = use_gpu_ops;
     context_params.op_offload = use_gpu_ops;
-    context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
-    context_params.type_k = quantizedKvCache == JNI_TRUE ? GGML_TYPE_Q8_0 : context_params.type_k;
-    context_params.type_v = quantizedKvCache == JNI_TRUE ? GGML_TYPE_Q8_0 : context_params.type_v;
+    context_params.flash_attn_type = use_gpu_ops ? LLAMA_FLASH_ATTN_TYPE_AUTO : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    const bool quantized_kv_enabled =
+        quantizedKvCache == JNI_TRUE &&
+        context_params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    context_params.type_k = quantized_kv_enabled ? GGML_TYPE_Q8_0 : context_params.type_k;
+    context_params.type_v = quantized_kv_enabled ? GGML_TYPE_Q8_0 : context_params.type_v;
     g_last_flash_attn_requested = context_params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
     g_last_flash_attn_gpu_ops = use_gpu_ops;
-    g_last_quantized_kv_cache = quantizedKvCache == JNI_TRUE;
+    g_last_quantized_kv_cache = quantized_kv_enabled;
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
@@ -2057,7 +2125,7 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         context_params.offload_kqv ? "true" : "false",
         context_params.op_offload ? "true" : "false",
         static_cast<int>(context_params.flash_attn_type),
-        quantizedKvCache == JNI_TRUE ? "true" : "false");
+        quantized_kv_enabled ? "true" : "false");
     g_context = llama_init_from_model(g_model, context_params);
     if (g_context == nullptr) {
         set_backend_error_locked(
@@ -2112,7 +2180,7 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             draft_model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
             draft_model_params.main_gpu = 0;
         }
-        g_draft_model = llama_model_load_from_file(draft_model_path.c_str(), draft_model_params);
+        g_draft_model = load_model_with_mmap_retry(draft_model_path, &draft_model_params, "draft");
         if (g_draft_model != nullptr) {
             madvise_model_readahead(draft_model_path, "draft");
         }
@@ -2125,7 +2193,10 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             draft_context_params.n_threads_batch = resolve_threads(nThreadsBatch);
             draft_context_params.offload_kqv = draft_model_params.n_gpu_layers != 0;
             draft_context_params.op_offload = draft_model_params.n_gpu_layers != 0;
-            draft_context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+            draft_context_params.flash_attn_type =
+                draft_model_params.n_gpu_layers != 0
+                    ? LLAMA_FLASH_ATTN_TYPE_AUTO
+                    : LLAMA_FLASH_ATTN_TYPE_DISABLED;
             draft_context_params.type_k = context_params.type_k;
             draft_context_params.type_v = context_params.type_v;
             g_draft_context = llama_init_from_model(g_draft_model, draft_context_params);
