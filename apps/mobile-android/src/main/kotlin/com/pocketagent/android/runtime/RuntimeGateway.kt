@@ -9,7 +9,6 @@ import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.RuntimeResourceControl
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -25,26 +24,6 @@ fun interface DeviceGpuOffloadSupport {
 
 interface RuntimeGateway {
     fun createSession(): SessionId
-    fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
-        return streamChat(
-            StreamChatRequestV2(
-                sessionId = request.sessionId,
-                messages = listOf(
-                    com.pocketagent.runtime.InteractionMessage(
-                        role = com.pocketagent.runtime.InteractionRole.USER,
-                        parts = listOf(com.pocketagent.runtime.InteractionContentPart.Text(request.userText)),
-                    ),
-                ),
-                taskType = request.taskType,
-                deviceState = request.deviceState,
-                maxTokens = request.maxTokens,
-                requestTimeoutMs = request.requestTimeoutMs,
-                requestId = request.requestId,
-                performanceConfig = request.performanceConfig,
-                residencyPolicy = request.residencyPolicy,
-            ),
-        )
-    }
     fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent>
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean
@@ -84,27 +63,6 @@ class MvpRuntimeGateway(
     private val tag = "RuntimeGateway"
 
     override fun createSession(): SessionId = facade.createSession()
-
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
-        return streamChat(
-            StreamChatRequestV2(
-                sessionId = request.sessionId,
-                messages = listOf(
-                    com.pocketagent.runtime.InteractionMessage(
-                        role = com.pocketagent.runtime.InteractionRole.USER,
-                        parts = listOf(com.pocketagent.runtime.InteractionContentPart.Text(request.userText)),
-                    ),
-                ),
-                taskType = request.taskType,
-                deviceState = request.deviceState,
-                maxTokens = request.maxTokens,
-                requestTimeoutMs = request.requestTimeoutMs,
-                requestId = request.requestId,
-                performanceConfig = request.performanceConfig,
-                residencyPolicy = request.residencyPolicy,
-            ),
-        )
-    }
 
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
         return facade.streamChat(request)

@@ -1,0 +1,33 @@
+package com.pocketagent.android.runtime
+
+/**
+ * Central runtime error-code registry for Android app/runtime boundary.
+ *
+ * Keep codes stable once shipped so diagnostics and telemetry remain queryable.
+ */
+object RuntimeErrorCodes {
+    const val PROVISIONING_IMPORT_SOURCE_UNREADABLE = "PROVISIONING_IMPORT_SOURCE_UNREADABLE"
+    const val PROVISIONING_IMPORT_PERSIST_FAILED = "PROVISIONING_IMPORT_PERSIST_FAILED"
+    const val MODEL_MANIFEST_HTTP_ERROR = "MODEL_MANIFEST_HTTP_ERROR"
+}
+
+data class RuntimeDomainError(
+    val code: String,
+    val userMessage: String,
+    val technicalDetail: String? = null,
+)
+
+class RuntimeDomainException(
+    val domainError: RuntimeDomainError,
+    cause: Throwable? = null,
+) : RuntimeException(
+    buildString {
+        append(domainError.code)
+        domainError.technicalDetail?.takeIf { it.isNotBlank() }?.let {
+            append(":")
+            append(it)
+        }
+    },
+    cause,
+)
+

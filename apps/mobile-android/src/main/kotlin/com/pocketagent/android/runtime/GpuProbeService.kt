@@ -31,6 +31,7 @@ import kotlin.math.max
 internal interface GpuProbeBridge {
     fun isReady(): Boolean
     fun supportsGpuOffload(): Boolean
+    fun setVulkanProfile(profile: String)
     fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig)
     fun loadModel(modelId: String, modelPath: String): Boolean
     fun generateSyncProbe(prompt: String, maxTokens: Int, cachePolicy: CachePolicy): Boolean
@@ -46,6 +47,10 @@ internal class NativeGpuProbeBridge : GpuProbeBridge {
     override fun isReady(): Boolean = delegate.isReady()
 
     override fun supportsGpuOffload(): Boolean = delegate.supportsGpuOffload()
+
+    override fun setVulkanProfile(profile: String) {
+        delegate.setVulkanProfile(profile)
+    }
 
     override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
         delegate.setRuntimeGenerationConfig(config)
@@ -97,6 +102,8 @@ internal class GpuProbeRunner(
                 detail = "probe_runtime_gpu_support=false",
             )
         }
+
+        bridge.setVulkanProfile(request.vulkanProfile)
 
         var maxStableLayers = 0
         val ladder = request.layerLadder.filter { it > 0 }.distinct().sorted()
@@ -191,6 +198,8 @@ internal object GpuProbeIpc {
     const val EXTRA_MODEL_PATH = "model_path"
     const val EXTRA_LAYER_LADDER = "layer_ladder"
 
+    const val EXTRA_VULKAN_PROFILE = "vulkan_profile"
+
     const val EXTRA_RESULT_STATUS = "result_status"
     const val EXTRA_RESULT_MAX_LAYERS = "result_max_layers"
     const val EXTRA_RESULT_REASON = "result_reason"
@@ -246,6 +255,7 @@ class GpuProbeService : Service() {
             ?.filter { it > 0 }
             ?.distinct()
             .orEmpty()
+        val vulkanProfile = source.getString(GpuProbeIpc.EXTRA_VULKAN_PROFILE)?.trim()?.ifEmpty { null } ?: "safe"
         if (modelId.isEmpty() || modelPath.isEmpty() || ladder.isEmpty()) {
             return null
         }
@@ -254,6 +264,7 @@ class GpuProbeService : Service() {
             modelVersion = modelVersion,
             modelPath = modelPath,
             layerLadder = ladder,
+            vulkanProfile = vulkanProfile,
         )
     }
 }

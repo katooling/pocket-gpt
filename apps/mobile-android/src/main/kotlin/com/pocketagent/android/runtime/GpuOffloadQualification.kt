@@ -57,6 +57,7 @@ data class GpuProbeRequest(
     val layerLadder: List<Int>,
     val modelContentFingerprint: String? = null,
     val modelFileSizeBytes: Long = 0L,
+    val vulkanProfile: String = "safe",
 )
 
 interface GpuProbeClient {
@@ -102,7 +103,7 @@ interface GpuOffloadQualifier {
 private const val PREFS_NAME = "pocketagent_gpu_probe_cache"
 private const val RESULT_PREFIX = "gpu_probe_result_"
 private const val KEY_LAST_WRITE_EPOCH_MS = "gpu_probe_last_write_ms"
-private const val PROBE_POLICY_VERSION = 2
+private const val PROBE_POLICY_VERSION = 3
 private const val PROBE_TOTAL_TIMEOUT_MS = 2 * 60_000L
 private const val PROBE_MIN_LAYER_TIMEOUT_MS = 12_000L
 private const val PROBE_MAX_LAYER_TIMEOUT_MS = 45_000L
@@ -117,6 +118,7 @@ private val PROBE_LAYER_LADDER_PRE_12: List<Int> = listOf(1, 2, 4, 8, 16)
 private data class GpuProbePolicy(
     val layerLadder: List<Int>,
     val totalTimeoutMs: Long,
+    val vulkanProfile: String = "safe",
 ) {
     fun timeoutForLayer(layer: Int, nativeDiagnostics: NativeVulkanDiagnostics): Long {
         val layerTimeout = when {
@@ -156,6 +158,7 @@ private fun resolveProbePolicy(nativeDiagnostics: NativeVulkanDiagnostics): GpuP
     return GpuProbePolicy(
         layerLadder = ladder,
         totalTimeoutMs = PROBE_TOTAL_TIMEOUT_MS,
+        vulkanProfile = "safe",
     )
 }
 
@@ -188,6 +191,7 @@ private fun resolveProbeRequestFromStore(store: AndroidRuntimeProvisioningStore)
         layerLadder = PROBE_LAYER_LADDER_FULL,
         modelContentFingerprint = modelFingerprint,
         modelFileSizeBytes = modelFileSizeBytes,
+        vulkanProfile = "safe",
     )
 }
 
@@ -433,7 +437,7 @@ internal class InternalAndroidGpuOffloadQualifier(
                 remainingBudgetMs,
             )
             val layerResult = probeClient.runProbe(
-                request = request.copy(layerLadder = listOf(layer)),
+                request = request.copy(layerLadder = listOf(layer), vulkanProfile = policy.vulkanProfile),
                 timeoutMs = timeoutMs,
             )
             if (layerResult.status == GpuProbeStatus.QUALIFIED && layerResult.maxStableGpuLayers > 0) {
@@ -523,6 +527,7 @@ internal class InternalAndroidGpuOffloadQualifier(
             "build=$appBuildSignature",
             "model=${request.cacheIdentity()}",
             "ladder=${policy.layerLadder.joinToString(",")}",
+            "vulkanProfile=${policy.vulkanProfile}",
         ).joinToString(separator = "|")
         return sha256(raw)
     }

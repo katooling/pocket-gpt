@@ -118,6 +118,14 @@ class NativeJniLlamaCppBridge(
         }
     }
 
+    fun setVulkanProfile(profile: String) {
+        ensureRuntimeInitialized()
+        if (usingFallback || !runtimeReady) {
+            return
+        }
+        runCatching { nativeApi.setVulkanProfile(profile) }
+    }
+
     override fun vulkanDiagnosticsJson(): String? {
         ensureRuntimeInitialized()
         if (usingFallback) {
@@ -537,6 +545,7 @@ class NativeJniLlamaCppBridge(
         fun vulkanDiagnosticsJson(): String
         fun peakRssMb(): Double? = null
         fun prefixCacheDiagnosticsLine(): String? = null
+        fun setVulkanProfile(profile: String) {}
     }
 
     private class JniNativeApi : NativeApi {
@@ -587,6 +596,7 @@ class NativeJniLlamaCppBridge(
         external fun nativeVulkanDiagnosticsJson(): String
         external fun nativePeakRssMb(): Double
         external fun nativePrefixCacheDiagnosticsLine(): String
+        external fun nativeSetVulkanProfile(profile: String)
 
         override fun initialize(): Boolean = nativeInitialize()
 
@@ -693,6 +703,8 @@ class NativeJniLlamaCppBridge(
         }
 
         override fun prefixCacheDiagnosticsLine(): String = nativePrefixCacheDiagnosticsLine()
+
+        override fun setVulkanProfile(profile: String) = nativeSetVulkanProfile(profile)
     }
 
     companion object {

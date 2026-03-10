@@ -2608,6 +2608,23 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
         thiz);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeSetVulkanProfile(
+    JNIEnv * env,
+    jobject /*thiz*/,
+    jstring profile) {
+    const char * profileChars = env->GetStringUTFChars(profile, nullptr);
+    if (profileChars) {
+        setenv("POCKETGPT_VULKAN_PROFILE", profileChars, 1);
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "GPU_OFFLOAD|set_vulkan_profile=%s",
+            profileChars);
+        env->ReleaseStringUTFChars(profile, profileChars);
+    }
+}
+
 extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM * /*vm*/, void * /*reserved*/) {
     std::lock_guard<std::mutex> lock(g_mutex);
     release_runtime_locked();

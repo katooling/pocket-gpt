@@ -70,6 +70,35 @@ class RemoteLlamaCppRuntimeBridgeTest {
     }
 
     @Test
+    fun `bridge surfaces remote timeout as structured error`() {
+        val transport = FakeRemoteRuntimeTransport(
+            nextGenerationResult = GenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = 0L,
+                cancelled = false,
+                errorCode = "REMOTE_TIMEOUT",
+            ),
+            nextLastError = BridgeError("REMOTE_TIMEOUT", "stream result timeout"),
+        )
+        val bridge = RemoteLlamaCppRuntimeBridge(transport)
+
+        assertTrue(bridge.loadModel("model-a", "/tmp/model-a.gguf"))
+        val result = bridge.generate(
+            requestId = "req-timeout",
+            prompt = "hello",
+            maxTokens = 8,
+            cacheKey = null,
+            cachePolicy = CachePolicy.OFF,
+        ) {}
+
+        assertFalse(result.success)
+        assertEquals("REMOTE_TIMEOUT", result.errorCode)
+        assertEquals("REMOTE_TIMEOUT", bridge.lastError()?.code)
+    }
+
+    @Test
     fun `runtime backend reports remote service when ping succeeds`() {
         val bridge = RemoteLlamaCppRuntimeBridge(FakeRemoteRuntimeTransport())
         assertEquals(RuntimeBackend.REMOTE_ANDROID_SERVICE, bridge.runtimeBackend())

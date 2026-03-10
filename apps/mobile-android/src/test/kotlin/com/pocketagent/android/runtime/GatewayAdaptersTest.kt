@@ -50,15 +50,7 @@ class GatewayAdaptersTest {
         val sessionId = gateway.createSession()
         gateway.setRoutingMode(RoutingMode.QWEN_2B)
 
-        val streamEvents = gateway.streamUserMessage(
-            StreamUserMessageRequest(
-                sessionId = sessionId,
-                userText = "hello",
-                taskType = "short_text",
-                deviceState = com.pocketagent.inference.DeviceState(80, 3, 8),
-            ),
-        ).toList()
-        val streamV2Events = gateway.streamChat(
+        val streamEvents = gateway.streamChat(
             StreamChatRequestV2(
                 sessionId = sessionId,
                 messages = listOf(
@@ -79,7 +71,6 @@ class GatewayAdaptersTest {
         assertEquals(RoutingMode.QWEN_2B, gateway.getRoutingMode())
         assertEquals("session-1", sessionId.value)
         assertEquals(3, streamEvents.size)
-        assertEquals(3, streamV2Events.size)
         assertTrue(tool is ToolExecutionResult.Success)
         assertTrue(image is ImageAnalysisResult.Success)
         assertEquals(listOf("ok"), checks)
