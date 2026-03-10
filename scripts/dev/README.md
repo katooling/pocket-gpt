@@ -83,6 +83,8 @@ Examples:
 - `bash scripts/dev/device-test.sh 10 scenario-a --framework espresso`
 - `bash scripts/dev/device-test.sh 10 scenario-a --framework maestro`
 
+For runtime tuning analysis after repeated device runs, use `docs/testing/runtime-tuning-debugging.md`. It explains how to read `RUNTIME_TUNING|...` diagnostics lines and correlate them with benchmark artifacts under `scripts/benchmarks/runs/...`.
+
 ## Stage-2 Benchmark Wrapper
 
 ```bash
@@ -149,8 +151,23 @@ Optional cache controls (env):
 python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
 python3 tools/devctl/main.py lane screenshot-pack
+python3 tools/devctl/main.py lane screenshot-pack --product-signal-only
 python3 tools/devctl/main.py lane journey [--repeats N]
 ```
+
+## Gate Wrappers (Policy)
+
+```bash
+python3 tools/devctl/main.py gate merge-unblock
+python3 tools/devctl/main.py gate promotion
+python3 tools/devctl/main.py gate promotion --include-screenshot-pack
+```
+
+Gate contract summary:
+
+1. `merge-unblock`: `merge` + `doctor` + `android-instrumented` + risk-triggered lifecycle flow.
+2. `promotion`: `merge` + `doctor` + `android-instrumented` + `maestro` + strict `journey` (+ optional `screenshot-pack`).
+3. Reports are written to `build/devctl/gates/*.json` with per-step duration, correctness class, and blocking decision.
 
 Device-lock behavior:
 
@@ -188,6 +205,7 @@ Screenshot pack workflow:
 
 ```bash
 python3 tools/devctl/main.py lane screenshot-pack
+python3 tools/devctl/main.py lane screenshot-pack --product-signal-only
 python3 tools/devctl/main.py lane screenshot-pack --update-reference
 ```
 
@@ -196,6 +214,25 @@ Maestro install:
 ```bash
 curl -Ls https://get.maestro.mobile.dev | bash
 ```
+
+## GPU Qualification Split Matrix
+
+Use two lanes on purpose:
+
+1. Maestro Cloud for Android UI/API-tier checks only.
+2. Explicit physical Android devices for real GPU eligibility.
+
+Commands:
+
+```bash
+bash scripts/dev/maestro-cloud-gpu-model-matrix.sh --dry-run --api-levels 29,31,34 --models tiny
+bash scripts/dev/maestro-cloud-upload-status.sh --help
+bash scripts/dev/maestro-gpu-real-device-matrix.sh --dry-run --serial <serial> --models tiny,qwen_0_8b
+```
+
+Plan doc:
+
+- `docs/testing/gpu-qualification-split-plan.md`
 
 ## Maestro Cloud (Supplemental)
 

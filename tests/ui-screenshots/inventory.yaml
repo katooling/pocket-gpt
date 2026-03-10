@@ -45,6 +45,7 @@ screenshots:
   - id: ui-11-advanced-unlock-cue
     filename: ui-11-advanced-unlock-cue.png
     candidates:
+      - instrumented/ui-11-advanced-default-available.png
       - instrumented/ui-11-advanced-unlock-cue.png
   - id: ui-12-runtime-loading
     filename: ui-12-runtime-loading.png

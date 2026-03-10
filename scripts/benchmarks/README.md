@@ -5,6 +5,7 @@ Source of truth for benchmark command syntax and lane policy:
 - `scripts/dev/README.md`
 - `docs/testing/test-strategy.md`
 - `docs/testing/runbooks.md`
+- `docs/testing/runtime-tuning-debugging.md`
 
 ## Purpose
 
