@@ -8,4 +8,5 @@ data class ChatResponse(
     val totalLatencyMs: Long,
     val requestId: String = "",
     val finishReason: String = "completed",
+    val runtimeStats: RuntimeExecutionStats? = null,
 )
