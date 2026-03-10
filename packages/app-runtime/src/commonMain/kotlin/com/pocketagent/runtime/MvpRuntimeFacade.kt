@@ -559,7 +559,7 @@ class DefaultRuntimeContainer(
     override fun supportsGpuOffload(): Boolean = orchestrator.supportsGpuOffload()
 }
 
-private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 90_000L
+private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 600_000L
 
 private fun defaultRequestId(): String {
     return "req-${System.currentTimeMillis()}-${UUID.randomUUID().toString().substring(0, 8)}"

@@ -34,13 +34,13 @@ class SendReducer {
                 ChatStreamPhase.CHAT_END -> "Finalizing..."
                 ChatStreamPhase.ERROR -> "Runtime error"
             }
-            is ChatStreamEvent.TokenDelta -> "Generating..."
             is ChatStreamEvent.Delta -> when (event.delta) {
                 is ChatStreamDelta.TextDelta -> "Generating..."
             }
             is ChatStreamEvent.Completed -> "Completed"
             is ChatStreamEvent.Cancelled -> "Cancelled"
             is ChatStreamEvent.Failed -> "Runtime error"
+            else -> "Generating..."
         }
     }
 }

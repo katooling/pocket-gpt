@@ -10,7 +10,6 @@ import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.StreamUserMessageRequest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
@@ -20,50 +19,11 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class ChatStreamCoordinator(
-    private val terminalWatchdogGraceMs: Long = 1_500L,
+    private val terminalWatchdogGraceMs: Long = 10_000L,
     private val sendElapsedUpdateIntervalMs: Long = 1_000L,
-    private val noFirstTokenWarnMs: Long = 90_000L,
-    private val noFirstTokenStallMs: Long = 300_000L,
+    private val noFirstTokenWarnMs: Long = 150_000L,
+    private val noFirstTokenStallMs: Long = 600_000L,
 ) {
-    suspend fun collectStream(
-        runtimeGateway: RuntimeGateway,
-        request: StreamUserMessageRequest,
-        requestTimeoutMs: Long,
-        streamReducer: StreamStateReducer,
-        sendStartedAtMs: Long,
-        onEvent: (ChatStreamEvent, StreamReducerState) -> Unit,
-        onElapsed: (Long, String?) -> Unit,
-        onBeforeTerminal: () -> Unit,
-        onTerminal: (StreamTerminalState) -> Unit,
-    ) {
-        collectStream(
-            runtimeGateway = runtimeGateway,
-            request = StreamChatRequestV2(
-                sessionId = request.sessionId,
-                requestId = request.requestId,
-                taskType = request.taskType,
-                deviceState = request.deviceState,
-                maxTokens = request.maxTokens,
-                requestTimeoutMs = request.requestTimeoutMs,
-                performanceConfig = request.performanceConfig,
-                residencyPolicy = request.residencyPolicy,
-                messages = listOf(
-                    InteractionMessage(
-                        role = InteractionRole.USER,
-                        parts = listOf(InteractionContentPart.Text(request.userText)),
-                    ),
-                ),
-            ),
-            requestTimeoutMs = requestTimeoutMs,
-            streamReducer = streamReducer,
-            sendStartedAtMs = sendStartedAtMs,
-            onEvent = onEvent,
-            onElapsed = onElapsed,
-            onBeforeTerminal = onBeforeTerminal,
-            onTerminal = onTerminal,
-        )
-    }
-
     suspend fun collectStream(
         runtimeGateway: RuntimeGateway,
         request: StreamChatRequestV2,
@@ -104,7 +64,7 @@ class ChatStreamCoordinator(
             }
         }
 
-        lateinit var streamCollector: Job
+        var streamCollector: Job? = null
         val prefillTimeoutWatchdog = launch {
             delay(requestTimeoutMs + terminalWatchdogGraceMs)
             if (streamFirstTokenMs() != null || hasTerminal()) {
@@ -118,9 +78,10 @@ class ChatStreamCoordinator(
             }
             elapsedTicker.cancel()
             runtimeGateway.cancelGenerationByRequest(request.requestId)
+            val terminal = nextState.terminal ?: return@launch
             onBeforeTerminal()
-            onTerminal(nextState.terminal!!)
-            streamCollector.cancel()
+            onTerminal(terminal)
+            streamCollector?.cancel()
         }
 
         streamCollector = launch {
@@ -158,8 +119,9 @@ class ChatStreamCoordinator(
                 if (generationTimedOut) {
                     runtimeGateway.cancelGenerationByRequest(request.requestId)
                 }
+                val terminal = nextState.terminal ?: return@onFailure
                 onBeforeTerminal()
-                onTerminal(nextState.terminal!!)
+                onTerminal(terminal)
             }
         }
         streamCollector.join()

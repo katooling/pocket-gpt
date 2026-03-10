@@ -29,27 +29,33 @@ class ChatPersistenceFlow(
         )
     }
 
-    fun saveState(state: ChatUiState) {
-        persistenceCoordinator.saveState(
-            PersistedChatState(
-                sessions = state.sessions.map { session ->
-                    session.copy(
-                        messages = session.messages.map { message -> message.copy(isStreaming = false) },
-                    )
-                },
-                activeSessionId = state.activeSessionId,
-                routingMode = state.runtime.routingMode.name,
-                performanceProfile = state.runtime.performanceProfile.name,
-                keepAlivePreference = state.runtime.keepAlivePreference.name,
-                gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled,
-                onboardingCompleted = !state.showOnboarding,
-                firstSessionStage = state.firstSessionStage.name,
-                advancedUnlocked = state.advancedUnlocked,
-                firstAnswerCompleted = state.firstAnswerCompleted,
-                followUpCompleted = state.followUpCompleted,
-                firstSessionTelemetryEvents = state.firstSessionTelemetryEvents,
-            ),
+    fun toPersistedState(state: ChatUiState): PersistedChatState {
+        return PersistedChatState(
+            sessions = state.sessions.map { session ->
+                session.copy(
+                    messages = session.messages.map { message -> message.copy(isStreaming = false) },
+                )
+            },
+            activeSessionId = state.activeSessionId,
+            routingMode = state.runtime.routingMode.name,
+            performanceProfile = state.runtime.performanceProfile.name,
+            keepAlivePreference = state.runtime.keepAlivePreference.name,
+            gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled,
+            onboardingCompleted = !state.showOnboarding,
+            firstSessionStage = state.firstSessionStage.name,
+            advancedUnlocked = state.advancedUnlocked,
+            firstAnswerCompleted = state.firstAnswerCompleted,
+            followUpCompleted = state.followUpCompleted,
+            firstSessionTelemetryEvents = state.firstSessionTelemetryEvents,
         )
+    }
+
+    fun savePersistedState(state: PersistedChatState) {
+        persistenceCoordinator.saveState(state)
+    }
+
+    fun saveState(state: ChatUiState) {
+        savePersistedState(toPersistedState(state))
     }
 
     private fun sessionStateLoadError(loadResult: SessionStateLoadResult): UiError? {

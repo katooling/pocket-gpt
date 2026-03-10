@@ -2,6 +2,7 @@ package com.pocketagent.android.ui.controllers
 
 import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
+import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -121,5 +122,43 @@ class ChatSendFlowTest {
         assertFalse(request.residencyPolicy.keepLoadedWhileAppForeground)
         assertFalse(request.residencyPolicy.adaptiveIdleTtl)
         assertEquals(1L, request.residencyPolicy.idleUnloadTtlMs)
+    }
+
+    @Test
+    fun `buildStreamChatRequest uses performance max tokens for short prompts`() {
+        val flow = ChatSendFlow(runtimeGenerationTimeoutMs = 0L)
+        val base = flow.resolvePerformanceConfig(
+            profile = RuntimePerformanceProfile.BALANCED,
+            gpuEnabled = false,
+        )
+        val config = base.copy(maxTokensDefault = 160)
+        val request = flow.buildStreamChatRequest(
+            sessionId = "s1",
+            requestId = "r1",
+            messages = emptyList(),
+            taskTypeHint = "short prompt",
+            performanceConfig = config,
+            requestTimeoutMs = 10_000L,
+            keepAlivePreference = RuntimeKeepAlivePreference.AUTO,
+        )
+
+        assertEquals(160, request.maxTokens)
+    }
+
+    @Test
+    fun `buildStreamChatRequest enforces minimum max tokens when config is too low`() {
+        val flow = ChatSendFlow(runtimeGenerationTimeoutMs = 0L)
+        val config = PerformanceRuntimeConfig.default().copy(maxTokensDefault = 4)
+        val request = flow.buildStreamChatRequest(
+            sessionId = "s1",
+            requestId = "r1",
+            messages = emptyList(),
+            taskTypeHint = "short prompt",
+            performanceConfig = config,
+            requestTimeoutMs = 10_000L,
+            keepAlivePreference = RuntimeKeepAlivePreference.AUTO,
+        )
+
+        assertEquals(16, request.maxTokens)
     }
 }

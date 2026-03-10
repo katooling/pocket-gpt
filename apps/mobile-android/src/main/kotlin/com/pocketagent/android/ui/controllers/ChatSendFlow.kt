@@ -172,18 +172,12 @@ class ChatSendFlow(
     }
 
     private fun resolveMaxTokens(prompt: String, performanceConfig: PerformanceRuntimeConfig): Int {
-        val promptBudget = if (prompt.length >= LONG_PROMPT_LENGTH) {
-            LONG_PROMPT_MAX_TOKENS
-        } else {
-            SHORT_PROMPT_MAX_TOKENS
-        }
-        return minOf(promptBudget, performanceConfig.maxTokensDefault.coerceAtLeast(16))
+        return performanceConfig.maxTokensDefault.coerceAtLeast(MIN_MAX_TOKENS)
     }
 
     private companion object {
         private const val LONG_PROMPT_LENGTH = 160
-        private const val SHORT_PROMPT_MAX_TOKENS = 32
-        private const val LONG_PROMPT_MAX_TOKENS = 96
+        private const val MIN_MAX_TOKENS = 16
         private const val GPU_SAFE_BATCH = 256
         private const val ALWAYS_KEEP_ALIVE_TTL_MS = 24 * 60 * 60 * 1000L
     }

@@ -179,7 +179,7 @@ internal class SendMessageUseCase(
             if (timeoutGuard.timedOut()) {
                 throw RuntimeGenerationTimeoutException(request.requestTimeoutMs)
             }
-        } catch (error: Throwable) {
+        } catch (error: RuntimeException) {
             if (timeoutGuard.timedOut()) {
                 throw RuntimeGenerationTimeoutException(request.requestTimeoutMs)
             }

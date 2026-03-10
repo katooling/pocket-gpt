@@ -45,17 +45,6 @@ class StreamStateReducer(
         return when (event) {
             is ChatStreamEvent.Started -> state
             is ChatStreamEvent.Phase -> state.copy(lastPhase = event.phase.name.lowercase())
-            is ChatStreamEvent.TokenDelta -> {
-                val firstToken = if (state.firstTokenMs == null && event.accumulatedText.isNotBlank()) {
-                    elapsedMs.coerceAtLeast(0L)
-                } else {
-                    state.firstTokenMs
-                }
-                state.copy(
-                    accumulatedText = event.accumulatedText,
-                    firstTokenMs = firstToken,
-                )
-            }
             is ChatStreamEvent.Delta -> {
                 when (event.delta) {
                     is ChatStreamDelta.TextDelta -> {
@@ -118,6 +107,7 @@ class StreamStateReducer(
                     ),
                 )
             }
+            else -> state
         }
     }
 

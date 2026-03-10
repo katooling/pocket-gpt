@@ -10,7 +10,6 @@ import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.ImageFailure
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -109,9 +108,6 @@ private class RecordingRuntimeGateway(
     var lastImagePrompt: String? = null
 
     override fun createSession(): SessionId = SessionId("session-1")
-
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = emptyFlow()
-
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = emptyFlow()
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = true

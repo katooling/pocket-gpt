@@ -20,7 +20,7 @@ open class StartupProbeController {
         } catch (_: TimeoutCancellationException) {
             val timeoutSeconds = (timeoutMs / 1000L).coerceAtLeast(1L)
             listOf("Startup checks timed out after ${timeoutSeconds}s.")
-        } catch (error: Throwable) {
+        } catch (error: RuntimeException) {
             if (error is CancellationException) {
                 throw error
             }

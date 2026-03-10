@@ -10,11 +10,12 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.ChatStreamDelta
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.InteractionContentPart
+import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -33,7 +34,13 @@ class ChatStreamCoordinatorTest {
             flowFactory = { request ->
                 flow {
                     emit(ChatStreamEvent.Started(request.requestId, startedAtEpochMs = 1L))
-                    emit(ChatStreamEvent.TokenDelta(request.requestId, token = "hello ", accumulatedText = "hello"))
+                    emit(
+                        ChatStreamEvent.Delta(
+                            requestId = request.requestId,
+                            delta = ChatStreamDelta.TextDelta("hello "),
+                            accumulatedText = "hello",
+                        ),
+                    )
                     emit(
                         ChatStreamEvent.Completed(
                             requestId = request.requestId,
@@ -66,7 +73,7 @@ class ChatStreamCoordinatorTest {
             streamReducer = reducer,
             sendStartedAtMs = System.currentTimeMillis(),
             onEvent = { event, _: StreamReducerState ->
-                if (event is ChatStreamEvent.TokenDelta) {
+                if (event is ChatStreamEvent.Delta) {
                     tokenEvents += 1
                 }
             },
@@ -121,7 +128,13 @@ class ChatStreamCoordinatorTest {
             flowFactory = { request ->
                 flow {
                     emit(ChatStreamEvent.Started(request.requestId, startedAtEpochMs = 1L))
-                    emit(ChatStreamEvent.TokenDelta(request.requestId, token = "hello ", accumulatedText = "hello"))
+                    emit(
+                        ChatStreamEvent.Delta(
+                            requestId = request.requestId,
+                            delta = ChatStreamDelta.TextDelta("hello "),
+                            accumulatedText = "hello",
+                        ),
+                    )
                     delay(80L)
                     emit(
                         ChatStreamEvent.Completed(
@@ -169,7 +182,13 @@ class ChatStreamCoordinatorTest {
             flowFactory = { request ->
                 flow {
                     emit(ChatStreamEvent.Started(requestId = "", startedAtEpochMs = 1L))
-                    emit(ChatStreamEvent.TokenDelta(requestId = "", token = "legacy ", accumulatedText = "legacy"))
+                    emit(
+                        ChatStreamEvent.Delta(
+                            requestId = "",
+                            delta = ChatStreamDelta.TextDelta("legacy "),
+                            accumulatedText = "legacy",
+                        ),
+                    )
                     emit(
                         ChatStreamEvent.Completed(
                             requestId = "",
@@ -211,51 +230,30 @@ class ChatStreamCoordinatorTest {
     }
 }
 
-private fun request(requestId: String): StreamUserMessageRequest {
-    return StreamUserMessageRequest(
+private fun request(requestId: String): StreamChatRequestV2 {
+    return StreamChatRequestV2(
         sessionId = SessionId("session-1"),
         requestId = requestId,
-        userText = "hello",
+        messages = listOf(
+            InteractionMessage(
+                role = InteractionRole.USER,
+                parts = listOf(InteractionContentPart.Text("hello")),
+            ),
+        ),
         taskType = "short_text",
         deviceState = DeviceState(80, 3, 8),
     )
 }
 
 private class FlowRuntimeGateway(
-    private val flowFactory: (StreamUserMessageRequest) -> Flow<ChatStreamEvent>,
+    private val flowFactory: (StreamChatRequestV2) -> Flow<ChatStreamEvent>,
 ) : RuntimeGateway {
     var cancelByRequestCalls: Int = 0
 
     override fun createSession(): SessionId = SessionId("session-1")
 
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
-        return flowFactory(request)
-    }
-
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
-        val latestUserText = request.messages
-            .asReversed()
-            .firstOrNull { message -> message.role == InteractionRole.USER }
-            ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
-            .orEmpty()
-        return streamUserMessage(
-            StreamUserMessageRequest(
-                sessionId = request.sessionId,
-                userText = latestUserText,
-                taskType = request.taskType,
-                deviceState = request.deviceState,
-                maxTokens = request.maxTokens,
-                requestTimeoutMs = request.requestTimeoutMs,
-                requestId = request.requestId,
-                performanceConfig = request.performanceConfig,
-                residencyPolicy = request.residencyPolicy,
-            ),
-        )
+        return flowFactory(request)
     }
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = true
