@@ -98,6 +98,9 @@ data class DownloadTaskState(
     val status: DownloadTaskStatus,
     val progressBytes: Long,
     val totalBytes: Long,
+    val downloadSpeedBps: Long? = null,
+    val etaSeconds: Long? = null,
+    val lastProgressEpochMs: Long? = null,
     val updatedAtEpochMs: Long,
     val failureReason: DownloadFailureReason? = null,
     val message: String? = null,
@@ -121,6 +124,9 @@ data class DownloadTaskState(
             status == DownloadTaskStatus.CANCELLED ||
             status == DownloadTaskStatus.COMPLETED ||
             status == DownloadTaskStatus.INSTALLED_INACTIVE
+
+    val hasThroughputEstimate: Boolean
+        get() = (downloadSpeedBps ?: 0L) > 0L && (etaSeconds ?: -1L) >= 0L
 }
 
 data class StorageSummary(

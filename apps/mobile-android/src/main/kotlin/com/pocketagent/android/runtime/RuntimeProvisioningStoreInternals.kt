@@ -16,6 +16,8 @@ internal const val PROVISIONING_PATH_ALIAS_MIGRATION_DONE_KEY = "path_alias_migr
 internal const val PROVISIONING_CORRUPT_BACKUP_PREFIX = "runtime_provisioning_corrupt_backup"
 internal const val PROVISIONING_MANAGED_MODELS_DIR_NAME = "models"
 internal const val PROVISIONING_METADATA_SUFFIX = ".meta.json"
+internal const val PROVISIONING_LAST_LOADED_MODEL_ID_KEY = "runtime_last_loaded_model_id"
+internal const val PROVISIONING_LAST_LOADED_MODEL_VERSION_KEY = "runtime_last_loaded_model_version"
 
 internal val PROVISIONING_MIGRATION_LOCK = Any()
 internal val PROVISIONING_MIGRATION_SIGNAL_LOCK = Any()
@@ -57,6 +59,11 @@ internal data class DynamicModelIdsReadResult(
 internal data class VersionReadResult(
     val versions: List<ModelVersionDescriptor>,
     val signal: ProvisioningRecoverySignal? = null,
+)
+
+internal data class LastLoadedModelRef(
+    val modelId: String,
+    val version: String,
 )
 
 private data class LegacySpecOverride(

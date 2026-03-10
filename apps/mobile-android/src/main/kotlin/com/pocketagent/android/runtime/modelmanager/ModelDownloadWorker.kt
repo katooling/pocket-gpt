@@ -105,6 +105,7 @@ class ModelDownloadWorker(
                 partFile = partFile,
                 declaredTotalBytes = declaredTotalBytes,
                 verificationPolicy = verificationPolicy,
+                lastKnownState = activeState,
             )
             val verificationTotalBytes = computedTotalBytes.takeIf { it > 0L } ?: downloadedBytes
 
@@ -118,6 +119,7 @@ class ModelDownloadWorker(
                 processingStage = DownloadProcessingStage.VERIFYING,
                 verificationPolicy = verificationPolicy,
                 message = "Verifying",
+                clearTransferMetrics = true,
             )
 
             val sha = sha256HexFromFile(partFile)
@@ -183,6 +185,7 @@ class ModelDownloadWorker(
                 processingStage = DownloadProcessingStage.INSTALLING,
                 verificationPolicy = verificationPolicy,
                 message = "Installing",
+                clearTransferMetrics = true,
             )
             if (!ModelInstallIo.replaceWithAtomicMove(source = partFile, destination = destinationFile)) {
                 fail(
@@ -236,6 +239,7 @@ class ModelDownloadWorker(
                 } else {
                     "Downloaded and verified. Activation pending."
                 },
+                clearTransferMetrics = true,
             )
             Result.success(outputDataOf(taskId))
         } catch (timeout: SocketTimeoutException) {
@@ -319,8 +323,11 @@ class ModelDownloadWorker(
         partFile: File,
         declaredTotalBytes: Long,
         verificationPolicy: DownloadVerificationPolicy,
+        lastKnownState: DownloadTaskState?,
     ): Pair<Long, Long> {
         var existingBytes = partFile.length().coerceAtLeast(0L)
+        var lastMetricBytes = lastKnownState?.progressBytes?.coerceAtLeast(0L) ?: existingBytes
+        var lastMetricEpochMs = lastKnownState?.lastProgressEpochMs?.takeIf { it > 0L } ?: System.currentTimeMillis()
         val connection = URL(downloadUrl).openConnection() as HttpURLConnection
         connection.connectTimeout = 20_000
         connection.readTimeout = 30_000
@@ -366,6 +373,14 @@ class ModelDownloadWorker(
                         if (bytesSinceUpdate >= PROGRESS_UPDATE_STEP_BYTES || downloaded == expectedTotal) {
                             bytesSinceUpdate = 0L
                             val percent = if (expectedTotal <= 0L) 0 else ((downloaded * 100L) / expectedTotal).toInt()
+                            val nowEpochMs = System.currentTimeMillis()
+                            val transferMetrics = calculateTransferMetrics(
+                                previousBytes = lastMetricBytes,
+                                previousEpochMs = lastMetricEpochMs,
+                                currentBytes = downloaded,
+                                currentEpochMs = nowEpochMs,
+                                totalBytes = expectedTotal,
+                            )
                             setForegroundAsync(createForegroundInfo(taskId = taskId, modelId = modelId, percent = percent))
                             updateState(
                                 taskId = taskId,
@@ -377,7 +392,10 @@ class ModelDownloadWorker(
                                 processingStage = DownloadProcessingStage.DOWNLOADING,
                                 verificationPolicy = verificationPolicy,
                                 message = "Downloading ($percent%)",
+                                transferMetrics = transferMetrics,
                             )
+                            lastMetricBytes = downloaded
+                            lastMetricEpochMs = nowEpochMs
                             setProgressAsync(outputDataOf(taskId))
                         }
                     }
@@ -417,6 +435,8 @@ class ModelDownloadWorker(
         verificationPolicy: DownloadVerificationPolicy,
         message: String,
         reason: DownloadFailureReason? = null,
+        transferMetrics: TransferMetrics? = null,
+        clearTransferMetrics: Boolean = false,
     ) {
         val previous = ModelDownloadTaskStateStore.get(appContext, taskId)
         val next = (previous ?: DownloadTaskState(
@@ -433,11 +453,29 @@ class ModelDownloadWorker(
             status = DownloadTaskStatus.QUEUED,
             progressBytes = 0L,
             totalBytes = 0L,
+            downloadSpeedBps = null,
+            etaSeconds = null,
+            lastProgressEpochMs = null,
             updatedAtEpochMs = System.currentTimeMillis(),
         )).copy(
             status = status,
             progressBytes = progressBytes.coerceAtLeast(0L),
             totalBytes = totalBytes.coerceAtLeast(0L).coerceAtLeast(progressBytes.coerceAtLeast(0L)),
+            downloadSpeedBps = when {
+                clearTransferMetrics -> null
+                transferMetrics != null -> transferMetrics.downloadSpeedBps
+                else -> previous?.downloadSpeedBps
+            },
+            etaSeconds = when {
+                clearTransferMetrics -> null
+                transferMetrics != null -> transferMetrics.etaSeconds
+                else -> previous?.etaSeconds
+            },
+            lastProgressEpochMs = when {
+                clearTransferMetrics -> null
+                transferMetrics != null -> transferMetrics.lastProgressEpochMs
+                else -> previous?.lastProgressEpochMs
+            },
             processingStage = processingStage,
             verificationPolicy = verificationPolicy,
             updatedAtEpochMs = System.currentTimeMillis(),
@@ -478,6 +516,7 @@ class ModelDownloadWorker(
                 ?: DownloadVerificationPolicy.INTEGRITY_ONLY,
             message = message,
             reason = reason,
+            clearTransferMetrics = true,
         )
     }
 
@@ -576,4 +615,38 @@ class ModelDownloadWorker(
             DownloadVerificationPolicy.valueOf(normalized)
         }.getOrNull()
     }
+}
+
+internal data class TransferMetrics(
+    val downloadSpeedBps: Long?,
+    val etaSeconds: Long?,
+    val lastProgressEpochMs: Long?,
+)
+
+internal fun calculateTransferMetrics(
+    previousBytes: Long,
+    previousEpochMs: Long,
+    currentBytes: Long,
+    currentEpochMs: Long,
+    totalBytes: Long,
+): TransferMetrics {
+    val safeCurrentBytes = currentBytes.coerceAtLeast(previousBytes.coerceAtLeast(0L))
+    val deltaBytes = (safeCurrentBytes - previousBytes.coerceAtLeast(0L)).coerceAtLeast(0L)
+    val elapsedMs = (currentEpochMs - previousEpochMs).coerceAtLeast(1L)
+    val speedBps = if (deltaBytes > 0L) {
+        ((deltaBytes * 1000L) / elapsedMs).coerceAtLeast(1L)
+    } else {
+        null
+    }
+    val etaSeconds = if ((speedBps ?: 0L) > 0L && totalBytes > 0L) {
+        ((totalBytes - safeCurrentBytes).coerceAtLeast(0L) / (speedBps ?: 1L))
+            .coerceAtLeast(0L)
+    } else {
+        null
+    }
+    return TransferMetrics(
+        downloadSpeedBps = speedBps,
+        etaSeconds = etaSeconds,
+        lastProgressEpochMs = currentEpochMs.takeIf { it > 0L },
+    )
 }

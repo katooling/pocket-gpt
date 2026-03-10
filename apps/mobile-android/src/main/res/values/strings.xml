@@ -61,7 +61,11 @@
     <string name="ui_gpu_acceleration_unavailable_with_reason">GPU acceleration unavailable (%1$s)</string>
     <string name="ui_gpu_acceleration_reason_model_required">download a model to validate</string>
     <string name="ui_gpu_acceleration_reason_unknown">unknown</string>
-    <string name="ui_gpu_acceleration_hint">GPU is opt-in. If unsupported or unstable, runtime automatically falls back to CPU.</string>
+    <string name="ui_gpu_acceleration_hint">GPU is opt-in. Explicit accelerator backends (Hexagon/OpenCL) fail fast with an explicit error when unsupported. Auto may continue on CPU when no accelerator is available.</string>
+    <string name="ui_gpu_backend_auto">Auto</string>
+    <string name="ui_gpu_backend_hexagon">Hexagon</string>
+    <string name="ui_gpu_backend_opencl">OpenCL</string>
+    <string name="ui_gpu_backend_cpu">CPU</string>
     <string name="ui_model_selection_title">Model selection</string>
     <string name="ui_export_diagnostics">Export diagnostics</string>
     <string name="ui_open_advanced_controls">Open advanced controls</string>
@@ -83,6 +87,8 @@
     <string name="ui_model_not_provisioned">Not provisioned</string>
     <string name="ui_model_provisioned_path">Path: %1$s</string>
     <string name="ui_model_provisioned_sha">SHA-256: %1$s...</string>
+    <string name="ui_model_path_origin_label">Location: %1$s</string>
+    <string name="ui_model_storage_root_label">Storage root: %1$s</string>
     <string name="ui_model_active_version_label">Active version: %1$s</string>
     <string name="ui_model_import">Import model file</string>
     <string name="ui_model_replace">Replace model file</string>
@@ -122,6 +128,16 @@
     <string name="ui_model_download_failed_timeout">Download failed for %1$s (%2$s): request timed out. Retry.</string>
     <string name="ui_model_download_failed_cancelled">Download cancelled for %1$s (%2$s).</string>
     <string name="ui_model_download_failed_unknown">Download failed for %1$s (%2$s). Review technical details and retry.</string>
+    <string name="ui_model_download_failure_panel_title">Download action required</string>
+    <string name="ui_model_stage_paused">Paused</string>
+    <string name="ui_model_stage_installing">Installing</string>
+    <string name="ui_model_stage_verifying_integrity">Verifying integrity</string>
+    <string name="ui_model_stage_failure_download">Network/download failure</string>
+    <string name="ui_model_stage_failure_verification">Verification failure</string>
+    <string name="ui_model_stage_failure_install">Install failure</string>
+    <string name="ui_model_stage_failure_corrupt">Corrupt task metadata</string>
+    <string name="ui_model_stage_low_storage">Low storage</string>
+    <string name="ui_model_stage_timeout">Request timed out</string>
     <string name="ui_model_download_version_label">%1$s • %2$s</string>
     <string name="ui_model_download_expected_size">Expected size: %1$s</string>
     <string name="ui_model_download_state">State: %1$s (%2$d%%)</string>
@@ -136,7 +152,28 @@
     <string name="ui_model_version_activation_failed">Version activation failed.</string>
     <string name="ui_model_version_removed">%1$s (%2$s) removed.</string>
     <string name="ui_model_version_remove_blocked">Cannot remove active version. Set another version active first.</string>
+    <string name="ui_model_runtime_lifecycle_title">Runtime load state</string>
+    <string name="ui_model_runtime_lifecycle_status">State: %1$s</string>
+    <string name="ui_model_runtime_loaded_version_label">Loaded: %1$s (%2$s)</string>
+    <string name="ui_model_runtime_load_last_used">Load last used model</string>
+    <string name="ui_model_runtime_load_last_used_short">Load last used (%1$s)</string>
+    <string name="ui_model_runtime_offload">Offload</string>
+    <string name="ui_model_runtime_failure">Runtime load failed (%1$s): %2$s</string>
+    <string name="ui_model_runtime_badge_label">Runtime: %1$s</string>
+    <string name="ui_model_runtime_loaded_badge">Loaded in runtime</string>
+    <string name="ui_model_runtime_load">Load</string>
+    <string name="ui_model_runtime_loading_action">Loading...</string>
+    <string name="ui_model_runtime_loaded_message">Loaded %1$s (%2$s) into runtime.</string>
+    <string name="ui_model_runtime_offloaded_message">Runtime model offloaded.</string>
+    <string name="ui_model_runtime_offload_queued">Offload queued and will run after active generation completes.</string>
+    <string name="ui_model_runtime_error_model_file_unavailable">Cannot load %1$s (%2$s): model file is unavailable.</string>
+    <string name="ui_model_runtime_error_incompatible">Cannot load %1$s (%2$s): runtime compatibility check failed.</string>
+    <string name="ui_model_runtime_error_backend_init">Runtime backend failed to initialize: %1$s</string>
+    <string name="ui_model_runtime_error_busy_generation">Runtime is busy generating. Wait for completion, then offload.</string>
+    <string name="ui_model_runtime_error_cancelled_newer_request">Load/offload request cancelled by a newer action.</string>
+    <string name="ui_model_runtime_error_unknown">Runtime model action failed: %1$s</string>
     <string name="ui_model_storage_summary">Storage • total=%1$d free=%2$d models=%3$d temp=%4$d bytes</string>
+    <string name="ui_model_storage_summary_human">Storage • total=%1$s free=%2$s models=%3$s temp=%4$s</string>
     <string name="ui_model_download_notification_title">Downloading model</string>
     <string name="ui_model_download_notification_body">%1$s • %2$d%%</string>
     <string name="ui_refresh_runtime_checks">Refresh runtime checks</string>

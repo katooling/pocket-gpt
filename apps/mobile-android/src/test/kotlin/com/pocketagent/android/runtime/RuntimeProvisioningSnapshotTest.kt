@@ -87,11 +87,33 @@ class RuntimeProvisioningSnapshotTest {
         assertTrue(snapshot.hasRecoverableCorruption)
     }
 
+    @Test
+    fun `snapshot stores root label and model path origin`() {
+        val snapshot = RuntimeProvisioningSnapshot(
+            models = listOf(
+                state(
+                    modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                    activeVersion = "q4_0",
+                    pathOrigin = ModelPathOrigin.IMPORTED_EXTERNAL,
+                    storageRootLabel = "App internal storage (/data/user/0/app/files)",
+                ),
+            ),
+            storageSummary = emptyStorage(),
+            requiredModelIds = setOf(ModelCatalog.QWEN_3_5_0_8B_Q4),
+            storageRootLabel = "App internal storage (/data/user/0/app/files)",
+        )
+
+        assertEquals("App internal storage (/data/user/0/app/files)", snapshot.storageRootLabel)
+        assertEquals(ModelPathOrigin.IMPORTED_EXTERNAL, snapshot.models.single().pathOrigin)
+    }
+
     private fun state(
         modelId: String,
         activeVersion: String?,
         absolutePath: String? = "/tmp/$modelId.gguf",
         sha: String? = "sha-$modelId",
+        pathOrigin: String = ModelPathOrigin.MANAGED,
+        storageRootLabel: String? = null,
         localFileMissing: Boolean = false,
     ): ProvisionedModelState {
         return ProvisionedModelState(
@@ -103,6 +125,8 @@ class RuntimeProvisioningSnapshotTest {
             importedAtEpochMs = null,
             activeVersion = activeVersion,
             installedVersions = emptyList(),
+            pathOrigin = pathOrigin,
+            storageRootLabel = storageRootLabel,
             localFileMissing = localFileMissing,
         )
     }

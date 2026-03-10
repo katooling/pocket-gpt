@@ -7,11 +7,13 @@ import androidx.lifecycle.viewModelScope
 import com.pocketagent.android.runtime.ProvisioningGateway
 import com.pocketagent.android.runtime.RuntimeDomainException
 import com.pocketagent.android.runtime.RuntimeModelImportResult
+import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +26,7 @@ import kotlinx.coroutines.withContext
 
 data class ModelProvisioningUiState(
     val snapshot: RuntimeProvisioningSnapshot? = null,
+    val lifecycle: RuntimeModelLifecycleSnapshot = RuntimeModelLifecycleSnapshot.initial(),
     val downloads: List<DownloadTaskState> = emptyList(),
     val manifest: ModelDistributionManifest = ModelDistributionManifest(models = emptyList()),
     val isImporting: Boolean = false,
@@ -44,10 +47,16 @@ class ModelProvisioningViewModel(
 
     init {
         refreshSnapshot()
+        refreshLifecycle()
         viewModelScope.launch {
             gateway.observeDownloads().collect { downloads ->
                 _uiState.update { state -> state.copy(downloads = downloads) }
                 refreshSnapshot()
+            }
+        }
+        viewModelScope.launch {
+            gateway.observeModelLifecycle().collect { lifecycle ->
+                _uiState.update { state -> state.copy(lifecycle = lifecycle) }
             }
         }
     }
@@ -61,13 +70,19 @@ class ModelProvisioningViewModel(
             do {
                 snapshotRefreshQueued = false
                 val snapshot = gateway.currentSnapshot()
-                _uiState.update { state -> state.copy(snapshot = snapshot) }
+                val lifecycle = gateway.currentModelLifecycle()
+                _uiState.update { state -> state.copy(snapshot = snapshot, lifecycle = lifecycle) }
             } while (snapshotRefreshQueued && isActive)
         }.also { job ->
             job.invokeOnCompletion {
                 snapshotRefreshJob = null
             }
         }
+    }
+
+    fun refreshLifecycle() {
+        val lifecycle = gateway.currentModelLifecycle()
+        _uiState.update { state -> state.copy(lifecycle = lifecycle) }
     }
 
     suspend fun refreshManifest() {
@@ -114,6 +129,7 @@ class ModelProvisioningViewModel(
         if (changed) {
             refreshSnapshot()
         }
+        refreshLifecycle()
         return changed
     }
 
@@ -124,6 +140,7 @@ class ModelProvisioningViewModel(
         if (changed) {
             refreshSnapshot()
         }
+        refreshLifecycle()
         return changed
     }
 
@@ -132,6 +149,7 @@ class ModelProvisioningViewModel(
         if (removed) {
             refreshSnapshot()
         }
+        refreshLifecycle()
         return removed
     }
 
@@ -142,7 +160,32 @@ class ModelProvisioningViewModel(
         if (removed) {
             refreshSnapshot()
         }
+        refreshLifecycle()
         return removed
+    }
+
+    suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult {
+        val result = withContext(ioDispatcher) {
+            gateway.loadInstalledModel(modelId = modelId, version = version)
+        }
+        refreshLifecycle()
+        return result
+    }
+
+    suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult {
+        val result = withContext(ioDispatcher) {
+            gateway.loadLastUsedModel()
+        }
+        refreshLifecycle()
+        return result
+    }
+
+    suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
+        val result = withContext(ioDispatcher) {
+            gateway.offloadModel(reason = reason)
+        }
+        refreshLifecycle()
+        return result
     }
 
     fun enqueueDownload(version: ModelDistributionVersion): String {

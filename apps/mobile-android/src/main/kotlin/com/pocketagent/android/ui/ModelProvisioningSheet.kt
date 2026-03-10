@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -23,14 +25,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.runtime.ModelPathOrigin
 import com.pocketagent.android.runtime.ProvisioningReadiness
+import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
+import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadProcessingStage
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ManifestSource
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import com.pocketagent.nativebridge.ModelLifecycleState
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,6 +44,7 @@ import java.util.Locale
 @Composable
 internal fun ModelProvisioningSheet(
     snapshot: RuntimeProvisioningSnapshot,
+    lifecycle: RuntimeModelLifecycleSnapshot,
     manifest: ModelDistributionManifest,
     downloads: List<DownloadTaskState>,
     isImporting: Boolean,
@@ -50,6 +57,9 @@ internal fun ModelProvisioningSheet(
     onRetryDownload: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
     onActivateVersion: (String, String) -> Unit,
+    onLoadVersion: (String, String) -> Unit,
+    onLoadLastUsedModel: () -> Unit,
+    onOffloadModel: (String) -> Unit,
     onRemoveVersion: (String, String) -> Unit,
     onRefreshManifest: () -> Unit,
     onRefreshRuntime: () -> Unit,
@@ -158,6 +168,67 @@ internal fun ModelProvisioningSheet(
                 }
             }
         }
+        item {
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.ui_model_runtime_lifecycle_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_model_runtime_lifecycle_status,
+                            lifecycle.readableRuntimeStateLabel(),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    lifecycle.loadedModel?.let { loaded ->
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_runtime_loaded_version_label,
+                                loaded.modelId,
+                                loaded.modelVersion.orEmpty(),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (lifecycle.loadedModel == null && lifecycle.lastUsedModel != null) {
+                        OutlinedButton(
+                            onClick = onLoadLastUsedModel,
+                            enabled = !isImporting && lifecycle.state != ModelLifecycleState.LOADING,
+                        ) {
+                            Text(stringResource(id = R.string.ui_model_runtime_load_last_used))
+                        }
+                    }
+                    if (lifecycle.loadedModel != null) {
+                        OutlinedButton(
+                            onClick = { onOffloadModel("manual_model_offload") },
+                            enabled = !isImporting && lifecycle.state != ModelLifecycleState.OFFLOADING,
+                        ) {
+                            Text(stringResource(id = R.string.ui_model_runtime_offload))
+                        }
+                    }
+                    if (lifecycle.state == ModelLifecycleState.FAILED && lifecycle.errorCode != null) {
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_runtime_failure,
+                                lifecycle.errorCode.name.lowercase(),
+                                lifecycle.errorDetail.orEmpty(),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        }
 
         item {
             Text(
@@ -175,6 +246,14 @@ internal fun ModelProvisioningSheet(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(model.displayName, style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_model_runtime_badge_label,
+                            lifecycle.modelRuntimeBadge(model.modelId),
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     if (model.isProvisioned) {
                         Text(
                             text = stringResource(id = R.string.ui_model_active_version_label, model.activeVersion.orEmpty()),
@@ -192,6 +271,24 @@ internal fun ModelProvisioningSheet(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_path_origin_label,
+                                model.pathOrigin.readableName(),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        model.storageRootLabel?.takeIf { it.isNotBlank() }?.let { rootLabel ->
+                            Text(
+                                text = stringResource(
+                                    id = R.string.ui_model_storage_root_label,
+                                    rootLabel,
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     } else {
                         Text(
                             text = stringResource(id = R.string.ui_model_not_provisioned),
@@ -307,6 +404,34 @@ internal fun ModelProvisioningSheet(
                             ),
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        LinearProgressIndicator(
+                            progress = { latest.progressPercent.coerceIn(0, 100) / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        latest.transferSummary()?.let { transferSummary ->
+                            Text(
+                                text = transferSummary,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        val stageWarnings = latest.stageWarningChips()
+                        if (stageWarnings.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                stageWarnings.forEach { warning ->
+                                    AssistChip(
+                                        onClick = { },
+                                        enabled = false,
+                                        label = {
+                                            Text(warning)
+                                        },
+                                    )
+                                }
+                            }
+                        }
                         latest.message?.takeIf { it.isNotBlank() }?.let { message ->
                             Text(
                                 text = message,
@@ -350,6 +475,41 @@ internal fun ModelProvisioningSheet(
                         if (latest != null && latest.status == DownloadTaskStatus.FAILED) {
                             OutlinedButton(onClick = { onRetryDownload(latest.taskId) }) {
                                 Text(stringResource(id = R.string.ui_model_download_retry))
+                            }
+                        }
+                    }
+                    if (latest != null && latest.status == DownloadTaskStatus.FAILED) {
+                        Card {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(id = R.string.ui_model_download_failure_panel_title),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                Text(
+                                    text = latest.failureReasonMessage(version = version),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    OutlinedButton(onClick = { onRetryDownload(latest.taskId) }) {
+                                        Text(stringResource(id = R.string.ui_model_download_retry))
+                                    }
+                                    OutlinedButton(onClick = { onCancelDownload(latest.taskId) }) {
+                                        Text(stringResource(id = R.string.ui_cancel_button))
+                                    }
+                                    OutlinedButton(onClick = onRefreshManifest) {
+                                        Text(stringResource(id = R.string.ui_model_refresh_manifest))
+                                    }
+                                }
                             }
                         }
                     }
@@ -433,6 +593,22 @@ internal fun ModelProvisioningSheet(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_path_origin_label,
+                                model.pathOrigin.readableName(),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        val isLoadedVersion = lifecycle.loadedModel?.modelId == model.modelId &&
+                            lifecycle.loadedModel?.modelVersion == version.version
+                        val isLoadingVersion = lifecycle.requestedModel?.modelId == model.modelId &&
+                            lifecycle.requestedModel?.modelVersion == version.version &&
+                            lifecycle.state == ModelLifecycleState.LOADING
+                        val isOffloadingVersion = lifecycle.requestedModel?.modelId == model.modelId &&
+                            lifecycle.requestedModel?.modelVersion == version.version &&
+                            lifecycle.state == ModelLifecycleState.OFFLOADING
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -454,9 +630,38 @@ internal fun ModelProvisioningSheet(
                                     Text(stringResource(id = R.string.ui_model_activate_version))
                                 }
                             }
+                            if (isLoadedVersion) {
+                                Text(
+                                    text = stringResource(id = R.string.ui_model_runtime_loaded_badge),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                OutlinedButton(
+                                    onClick = { onOffloadModel("manual_model_offload") },
+                                    enabled = !isImporting && !isOffloadingVersion,
+                                ) {
+                                    Text(stringResource(id = R.string.ui_model_runtime_offload))
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { onLoadVersion(model.modelId, version.version) },
+                                    enabled = !isImporting && !isLoadingVersion &&
+                                        lifecycle.state != ModelLifecycleState.OFFLOADING,
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            id = if (isLoadingVersion) {
+                                                R.string.ui_model_runtime_loading_action
+                                            } else {
+                                                R.string.ui_model_runtime_load
+                                            },
+                                        ),
+                                    )
+                                }
+                            }
                             OutlinedButton(
                                 onClick = { onRemoveVersion(model.modelId, version.version) },
-                                enabled = !version.isActive && !isImporting,
+                                enabled = !version.isActive && !isImporting && !isLoadedVersion,
                             ) {
                                 Text(stringResource(id = R.string.ui_model_remove_version))
                             }
@@ -470,17 +675,26 @@ internal fun ModelProvisioningSheet(
 
         item {
             val storage = snapshot.storageSummary
-            Text(
-                text = stringResource(
-                    id = R.string.ui_model_storage_summary,
-                    storage.totalBytes,
-                    storage.freeBytes,
-                    storage.usedByModelsBytes,
-                    storage.tempDownloadBytes,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_model_storage_summary_human,
+                        storage.totalBytes.formatAsGiB(),
+                        storage.freeBytes.formatAsGiB(),
+                        storage.usedByModelsBytes.formatAsGiB(),
+                        storage.tempDownloadBytes.formatAsGiB(),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                snapshot.storageRootLabel?.takeIf { it.isNotBlank() }?.let { rootLabel ->
+                    Text(
+                        text = stringResource(id = R.string.ui_model_storage_root_label, rootLabel),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         statusMessage?.let { message ->
@@ -544,6 +758,131 @@ internal fun DownloadTaskState.readableStateName(): String {
     }
 }
 
+internal fun DownloadTaskState.transferSummary(): String? {
+    val speed = downloadSpeedBps?.takeIf { it > 0L } ?: return null
+    val eta = etaSeconds?.takeIf { it >= 0L }
+    return buildString {
+        append("${speed.formatAsPerSecond()}")
+        eta?.let { seconds ->
+            append(" • ETA ${seconds.formatAsEta()}")
+        }
+    }
+}
+
+private fun RuntimeModelLifecycleSnapshot.readableRuntimeStateLabel(): String {
+    return when (state) {
+        ModelLifecycleState.UNLOADED -> "unloaded"
+        ModelLifecycleState.LOADING -> "loading"
+        ModelLifecycleState.LOADED -> "loaded"
+        ModelLifecycleState.OFFLOADING -> if (queuedOffload) "offloading (queued)" else "offloading"
+        ModelLifecycleState.FAILED -> "failed"
+    }
+}
+
+private fun RuntimeModelLifecycleSnapshot.modelRuntimeBadge(modelId: String): String {
+    val loaded = loadedModel
+    if (loaded != null && loaded.modelId == modelId) {
+        return "loaded"
+    }
+    val requested = requestedModel
+    if (requested != null && requested.modelId == modelId) {
+        return when (state) {
+            ModelLifecycleState.LOADING -> "loading"
+            ModelLifecycleState.OFFLOADING -> "offloading"
+            else -> "unloaded"
+        }
+    }
+    return "unloaded"
+}
+
+@Composable
+private fun DownloadTaskState.stageWarningChips(): List<String> {
+    val chips = mutableListOf<String>()
+    when (status) {
+        DownloadTaskStatus.PAUSED -> chips += stringResource(id = R.string.ui_model_stage_paused)
+        DownloadTaskStatus.VERIFYING -> chips += if (processingStage == DownloadProcessingStage.INSTALLING) {
+            stringResource(id = R.string.ui_model_stage_installing)
+        } else {
+            stringResource(id = R.string.ui_model_stage_verifying_integrity)
+        }
+        DownloadTaskStatus.FAILED -> {
+            chips += when (processingStage) {
+                DownloadProcessingStage.DOWNLOADING -> stringResource(id = R.string.ui_model_stage_failure_download)
+                DownloadProcessingStage.VERIFYING -> stringResource(id = R.string.ui_model_stage_failure_verification)
+                DownloadProcessingStage.INSTALLING -> stringResource(id = R.string.ui_model_stage_failure_install)
+                DownloadProcessingStage.CORRUPT -> stringResource(id = R.string.ui_model_stage_failure_corrupt)
+            }
+        }
+        else -> Unit
+    }
+    if (failureReason == DownloadFailureReason.INSUFFICIENT_STORAGE) {
+        chips += stringResource(id = R.string.ui_model_stage_low_storage)
+    }
+    if (failureReason == DownloadFailureReason.TIMEOUT) {
+        chips += stringResource(id = R.string.ui_model_stage_timeout)
+    }
+    return chips
+}
+
+@Composable
+private fun DownloadTaskState.failureReasonMessage(version: ModelDistributionVersion): String {
+    return when (failureReason) {
+        DownloadFailureReason.CHECKSUM_MISMATCH -> stringResource(
+            id = R.string.ui_model_download_failed_checksum,
+            version.modelId,
+            version.version,
+        )
+        DownloadFailureReason.PROVENANCE_MISMATCH -> stringResource(
+            id = R.string.ui_model_download_failed_provenance,
+            version.modelId,
+            version.version,
+        )
+        DownloadFailureReason.RUNTIME_INCOMPATIBLE -> stringResource(
+            id = R.string.ui_model_download_failed_runtime_compat,
+            version.modelId,
+            version.version,
+        )
+        DownloadFailureReason.INSUFFICIENT_STORAGE -> stringResource(
+            id = R.string.ui_model_download_failed_storage,
+            version.modelId,
+            version.version,
+        )
+        DownloadFailureReason.NETWORK_UNAVAILABLE,
+        DownloadFailureReason.NETWORK_ERROR,
+        -> stringResource(
+            id = R.string.ui_model_download_failed_network,
+            version.modelId,
+            version.version,
+        )
+        DownloadFailureReason.TIMEOUT -> stringResource(
+            id = R.string.ui_model_download_failed_timeout,
+            version.modelId,
+            version.version,
+        )
+        DownloadFailureReason.CANCELLED -> stringResource(
+            id = R.string.ui_model_download_failed_cancelled,
+            version.modelId,
+            version.version,
+        )
+        DownloadFailureReason.UNKNOWN,
+        null,
+        -> stringResource(
+            id = R.string.ui_model_download_failed_unknown,
+            version.modelId,
+            version.version,
+        )
+    }
+}
+
+internal fun String.readableName(): String {
+    return when (this) {
+        ModelPathOrigin.MANAGED -> "managed"
+        ModelPathOrigin.IMPORTED_EXTERNAL -> "imported external"
+        ModelPathOrigin.DISCOVERED_RECOVERED -> "discovered recovery"
+        else -> this
+    }
+}
+
 private fun ManifestSource.readableNameRes(): Int {
     return when (this) {
         ManifestSource.BUNDLED -> R.string.ui_model_catalog_source_bundled
@@ -577,6 +916,29 @@ internal fun Long.formatAsGiB(): String {
         this.toDouble() / BYTES_PER_GIB
     }
     return String.format(Locale.US, "%.2f GB", gib)
+}
+
+internal fun Long.formatAsPerSecond(): String {
+    val mib = this.toDouble() / (1024.0 * 1024.0)
+    if (mib >= 1.0) {
+        return String.format(Locale.US, "%.2f MB/s", mib)
+    }
+    val kib = this.toDouble() / 1024.0
+    if (kib >= 1.0) {
+        return String.format(Locale.US, "%.1f KB/s", kib)
+    }
+    return "$this B/s"
+}
+
+internal fun Long.formatAsEta(): String {
+    val safe = coerceAtLeast(0L)
+    val minutes = safe / 60L
+    val seconds = safe % 60L
+    return if (minutes > 0L) {
+        "${minutes}m ${seconds}s"
+    } else {
+        "${seconds}s"
+    }
 }
 
 private const val BYTES_PER_GIB: Double = 1024.0 * 1024.0 * 1024.0

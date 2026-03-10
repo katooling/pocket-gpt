@@ -71,6 +71,9 @@ class ModelDownloadManager(
             status = DownloadTaskStatus.QUEUED,
             progressBytes = 0L,
             totalBytes = version.fileSizeBytes,
+            downloadSpeedBps = null,
+            etaSeconds = null,
+            lastProgressEpochMs = null,
             updatedAtEpochMs = now,
             message = "Queued",
         )
@@ -86,6 +89,8 @@ class ModelDownloadManager(
             appContext,
             state.copy(
                 status = DownloadTaskStatus.PAUSED,
+                downloadSpeedBps = null,
+                etaSeconds = null,
                 updatedAtEpochMs = System.currentTimeMillis(),
                 message = "Paused",
             ),
@@ -104,6 +109,8 @@ class ModelDownloadManager(
             processingStage = DownloadProcessingStage.DOWNLOADING,
             updatedAtEpochMs = System.currentTimeMillis(),
             failureReason = null,
+            downloadSpeedBps = null,
+            etaSeconds = null,
             message = "Resumed",
         )
         ModelDownloadTaskStateStore.upsert(appContext, resumed)
@@ -123,6 +130,9 @@ class ModelDownloadManager(
             progressBytes = 0L,
             updatedAtEpochMs = System.currentTimeMillis(),
             failureReason = null,
+            downloadSpeedBps = null,
+            etaSeconds = null,
+            lastProgressEpochMs = null,
             message = "Retrying",
         )
         ModelDownloadTaskStateStore.upsert(appContext, retried)
@@ -139,6 +149,8 @@ class ModelDownloadManager(
             state.copy(
                 status = DownloadTaskStatus.CANCELLED,
                 failureReason = DownloadFailureReason.CANCELLED,
+                downloadSpeedBps = null,
+                etaSeconds = null,
                 updatedAtEpochMs = System.currentTimeMillis(),
                 message = "Cancelled",
             ),
@@ -181,6 +193,8 @@ class ModelDownloadManager(
                     appContext,
                     state.copy(
                         updatedAtEpochMs = now,
+                        downloadSpeedBps = null,
+                        etaSeconds = null,
                         message = nextMessage,
                     ),
                 )
@@ -204,7 +218,11 @@ class ModelDownloadManager(
             seenTaskIds += taskId
             val status = when (info.state) {
                 WorkInfo.State.ENQUEUED -> DownloadTaskStatus.QUEUED
-                WorkInfo.State.RUNNING -> DownloadTaskStatus.DOWNLOADING
+                WorkInfo.State.RUNNING -> if (existing.status == DownloadTaskStatus.VERIFYING) {
+                    DownloadTaskStatus.VERIFYING
+                } else {
+                    DownloadTaskStatus.DOWNLOADING
+                }
                 WorkInfo.State.SUCCEEDED -> DownloadTaskStatus.COMPLETED
                 WorkInfo.State.CANCELLED -> {
                     if (existing.status == DownloadTaskStatus.PAUSED) {
@@ -237,6 +255,8 @@ class ModelDownloadManager(
                 states[existing.taskId] = existing.copy(
                     status = DownloadTaskStatus.FAILED,
                     failureReason = DownloadFailureReason.UNKNOWN,
+                    downloadSpeedBps = null,
+                    etaSeconds = null,
                     updatedAtEpochMs = now,
                     message = "Download interrupted. Retry or cancel.",
                 )

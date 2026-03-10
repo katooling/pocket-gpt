@@ -23,4 +23,10 @@ class ModelProvisioningSheetSizeFormatTest {
 
         assertEquals("0.47 GB", bytes.formatAsGiB())
     }
+
+    @Test
+    fun `formatAsPerSecond and formatAsEta provide user friendly units`() {
+        assertEquals("2.00 MB/s", (2L * 1024L * 1024L).formatAsPerSecond())
+        assertEquals("2m 5s", 125L.formatAsEta())
+    }
 }

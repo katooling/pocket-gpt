@@ -38,6 +38,8 @@ class AndroidRuntimeProvisioningStore(
         ensureMigrated()
         val corruptionSignals = mutableListOf<ProvisioningRecoverySignal>()
         corruptionSignals += drainMigrationCorruptionSignals()
+        val storageRoot = managedStorageRoot()
+        val storageRootLabel = describeStorageRoot(storageRoot)
         val dynamicIdsResult = readDynamicModelIdsWithDiagnostics()
         dynamicIdsResult.signal?.let { corruptionSignals += it }
         val specs = allModelSpecs(dynamicIdsResult.ids)
@@ -47,26 +49,52 @@ class AndroidRuntimeProvisioningStore(
             val versions = versionResult.versions
             val activeVersion = prefs.readOptional(activeVersionKey(spec))
             val active = versions.firstOrNull { it.version == activeVersion }
-            val localFileMissing = active?.absolutePath
-                ?.takeIf { it.isNotBlank() }
-                ?.let { path -> !File(path).exists() }
+            val activePath = active?.absolutePath?.trim().orEmpty()
+            val activeFile = activePath.takeIf { it.isNotBlank() }?.let(::File)
+            val localFileMissing = activeFile
+                ?.let { file -> !file.exists() || !file.isFile }
                 ?: false
+            val fallbackAliasPath = if (localFileMissing && activePath.isNotBlank()) {
+                resolveFallbackModelPath(spec = spec, missingPath = activePath)
+            } else {
+                null
+            }
+            if (fallbackAliasPath != null) {
+                corruptionSignals += ProvisioningRecoverySignal(
+                    code = "MODEL_PATH_ALIAS_STALE",
+                    message = "Model path alias is stale for ${spec.modelId}. Refresh runtime checks to re-link local files.",
+                    technicalDetail = "model=${spec.modelId};missing_path=$activePath;fallback_path=$fallbackAliasPath",
+                )
+            }
             if (localFileMissing) {
                 corruptionSignals += ProvisioningRecoverySignal(
                     code = "MODEL_LOCAL_FILE_MISSING",
                     message = "Active model file is missing for ${spec.modelId}. Re-download or import a local file.",
-                    technicalDetail = "model=${spec.modelId};path=${active?.absolutePath.orEmpty()}",
+                    technicalDetail = "model=${spec.modelId};path=$activePath",
                 )
             }
+            if (active != null && !localFileMissing && activeFile != null) {
+                corruptionSignals += activeMetadataSignals(
+                    spec = spec,
+                    activeVersion = active,
+                    activeFile = activeFile,
+                )
+            }
+            val pathOrigin = resolvePathOrigin(
+                activeVersion = activeVersion,
+                absolutePath = activePath,
+            )
             ProvisionedModelState(
                 modelId = spec.modelId,
                 displayName = spec.displayName,
                 fileName = spec.fileName,
-                absolutePath = active?.absolutePath,
+                absolutePath = activePath.ifBlank { null },
                 sha256 = active?.sha256,
                 importedAtEpochMs = active?.importedAtEpochMs,
                 activeVersion = activeVersion,
                 installedVersions = versions,
+                pathOrigin = pathOrigin,
+                storageRootLabel = if (pathOrigin == ModelPathOrigin.MANAGED) storageRootLabel else null,
                 localFileMissing = localFileMissing,
             )
         }
@@ -74,6 +102,7 @@ class AndroidRuntimeProvisioningStore(
             models = models,
             storageSummary = storageSummary(),
             requiredModelIds = startupCandidateModelIds,
+            storageRootLabel = storageRootLabel,
             recoverableCorruptions = corruptionSignals.distinctBy { signal -> "${signal.code}:${signal.technicalDetail}" },
         )
     }
@@ -227,6 +256,46 @@ class AndroidRuntimeProvisioningStore(
         return readInstalledVersions(modelSpecFor(modelId))
     }
 
+    fun recordLastLoadedModel(modelId: String, version: String) {
+        val normalizedModelId = modelId.trim()
+        val normalizedVersion = version.trim()
+        if (normalizedModelId.isBlank() || normalizedVersion.isBlank()) {
+            return
+        }
+        prefs.edit()
+            .putString(PROVISIONING_LAST_LOADED_MODEL_ID_KEY, normalizedModelId)
+            .putString(PROVISIONING_LAST_LOADED_MODEL_VERSION_KEY, normalizedVersion)
+            .apply()
+    }
+
+    fun clearLastLoadedModel() {
+        prefs.edit()
+            .remove(PROVISIONING_LAST_LOADED_MODEL_ID_KEY)
+            .remove(PROVISIONING_LAST_LOADED_MODEL_VERSION_KEY)
+            .apply()
+    }
+
+    internal fun lastLoadedModel(): LastLoadedModelRef? {
+        ensureMigrated()
+        val modelId = prefs.readOptional(PROVISIONING_LAST_LOADED_MODEL_ID_KEY) ?: return null
+        val version = prefs.readOptional(PROVISIONING_LAST_LOADED_MODEL_VERSION_KEY) ?: return null
+        val installed = runCatching { readInstalledVersions(modelSpecFor(modelId)) }
+            .getOrElse {
+                clearLastLoadedModel()
+                return null
+            }
+        val matched = installed.firstOrNull { descriptor -> descriptor.version == version } ?: run {
+            clearLastLoadedModel()
+            return null
+        }
+        val file = File(matched.absolutePath)
+        if (!file.exists() || !file.isFile) {
+            clearLastLoadedModel()
+            return null
+        }
+        return LastLoadedModelRef(modelId = modelId, version = version)
+    }
+
     fun setActiveVersion(modelId: String, version: String): Boolean {
         val spec = modelSpecFor(modelId)
         return withModelLock(modelId) {
@@ -256,6 +325,10 @@ class AndroidRuntimeProvisioningStore(
                 absolutePath = target.absolutePath,
                 remainingEntries = versions,
             )
+            val lastLoaded = lastLoadedModel()
+            if (lastLoaded != null && lastLoaded.modelId == modelId && lastLoaded.version == version) {
+                clearLastLoadedModel()
+            }
             if (versions.isEmpty() && !isBaselineModel(modelId)) {
                 unregisterDynamicModelId(modelId)
             }
@@ -670,6 +743,76 @@ class AndroidRuntimeProvisioningStore(
         return candidatePath == rootPath || candidatePath.startsWith("$rootPath${File.separator}")
     }
 
+    private fun resolvePathOrigin(
+        activeVersion: String?,
+        absolutePath: String,
+    ): String {
+        if (activeVersion == PROVISIONING_DISCOVERED_VERSION_FALLBACK) {
+            return ModelPathOrigin.DISCOVERED_RECOVERED
+        }
+        if (absolutePath.isBlank()) {
+            return ModelPathOrigin.MANAGED
+        }
+        return if (isManagedModelFile(File(absolutePath))) {
+            ModelPathOrigin.MANAGED
+        } else {
+            ModelPathOrigin.IMPORTED_EXTERNAL
+        }
+    }
+
+    private fun activeMetadataSignals(
+        spec: ModelSpec,
+        activeVersion: ModelVersionDescriptor,
+        activeFile: File,
+    ): List<ProvisioningRecoverySignal> {
+        val signals = mutableListOf<ProvisioningRecoverySignal>()
+        val sha = activeVersion.sha256.trim()
+        if (!SHA256_HEX_REGEX.matches(sha)) {
+            signals += ProvisioningRecoverySignal(
+                code = "MODEL_METADATA_SHA_INVALID",
+                message = "Model metadata is inconsistent for ${spec.modelId}. Re-import or re-download to refresh integrity metadata.",
+                technicalDetail = "model=${spec.modelId};version=${activeVersion.version};sha=$sha",
+            )
+        }
+        val actualSize = activeFile.length().coerceAtLeast(0L)
+        val declaredSize = activeVersion.fileSizeBytes.coerceAtLeast(0L)
+        if (declaredSize > 0L && actualSize > 0L && declaredSize != actualSize) {
+            signals += ProvisioningRecoverySignal(
+                code = "MODEL_METADATA_SIZE_MISMATCH",
+                message = "Model file size does not match stored metadata for ${spec.modelId}. Re-import or re-download to repair.",
+                technicalDetail = "model=${spec.modelId};version=${activeVersion.version};declared=$declaredSize;actual=$actualSize",
+            )
+        }
+        if (activeVersion.runtimeCompatibility != PROVISIONING_RUNTIME_COMPATIBILITY_TAG) {
+            signals += ProvisioningRecoverySignal(
+                code = "MODEL_METADATA_RUNTIME_MISMATCH",
+                message = "Model runtime compatibility metadata is outdated for ${spec.modelId}. Use a compatible download.",
+                technicalDetail = "model=${spec.modelId};version=${activeVersion.version};stored_runtime=${activeVersion.runtimeCompatibility};expected=$PROVISIONING_RUNTIME_COMPATIBILITY_TAG",
+            )
+        }
+        if (activeVersion.provenanceIssuer.isBlank() || activeVersion.provenanceSignature.isBlank()) {
+            signals += ProvisioningRecoverySignal(
+                code = "MODEL_METADATA_PROVENANCE_MISSING",
+                message = "Model provenance metadata is incomplete for ${spec.modelId}. Re-download verified artifacts.",
+                technicalDetail = "model=${spec.modelId};version=${activeVersion.version};issuer_blank=${activeVersion.provenanceIssuer.isBlank()};signature_blank=${activeVersion.provenanceSignature.isBlank()}",
+            )
+        }
+        return signals
+    }
+
+    private fun describeStorageRoot(root: File): String {
+        val isExternalMedia = context.externalMediaDirs
+            .asSequence()
+            .filterNotNull()
+            .any { candidate -> isPathWithin(root, candidate) || isPathWithin(candidate, root) }
+        val bucket = if (isExternalMedia) {
+            "External app media"
+        } else {
+            "App internal storage"
+        }
+        return "$bucket (${root.absolutePath})"
+    }
+
     internal fun sanitizeVersion(raw: String): String {
         return raw
             .trim()
@@ -758,6 +901,8 @@ class AndroidRuntimeProvisioningStore(
     }
 
     companion object {
+        private val SHA256_HEX_REGEX = Regex("^[a-fA-F0-9]{64}$")
+
         internal fun baselineModelIdsForTesting(): Set<String> {
             return provisioningBaselineModelIdsForTesting()
         }

@@ -10,7 +10,7 @@ import org.json.JSONObject
 
 internal object ModelDownloadTaskStateStore {
     private const val DB_NAME = "pocketagent_model_downloads.db"
-    private const val DB_VERSION = 1
+    private const val DB_VERSION = 2
     private const val TABLE = "download_tasks"
 
     private const val LEGACY_PREFS_NAME = "pocketagent_model_downloads"
@@ -89,6 +89,9 @@ internal object ModelDownloadTaskStateStore {
             put("status", task.status.name)
             put("progress_bytes", task.progressBytes)
             put("total_bytes", task.totalBytes)
+            put("download_speed_bps", task.downloadSpeedBps)
+            put("eta_seconds", task.etaSeconds)
+            put("last_progress_epoch_ms", task.lastProgressEpochMs)
             put("updated_at_epoch_ms", task.updatedAtEpochMs)
             put("failure_reason", task.failureReason?.name)
             put("message", task.message)
@@ -117,6 +120,9 @@ internal object ModelDownloadTaskStateStore {
             statusRaw = json.optString("status", DownloadTaskStatus.QUEUED.name),
             progressBytes = json.optLong("progressBytes", 0L).coerceAtLeast(0L),
             totalBytes = json.optLong("totalBytes", 0L).coerceAtLeast(0L),
+            downloadSpeedBps = json.optLong("downloadSpeedBps", -1L).takeIf { value -> value > 0L },
+            etaSeconds = json.optLong("etaSeconds", -1L).takeIf { value -> value >= 0L },
+            lastProgressEpochMs = json.optLong("lastProgressEpochMs", -1L).takeIf { value -> value > 0L },
             updatedAtEpochMs = json.optLong("updatedAtEpochMs", System.currentTimeMillis()),
             failureReasonRaw = json.optString("failureReason", ""),
             message = json.optString("message", "").trim().ifEmpty { null },
@@ -138,6 +144,9 @@ internal object ModelDownloadTaskStateStore {
             statusRaw = cursor.stringOrEmpty("status"),
             progressBytes = cursor.longOrZero("progress_bytes"),
             totalBytes = cursor.longOrZero("total_bytes"),
+            downloadSpeedBps = cursor.longOrNull("download_speed_bps"),
+            etaSeconds = cursor.longOrNull("eta_seconds"),
+            lastProgressEpochMs = cursor.longOrNull("last_progress_epoch_ms"),
             updatedAtEpochMs = cursor.longOrZero("updated_at_epoch_ms"),
             failureReasonRaw = cursor.stringOrEmpty("failure_reason"),
             message = cursor.stringOrEmpty("message").ifBlank { null },
@@ -158,6 +167,9 @@ internal object ModelDownloadTaskStateStore {
         statusRaw: String,
         progressBytes: Long,
         totalBytes: Long,
+        downloadSpeedBps: Long?,
+        etaSeconds: Long?,
+        lastProgressEpochMs: Long?,
         updatedAtEpochMs: Long,
         failureReasonRaw: String,
         message: String?,
@@ -209,6 +221,9 @@ internal object ModelDownloadTaskStateStore {
             status = if (isCorrupt) DownloadTaskStatus.FAILED else status ?: DownloadTaskStatus.FAILED,
             progressBytes = progressBytes.coerceAtLeast(0L),
             totalBytes = totalBytes.coerceAtLeast(0L),
+            downloadSpeedBps = downloadSpeedBps?.takeIf { value -> value > 0L },
+            etaSeconds = etaSeconds?.takeIf { value -> value >= 0L },
+            lastProgressEpochMs = lastProgressEpochMs?.takeIf { value -> value > 0L },
             updatedAtEpochMs = updatedAtEpochMs.takeIf { it > 0L } ?: System.currentTimeMillis(),
             failureReason = if (isCorrupt) DownloadFailureReason.UNKNOWN else failure,
             message = resolvedMessage,
@@ -261,6 +276,9 @@ internal object ModelDownloadTaskStateStore {
                     status TEXT NOT NULL,
                     progress_bytes INTEGER NOT NULL,
                     total_bytes INTEGER NOT NULL,
+                    download_speed_bps INTEGER,
+                    eta_seconds INTEGER,
+                    last_progress_epoch_ms INTEGER,
                     updated_at_epoch_ms INTEGER NOT NULL,
                     failure_reason TEXT,
                     message TEXT
@@ -271,7 +289,11 @@ internal object ModelDownloadTaskStateStore {
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            // No-op for initial schema.
+            if (oldVersion < 2) {
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN download_speed_bps INTEGER")
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN eta_seconds INTEGER")
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN last_progress_epoch_ms INTEGER")
+            }
         }
     }
 }
@@ -288,6 +310,14 @@ private fun Cursor.longOrZero(columnName: String): Long {
     val index = getColumnIndex(columnName)
     if (index < 0 || isNull(index)) {
         return 0L
+    }
+    return getLong(index)
+}
+
+private fun Cursor.longOrNull(columnName: String): Long? {
+    val index = getColumnIndex(columnName)
+    if (index < 0 || isNull(index)) {
+        return null
     }
     return getLong(index)
 }

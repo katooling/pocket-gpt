@@ -13,6 +13,8 @@ data class ProvisionedModelState(
     val importedAtEpochMs: Long?,
     val activeVersion: String?,
     val installedVersions: List<ModelVersionDescriptor>,
+    val pathOrigin: String = ModelPathOrigin.MANAGED,
+    val storageRootLabel: String? = null,
     val localFileMissing: Boolean = false,
 ) {
     val isProvisioned: Boolean
@@ -29,6 +31,7 @@ data class RuntimeProvisioningSnapshot(
     val models: List<ProvisionedModelState>,
     val storageSummary: StorageSummary,
     val requiredModelIds: Set<String>,
+    val storageRootLabel: String? = null,
     val recoverableCorruptions: List<ProvisioningRecoverySignal> = emptyList(),
 ) {
     val verifiedActiveModelCount: Int
@@ -51,6 +54,12 @@ data class RuntimeProvisioningSnapshot(
 
     val hasRecoverableCorruption: Boolean
         get() = recoverableCorruptions.isNotEmpty()
+}
+
+object ModelPathOrigin {
+    const val MANAGED = "managed"
+    const val IMPORTED_EXTERNAL = "imported_external"
+    const val DISCOVERED_RECOVERED = "discovered_recovered"
 }
 
 enum class ProvisioningReadiness {

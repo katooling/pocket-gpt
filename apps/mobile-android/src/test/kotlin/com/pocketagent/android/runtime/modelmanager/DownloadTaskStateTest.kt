@@ -2,6 +2,8 @@ package com.pocketagent.android.runtime.modelmanager
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class DownloadTaskStateTest {
     @Test
@@ -32,6 +34,23 @@ class DownloadTaskStateTest {
     fun `strict verification policy enforces provenance checks`() {
         assertEquals(true, DownloadVerificationPolicy.PROVENANCE_STRICT.enforcesProvenance)
         assertEquals(false, DownloadVerificationPolicy.INTEGRITY_ONLY.enforcesProvenance)
+    }
+
+    @Test
+    fun `throughput estimate is true only when speed and eta are present`() {
+        val withMetrics = fixture(
+            status = DownloadTaskStatus.DOWNLOADING,
+            processingStage = DownloadProcessingStage.DOWNLOADING,
+            progressBytes = 512L,
+            totalBytes = 1024L,
+        ).copy(
+            downloadSpeedBps = 1024L,
+            etaSeconds = 4L,
+        )
+        val withoutSpeed = withMetrics.copy(downloadSpeedBps = null)
+
+        assertTrue(withMetrics.hasThroughputEstimate)
+        assertFalse(withoutSpeed.hasThroughputEstimate)
     }
 
     private fun fixture(
