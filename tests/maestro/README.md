@@ -10,19 +10,21 @@ Source of truth for execution commands and cloud guidance:
 
 ## Flow Set
 
-1. `scenario-a.yaml`: send-message chat loop smoke
-2. `scenario-b.yaml`: advanced controls/tools/diagnostics journey
-3. `scenario-c.yaml`: continuity + image-aware journey
-4. `scenario-activation-send-smoke.yaml`: activation + send recovery smoke
-5. `scenario-first-run-download-chat.yaml`: clean install -> first-run download -> runtime ready -> send smoke
-6. `scenario-first-run-gpu-chat.yaml`: clean install -> first-run setup -> enable GPU acceleration -> send smoke
+1. `scenario-onboarding.yaml`: onboarding completion + runtime-ready baseline bootstrap
+2. `scenario-a.yaml`: post-onboarding send-message chat loop smoke
+3. `scenario-b.yaml`: post-onboarding advanced controls/tools/diagnostics journey
+4. `scenario-c.yaml`: post-onboarding continuity + image-aware journey
+5. `scenario-activation-send-smoke.yaml`: activation + send recovery smoke
+6. `scenario-first-run-download-chat.yaml`: clean install -> first-run download -> runtime ready -> send smoke
+7. `scenario-first-run-gpu-chat.yaml`: clean install -> first-run setup -> enable GPU acceleration -> send smoke
 
 ## Contract Notes
 
-1. Most flows run with `clearState: true` to avoid cross-scenario leakage; `scenario-b` keeps state so provisioned runtime metadata is preserved in journey/maestro lane sequencing.
-2. Screenshot checkpoints feed `tests/ui-screenshots/inventory.yaml` through `lane screenshot-pack`.
-3. Release-gate usage remains through `devctl` lanes; direct `maestro`/cloud execution is supplemental.
-4. CI lifecycle gate flow is `scenario-first-run-download-chat.yaml` (`lifecycle-e2e-first-run` job in CI).
+1. `scenario-onboarding.yaml` is the only onboarding flow in the default maestro lane sequence; scenario A/B/C intentionally assume post-onboarding state and assert onboarding is not visible.
+2. Most flows run with `clearState: true` to avoid cross-scenario leakage; post-onboarding flows keep state so provisioned runtime metadata is preserved in journey/maestro lane sequencing.
+3. Screenshot checkpoints feed `tests/ui-screenshots/inventory.yaml` through `lane screenshot-pack`.
+4. Release-gate usage remains through `devctl` lanes; direct `maestro`/cloud execution is supplemental.
+5. CI lifecycle gate flow is `scenario-first-run-download-chat.yaml` (`lifecycle-e2e-first-run` job in CI).
 
 ## Scoped Debug Flows
 

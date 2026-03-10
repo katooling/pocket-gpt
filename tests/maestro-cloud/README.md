@@ -1,5 +1,7 @@
 # Maestro Cloud Benchmarks
 
+Android cloud coverage here is for hosted emulator/API checks, not physical Samsung GPU qualification.
+
 These flows are intentionally separate from `tests/maestro/`.
 
 Purpose:

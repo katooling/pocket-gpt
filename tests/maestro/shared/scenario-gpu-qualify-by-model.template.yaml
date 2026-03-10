@@ -33,7 +33,7 @@ appId: com.pocketagent.android
     timeout: 30000
 - scrollUntilVisible:
     element:
-      text: "__TARGET_DOWNLOAD_ROW__"
+      text: "__TARGET_DOWNLOAD_START__"
     direction: DOWN
     timeout: 120000
 - tapOn: "__TARGET_DOWNLOAD_START__"
@@ -59,13 +59,4 @@ appId: com.pocketagent.android
     notVisible: "Validating GPU support..."
     timeout: 240000
 - takeScreenshot: "__RUN_TAG__-gate"
-- runFlow:
-    when:
-      visible: "Enable GPU acceleration"
-    commands:
-      - assertVisible: "Enable GPU acceleration"
-- runFlow:
-    when:
-      notVisible: "Enable GPU acceleration"
-    commands:
-      - assertVisible: "GPU acceleration unavailable"
+- assertVisible: "Enable GPU acceleration"

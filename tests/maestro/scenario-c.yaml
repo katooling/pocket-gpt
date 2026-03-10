@@ -2,10 +2,7 @@ appId: com.pocketagent.android
 ---
 - launchApp:
     clearState: false
-- tapOn:
-    text: "Skip"
-    optional: true
-    waitUntilVisible: true
+- assertNotVisible: "Welcome to Pocket GPT"
 - runFlow:
     when:
       visible: "Refresh runtime checks"
