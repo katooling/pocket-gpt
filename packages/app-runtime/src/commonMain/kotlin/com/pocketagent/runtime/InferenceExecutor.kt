@@ -36,6 +36,7 @@ class InferenceExecutor(
         var prefillMs: Long? = null
         var decodeMs: Long? = null
         var tokensPerSec: Double? = null
+        var peakRssMb: Double? = null
         val startedAtMs = System.currentTimeMillis()
         try {
             if (nativeInference != null) {
@@ -61,6 +62,7 @@ class InferenceExecutor(
                 prefillMs = result.prefillMs
                 decodeMs = result.decodeMs
                 tokensPerSec = result.tokensPerSec
+                peakRssMb = result.peakRssMb
                 finishReason = result.finishReason.name.lowercase()
                 bridgeErrorCode = result.errorCode
                 if (!result.success) {
@@ -128,6 +130,7 @@ class InferenceExecutor(
                 prefillMs = prefillMs,
                 decodeMs = decodeMs,
                 tokensPerSec = tokensPerSec,
+                peakRssMb = peakRssMb,
             )
         } finally {
             activeByRequestId.remove(requestId)
@@ -196,6 +199,7 @@ data class InferenceExecutionResult(
     val prefillMs: Long?,
     val decodeMs: Long?,
     val tokensPerSec: Double?,
+    val peakRssMb: Double?,
 )
 
 data class CancellationResult(

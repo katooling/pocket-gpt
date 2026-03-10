@@ -208,6 +208,8 @@ interface RuntimeContainer {
     fun setRoutingMode(mode: RoutingMode)
     fun getRoutingMode(): RoutingMode
     fun runStartupChecks(): List<String>
+    fun warmupActiveModel(): WarmupResult = WarmupResult.skipped("warmup_unsupported")
+    fun evictResidentModel(reason: String = "manual"): Boolean = false
     fun restoreSession(sessionId: SessionId, turns: List<Turn>)
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String? = null
@@ -216,7 +218,7 @@ interface RuntimeContainer {
 
 class DefaultMvpRuntimeFacade(
     private val container: RuntimeContainer = DefaultRuntimeContainer(),
-) : MvpRuntimeFacade {
+) : MvpRuntimeFacade, RuntimeWarmupSupport, RuntimeResourceControl {
     private val streamContractV2Enabled: Boolean = streamContractV2Enabled()
 
     override fun createSession(): SessionId = container.createSession()
@@ -407,6 +409,10 @@ class DefaultMvpRuntimeFacade(
 
     override fun runStartupChecks(): List<String> = container.runStartupChecks()
 
+    override fun warmupActiveModel(): WarmupResult = container.warmupActiveModel()
+
+    override fun evictResidentModel(reason: String): Boolean = container.evictResidentModel(reason)
+
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         container.restoreSession(sessionId = sessionId, turns = turns)
     }
@@ -517,6 +523,10 @@ class DefaultRuntimeContainer(
     override fun getRoutingMode(): RoutingMode = orchestrator.getRoutingMode()
 
     override fun runStartupChecks(): List<String> = orchestrator.runStartupChecks()
+
+    override fun warmupActiveModel(): WarmupResult = orchestrator.warmupActiveModel()
+
+    override fun evictResidentModel(reason: String): Boolean = orchestrator.evictResidentModel(reason)
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         orchestrator.restoreSession(sessionId = sessionId, turns = turns)

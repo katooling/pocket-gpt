@@ -110,6 +110,14 @@ class RuntimeOrchestrator(
         runtimeBackendProvider = ::runtimeBackend,
         modelRegistry = modelRegistry,
     )
+    private val runtimeWarmupCoordinator = RuntimeWarmupCoordinator(
+        inferenceModule = inferenceModule,
+        artifactVerifier = artifactVerifier,
+        observabilityModule = observabilityModule,
+        cancelIdleUnload = idleUnloadGuard::cancel,
+        scheduleIdleUnload = idleUnloadGuard::schedule,
+        unloadNow = idleUnloadGuard::unloadNow,
+    )
 
     init {
         val nativeInference = inferenceModule as? LlamaCppInferenceModule
@@ -283,6 +291,19 @@ class RuntimeOrchestrator(
         return startupChecksUseCase.run()
     }
 
+    override fun warmupActiveModel(): WarmupResult {
+        return runtimeWarmupCoordinator.warmup()
+    }
+
+    override fun evictResidentModel(reason: String): Boolean {
+        idleUnloadGuard.unloadNow()
+        observabilityModule.recordLatencyMetric(
+            "inference.resident_eviction.${sanitizeMetricSegment(reason)}",
+            1.0,
+        )
+        return true
+    }
+
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         sessionManager.restoreSession(sessionId, turns)
     }
@@ -314,6 +335,13 @@ class RuntimeOrchestrator(
     companion object {
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
     }
+}
+
+private fun sanitizeMetricSegment(raw: String): String {
+    return raw.lowercase()
+        .replace(Regex("[^a-z0-9]+"), "_")
+        .trim('_')
+        .ifBlank { "unknown" }
 }
 
 class RuntimeGenerationTimeoutException(

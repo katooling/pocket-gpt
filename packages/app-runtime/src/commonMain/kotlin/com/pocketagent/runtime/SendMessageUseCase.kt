@@ -5,6 +5,7 @@ import com.pocketagent.core.ConversationModule
 import com.pocketagent.core.ObservabilityModule
 import com.pocketagent.core.PolicyModule
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.core.RuntimeExecutionStats
 import com.pocketagent.core.SessionId
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
@@ -13,7 +14,6 @@ import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.MemoryChunk
 import com.pocketagent.memory.MemoryModule
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
-import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import java.security.MessageDigest
 
 internal class SendMessageUseCase(
@@ -123,6 +123,9 @@ internal class SendMessageUseCase(
         )
         val startedMs = System.currentTimeMillis()
 
+        val effectivePerformanceConfig = request.performanceConfig.withThermalAdaptiveOverrides(request.deviceState)
+        val thermalThrottled = effectivePerformanceConfig != request.performanceConfig
+
         responseCache.get(responseCacheKey)?.let { cachedText ->
             if (cachedText.isNotBlank()) {
                 emitCachedTokens(cachedText, request.onToken)
@@ -136,11 +139,15 @@ internal class SendMessageUseCase(
                 observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
                 observabilityModule.recordLatencyMetric(
                     "inference.profile",
-                    request.performanceConfig.profile.ordinal.toDouble(),
+                    effectivePerformanceConfig.profile.ordinal.toDouble(),
                 )
                 observabilityModule.recordLatencyMetric(
                     "inference.gpu_mode",
-                    if (request.performanceConfig.gpuEnabled && request.performanceConfig.gpuLayers > 0) 1.0 else 0.0,
+                    if (effectivePerformanceConfig.gpuEnabled && effectivePerformanceConfig.gpuLayers > 0) 1.0 else 0.0,
+                )
+                observabilityModule.recordLatencyMetric(
+                    "inference.thermal_throttled",
+                    if (thermalThrottled) 1.0 else 0.0,
                 )
                 observabilityModule.recordThermalSnapshot(request.deviceState.thermalLevel)
                 conversationModule.appendAssistantTurn(request.sessionId, cachedText)
@@ -152,24 +159,26 @@ internal class SendMessageUseCase(
                     totalLatencyMs = totalLatency,
                     requestId = request.requestId,
                     finishReason = "cached",
+                    runtimeStats = RuntimeExecutionStats(),
                 )
             }
         }
 
         val nativeInference = inferenceModule as? LlamaCppInferenceModule
         nativeInference?.setRuntimeGenerationConfig(
-            RuntimeGenerationConfig(
-                nThreads = request.performanceConfig.nThreads,
-                nThreadsBatch = request.performanceConfig.nThreadsBatch,
-                nBatch = request.performanceConfig.nBatch,
-                nUbatch = request.performanceConfig.nUbatch,
-                gpuEnabled = request.performanceConfig.gpuEnabled,
-                gpuLayers = request.performanceConfig.gpuLayers,
-            ),
+            effectivePerformanceConfig.toRuntimeGenerationConfig(),
         )
 
         check(inferenceModule.loadModel(modelId)) {
             "Failed to load runtime model: $modelId"
+        }
+        nativeInference?.residencyState()?.let { state ->
+            recordResidencyMetrics(
+                observabilityModule = observabilityModule,
+                residencyState = state,
+                loadDurationMs = state.lastLoadDurationMs,
+                thermalThrottled = thermalThrottled,
+            )
         }
 
         val cachePolicy = modelLifecycleCoordinator.resolveNativeCachePolicy()
@@ -235,6 +244,7 @@ internal class SendMessageUseCase(
         val prefillMs = executionResult?.prefillMs ?: firstTokenLatencyMs
         val decodeMs = executionResult?.decodeMs ?: (totalLatency - prefillMs).coerceAtLeast(0L)
         val tokenCount = executionResult?.tokenCount ?: 0
+        val peakRssMb = executionResult?.peakRssMb
         val tokensPerSec = executionResult?.tokensPerSec
             ?: if (tokenCount > 0 && decodeMs > 0) {
                 tokenCount.toDouble() / (decodeMs.toDouble() / 1000.0)
@@ -251,10 +261,15 @@ internal class SendMessageUseCase(
         observabilityModule.recordLatencyMetric("inference.prefill_ms", prefillMs.toDouble())
         observabilityModule.recordLatencyMetric("inference.decode_ms", decodeMs.toDouble())
         observabilityModule.recordLatencyMetric("inference.tokens_per_sec", tokensPerSec)
-        observabilityModule.recordLatencyMetric("inference.profile", request.performanceConfig.profile.ordinal.toDouble())
+        peakRssMb?.let { observabilityModule.recordLatencyMetric("inference.peak_rss_mb", it) }
+        observabilityModule.recordLatencyMetric("inference.profile", effectivePerformanceConfig.profile.ordinal.toDouble())
         observabilityModule.recordLatencyMetric(
             "inference.gpu_mode",
-            if (request.performanceConfig.gpuEnabled && request.performanceConfig.gpuLayers > 0) 1.0 else 0.0,
+            if (effectivePerformanceConfig.gpuEnabled && effectivePerformanceConfig.gpuLayers > 0) 1.0 else 0.0,
+        )
+        observabilityModule.recordLatencyMetric(
+            "inference.thermal_throttled",
+            if (thermalThrottled) 1.0 else 0.0,
         )
         observabilityModule.recordThermalSnapshot(request.deviceState.thermalLevel)
         conversationModule.appendAssistantTurn(request.sessionId, responseText)
@@ -267,6 +282,12 @@ internal class SendMessageUseCase(
             totalLatencyMs = totalLatency,
             requestId = request.requestId,
             finishReason = finishReason,
+            runtimeStats = RuntimeExecutionStats(
+                prefillMs = prefillMs,
+                decodeMs = decodeMs,
+                tokensPerSec = tokensPerSec,
+                peakRssMb = peakRssMb,
+            ),
         )
     }
 
