@@ -56,7 +56,7 @@ data class PerformanceRuntimeConfig(
             val profilePreset = when (profile) {
                 RuntimePerformanceProfile.BATTERY -> Preset(
                     timeoutMs = 900_000L,
-                    maxTokensDefault = 64,
+                    maxTokensDefault = 128,
                     threads = (cpu / 2).coerceAtLeast(2).coerceAtMost(4),
                     batch = 256,
                     ubatch = 256,
@@ -65,7 +65,7 @@ data class PerformanceRuntimeConfig(
 
                 RuntimePerformanceProfile.BALANCED -> Preset(
                     timeoutMs = 600_000L,
-                    maxTokensDefault = 96,
+                    maxTokensDefault = 256,
                     threads = cpu.coerceAtMost(6),
                     batch = 512,
                     ubatch = 256,
@@ -74,7 +74,7 @@ data class PerformanceRuntimeConfig(
 
                 RuntimePerformanceProfile.FAST -> Preset(
                     timeoutMs = 600_000L,
-                    maxTokensDefault = 128,
+                    maxTokensDefault = 384,
                     threads = cpu.coerceAtMost(8),
                     batch = 768,
                     ubatch = 384,
