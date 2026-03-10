@@ -154,15 +154,26 @@ bash scripts/dev/bench.sh stage2 --device <device-id> --profile quick --models 0
 Then:
 
 1. Export diagnostics from the app's advanced settings sheet.
-2. In the diagnostic message, inspect `RUNTIME_TUNING|...` and `RUNTIME_TUNING_SAMPLE|...`.
+2. In the diagnostic message, inspect `RUNTIME_TUNING|...`, `RUNTIME_TUNING_SAMPLE|...`, `RUNTIME_RESIDENCY|...`, and `PREFIX_CACHE_DIAG|...`.
 3. Correlate them with files under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
    - `summary.json`
+   - `runtime-log-signals.md`
    - `scenario-a.csv` / `scenario-b.csv`
    - `meminfo-*.txt`
    - `logcat.txt`
-4. Use `docs/testing/runtime-tuning-debugging.md` to interpret the fields and decide whether a promotion or demotion was correct.
+4. Use `runtime-log-signals.md` as the first-pass summary for `MMAP|`, `FLASH_ATTN|`, `SPECULATIVE|`, and `PREFIX_CACHE|` issues; then use `docs/testing/runtime-tuning-debugging.md` to decide whether a promotion or demotion was correct.
+5. When TTFT or decode throughput still looks wrong, inspect the matching logcat window for `MMAP|`, `FLASH_ATTN|`, `SPECULATIVE|`, `PREFIX_CACHE|`, and `PROMPT_TRIM|`.
+6. When the regression appears only after switching conversations, inspect raw logcat for `PREFIX_CACHE|stage=store_state` and `PREFIX_CACHE|stage=restore_state`. `success=true` confirms real slot-state reuse; `reason=over_budget` or `reason=empty` explains why switch-back fell back to re-decode.
 
 ## Runbook: Send/Runtime Journey Validation
+
+Artifacts to check after the lane completes:
+
+1. `journey-report.json`
+2. `journey-summary.md`
+3. each send-window `*-runtime-log-signals.md` linked from the journey summary
+4. the original send-window logcat if the summarized finding needs raw-line confirmation
+
 
 ```bash
 python3 tools/devctl/main.py lane journey --repeats 1 --mode strict --reply-timeout-seconds 90

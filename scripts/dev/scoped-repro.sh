@@ -183,7 +183,11 @@ CANDIDATE_PATH="${MATCH_PATH}.candidate"
 with_timeout "${ADB_TIMEOUT_SEC}" adb -s "${DEVICE_SERIAL}" logcat -c >/dev/null || true
 
 set +e
-with_timeout "${MAESTRO_TIMEOUT_SEC}" maestro --device "${DEVICE_SERIAL}" test "${FLOW_PATH}" "${MAESTRO_EXTRA_ARGS[@]}" >"${MAESTRO_LOG_PATH}" 2>&1
+if [[ ${#MAESTRO_EXTRA_ARGS[@]} -gt 0 ]]; then
+  with_timeout "${MAESTRO_TIMEOUT_SEC}" maestro --device "${DEVICE_SERIAL}" test "${FLOW_PATH}" "${MAESTRO_EXTRA_ARGS[@]}" >"${MAESTRO_LOG_PATH}" 2>&1
+else
+  with_timeout "${MAESTRO_TIMEOUT_SEC}" maestro --device "${DEVICE_SERIAL}" test "${FLOW_PATH}" >"${MAESTRO_LOG_PATH}" 2>&1
+fi
 MAESTRO_EXIT=$?
 set -e
 

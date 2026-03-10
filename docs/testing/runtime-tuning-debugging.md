@@ -70,6 +70,18 @@ The diagnostics payload now includes:
 2. `GPU_PROBE|...`
 3. `RUNTIME_TUNING|...`
 4. `RUNTIME_TUNING_SAMPLE|...`
+5. `RUNTIME_RESIDENCY|...`
+6. `PREFIX_CACHE_DIAG|...`
+
+The native logcat stream now also emits high-signal runtime optimization markers:
+
+1. `MMAP|...`: mmap configuration and readahead results.
+2. `FLASH_ATTN|...`: requested flash-attention mode, KV type, and batch/context settings.
+3. `SPECULATIVE|...`: draft acceptance metrics and adaptive draft budgeting.
+4. `PREFIX_CACHE|...`: slot reuse hits plus store/restore state outcomes.
+5. `PROMPT_TRIM|...`: prompt head/tail preservation decisions when context is exceeded.
+6. `PROMPT_DECODE|...`: prompt decode progress markers per decode chunk.
+7. `WARMUP|...`: warmup attempt/result, timings, and speculative-path status.
 
 ## How To Trigger Useful Tuning Evidence
 
@@ -105,7 +117,15 @@ After the benchmark finishes:
 
 1. export diagnostics from the app;
 2. capture the `RUNTIME_TUNING|...` lines;
-3. compare them with `summary.json`, `scenario-*.csv`, `meminfo-*.txt`, and `logcat.txt`.
+3. compare them with `summary.json`, `scenario-*.csv`, `meminfo-*.txt`, `logcat.txt`, and `runtime-log-signals.md`.
+
+The device lanes now write structured runtime-log signal artifacts next to the captured logcat:
+
+1. `*-runtime-log-signals.json`: machine-readable analysis of `MMAP|`, `FLASH_ATTN|`, `SPECULATIVE|`, and `PREFIX_CACHE|` markers.
+2. `*-runtime-log-signals.md`: human-readable summary of the same analysis.
+
+For `journey`, each send-window logcat gets its own sibling `*-runtime-log-signals.{json,md}` file and the generated `journey-report.json` / `journey-summary.md` link to them.
+For `stage2`, the run root now includes `runtime-log-signals.json` and `runtime-log-signals.md`.
 
 ## How To Read The Diagnostics
 
@@ -158,6 +178,7 @@ Use the sample lines to answer: "what setting did we apply for the last few runs
 5. Open the matching benchmark artifact directory under `scripts/benchmarks/runs/...`.
 6. Compare these files in order:
    - `summary.json`
+   - `runtime-log-signals.md`
    - `scenario-a.csv` / `scenario-b.csv`
    - `meminfo-*.txt`
    - `logcat.txt`
@@ -175,8 +196,9 @@ Check:
 
 1. `RUNTIME_TUNING|last_decision=demote_gpu_regression`
 2. `RUNTIME_TUNING_SAMPLE|error_code=...`
-3. `logcat.txt` for Vulkan/JNI/remote-runtime failures
-4. `GPU_OFFLOAD|probe_status=...`
+3. `runtime-log-signals.md` for summarized `FLASH_ATTN|`, `MMAP|`, `SPECULATIVE|`, and `PREFIX_CACHE|` findings
+4. `logcat.txt` for Vulkan/JNI/remote-runtime failures
+5. `GPU_OFFLOAD|probe_status=...`
 
 ### Batch Sizes Were Cut
 
@@ -217,3 +239,85 @@ The core implementation lives here:
 7. `apps/mobile-android/src/main/cpp/pocket_llama.cpp`
 
 When debugging tuning behavior, start with diagnostics and artifacts first. Only then change heuristics.
+
+
+## How To Read The New Native Log Lines
+
+### `MMAP|...`
+
+Use this to confirm whether the runtime asked llama.cpp for memory-mapped loading and whether readahead succeeded.
+
+Important fields:
+
+1. `use_mmap`
+2. `use_mlock`
+3. `use_direct_io`
+4. `stage=readahead`
+5. `label=target` or `label=draft`
+6. `result=0` for a successful `posix_madvise`/`madvise` call
+
+If `use_mmap=true` but readahead fails, first-token latency may still be correct eventually, but cold-start TTFT will usually stay worse.
+
+### `FLASH_ATTN|...`
+
+This line reports requested runtime configuration, not a post-hoc proof from llama.cpp that the backend kept flash attention enabled internally.
+
+Important fields:
+
+1. `requested`
+2. `type`
+3. `gpu_ops`
+4. `type_k`
+5. `type_v`
+6. `n_ctx`
+7. `n_batch`
+8. `n_ubatch`
+
+Use it to explain config decisions and correlate failures. Do not treat it as stronger evidence than measured throughput or GPU stability.
+
+### `SPECULATIVE|...`
+
+These lines show whether speculative decoding was enabled and how well the draft model is matching.
+
+Important fields:
+
+1. `accepted`
+2. `drafted`
+3. `acceptance_rate`
+4. `adaptive_max`
+5. `draft_n_ctx`
+
+Healthy acceptance tends to rise when the draft model remains well matched. If `acceptance_rate` collapses and throughput does not improve, speculative decoding is not helping that device/model pair.
+
+### `PROMPT_TRIM|...`
+
+This line shows when the runtime preserved the head of the prompt and kept the newest tail while trimming the middle.
+
+Important fields:
+
+1. `original`
+2. `max`
+3. `preserve_head`
+4. `keep_tail`
+5. `trimmed`
+
+Use it when debugging long chats that appear to forget system instructions or recent turns.
+
+### `PREFIX_CACHE|...`
+
+These lines now distinguish plain prefix metadata reuse from real multi-conversation state restore. They are also summarized in `runtime-log-signals.md`, but raw logcat remains the source of truth for sequence-level debugging.
+
+Important stages:
+
+1. `stage=target` / `stage=draft`: whether this request reused a prefix and which slot it used.
+2. `stage=store_state`: whether a target or draft sequence snapshot was stored for later switch-back reuse.
+3. `stage=restore_state`: whether a previously stored snapshot was restored into the active llama context.
+4. `reason=over_budget`: the snapshot was intentionally skipped because the saved sequence state would have exceeded the mobile memory budget.
+5. `reason=empty`: the slot had metadata but no stored sequence state, so cross-slot restore was not available.
+
+Interpretation:
+
+1. `target hit=true` with a matching `restore_state success=true` means real cross-slot target KV reuse happened.
+2. `draft hit=true` with `restore_state success=true` means speculative draft state was also restored, so switch-back should avoid the draft cold-start cost.
+3. `store_state success=false reason=over_budget` means the slot still tracks prompt metadata, but future switch-back for that slot will fall back to re-decode instead of instant restoration.
+4. If performance is worse after conversation switching, search the matching raw logcat window for `PREFIX_CACHE|` before changing heuristics.

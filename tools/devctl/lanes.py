@@ -29,6 +29,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - dependency guard is handled at runtime.
     yaml = None
 
+from tools.devctl.runtime_log_signals import write_runtime_log_signal_reports
 from tools.devctl.subprocess_utils import DevctlError, REPO_ROOT, format_command, print_step, run_subprocess
 
 if TYPE_CHECKING:
@@ -3009,6 +3010,21 @@ def _resolve_maestro_flow_selection(available_flows: Sequence[str], selected_tok
     return resolved
 
 
+def _write_runtime_log_signal_artifacts(logcat_path: Path) -> tuple[str, str, dict[str, Any]] | None:
+    resolved_logcat = logcat_path if logcat_path.is_absolute() else (REPO_ROOT / logcat_path)
+    if not resolved_logcat.exists():
+        return None
+    base_path = resolved_logcat.with_name(f"{resolved_logcat.stem}-runtime-log-signals")
+    json_path = base_path.with_suffix(".json")
+    markdown_path = base_path.with_suffix(".md")
+    analysis = write_runtime_log_signal_reports(
+        logcat_path=resolved_logcat,
+        json_output_path=json_path,
+        markdown_output_path=markdown_path,
+    )
+    return _report_path(json_path), _report_path(markdown_path), analysis
+
+
 def _write_journey_report(
     *,
     report_path: Path,
@@ -3018,11 +3034,29 @@ def _write_journey_report(
 ) -> None:
     run_owner = os.environ.get("POCKETGPT_RUN_OWNER") or os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
     run_host = os.environ.get("HOSTNAME") or os.uname().nodename
+    step_signal_reports: dict[str, tuple[str, str, dict[str, Any]]] = {}
+    for step in steps:
+        if not step.logcat:
+            continue
+        report = _write_runtime_log_signal_artifacts(Path(step.logcat))
+        if report is not None:
+            step_signal_reports[step.name] = report
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "serial": serial,
         "run_owner": run_owner,
         "run_host": run_host,
+        "runtime_log_signal_reports": [
+            {
+                "step": step.name,
+                "json_report": step_signal_reports[step.name][0],
+                "markdown_report": step_signal_reports[step.name][1],
+                "status": step_signal_reports[step.name][2]["status"],
+                "issue_count": step_signal_reports[step.name][2]["issue_count"],
+            }
+            for step in steps
+            if step.name in step_signal_reports
+        ],
         "steps": [
             {
                 "name": step.name,
@@ -3032,6 +3066,10 @@ def _write_journey_report(
                 "screenshots": step.screenshots or [],
                 "failure_signature": step.failure_signature,
                 "logcat": step.logcat,
+                "runtime_log_signals_json": step_signal_reports[step.name][0] if step.name in step_signal_reports else None,
+                "runtime_log_signals_markdown": step_signal_reports[step.name][1] if step.name in step_signal_reports else None,
+                "runtime_log_signals_status": step_signal_reports[step.name][2]["status"] if step.name in step_signal_reports else None,
+                "runtime_log_signals_issue_count": step_signal_reports[step.name][2]["issue_count"] if step.name in step_signal_reports else 0,
                 "phase": step.phase,
                 "elapsed_ms": step.elapsed_ms,
                 "runtime_status": step.runtime_status,
@@ -3071,6 +3109,7 @@ def _write_journey_report(
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for step in steps:
+        signal_report = step_signal_reports.get(step.name)
         lines.append(
             "| "
             f"{step.name} | {step.mode or '-'} | {step.phase or '-'} | {step.status} | {step.duration_seconds:.2f} | "
@@ -3097,6 +3136,10 @@ def _write_journey_report(
             lines.append(f"- Failure signature: `{step.failure_signature}`")
         if step.logcat:
             lines.append(f"- Logcat: `{step.logcat}`")
+        if signal_report is not None:
+            lines.append(
+                f"- Runtime log signals: `{signal_report[1]}` (status={signal_report[2]['status']}, issues={signal_report[2]['issue_count']})",
+            )
         if step.screenshots:
             lines.append("- Screenshots:")
             for shot in step.screenshots:
@@ -4178,6 +4221,14 @@ def _lane_stage2_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
         runtime_output = "Runtime evidence validation skipped for quick profile.\n"
     _write_report(runtime_validation_report_path, runtime_output)
 
+    runtime_log_signals_json_path = run_dir / "runtime-log-signals.json"
+    runtime_log_signals_markdown_path = run_dir / "runtime-log-signals.md"
+    runtime_log_signal_analysis = write_runtime_log_signal_reports(
+        logcat_path=logcat_path,
+        json_output_path=runtime_log_signals_json_path,
+        markdown_output_path=runtime_log_signals_markdown_path,
+    )
+
     run_meta = _load_stage2_run_meta(run_dir)
     summary_data = {
         "stage": "stage2",
@@ -4195,6 +4246,10 @@ def _lane_stage2_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
         "model_2b_metrics_csv": str(model_2b_metrics_path.relative_to(REPO_ROOT)),
         "threshold_report": str(threshold_report_path.relative_to(REPO_ROOT)),
         "runtime_evidence_validation_report": str(runtime_validation_report_path.relative_to(REPO_ROOT)),
+        "runtime_log_signals_json": str(runtime_log_signals_json_path.relative_to(REPO_ROOT)),
+        "runtime_log_signals_markdown": str(runtime_log_signals_markdown_path.relative_to(REPO_ROOT)),
+        "runtime_log_signals_status": runtime_log_signal_analysis["status"],
+        "runtime_log_signals_issue_count": runtime_log_signal_analysis["issue_count"],
         "logcat": str(logcat_path.relative_to(REPO_ROOT)),
         "notes": str(notes_path.relative_to(REPO_ROOT)),
         "evidence_draft": str(evidence_draft_path.relative_to(REPO_ROOT)),

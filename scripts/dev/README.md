@@ -83,7 +83,7 @@ Examples:
 - `bash scripts/dev/device-test.sh 10 scenario-a --framework espresso`
 - `bash scripts/dev/device-test.sh 10 scenario-a --framework maestro`
 
-For runtime tuning analysis after repeated device runs, use `docs/testing/runtime-tuning-debugging.md`. It explains how to read `RUNTIME_TUNING|...` diagnostics lines and correlate them with benchmark artifacts under `scripts/benchmarks/runs/...`.
+For runtime tuning analysis after repeated device runs, use `docs/testing/runtime-tuning-debugging.md`. It explains how to read `RUNTIME_TUNING|...` diagnostics lines, where the generated `runtime-log-signals.{json,md}` artifacts land, and how to correlate them with benchmark artifacts under `scripts/benchmarks/runs/...`.
 
 ## Stage-2 Benchmark Wrapper
 
@@ -107,10 +107,12 @@ Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
 5. `meminfo-*.txt` (PSS snapshots per scenario/model)
 6. `threshold-report.txt`
 7. `runtime-evidence-validation.txt`
-8. `logcat.txt`
-9. `notes.md`
-10. `summary.json`
-11. `evidence-draft.md`
+8. `runtime-log-signals.json`
+9. `runtime-log-signals.md`
+10. `logcat.txt`
+11. `notes.md`
+12. `summary.json`
+13. `evidence-draft.md`
 
 Evidence integrity gate:
 

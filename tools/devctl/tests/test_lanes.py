@@ -2001,6 +2001,46 @@ class LanesTest(unittest.TestCase):
         context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
         _run_device_health_preflight(context, "SER123")
 
+    def test_write_journey_report_generates_runtime_log_signal_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            logcat_path = tmp_path / "send-window-logcat.txt"
+            report_path = tmp_path / "journey-report.json"
+            summary_path = tmp_path / "journey-summary.md"
+            logcat_path.write_text(
+                "\n".join(
+                    [
+                        "I/PocketLlamaJNI: MMAP|use_mmap=true|use_mlock=false|use_direct_io=false",
+                        "I/PocketLlamaJNI: MMAP|stage=readahead|label=target|bytes=1024|result=0",
+                        "I/PocketLlamaJNI: FLASH_ATTN|requested=true|type=auto|gpu_ops=true|type_k=Q8_0|type_v=Q8_0|n_ctx=4096|n_batch=768|n_ubatch=384",
+                        "I/PocketLlamaJNI: SPECULATIVE|accepted=6|drafted=8|max_draft=6|remaining=32|acceptance_rate=0.750",
+                    ],
+                ),
+                encoding="utf-8",
+            )
+            _write_journey_report(
+                report_path=report_path,
+                summary_path=summary_path,
+                serial="SER123",
+                steps=[
+                    JourneyStepResult(
+                        name="run-01:send-capture",
+                        status="passed",
+                        duration_seconds=1.23,
+                        logcat=str(logcat_path),
+                    ),
+                ],
+            )
+
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(1, len(payload["runtime_log_signal_reports"]))
+            signal_report = payload["runtime_log_signal_reports"][0]
+            self.assertEqual("pass", signal_report["status"])
+            self.assertTrue((Path(signal_report["json_report"]) if Path(signal_report["json_report"]).is_absolute() else REPO_ROOT / signal_report["json_report"]).exists())
+            self.assertTrue((Path(signal_report["markdown_report"]) if Path(signal_report["markdown_report"]).is_absolute() else REPO_ROOT / signal_report["markdown_report"]).exists())
+            summary = summary_path.read_text(encoding="utf-8")
+            self.assertIn("Runtime log signals:", summary)
+
     def test_write_journey_report_includes_owner_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             report_path = Path(tmp) / "journey-report.json"

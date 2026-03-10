@@ -9,6 +9,8 @@ required_files:
   - meminfo-2b-scenario-b.txt
   - threshold-report.txt
   - runtime-evidence-validation.txt
+  - runtime-log-signals.json
+  - runtime-log-signals.md
   - logcat.txt
   - notes.md
   - summary.json
@@ -21,6 +23,8 @@ quick_required_files:
   - notes.md
   - threshold-report.txt
   - runtime-evidence-validation.txt
+  - runtime-log-signals.json
+  - runtime-log-signals.md
   - summary.json
 
 threshold_csv:
@@ -41,6 +45,10 @@ summary_json:
     - model_2b_metrics_csv
     - threshold_report
     - runtime_evidence_validation_report
+    - runtime_log_signals_json
+    - runtime_log_signals_markdown
+    - runtime_log_signals_status
+    - runtime_log_signals_issue_count
     - logcat
     - notes
     - summary_json
