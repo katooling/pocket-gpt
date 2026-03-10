@@ -1,0 +1,24 @@
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+  warningsAsErrors: false
+
+comments:
+  active: true
+
+style:
+  MagicNumber:
+    active: false
+  WildcardImport:
+    active: false
+
+complexity:
+  LongMethod:
+    active: true
+    threshold: 140
+  LongParameterList:
+    active: true
+    functionThreshold: 8
+

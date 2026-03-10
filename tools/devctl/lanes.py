@@ -3295,8 +3295,7 @@ def _lane_test_impl(raw_args: Sequence[str], context: RuntimeContext) -> None:
     profile_cfg = context.configs.test_profiles.profiles[mode]
 
     for step in lane_cfg.commands:
-        if step.name == "python_unit_tests":
-            context.run(step.argv, check=True, env=context.env)
+        context.run(step.argv, check=True, env=context.env)
 
     android_configured, resolved_env = _resolve_android_env(context.env)
     if not android_configured:

@@ -5,6 +5,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.SQLException
 
 /**
  * JVM SQLite-backed memory module for stage-5 persistence and pruning validation.
@@ -98,7 +99,13 @@ class SqliteMemoryModule private constructor(
                 }
                 connection.commit()
                 deleted
-            } catch (error: Throwable) {
+            } catch (error: SQLException) {
+                connection.rollback()
+                throw error
+            } catch (error: RuntimeException) {
+                connection.rollback()
+                throw error
+            } catch (error: Error) {
                 connection.rollback()
                 throw error
             } finally {

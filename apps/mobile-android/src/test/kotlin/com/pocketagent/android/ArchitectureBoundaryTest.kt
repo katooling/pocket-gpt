@@ -72,6 +72,25 @@ class ArchitectureBoundaryTest {
         )
     }
 
+    @Test
+    fun `runtime package does not reference ui package types`() {
+        val runtimeDir = locatePath(
+            "src/main/kotlin/com/pocketagent/android/runtime",
+            "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime",
+        )
+        val offenders = Files.walk(runtimeDir).use { stream ->
+            stream
+                .filter { path -> path.toString().endsWith(".kt") }
+                .filter { path -> String(Files.readAllBytes(path)).contains("com.pocketagent.android.ui") }
+                .map(Path::toString)
+                .toList()
+        }
+        assertFalse(
+            offenders.isNotEmpty(),
+            "Runtime package must not depend on UI packages. Found: ${offenders.joinToString()}",
+        )
+    }
+
     private fun locatePath(vararg candidates: String): Path {
         return candidates
             .asSequence()

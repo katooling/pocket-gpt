@@ -13,6 +13,11 @@ lanes:
           - discover
           - -s
           - tools/devctl/tests
+      - name: kotlin_quality_gate
+        argv:
+          - python3
+          - tools/devctl/kotlin_quality_gate.py
+          - --strict-changed-only
     gradle_binary: ./gradlew
     gradle_flags:
       - --no-daemon

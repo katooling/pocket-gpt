@@ -200,10 +200,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-test-reports
+          name: gradle-test-and-static-analysis-reports
           path: |
             **/build/reports/tests/**
             **/build/test-results/**
+            **/build/reports/detekt/**
+            **/build/reports/ktlint/**
           if-no-files-found: warn
 
   android-lint:
