@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui.controllers
 
+import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
@@ -25,9 +26,15 @@ fun interface DeviceStateProvider {
     }
 }
 
+data class ResolvedPerformancePlan(
+    val baseConfig: PerformanceRuntimeConfig,
+    val effectiveConfig: PerformanceRuntimeConfig,
+)
+
 class ChatSendFlow(
     private val runtimeGenerationTimeoutMs: Long,
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
+    private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
 ) {
     fun isRuntimeReadyForSend(runtime: RuntimeUiState): Boolean {
         return runtime.startupProbeState == StartupProbeState.READY &&
@@ -41,18 +48,49 @@ class ChatSendFlow(
         return performanceConfig.requestTimeoutMs
     }
 
+    fun resolvePerformancePlan(
+        profile: RuntimePerformanceProfile,
+        gpuEnabled: Boolean,
+        gpuLayers: Int = 32,
+        modelIdHint: String? = null,
+    ): ResolvedPerformancePlan {
+        val cpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val safeBaseConfig = enforceGpuSafeBatch(
+            PerformanceRuntimeConfig.forProfile(
+                profile = profile,
+                availableCpuThreads = cpuThreads,
+                gpuEnabled = gpuEnabled,
+                gpuLayers = gpuLayers.coerceAtLeast(0),
+            ),
+        )
+        val tunedConfig = enforceGpuSafeBatch(
+            runtimeTuning.applyRecommendedConfig(
+                modelIdHint = modelIdHint,
+                baseConfig = safeBaseConfig,
+                gpuQualifiedLayers = gpuLayers.coerceAtLeast(0),
+            ),
+        )
+        return ResolvedPerformancePlan(
+            baseConfig = safeBaseConfig,
+            effectiveConfig = tunedConfig,
+        )
+    }
+
     fun resolvePerformanceConfig(
         profile: RuntimePerformanceProfile,
         gpuEnabled: Boolean,
         gpuLayers: Int = 32,
+        modelIdHint: String? = null,
     ): PerformanceRuntimeConfig {
-        val cpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        val config = PerformanceRuntimeConfig.forProfile(
+        return resolvePerformancePlan(
             profile = profile,
-            availableCpuThreads = cpuThreads,
             gpuEnabled = gpuEnabled,
-            gpuLayers = gpuLayers.coerceAtLeast(0),
-        )
+            gpuLayers = gpuLayers,
+            modelIdHint = modelIdHint,
+        ).effectiveConfig
+    }
+
+    private fun enforceGpuSafeBatch(config: PerformanceRuntimeConfig): PerformanceRuntimeConfig {
         if (!config.gpuEnabled || config.gpuLayers <= 0) {
             return config
         }

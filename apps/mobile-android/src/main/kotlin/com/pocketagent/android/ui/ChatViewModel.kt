@@ -6,6 +6,7 @@ import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeResult
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.controllers.ChatPersistenceFlow
 import com.pocketagent.android.ui.controllers.ChatStreamCoordinator
 import com.pocketagent.android.ui.controllers.ChatPersistenceCoordinator
@@ -44,6 +45,7 @@ import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.android.ui.state.UiError
 import com.pocketagent.android.ui.state.UiErrorMapper
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.core.RuntimeExecutionStats
 import com.pocketagent.core.SessionId
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ChatStreamDelta
@@ -75,6 +77,7 @@ class ChatViewModel(
     ),
     private val persistenceCoordinator: ChatPersistenceCoordinator = ChatPersistenceCoordinator(sessionPersistence),
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
+    private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
     private val timelineProjector: TimelineProjector = TimelineProjector(),
     private val persistenceFlow: ChatPersistenceFlow = ChatPersistenceFlow(persistenceCoordinator),
     private val startupFlow: ChatStartupFlow = ChatStartupFlow(
@@ -89,6 +92,7 @@ class ChatViewModel(
     private val sendFlow: ChatSendFlow = ChatSendFlow(
         runtimeGenerationTimeoutMs = runtimeGenerationTimeoutMs,
         deviceStateProvider = deviceStateProvider,
+        runtimeTuning = runtimeTuning,
     ),
     private val sendReducer: SendReducer = SendReducer(),
     private val toolLoopUseCase: ToolLoopUseCase = ToolLoopUseCase(sendController),
@@ -142,11 +146,14 @@ class ChatViewModel(
             persistState()
             return
         }
-        val performanceConfig = sendFlow.resolvePerformanceConfig(
+        val performancePlan = sendFlow.resolvePerformancePlan(
             profile = snapshot.runtime.performanceProfile,
             gpuEnabled = snapshot.runtime.gpuAccelerationEnabled,
             gpuLayers = snapshot.runtime.gpuMaxQualifiedLayers.coerceAtLeast(0),
+            modelIdHint = snapshot.runtime.activeModelId,
         )
+        val performanceConfig = performancePlan.effectiveConfig
+        val targetPerformanceConfig = performancePlan.baseConfig
         val requestTimeoutMs = sendFlow.resolveRequestTimeoutMs(performanceConfig)
         val userMessage = createMessage(
             role = MessageRole.USER,
@@ -236,6 +243,8 @@ class ChatViewModel(
                 terminalReason: String,
                 terminalRequestId: String = requestId,
                 terminalEventSeen: Boolean = true,
+                terminalModelId: String? = null,
+                errorCode: String? = null,
             ) {
                 val partialStreamingText = messageContent(
                     sessionId = activeSession.id,
@@ -269,6 +278,13 @@ class ChatViewModel(
                         terminalEventSeen = terminalEventSeen,
                     )
                 }
+                runtimeTuning.recordFailure(
+                    modelId = terminalModelId ?: snapshot.runtime.activeModelId,
+                    appliedConfig = performanceConfig,
+                    targetConfig = targetPerformanceConfig,
+                    errorCode = errorCode ?: terminalReason.removePrefix("failed:"),
+                    thermalThrottled = deviceStateProvider.current().thermalLevel >= 5,
+                )
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
@@ -295,6 +311,8 @@ class ChatViewModel(
                         terminalReason = terminal.finishReason,
                         terminalRequestId = terminal.requestId,
                         terminalEventSeen = terminal.terminalEventSeen,
+                        terminalModelId = terminal.responseModelId,
+                        errorCode = terminal.errorCode,
                     )
                     return
                 }
@@ -309,13 +327,14 @@ class ChatViewModel(
                 )
                 val effectiveFirstToken = terminal.firstTokenMs
                 val effectiveCompletion = terminal.completionMs ?: (System.currentTimeMillis() - sendStartedAtMs)
-                val effectivePrefill = effectiveFirstToken
-                val effectiveDecode = if (effectiveFirstToken != null) {
+                val runtimeStats = terminal.runtimeStats
+                val effectivePrefill = runtimeStats?.prefillMs ?: effectiveFirstToken
+                val effectiveDecode = runtimeStats?.decodeMs ?: if (effectiveFirstToken != null) {
                     (effectiveCompletion - effectiveFirstToken).coerceAtLeast(0L)
                 } else {
                     null
                 }
-                val tokensPerSecEstimate = if (!finalText.isBlank() && effectiveDecode != null && effectiveDecode > 0L) {
+                val tokensPerSecEstimate = runtimeStats?.tokensPerSec ?: if (!finalText.isBlank() && effectiveDecode != null && effectiveDecode > 0L) {
                     val approxTokens = finalText.split(Regex("\\s+")).count { it.isNotBlank() }
                     if (approxTokens > 0) {
                         approxTokens.toDouble() / (effectiveDecode.toDouble() / 1000.0)
@@ -325,6 +344,11 @@ class ChatViewModel(
                 } else {
                     null
                 }
+                val resolvedRuntimeStats = runtimeStats ?: RuntimeExecutionStats(
+                    prefillMs = effectivePrefill,
+                    decodeMs = effectiveDecode,
+                    tokensPerSec = tokensPerSecEstimate,
+                )
                 _uiState.update { state ->
                     state.copy(
                         composer = state.composer.copy(isSending = false),
@@ -339,11 +363,19 @@ class ChatViewModel(
                             lastPrefillMs = effectivePrefill,
                             lastDecodeMs = effectiveDecode,
                             lastTokensPerSec = tokensPerSecEstimate,
+                            lastPeakRssMb = runtimeStats?.peakRssMb,
                             sendElapsedMs = null,
                             sendSlowState = null,
                         ).clearError(),
                     )
                 }
+                runtimeTuning.recordSuccess(
+                    modelId = terminal.responseModelId ?: snapshot.runtime.activeModelId,
+                    appliedConfig = performanceConfig,
+                    targetConfig = targetPerformanceConfig,
+                    runtimeStats = resolvedRuntimeStats,
+                    thermalThrottled = deviceStateProvider.current().thermalLevel >= 5,
+                )
                 persistState()
                 maybeAdvanceAfterAssistantResponse()
             }
@@ -1406,6 +1438,7 @@ class ChatViewModelFactory(
     private val runtimeFacade: RuntimeGateway,
     private val sessionPersistence: SessionPersistence,
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
+    private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1414,6 +1447,7 @@ class ChatViewModelFactory(
                 runtimeFacade = runtimeFacade,
                 sessionPersistence = sessionPersistence,
                 deviceStateProvider = deviceStateProvider,
+                runtimeTuning = runtimeTuning,
             ) as T
         }
         throw IllegalArgumentException("Unsupported ViewModel class: ${modelClass.name}")

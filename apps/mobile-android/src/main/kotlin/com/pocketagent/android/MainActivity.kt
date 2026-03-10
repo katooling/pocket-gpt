@@ -1,5 +1,6 @@
 package com.pocketagent.android
 
+import android.content.ComponentCallbacks2
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +9,7 @@ import androidx.compose.material3.Surface
 import com.pocketagent.android.runtime.DefaultProvisioningGateway
 import com.pocketagent.android.runtime.AndroidGpuOffloadSupport
 import com.pocketagent.android.runtime.AndroidGpuOffloadQualifier
+import com.pocketagent.android.runtime.AndroidRuntimeTuningStore
 import com.pocketagent.android.runtime.MvpRuntimeGateway
 import com.pocketagent.android.runtime.RuntimeBootstrapper
 import com.pocketagent.android.ui.ChatViewModel
@@ -20,11 +22,16 @@ import com.pocketagent.android.ui.controllers.AndroidTelemetryDeviceStateProvide
 import com.pocketagent.android.ui.state.AndroidSessionPersistence
 
 class MainActivity : ComponentActivity() {
+    private val runtimeTuning by lazy {
+        AndroidRuntimeTuningStore(applicationContext)
+    }
+
     private val runtimeGateway by lazy {
         MvpRuntimeGateway(
             facade = RuntimeBootstrapper.runtimeFacade(),
             deviceGpuOffloadSupport = AndroidGpuOffloadSupport(applicationContext),
             gpuOffloadQualifier = AndroidGpuOffloadQualifier(applicationContext),
+            runtimeTuning = runtimeTuning,
         )
     }
 
@@ -33,6 +40,7 @@ class MainActivity : ComponentActivity() {
             runtimeFacade = runtimeGateway,
             sessionPersistence = AndroidSessionPersistence(applicationContext),
             deviceStateProvider = AndroidTelemetryDeviceStateProvider(applicationContext),
+            runtimeTuning = runtimeTuning,
         )
     }
 
@@ -55,5 +63,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            runtimeGateway.evictResidentModel(reason = "trim_memory_$level")
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        runtimeGateway.evictResidentModel(reason = "low_memory")
     }
 }

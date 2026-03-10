@@ -92,6 +92,7 @@ data class RuntimeUiState(
     val lastPrefillMs: Long? = null,
     val lastDecodeMs: Long? = null,
     val lastTokensPerSec: Double? = null,
+    val lastPeakRssMb: Double? = null,
     val startupChecks: List<String> = emptyList(),
     val startupWarnings: List<String> = emptyList(),
     val lastErrorCode: String? = null,

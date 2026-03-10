@@ -251,6 +251,17 @@ internal fun AdvancedSettingsSheet(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+        state.runtime.lastPeakRssMb?.let { value ->
+            Text(
+                text = "Last peak RSS: ${"%.0f".format(value)} MB",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text(
+            text = "Diagnostics export includes runtime tuning recommendations and recent benchmark samples.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
