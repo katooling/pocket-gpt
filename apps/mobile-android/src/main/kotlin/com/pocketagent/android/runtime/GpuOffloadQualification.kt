@@ -194,8 +194,8 @@ private fun resolveProbeRequestFromStore(store: AndroidRuntimeProvisioningStore)
 class AndroidGpuOffloadQualifier(
     context: Context,
     probeClient: GpuProbeClient = AndroidGpuProbeClient(context.applicationContext),
-    probeRequestResolver: () -> GpuProbeRequest? = {
-        resolveProbeRequestFromStore(AndroidRuntimeProvisioningStore(context.applicationContext))
+    probeRequestResolver: () -> GpuProbeRequest? = AndroidRuntimeProvisioningStore(context.applicationContext).let { store ->
+        { resolveProbeRequestFromStore(store) }
     },
     nativeDiagnosticsReader: NativeVulkanDiagnosticsReader = NativeVulkanDiagnosticsReader(
         payloadProvider = {

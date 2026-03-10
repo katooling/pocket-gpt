@@ -96,6 +96,8 @@ class AndroidRuntimeProvisioningStore(
         .candidateModelIds
         .toSet()
         .ifEmpty { baselineModelIdSet }
+    @Volatile
+    private var migrationEnsured: Boolean = false
 
     fun snapshot(): RuntimeProvisioningSnapshot {
         ensureMigrated()
@@ -713,7 +715,13 @@ class AndroidRuntimeProvisioningStore(
     }
 
     private fun ensureMigrated() {
+        if (migrationEnsured) {
+            return
+        }
         synchronized(MIGRATION_LOCK) {
+            if (migrationEnsured) {
+                return
+            }
             BASELINE_MODEL_SPECS.forEach(::migrateSpecIfNeeded)
             val discoveredDynamicIds = discoverDynamicModelIdsFromMetadata()
             val mergedDynamicIds = (readDynamicModelIds() + discoveredDynamicIds)
@@ -723,9 +731,10 @@ class AndroidRuntimeProvisioningStore(
             mergedDynamicIds
                 .map(::dynamicModelSpec)
                 .forEach(::migrateSpecIfNeeded)
-            // Re-run alias migration on every startup so stale metadata can self-heal
-            // after external model files are restored later in the session lifecycle.
+            // Run alias migration once per process start to self-heal stale metadata
+            // without repeating full migration work on every snapshot call.
             runPathAliasMigrationLocked()
+            migrationEnsured = true
         }
     }
 
@@ -1258,13 +1267,13 @@ class AndroidRuntimeProvisioningStore(
     }
 
     private fun recordMigrationCorruption(signal: ProvisioningRecoverySignal) {
-        synchronized(MIGRATION_LOCK) {
+        synchronized(MIGRATION_SIGNAL_LOCK) {
             migrationCorruptionSignals += signal
         }
     }
 
     private fun drainMigrationCorruptionSignals(): List<ProvisioningRecoverySignal> {
-        synchronized(MIGRATION_LOCK) {
+        synchronized(MIGRATION_SIGNAL_LOCK) {
             if (migrationCorruptionSignals.isEmpty()) {
                 return emptyList()
             }
@@ -1355,6 +1364,7 @@ class AndroidRuntimeProvisioningStore(
         private const val MANAGED_MODELS_DIR_NAME = "models"
         private const val METADATA_SUFFIX = ".meta.json"
         private val MIGRATION_LOCK = Any()
+        private val MIGRATION_SIGNAL_LOCK = Any()
 
         private data class LegacySpecOverride(
             val displayName: String,
