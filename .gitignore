@@ -20,11 +20,6 @@ out/
 **/.cxx/
 local.properties
 
-# Xcode
-DerivedData/
-*.xcworkspace/xcuserdata/
-*.xcodeproj/xcuserdata/
-
 # Python
 .venv/
 __pycache__/
