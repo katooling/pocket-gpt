@@ -7,6 +7,7 @@ import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.RuntimeResourceControl
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
@@ -58,6 +59,7 @@ interface RuntimeGateway {
     fun runtimeBackend(): String?
     fun supportsGpuOffload(): Boolean
     fun reportGpuRuntimeFailure(reason: GpuProbeFailureReason, detail: String? = null) = Unit
+    fun evictResidentModel(reason: String = "manual"): Boolean = false
     fun gpuOffloadStatus(): GpuProbeResult = if (supportsGpuOffload()) {
         GpuProbeResult(status = GpuProbeStatus.QUALIFIED, maxStableGpuLayers = 32)
     } else {
@@ -73,6 +75,7 @@ class MvpRuntimeGateway(
     private val facade: MvpRuntimeFacade,
     private val deviceGpuOffloadSupport: DeviceGpuOffloadSupport = DeviceGpuOffloadSupport.ASSUME_SUPPORTED,
     private val gpuOffloadQualifier: GpuOffloadQualifier = GpuOffloadQualifier.DISABLED,
+    private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
 ) : RuntimeGateway {
     private val tag = "RuntimeGateway"
 
@@ -143,15 +146,20 @@ class MvpRuntimeGateway(
                 detail = "probe_evaluation_failed:${it.message ?: it::class.simpleName}",
             )
         }
+        val tuningDiagnostics = runtimeTuning.diagnosticsReport().takeIf { it.isNotBlank() }
         val diagnosticFooter = buildString {
             appendLine()
             append(
                 "GPU_OFFLOAD|runtime_supported=$runtimeSupported|device_feature_advisory_supported=$deviceFeatureAdvisorySupported|" +
                     "probe_status=${probe.status}|probe_layers=${probe.maxStableGpuLayers}|" +
-                    "probe_reason=${probe.failureReason ?: "none"}|probe_detail=${probe.detail.orEmpty()}",
+                    "probe_reason=${probe.failureReason ?: "none"}|probe_source=runtime_plus_probe|probe_detail=${probe.detail.orEmpty()}",
             )
             appendLine()
             append(gpuOffloadQualifier.diagnosticsLine())
+            tuningDiagnostics?.let {
+                appendLine()
+                append(it)
+            }
         }
         return facade.exportDiagnostics() + diagnosticFooter
     }
@@ -171,6 +179,10 @@ class MvpRuntimeGateway(
     override fun deleteSession(sessionId: SessionId): Boolean = facade.deleteSession(sessionId)
 
     override fun runtimeBackend(): String? = facade.runtimeBackend()
+
+    override fun evictResidentModel(reason: String): Boolean {
+        return (facade as? RuntimeResourceControl)?.evictResidentModel(reason) ?: false
+    }
 
     override fun supportsGpuOffload(): Boolean {
         val status = gpuOffloadStatus()

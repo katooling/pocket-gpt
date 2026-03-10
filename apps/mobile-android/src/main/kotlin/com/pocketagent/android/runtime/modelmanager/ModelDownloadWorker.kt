@@ -182,10 +182,7 @@ class ModelDownloadWorker(
                 verificationPolicy = verificationPolicy,
                 message = "Installing",
             )
-            if (destinationFile.exists()) {
-                destinationFile.delete()
-            }
-            if (!partFile.renameTo(destinationFile)) {
+            if (!ModelInstallIo.replaceWithAtomicMove(source = partFile, destination = destinationFile)) {
                 fail(
                     taskId = taskId,
                     modelId = modelId,
@@ -317,7 +314,8 @@ class ModelDownloadWorker(
 
             BufferedInputStream(connection.inputStream).use { input ->
                 val append = responseCode == HttpURLConnection.HTTP_PARTIAL && existingBytes > 0L
-                BufferedOutputStream(FileOutputStream(partFile, append), COPY_BUFFER_SIZE).use { output ->
+                FileOutputStream(partFile, append).use { fileOutput ->
+                    BufferedOutputStream(fileOutput, COPY_BUFFER_SIZE).use { output ->
                     val buffer = ByteArray(COPY_BUFFER_SIZE)
                     var downloaded = existingBytes
                     var bytesSinceUpdate = 0L
@@ -351,7 +349,9 @@ class ModelDownloadWorker(
                         }
                     }
                     output.flush()
+                    runCatching { fileOutput.fd.sync() }
                     return@use downloaded to expectedTotal
+                    }
                 }
             }
         } finally {

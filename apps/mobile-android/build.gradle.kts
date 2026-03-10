@@ -10,6 +10,14 @@ val nativeBuildEnabled = providers.gradleProperty("pocketgpt.enableNativeBuild")
     .orElse("true")
     .map { it.isTruthyFlag() }
     .get()
+val nativeHexagonEnabled = providers.gradleProperty("pocketgpt.enableHexagonBuild")
+    .orElse("false")
+    .map { it.isTruthyFlag() }
+    .get()
+val nativeArmI8mmEnabled = providers.gradleProperty("pocketgpt.enableArmI8mm")
+    .orElse("true")
+    .map { it.isTruthyFlag() }
+    .get()
 val nativeAbiFilters = providers.gradleProperty("pocketgpt.nativeAbiFilters")
     .orElse("arm64-v8a")
     .map { raw ->
@@ -62,7 +70,11 @@ android {
             }
             externalNativeBuild {
                 cmake {
-                    arguments += listOf("-DANDROID_STL=c++_shared")
+                    arguments += listOf(
+                        "-DANDROID_STL=c++_shared",
+                        "-DPOCKETGPT_ENABLE_HEXAGON=${if (nativeHexagonEnabled) "ON" else "OFF"}",
+                        "-DPOCKETGPT_ENABLE_ARM_I8MM=${if (nativeArmI8mmEnabled) "ON" else "OFF"}",
+                    )
                     cppFlags += listOf("-std=c++17", "-fexceptions", "-frtti")
                     targets += listOf("pocket_llama")
                 }

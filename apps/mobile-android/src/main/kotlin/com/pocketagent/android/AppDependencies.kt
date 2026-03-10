@@ -22,14 +22,18 @@ import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.RuntimeCompositionRoot
+import com.pocketagent.runtime.RuntimeResourceControl
+import com.pocketagent.runtime.RuntimeWarmupSupport
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
+import com.pocketagent.runtime.WarmupResult
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.thread
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
@@ -62,14 +66,26 @@ object AppRuntimeDependencies {
         synchronized(lock) {
             val store = runtimeProvisioningStore
                 ?: AndroidRuntimeProvisioningStore(context.applicationContext).also { runtimeProvisioningStore = it }
-            hotSwappableRuntimeFacade.replace(
-                RuntimeCompositionRoot.createFacade(
-                    runtimeConfig = store.runtimeConfig(),
-                    conversationModule = getOrCreateConversationModule(),
-                    memoryModule = getOrCreateMemoryModule(),
-                    inferenceModule = createDefaultAndroidInferenceModule(context.applicationContext),
-                ),
+            val newFacade = RuntimeCompositionRoot.createFacade(
+                runtimeConfig = store.runtimeConfig(),
+                conversationModule = getOrCreateConversationModule(),
+                memoryModule = getOrCreateMemoryModule(),
+                inferenceModule = createDefaultAndroidInferenceModule(context.applicationContext),
             )
+            hotSwappableRuntimeFacade.replace(newFacade)
+            scheduleWarmupIfSupported(newFacade)
+        }
+    }
+
+    private fun scheduleWarmupIfSupported(facade: MvpRuntimeFacade) {
+        val warmupSupport = facade as? RuntimeWarmupSupport ?: return
+        thread(name = "pocketgpt-runtime-warmup", start = true, isDaemon = true) {
+            runCatching { warmupSupport.warmupActiveModel() }
+                .onFailure { error ->
+                    runCatching {
+                        Log.w("AppRuntimeDeps", "RUNTIME_WARMUP|failed|reason=${error.message ?: error::class.simpleName}")
+                    }
+                }
         }
     }
 
@@ -205,7 +221,7 @@ object AppRuntimeDependencies {
 
 internal class HotSwappableRuntimeFacade(
     initial: MvpRuntimeFacade,
-) : MvpRuntimeFacade {
+) : MvpRuntimeFacade, RuntimeWarmupSupport, RuntimeResourceControl {
     private val lock = ReentrantReadWriteLock()
     private var delegate: MvpRuntimeFacade = initial
     private var replacementCounter: Long = 0L
@@ -263,6 +279,19 @@ internal class HotSwappableRuntimeFacade(
     override fun runtimeBackend(): String? = withDelegate { it.runtimeBackend() }
 
     override fun supportsGpuOffload(): Boolean = withDelegate { it.supportsGpuOffload() }
+
+    override fun warmupActiveModel(): WarmupResult {
+        return withDelegate { facade ->
+            (facade as? RuntimeWarmupSupport)?.warmupActiveModel()
+                ?: WarmupResult.skipped("warmup_unsupported")
+        }
+    }
+
+    override fun evictResidentModel(reason: String): Boolean {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.evictResidentModel(reason) ?: false
+        }
+    }
 
     private inline fun <T> withDelegate(block: (MvpRuntimeFacade) -> T): T {
         return lock.read {

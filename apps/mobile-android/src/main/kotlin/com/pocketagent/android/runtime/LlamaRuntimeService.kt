@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import com.pocketagent.android.BuildConfig
 import com.pocketagent.nativebridge.BridgeError
 import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.GenerationFinishReason
@@ -63,12 +64,14 @@ fun createDefaultAndroidInferenceModule(
 
 internal fun resolveAndroidRuntimeMode(
     environment: Map<String, String> = System.getenv(),
+    debugBuild: Boolean = BuildConfig.DEBUG,
 ): String {
+    val defaultMode = if (debugBuild) ANDROID_RUNTIME_MODE_IN_PROCESS else ANDROID_RUNTIME_MODE_REMOTE
     return environment[ANDROID_RUNTIME_MODE_ENV]
         ?.trim()
         ?.lowercase()
         ?.takeIf { it == ANDROID_RUNTIME_MODE_IN_PROCESS || it == ANDROID_RUNTIME_MODE_REMOTE }
-        ?: ANDROID_RUNTIME_MODE_REMOTE
+        ?: defaultMode
 }
 
 internal object LlamaRuntimeIpc {
@@ -103,8 +106,18 @@ internal object LlamaRuntimeIpc {
     const val EXTRA_THREADS_BATCH = "n_threads_batch"
     const val EXTRA_BATCH = "n_batch"
     const val EXTRA_UBATCH = "n_ubatch"
+    const val EXTRA_CTX = "n_ctx"
     const val EXTRA_GPU_ENABLED = "gpu_enabled"
     const val EXTRA_GPU_LAYERS = "gpu_layers"
+    const val EXTRA_KV_QUANTIZED = "kv_quantized"
+    const val EXTRA_SAMPLING_TEMPERATURE = "sampling_temperature"
+    const val EXTRA_SAMPLING_TOP_K = "sampling_top_k"
+    const val EXTRA_SAMPLING_TOP_P = "sampling_top_p"
+    const val EXTRA_SPECULATIVE_ENABLED = "speculative_enabled"
+    const val EXTRA_SPECULATIVE_DRAFT_MODEL_ID = "speculative_draft_model_id"
+    const val EXTRA_SPECULATIVE_DRAFT_MODEL_PATH = "speculative_draft_model_path"
+    const val EXTRA_SPECULATIVE_DRAFT_MAX = "speculative_draft_max"
+    const val EXTRA_SPECULATIVE_DRAFT_MIN = "speculative_draft_min"
 
     const val EXTRA_REQUEST_ID = "request_id"
     const val EXTRA_PROMPT = "prompt"
@@ -121,6 +134,7 @@ internal object LlamaRuntimeIpc {
     const val EXTRA_RESULT_PREFILL_MS = "result_prefill_ms"
     const val EXTRA_RESULT_DECODE_MS = "result_decode_ms"
     const val EXTRA_RESULT_TOKENS_PER_SEC = "result_tokens_per_sec"
+    const val EXTRA_RESULT_PEAK_RSS_MB = "result_peak_rss_mb"
 
     const val EXTRA_RUNTIME_SUPPORTED = "runtime_supported"
     const val EXTRA_DRIVER_NAME = "driver_name"
@@ -502,6 +516,8 @@ internal class MessengerRemoteRuntimeTransport(
             ?.getLong(LlamaRuntimeIpc.EXTRA_RESULT_DECODE_MS)
         val tokensPerSec = bundle.takeIf { it.containsKey(LlamaRuntimeIpc.EXTRA_RESULT_TOKENS_PER_SEC) }
             ?.getDouble(LlamaRuntimeIpc.EXTRA_RESULT_TOKENS_PER_SEC)
+        val peakRssMb = bundle.takeIf { it.containsKey(LlamaRuntimeIpc.EXTRA_RESULT_PEAK_RSS_MB) }
+            ?.getDouble(LlamaRuntimeIpc.EXTRA_RESULT_PEAK_RSS_MB)
         return GenerationResult(
             finishReason = finishReason,
             tokenCount = bundle.getInt(LlamaRuntimeIpc.EXTRA_RESULT_TOKEN_COUNT, 0),
@@ -511,6 +527,7 @@ internal class MessengerRemoteRuntimeTransport(
             prefillMs = prefillMs,
             decodeMs = decodeMs,
             tokensPerSec = tokensPerSec,
+            peakRssMb = peakRssMb,
             errorCode = bundle.getString(LlamaRuntimeIpc.EXTRA_ERROR_CODE),
         )
     }
@@ -983,8 +1000,18 @@ private fun RuntimeGenerationConfig.toBundle(): Bundle {
         putInt(LlamaRuntimeIpc.EXTRA_THREADS_BATCH, nThreadsBatch)
         putInt(LlamaRuntimeIpc.EXTRA_BATCH, nBatch)
         putInt(LlamaRuntimeIpc.EXTRA_UBATCH, nUbatch)
+        putInt(LlamaRuntimeIpc.EXTRA_CTX, nCtx)
         putBoolean(LlamaRuntimeIpc.EXTRA_GPU_ENABLED, gpuEnabled)
         putInt(LlamaRuntimeIpc.EXTRA_GPU_LAYERS, gpuLayers)
+        putBoolean(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, quantizedKvCache)
+        putFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TEMPERATURE, sampling.temperature)
+        putInt(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_K, sampling.topK)
+        putFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_P, sampling.topP)
+        putBoolean(LlamaRuntimeIpc.EXTRA_SPECULATIVE_ENABLED, speculativeEnabled)
+        putString(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MODEL_ID, speculativeDraftModelId)
+        putString(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MODEL_PATH, speculativeDraftModelPath)
+        putInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MAX, speculativeMaxDraftTokens)
+        putInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MIN, speculativeMinDraftTokens)
     }
 }
 
@@ -994,8 +1021,20 @@ private fun Bundle.toRuntimeGenerationConfig(): RuntimeGenerationConfig {
         nThreadsBatch = getInt(LlamaRuntimeIpc.EXTRA_THREADS_BATCH, 0),
         nBatch = getInt(LlamaRuntimeIpc.EXTRA_BATCH, 512),
         nUbatch = getInt(LlamaRuntimeIpc.EXTRA_UBATCH, 512),
+        nCtx = getInt(LlamaRuntimeIpc.EXTRA_CTX, 2048),
         gpuEnabled = getBoolean(LlamaRuntimeIpc.EXTRA_GPU_ENABLED, false),
         gpuLayers = getInt(LlamaRuntimeIpc.EXTRA_GPU_LAYERS, 0),
+        quantizedKvCache = getBoolean(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, true),
+        sampling = com.pocketagent.nativebridge.RuntimeSamplingConfig(
+            temperature = getFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TEMPERATURE, 0.7f),
+            topK = getInt(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_K, 40),
+            topP = getFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_P, 0.95f),
+        ),
+        speculativeEnabled = getBoolean(LlamaRuntimeIpc.EXTRA_SPECULATIVE_ENABLED, false),
+        speculativeDraftModelId = getString(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MODEL_ID),
+        speculativeDraftModelPath = getString(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MODEL_PATH),
+        speculativeMaxDraftTokens = getInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MAX, 6),
+        speculativeMinDraftTokens = getInt(LlamaRuntimeIpc.EXTRA_SPECULATIVE_DRAFT_MIN, 2),
     )
 }
 
@@ -1009,6 +1048,7 @@ private fun GenerationResult.toBundle(): Bundle {
         prefillMs?.let { putLong(LlamaRuntimeIpc.EXTRA_RESULT_PREFILL_MS, it) }
         decodeMs?.let { putLong(LlamaRuntimeIpc.EXTRA_RESULT_DECODE_MS, it) }
         tokensPerSec?.let { putDouble(LlamaRuntimeIpc.EXTRA_RESULT_TOKENS_PER_SEC, it) }
+        peakRssMb?.let { putDouble(LlamaRuntimeIpc.EXTRA_RESULT_PEAK_RSS_MB, it) }
         putString(LlamaRuntimeIpc.EXTRA_ERROR_CODE, errorCode)
     }
 }
