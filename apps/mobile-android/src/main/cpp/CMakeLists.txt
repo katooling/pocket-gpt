@@ -16,7 +16,11 @@ if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
 endif()
 
 option(POCKETGPT_ENABLE_HEXAGON "Enable experimental Hexagon backend" OFF)
-option(POCKETGPT_ENABLE_ARM_I8MM "Enable ARM i8mm/dotprod compile flags" ON)
+option(
+    POCKETGPT_FORCE_ARM_I8MM
+    "Force ARM i8mm/dotprod compile flags (unsafe on older arm64 devices)"
+    OFF
+)
 
 # Path from apps/mobile-android/src/main/cpp -> repo root -> third_party/llama.cpp
 set(LLAMA_CPP_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../third_party/llama.cpp")
@@ -24,7 +28,7 @@ if(NOT EXISTS "${LLAMA_CPP_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "Missing vendored llama.cpp source at ${LLAMA_CPP_ROOT}.")
 endif()
 
-if(POCKETGPT_ENABLE_ARM_I8MM AND ANDROID_ABI STREQUAL "arm64-v8a")
+if(POCKETGPT_FORCE_ARM_I8MM AND ANDROID_ABI STREQUAL "arm64-v8a")
     add_compile_options(
         "$<$<COMPILE_LANGUAGE:C>:-march=armv8.2-a+dotprod+i8mm>"
         "$<$<COMPILE_LANGUAGE:CXX>:-march=armv8.2-a+dotprod+i8mm>"

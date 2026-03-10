@@ -40,30 +40,19 @@ class SendMessageUseCaseTest {
     }
 
     @Test
-    fun `response cache branch returns cached response and skips model load`() {
-        val sharedCache = RuntimeResponseCache(maxEntries = 8, ttlMs = 60_000L)
-        val runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true)
-
-        val firstFixture = createFixture(
-            runtimeConfig = runtimeConfig,
-            policyModule = permissivePolicy(),
-            inferenceModule = SendRecordingInferenceModule(generatedTokens = listOf("fresh ", "answer ")),
-            responseCache = sharedCache,
-        )
-        val first = firstFixture.useCase.execute(firstFixture.request())
-        assertEquals("fresh answer", first.text)
-
-        val secondFixture = createFixture(
-            runtimeConfig = runtimeConfig,
+    fun `interactive chat bypasses response cache and still requires model load`() {
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
             policyModule = permissivePolicy(),
             inferenceModule = SendRecordingInferenceModule(loadModelResult = false),
-            responseCache = sharedCache,
         )
-        val second = secondFixture.useCase.execute(secondFixture.request())
 
-        assertEquals("cached", second.finishReason)
-        assertEquals("fresh answer", second.text)
-        assertEquals(0, secondFixture.inferenceModule.loadCalls)
+        val error = assertFailsWith<IllegalStateException> {
+            fixture.useCase.execute(fixture.request())
+        }
+
+        assertTrue(error.message?.contains("Failed to load runtime model") == true)
+        assertEquals(1, fixture.inferenceModule.loadCalls)
     }
 
     @Test
@@ -148,8 +137,8 @@ class SendMessageUseCaseTest {
                 residencyPolicy = ModelResidencyPolicy(keepLoadedWhileAppForeground = true, idleUnloadTtlMs = 4_000L),
             ),
         )
-        assertEquals(1, unloadNowFixture.unloadNowCalls)
-        assertEquals(0, unloadNowFixture.scheduleCalls.size)
+        assertEquals(1, unloadNowFixture.inferenceModule.unloadCalls)
+        assertTrue(unloadNowFixture.runtimeResidencyManager.listResident().isEmpty())
 
         val scheduleFixture = createFixture(
             runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
@@ -162,19 +151,18 @@ class SendMessageUseCaseTest {
                 residencyPolicy = ModelResidencyPolicy(keepLoadedWhileAppForeground = true, idleUnloadTtlMs = 4_000L),
             ),
         )
-        assertEquals(0, scheduleFixture.unloadNowCalls)
-        assertEquals(listOf(4_000L), scheduleFixture.scheduleCalls)
+        assertEquals(0, scheduleFixture.inferenceModule.unloadCalls)
+        assertEquals(1, scheduleFixture.runtimeResidencyManager.listResident().size)
     }
 }
 
 private class SendMessageFixture(
     val inferenceModule: SendRecordingInferenceModule,
+    val runtimeResidencyManager: RuntimeResidencyManager,
 ) {
     lateinit var useCase: SendMessageUseCase
     var cancelByRequestCalls: Int = 0
     var cancelBySessionCalls: Int = 0
-    var unloadNowCalls: Int = 0
-    val scheduleCalls: MutableList<Long> = mutableListOf()
 
     fun request(
         requestTimeoutMs: Long = 60_000L,
@@ -205,7 +193,6 @@ private fun createFixture(
     runtimeConfig: RuntimeConfig,
     policyModule: SendPolicyModule,
     inferenceModule: SendRecordingInferenceModule,
-    responseCache: RuntimeResponseCache = RuntimeResponseCache(maxEntries = 16, ttlMs = 60_000L),
 ): SendMessageFixture {
     val routingModule = SendStaticRoutingModule()
     val modelLifecycle = ModelLifecycleCoordinator(
@@ -214,7 +201,11 @@ private fun createFixture(
         runtimeConfig = runtimeConfig,
     )
     val observability = NoopObservabilityModule()
-    val fixture = SendMessageFixture(inferenceModule = inferenceModule)
+    val runtimeResidencyManager = RuntimeResidencyManager(inferenceModule = inferenceModule)
+    val fixture = SendMessageFixture(
+        inferenceModule = inferenceModule,
+        runtimeResidencyManager = runtimeResidencyManager,
+    )
     fixture.useCase = SendMessageUseCase(
         conversationModule = InMemoryConversationModule(),
         routingModule = routingModule,
@@ -229,11 +220,9 @@ private fun createFixture(
             inferenceModule = inferenceModule,
             runtimeConfig = runtimeConfig,
         ),
-        responseCache = responseCache,
         modelLifecycleCoordinator = modelLifecycle,
-        cancelIdleUnload = {},
-        unloadNow = { fixture.unloadNowCalls += 1 },
-        scheduleIdleUnload = { ttl -> fixture.scheduleCalls += ttl },
+        runtimePlanResolver = RuntimePlanResolver(),
+        runtimeResidencyManager = runtimeResidencyManager,
         cancelByRequest = { _ ->
             fixture.cancelByRequestCalls += 1
             true
@@ -253,6 +242,7 @@ private class SendRecordingInferenceModule(
     private val busyWaitMsAfterFirstToken: Long = 0L,
 ) : InferenceModule {
     var loadCalls: Int = 0
+    var unloadCalls: Int = 0
 
     override fun listAvailableModels(): List<String> {
         return listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
@@ -273,7 +263,9 @@ private class SendRecordingInferenceModule(
         }
     }
 
-    override fun unloadModel() = Unit
+    override fun unloadModel() {
+        unloadCalls += 1
+    }
 
     private fun busyWait(waitMs: Long) {
         if (waitMs <= 0L) {

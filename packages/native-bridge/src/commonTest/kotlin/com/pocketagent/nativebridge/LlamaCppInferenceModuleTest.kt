@@ -51,6 +51,73 @@ class LlamaCppInferenceModuleTest {
     }
 
     @Test
+    fun `sampling-only config changes do not reload active model`() {
+        val bridge = FakeBridge()
+        val module = LlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        module.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                sampling = RuntimeSamplingConfig(
+                    temperature = 0.2f,
+                    topK = 8,
+                    topP = 0.6f,
+                ),
+            ),
+        )
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+
+        assertEquals(1, bridge.loadCalls)
+        assertTrue(module.residencyState().residentHit)
+    }
+
+    @Test
+    fun `load config changes reload active model on next load`() {
+        val bridge = FakeBridge()
+        val module = LlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        module.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig(
+                nThreads = 6,
+                nThreadsBatch = 6,
+                nBatch = 768,
+                nUbatch = 384,
+                nCtx = 1024,
+                gpuEnabled = true,
+                gpuLayers = 32,
+            ),
+        )
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+
+        assertEquals(2, bridge.loadCalls)
+        assertEquals(0, bridge.unloadCalls)
+        assertEquals(RuntimeReloadReason.GENERATION_CONFIG_CHANGED, module.residencyState().reloadReason)
+    }
+
+    @Test
+    fun `mmap and draft gpu config changes also force reload on next load`() {
+        val bridge = FakeBridge()
+        val module = LlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        module.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                speculativeEnabled = true,
+                speculativeDraftGpuLayers = 2,
+                useMmap = false,
+            ),
+        )
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+
+        assertEquals(2, bridge.loadCalls)
+        assertEquals(RuntimeReloadReason.GENERATION_CONFIG_CHANGED, module.residencyState().reloadReason)
+    }
+
+    @Test
     fun `load fails for unknown model and runtime generation failure throws`() {
         val bridge = FakeBridge(generateOk = false)
         val module = LlamaCppInferenceModule(bridge)
@@ -63,7 +130,6 @@ class LlamaCppInferenceModuleTest {
         assertTrue(error.message?.contains("generation failed") == true)
     }
 
-
     @Test
     fun `last bridge error delegates to runtime bridge contract`() {
         val module = LlamaCppInferenceModule(FakeBridge(lastError = BridgeError("REMOTE_PROCESS_DIED", "service disconnected")))
@@ -72,9 +138,29 @@ class LlamaCppInferenceModuleTest {
     }
 
     @Test
+    fun `prefix cache diagnostics line delegates to bridge`() {
+        val module = LlamaCppInferenceModule(
+            FakeBridge(prefixCacheDiagnosticsLine = "PREFIX_CACHE_DIAG|restore_state_success=2"),
+        )
+
+        assertEquals("PREFIX_CACHE_DIAG|restore_state_success=2", module.prefixCacheDiagnosticsLine())
+    }
+
+    @Test
     fun `runtime backend delegates to bridge`() {
         val module = LlamaCppInferenceModule(FakeBridge(backend = RuntimeBackend.ADB_FALLBACK))
         assertEquals(RuntimeBackend.ADB_FALLBACK, module.runtimeBackend())
+    }
+
+    @Test
+    fun `load caches estimated gpu layers for the active model context`() {
+        val bridge = FakeBridge(estimateMaxGpuLayers = 12)
+        val module = LlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+
+        assertEquals(12, module.cachedEstimatedMaxGpuLayers(ModelCatalog.QWEN_3_5_0_8B_Q4, 2048))
     }
 
     @Test
@@ -95,35 +181,14 @@ class LlamaCppInferenceModuleTest {
         assertEquals("cache-key-v1", bridge.lastCacheKey)
         assertEquals(CachePolicy.PREFIX_KV_REUSE, bridge.lastCachePolicy)
     }
-
-    @Test
-    fun `changing runtime generation config reloads active model on next load`() {
-        val bridge = FakeBridge()
-        val module = LlamaCppInferenceModule(bridge)
-        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
-
-        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
-        module.setRuntimeGenerationConfig(
-            RuntimeGenerationConfig(
-                nThreads = 6,
-                nThreadsBatch = 6,
-                nBatch = 768,
-                nUbatch = 768,
-                gpuEnabled = true,
-                gpuLayers = 32,
-            ),
-        )
-        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
-
-        assertEquals(2, bridge.loadCalls)
-        assertEquals(0, bridge.unloadCalls)
-    }
 }
 
 private class FakeBridge(
     private val generateOk: Boolean = true,
     private val backend: RuntimeBackend = RuntimeBackend.NATIVE_JNI,
     private val lastError: BridgeError? = null,
+    private val prefixCacheDiagnosticsLine: String? = null,
+    private val estimateMaxGpuLayers: Int? = null,
 ) : LlamaCppRuntimeBridge {
     var loadCalls: Int = 0
     var generateCalls: Int = 0
@@ -186,4 +251,8 @@ private class FakeBridge(
     override fun runtimeBackend(): RuntimeBackend = backend
 
     override fun lastError(): BridgeError? = lastError
+
+    override fun estimateMaxGpuLayers(nCtx: Int): Int? = estimateMaxGpuLayers
+
+    override fun prefixCacheDiagnosticsLine(): String? = prefixCacheDiagnosticsLine
 }

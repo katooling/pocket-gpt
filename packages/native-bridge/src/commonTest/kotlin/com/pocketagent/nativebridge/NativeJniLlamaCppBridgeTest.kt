@@ -43,6 +43,38 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
+    fun `set runtime generation config hot updates native sampler after load`() {
+        val nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello")
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                sampling = RuntimeSamplingConfig(
+                    temperature = 0.2f,
+                    topK = 8,
+                    topP = 0.6f,
+                ),
+                nKeep = 96,
+            ),
+        )
+
+        assertEquals(1, nativeApi.loadGpuLayers.size)
+        assertEquals(1, nativeApi.samplingConfigCalls)
+        assertEquals(0.2f, nativeApi.lastSamplingTemperature)
+        assertEquals(8, nativeApi.lastSamplingTopK)
+        assertEquals(0.6f, nativeApi.lastSamplingTopP)
+        assertEquals(96, nativeApi.lastSamplingNKeep)
+    }
+
+    @Test
     fun `falls back to adb bridge when native runtime is unavailable`() {
         val nativeApi = FakeNativeApi(initializeOk = false, loadOk = false, generatedText = "")
         val fallback = FakeFallbackBridge(ready = true, loadOk = true, generateOk = true)
@@ -152,13 +184,66 @@ class NativeJniLlamaCppBridgeTest {
             RuntimeGenerationConfig.default().copy(
                 gpuEnabled = true,
                 gpuLayers = 32,
+                speculativeEnabled = true,
+                speculativeDraftGpuLayers = 2,
             ),
         )
 
         assertTrue(bridge.isReady())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         assertEquals(listOf(32, 0), nativeApi.loadGpuLayers)
+        assertEquals(listOf(2, 0), nativeApi.loadDraftGpuLayers)
         assertEquals(null, bridge.lastError())
+    }
+
+    @Test
+    fun `estimate max gpu layers delegates to native runtime`() {
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(
+                initializeOk = true,
+                loadOk = true,
+                generatedText = "native hello",
+                estimateMaxGpuLayersValue = 14,
+            ),
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertTrue(bridge.isReady())
+        assertEquals(14, bridge.estimateMaxGpuLayers(2048))
+    }
+
+    @Test
+    fun `forwards mmap and draft gpu controls to native load`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 24,
+                speculativeEnabled = true,
+                speculativeDraftGpuLayers = 3,
+                useMmap = false,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(listOf(24), nativeApi.loadGpuLayers)
+        assertEquals(listOf(3), nativeApi.loadDraftGpuLayers)
+        assertEquals(listOf(false), nativeApi.loadUseMmap)
     }
 
     @Test
@@ -212,7 +297,7 @@ class NativeJniLlamaCppBridgeTest {
                 initializeOk = true,
                 loadOk = true,
                 generatedText = "ok",
-                vulkanDiagnosticsJson = """{"compiled_backend":"vulkan"}""",
+                vulkanDiagnosticsJson = "{\"compiled_backend\":\"vulkan\"}",
             ),
             libraryLoader = { _ -> },
             fallbackBridge = FakeFallbackBridge(),
@@ -220,7 +305,28 @@ class NativeJniLlamaCppBridgeTest {
         )
 
         assertTrue(bridge.isReady())
-        assertEquals("""{"compiled_backend":"vulkan"}""", bridge.vulkanDiagnosticsJson())
+        assertEquals("{\"compiled_backend\":\"vulkan\"}", bridge.vulkanDiagnosticsJson())
+    }
+
+    @Test
+    fun `prefix cache diagnostics are returned when native runtime is active`() {
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(
+                initializeOk = true,
+                loadOk = true,
+                generatedText = "ok",
+                prefixCacheDiagnosticsLine = "PREFIX_CACHE_DIAG|restore_state_success=1|restore_state_failure=0",
+            ),
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertTrue(bridge.isReady())
+        assertEquals(
+            "PREFIX_CACHE_DIAG|restore_state_success=1|restore_state_failure=0",
+            bridge.prefixCacheDiagnosticsLine(),
+        )
     }
 }
 
@@ -233,6 +339,10 @@ private class FakeNativeApi(
     private val loadResults: MutableList<Boolean>? = null,
     private val vulkanDiagnosticsJson: String = "{}",
     private val peakRssMb: Double? = null,
+    private val modelLayerCount: Int? = null,
+    private val modelSizeBytes: Long? = null,
+    private val estimateMaxGpuLayersValue: Int? = null,
+    private val prefixCacheDiagnosticsLine: String? = null,
 ) : NativeJniLlamaCppBridge.NativeApi {
     var loadCalled = false
     var generateCalled = false
@@ -240,9 +350,26 @@ private class FakeNativeApi(
     var cancelCalled = false
     var lastCacheKey: String? = null
     var lastCachePolicyCode: Int? = null
+    var samplingConfigCalls: Int = 0
+    var lastSamplingTemperature: Float? = null
+    var lastSamplingTopK: Int? = null
+    var lastSamplingTopP: Float? = null
+    var lastSamplingNKeep: Int? = null
     val loadGpuLayers = mutableListOf<Int>()
+    val loadDraftGpuLayers = mutableListOf<Int>()
+    val loadUseMmap = mutableListOf<Boolean>()
+    val loadUseMlock = mutableListOf<Boolean>()
+    val loadNKeep = mutableListOf<Int>()
 
     override fun initialize(): Boolean = initializeOk
+
+    override fun setSamplingConfig(temperature: Float, topK: Int, topP: Float, nKeep: Int) {
+        samplingConfigCalls += 1
+        lastSamplingTemperature = temperature
+        lastSamplingTopK = topK
+        lastSamplingTopP = topP
+        lastSamplingNKeep = nKeep
+    }
 
     override fun loadModel(
         modelId: String,
@@ -261,12 +388,20 @@ private class FakeNativeApi(
         speculativeDraftModelPath: String?,
         speculativeMaxDraftTokens: Int,
         speculativeMinDraftTokens: Int,
+        speculativeDraftGpuLayers: Int,
+        useMmap: Boolean,
+        useMlock: Boolean,
+        nKeep: Int,
     ): Boolean {
         if (throwOnLoad) {
             error("simulated native load exception")
         }
         loadCalled = true
         loadGpuLayers += nGpuLayers
+        loadDraftGpuLayers += speculativeDraftGpuLayers
+        loadUseMmap += useMmap
+        loadUseMlock += useMlock
+        loadNKeep += nKeep
         return if (loadResults != null && loadResults.isNotEmpty()) {
             loadResults.removeAt(0)
         } else {
@@ -313,6 +448,14 @@ private class FakeNativeApi(
     override fun vulkanDiagnosticsJson(): String = vulkanDiagnosticsJson
 
     override fun peakRssMb(): Double? = peakRssMb
+
+    override fun modelLayerCount(): Int? = modelLayerCount
+
+    override fun modelSizeBytes(): Long? = modelSizeBytes
+
+    override fun estimateMaxGpuLayers(nCtx: Int): Int? = estimateMaxGpuLayersValue
+
+    override fun prefixCacheDiagnosticsLine(): String? = prefixCacheDiagnosticsLine
 }
 
 private class FakeFallbackBridge(

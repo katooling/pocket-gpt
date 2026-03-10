@@ -2,19 +2,27 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
+#include <cerrno>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <dlfcn.h>
 #include <exception>
+#include <fcntl.h>
 #include <fstream>
 #include <functional>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -52,10 +60,55 @@ llama_model * g_draft_model = nullptr;
 llama_context * g_draft_context = nullptr;
 llama_sampler * g_draft_sampler = nullptr;
 std::atomic<bool> g_cancel_requested{false};
-std::vector<llama_token> g_cached_prompt_tokens;
-std::string g_cached_cache_key;
+constexpr size_t MAX_TARGET_PREFIX_STATE_BYTES = 192u * 1024u * 1024u;
+constexpr size_t MAX_DRAFT_PREFIX_STATE_BYTES = 48u * 1024u * 1024u;
+
+struct PrefixCacheSlot {
+    std::vector<llama_token> target_prompt_tokens;
+    std::vector<llama_token> draft_prompt_tokens;
+    std::vector<uint8_t> target_seq_state;
+    std::vector<uint8_t> draft_seq_state;
+    std::string cache_key;
+    uint64_t last_used_epoch = 0;
+    bool valid = false;
+};
+
+struct PrefixCacheTelemetry {
+    uint64_t target_hits = 0;
+    uint64_t target_misses = 0;
+    uint64_t draft_hits = 0;
+    uint64_t draft_misses = 0;
+    uint64_t store_state_success = 0;
+    uint64_t store_state_failure = 0;
+    uint64_t store_state_over_budget = 0;
+    uint64_t restore_state_success = 0;
+    uint64_t restore_state_failure = 0;
+    uint64_t restore_state_over_budget = 0;
+    int32_t last_slot = -1;
+    std::string last_stage;
+    std::string last_store_reason;
+    std::string last_restore_reason;
+};
+
+std::array<PrefixCacheSlot, 2> g_prefix_cache_slots;
+int32_t g_active_prefix_cache_slot = -1;
+uint64_t g_prefix_cache_epoch = 0;
+PrefixCacheTelemetry g_prefix_cache_telemetry;
 int32_t g_prompt_decode_batch_size = DEFAULT_PROMPT_DECODE_BATCH_SIZE;
 int32_t g_runtime_context_size = DEFAULT_CONTEXT_SIZE;
+float g_sampling_temperature = 0.7f;
+int32_t g_sampling_top_k = 40;
+float g_sampling_top_p = 0.95f;
+int32_t g_runtime_n_keep = 128;
+bool g_model_use_mmap = true;
+bool g_model_use_mlock = false;
+int32_t g_model_layer_count = 0;
+uint64_t g_model_size_bytes = 0;
+bool g_last_flash_attn_requested = false;
+bool g_last_flash_attn_gpu_ops = false;
+bool g_last_flash_attn_active = false;
+bool g_last_quantized_kv_cache = false;
+float g_speculative_acceptance_rate = 0.65f;
 bool g_speculative_enabled = false;
 int32_t g_speculative_max_draft_tokens = 6;
 int32_t g_speculative_min_draft_tokens = 2;
@@ -86,6 +139,208 @@ int32_t resolve_context_size(jint requested_ctx) {
         return DEFAULT_CONTEXT_SIZE;
     }
     return clamp_i32(static_cast<int32_t>(requested_ctx), 512, 32768);
+}
+
+void clear_prefix_cache_slots_locked();
+
+int32_t resolve_speculative_max_draft(int remaining_tokens) {
+    const int configured_max = std::max(0, std::min(g_speculative_max_draft_tokens, remaining_tokens - 1));
+    if (configured_max <= 0) {
+        return 0;
+    }
+    const float adaptive_factor = std::clamp(0.25f + g_speculative_acceptance_rate, 0.35f, 1.0f);
+    const int adaptive_max = static_cast<int>(std::lround(static_cast<float>(configured_max) * adaptive_factor));
+    return std::max(g_speculative_min_draft_tokens, std::min(configured_max, adaptive_max));
+}
+
+void log_speculative_metrics(size_t accepted_drafts, size_t drafted_tokens, int adaptive_max_draft, int remaining_tokens) {
+    if (drafted_tokens > 0) {
+        const float instant_acceptance = static_cast<float>(accepted_drafts) / static_cast<float>(drafted_tokens);
+        g_speculative_acceptance_rate = std::clamp(
+            (g_speculative_acceptance_rate * 0.8f) + (instant_acceptance * 0.2f),
+            0.0f,
+            1.0f);
+    }
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "SPECULATIVE|accepted=%zu|drafted=%zu|acceptance_rate=%.3f|adaptive_max=%d|remaining=%d",
+        accepted_drafts,
+        drafted_tokens,
+        static_cast<double>(g_speculative_acceptance_rate),
+        adaptive_max_draft,
+        remaining_tokens);
+}
+
+bool madvise_model_readahead(const std::string & path, const char * label) {
+    if (path.empty()) {
+        return false;
+    }
+    const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        __android_log_print(
+            ANDROID_LOG_WARN,
+            TAG,
+            "MMAP|stage=readahead_open_failed|label=%s|errno=%d|detail=%s",
+            label,
+            errno,
+            std::strerror(errno));
+        return false;
+    }
+
+    struct stat info {};
+    if (fstat(fd, &info) != 0 || info.st_size <= 0) {
+        const int saved_errno = errno;
+        close(fd);
+        __android_log_print(
+            ANDROID_LOG_WARN,
+            TAG,
+            "MMAP|stage=readahead_stat_failed|label=%s|errno=%d|detail=%s",
+            label,
+            saved_errno,
+            std::strerror(saved_errno));
+        return false;
+    }
+
+    void * mapping = mmap(nullptr, static_cast<size_t>(info.st_size), PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mapping == MAP_FAILED) {
+        const int saved_errno = errno;
+        close(fd);
+        __android_log_print(
+            ANDROID_LOG_WARN,
+            TAG,
+            "MMAP|stage=readahead_mmap_failed|label=%s|errno=%d|detail=%s",
+            label,
+            saved_errno,
+            std::strerror(saved_errno));
+        return false;
+    }
+
+    int advise_result = 0;
+#if defined(POSIX_MADV_WILLNEED)
+    advise_result = posix_madvise(mapping, static_cast<size_t>(info.st_size), POSIX_MADV_WILLNEED);
+#else
+    advise_result = madvise(mapping, static_cast<size_t>(info.st_size), MADV_WILLNEED);
+#endif
+    munmap(mapping, static_cast<size_t>(info.st_size));
+    close(fd);
+    __android_log_print(
+        advise_result == 0 ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
+        TAG,
+        "MMAP|stage=readahead|label=%s|bytes=%lld|result=%d",
+        label,
+        static_cast<long long>(info.st_size),
+        advise_result);
+    return advise_result == 0;
+}
+
+void trim_prompt_tokens_for_context(std::vector<llama_token> * prompt_tokens, size_t max_prompt_tokens) {
+    if (prompt_tokens == nullptr || prompt_tokens->size() <= max_prompt_tokens) {
+        return;
+    }
+    const size_t original_size = prompt_tokens->size();
+    if (max_prompt_tokens <= 1) {
+        prompt_tokens->assign(prompt_tokens->end() - 1, prompt_tokens->end());
+        return;
+    }
+    size_t preserve_head = max_prompt_tokens > 384
+        ? std::min<size_t>(128, max_prompt_tokens - 1)
+        : std::max<size_t>(1, std::min<size_t>(128, max_prompt_tokens / 3));
+    preserve_head = std::min(preserve_head, max_prompt_tokens - 1);
+    const size_t keep_tail = max_prompt_tokens - preserve_head;
+    std::vector<llama_token> trimmed;
+    trimmed.reserve(max_prompt_tokens);
+    trimmed.insert(trimmed.end(), prompt_tokens->begin(), prompt_tokens->begin() + static_cast<std::ptrdiff_t>(preserve_head));
+    trimmed.insert(trimmed.end(), prompt_tokens->end() - static_cast<std::ptrdiff_t>(keep_tail), prompt_tokens->end());
+    *prompt_tokens = std::move(trimmed);
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "PROMPT_TRIM|original=%zu|max=%zu|preserve_head=%zu|keep_tail=%zu|trimmed=%zu",
+        original_size,
+        max_prompt_tokens,
+        preserve_head,
+        keep_tail,
+        prompt_tokens->size());
+}
+
+llama_pos resolve_n_keep_tokens(size_t tracked_tokens) {
+    if (tracked_tokens == 0) {
+        return 0;
+    }
+    const llama_pos max_keep = static_cast<llama_pos>(tracked_tokens > 0 ? tracked_tokens - 1 : 0);
+    return std::clamp(static_cast<llama_pos>(g_runtime_n_keep), static_cast<llama_pos>(0), max_keep);
+}
+
+llama_pos resolve_context_shift_discard(llama_pos context_tokens, int reserved_tokens, llama_pos n_keep) {
+    const llama_pos runtime_ctx = static_cast<llama_pos>(std::max(1, g_runtime_context_size));
+    if (context_tokens + reserved_tokens < runtime_ctx) {
+        return 0;
+    }
+    const llama_pos available = std::max<llama_pos>(0, context_tokens - n_keep);
+    if (available <= 0) {
+        return 0;
+    }
+    const llama_pos overflow = std::max<llama_pos>(0, (context_tokens + reserved_tokens) - runtime_ctx);
+    const llama_pos window = std::max<llama_pos>(1, runtime_ctx / 4);
+    return std::min(available, std::max(overflow, window));
+}
+
+void erase_token_window(std::vector<llama_token> * tokens, llama_pos n_keep, llama_pos discard) {
+    if (tokens == nullptr || discard <= 0) {
+        return;
+    }
+    const size_t keep_index = static_cast<size_t>(std::max<llama_pos>(0, n_keep));
+    if (keep_index >= tokens->size()) {
+        return;
+    }
+    const size_t erase_count = std::min(static_cast<size_t>(discard), tokens->size() - keep_index);
+    tokens->erase(
+        tokens->begin() + static_cast<std::ptrdiff_t>(keep_index),
+        tokens->begin() + static_cast<std::ptrdiff_t>(keep_index + erase_count));
+}
+
+bool shift_context_window_locked(
+    llama_context * context,
+    llama_pos * context_tokens,
+    std::vector<llama_token> * tracked_tokens,
+    llama_pos n_keep,
+    llama_pos discard,
+    const char * label) {
+    if (context == nullptr || context_tokens == nullptr || discard <= 0) {
+        return false;
+    }
+    llama_memory_t memory = llama_get_memory(context);
+    if (!llama_memory_can_shift(memory)) {
+        __android_log_print(
+            ANDROID_LOG_WARN,
+            TAG,
+            "CONTEXT_SHIFT|label=%s|status=unsupported",
+            label);
+        return false;
+    }
+    if (!llama_memory_seq_rm(memory, -1, n_keep, n_keep + discard)) {
+        __android_log_print(
+            ANDROID_LOG_WARN,
+            TAG,
+            "CONTEXT_SHIFT|label=%s|status=seq_rm_failed|n_keep=%d|discard=%d",
+            label,
+            static_cast<int>(n_keep),
+            static_cast<int>(discard));
+        return false;
+    }
+    llama_memory_seq_add(memory, -1, n_keep + discard, -1, -discard);
+    erase_token_window(tracked_tokens, n_keep, discard);
+    *context_tokens = std::max(n_keep, *context_tokens - discard);
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "CONTEXT_SHIFT|label=%s|n_keep=%d|discard=%d|remaining=%d",
+        label,
+        static_cast<int>(n_keep),
+        static_cast<int>(discard),
+        static_cast<int>(*context_tokens));
+    return true;
 }
 
 std::string lowercase_copy(const std::string & value) {
@@ -167,7 +422,6 @@ void apply_android_vulkan_safety_env_once() {
         setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
     } else {
         // Balanced mode keeps core safety rails but allows high-impact optimizations.
-        setenv("GGML_VK_DISABLE_COOPMAT", "1", 1);
         setenv("GGML_VK_DISABLE_COOPMAT2", "1", 1);
         setenv("GGML_VK_DISABLE_BUFFER_DEVICE_ADDRESS", "1", 1);
     }
@@ -247,6 +501,7 @@ struct VulkanDiagnostics {
     bool shader_float16 = false;
     std::string driver_name;
     uint32_t driver_version = 0;
+    uint64_t device_local_heap_bytes = 0;
 };
 
 VulkanDiagnostics collect_vulkan_diagnostics() {
@@ -314,6 +569,8 @@ VulkanDiagnostics collect_vulkan_diagnostics() {
         vk_get_physical_device_features2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
             vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceFeatures2KHR"));
     }
+    auto vk_get_physical_device_memory_properties = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
+        vk_get_instance_proc_addr(instance, "vkGetPhysicalDeviceMemoryProperties"));
 
     if (vk_enumerate_physical_devices != nullptr) {
         uint32_t device_count = 0;
@@ -334,6 +591,16 @@ VulkanDiagnostics collect_vulkan_diagnostics() {
                     info.driver_version = props2.properties.driverVersion;
                     if (driver_props.driverName[0] != '\0') {
                         info.driver_name = driver_props.driverName;
+                    }
+                }
+                if (vk_get_physical_device_memory_properties != nullptr) {
+                    VkPhysicalDeviceMemoryProperties memory_props{};
+                    vk_get_physical_device_memory_properties(selected, &memory_props);
+                    for (uint32_t heap_index = 0; heap_index < memory_props.memoryHeapCount; ++heap_index) {
+                        const VkMemoryHeap & heap = memory_props.memoryHeaps[heap_index];
+                        if ((heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0) {
+                            info.device_local_heap_bytes += heap.size;
+                        }
                     }
                 }
 
@@ -386,10 +653,62 @@ std::string vulkan_diagnostics_json() {
         << "\"physical_device_count\":" << diag.physical_device_count << ","
         << "\"storage_buffer_16bit_access\":" << (diag.storage_buffer_16bit_access ? "true" : "false") << ","
         << "\"shader_float16\":" << (diag.shader_float16 ? "true" : "false") << ","
+        << "\"flashAttnActive\":" << (g_last_flash_attn_active ? "true" : "false") << ","
         << "\"driver_name\":\"" << json_escape(diag.driver_name) << "\","
-        << "\"driver_version\":" << diag.driver_version
+        << "\"driver_version\":" << diag.driver_version << ","
+        << "\"device_local_heap_bytes\":" << static_cast<unsigned long long>(diag.device_local_heap_bytes)
         << "}";
     return out.str();
+}
+
+int32_t estimate_max_gpu_layers_locked(int32_t requested_n_ctx) {
+    if (g_model == nullptr || !gpu_offload_supported()) {
+        return -1;
+    }
+    const int32_t layer_count = llama_model_n_layer(g_model);
+    if (layer_count <= 0) {
+        return -1;
+    }
+    const uint64_t model_size = g_model_size_bytes > 0
+        ? g_model_size_bytes
+        : static_cast<uint64_t>(llama_model_size(g_model));
+    if (model_size == 0) {
+        return -1;
+    }
+    const VulkanDiagnostics diag = collect_vulkan_diagnostics();
+    if (diag.device_local_heap_bytes == 0) {
+        return -1;
+    }
+    const int32_t n_ctx = std::max<int32_t>(1, requested_n_ctx > 0 ? requested_n_ctx : g_runtime_context_size);
+    const int32_t n_embd = std::max(1, llama_model_n_embd(g_model));
+    const int32_t n_head = std::max(1, llama_model_n_head(g_model));
+    const int32_t n_head_kv = std::max(1, llama_model_n_head_kv(g_model));
+    const double kv_type_bytes = g_last_quantized_kv_cache ? 1.0 : 2.0;
+    const double per_layer_model_bytes = static_cast<double>(model_size) / static_cast<double>(layer_count);
+    const double kv_ratio = static_cast<double>(n_head_kv) / static_cast<double>(n_head);
+    const double per_layer_kv_bytes =
+        2.0 * static_cast<double>(n_ctx) * static_cast<double>(n_embd) * kv_ratio * kv_type_bytes;
+    const double per_layer_total_bytes = per_layer_model_bytes + per_layer_kv_bytes;
+    if (per_layer_total_bytes <= 0.0) {
+        return -1;
+    }
+    const double available_bytes = static_cast<double>(diag.device_local_heap_bytes) * 0.75;
+    const int32_t estimate = clamp_i32(
+        static_cast<int32_t>(std::floor(available_bytes / per_layer_total_bytes)),
+        0,
+        layer_count);
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "GPU_OFFLOAD|estimate_layers=%d|layer_count=%d|n_ctx=%d|heap_bytes=%llu|model_bytes=%llu|per_layer_bytes=%.0f|kv_per_layer_bytes=%.0f",
+        static_cast<int>(estimate),
+        static_cast<int>(layer_count),
+        static_cast<int>(n_ctx),
+        static_cast<unsigned long long>(diag.device_local_heap_bytes),
+        static_cast<unsigned long long>(model_size),
+        per_layer_model_bytes,
+        per_layer_kv_bytes);
+    return estimate;
 }
 
 void log_gpu_support_once() {
@@ -562,10 +881,22 @@ void release_runtime_locked() {
         llama_model_free(g_draft_model);
         g_draft_model = nullptr;
     }
-    g_cached_prompt_tokens.clear();
-    g_cached_cache_key.clear();
+    clear_prefix_cache_slots_locked();
     g_prompt_decode_batch_size = DEFAULT_PROMPT_DECODE_BATCH_SIZE;
     g_runtime_context_size = DEFAULT_CONTEXT_SIZE;
+    g_sampling_temperature = 0.7f;
+    g_sampling_top_k = 40;
+    g_sampling_top_p = 0.95f;
+    g_runtime_n_keep = 128;
+    g_model_use_mmap = true;
+    g_model_use_mlock = false;
+    g_model_layer_count = 0;
+    g_model_size_bytes = 0;
+    g_last_flash_attn_requested = false;
+    g_last_flash_attn_gpu_ops = false;
+    g_last_flash_attn_active = false;
+    g_last_quantized_kv_cache = false;
+    g_speculative_acceptance_rate = 0.65f;
     g_speculative_enabled = false;
     g_speculative_max_draft_tokens = 6;
     g_speculative_min_draft_tokens = 2;
@@ -644,6 +975,255 @@ size_t longest_common_prefix(
     return count;
 }
 
+void clear_prefix_cache_slots_locked() {
+    for (auto & slot : g_prefix_cache_slots) {
+        slot.target_prompt_tokens.clear();
+        slot.draft_prompt_tokens.clear();
+        slot.target_seq_state.clear();
+        slot.draft_seq_state.clear();
+        slot.cache_key.clear();
+        slot.last_used_epoch = 0;
+        slot.valid = false;
+    }
+    g_active_prefix_cache_slot = -1;
+    g_prefix_cache_epoch = 0;
+    g_prefix_cache_telemetry = PrefixCacheTelemetry{};
+}
+
+int select_prefix_cache_slot_for_store() {
+    for (size_t idx = 0; idx < g_prefix_cache_slots.size(); ++idx) {
+        if (!g_prefix_cache_slots[idx].valid) {
+            return static_cast<int>(idx);
+        }
+    }
+    size_t evict_index = 0;
+    for (size_t idx = 1; idx < g_prefix_cache_slots.size(); ++idx) {
+        if (g_prefix_cache_slots[idx].last_used_epoch < g_prefix_cache_slots[evict_index].last_used_epoch) {
+            evict_index = idx;
+        }
+    }
+    return static_cast<int>(evict_index);
+}
+
+int store_prefix_cache_slot(
+    const std::vector<llama_token> & target_prompt_tokens,
+    const std::vector<llama_token> * draft_prompt_tokens,
+    const std::string & cache_key) {
+    int slot_index = g_active_prefix_cache_slot;
+    const bool active_slot_valid =
+        slot_index >= 0 &&
+        slot_index < static_cast<int>(g_prefix_cache_slots.size()) &&
+        g_prefix_cache_slots[static_cast<size_t>(slot_index)].valid;
+    if (!active_slot_valid) {
+        slot_index = select_prefix_cache_slot_for_store();
+    } else {
+        const auto & active_slot = g_prefix_cache_slots[static_cast<size_t>(slot_index)];
+        const bool preserve_previous_slot = !cache_key.empty() && active_slot.cache_key != cache_key;
+        if (preserve_previous_slot) {
+            slot_index = select_prefix_cache_slot_for_store();
+            if (slot_index == g_active_prefix_cache_slot && g_prefix_cache_slots.size() > 1) {
+                slot_index = (slot_index + 1) % static_cast<int>(g_prefix_cache_slots.size());
+            }
+        }
+    }
+    auto & slot = g_prefix_cache_slots[static_cast<size_t>(slot_index)];
+    slot.target_prompt_tokens = target_prompt_tokens;
+    if (draft_prompt_tokens != nullptr) {
+        slot.draft_prompt_tokens = *draft_prompt_tokens;
+    } else {
+        slot.draft_prompt_tokens.clear();
+        slot.draft_seq_state.clear();
+    }
+    slot.cache_key = cache_key;
+    slot.valid = true;
+    slot.last_used_epoch = ++g_prefix_cache_epoch;
+    g_active_prefix_cache_slot = slot_index;
+    return slot_index;
+}
+
+int reuse_prefix_cache_slot(
+    int cache_policy,
+    const std::string & cache_key,
+    const std::vector<llama_token> & prompt_tokens,
+    bool * strict_key_match,
+    size_t * reused_tokens) {
+    *strict_key_match = false;
+    *reused_tokens = 0;
+    if (cache_policy != CACHE_POLICY_PREFIX_REUSE && cache_policy != CACHE_POLICY_PREFIX_REUSE_STRICT) {
+        return -1;
+    }
+
+    const bool strict_mode = cache_policy == CACHE_POLICY_PREFIX_REUSE_STRICT;
+    int best_slot = -1;
+    size_t best_reused_tokens = 0;
+    bool best_slot_strict_match = false;
+
+    for (size_t idx = 0; idx < g_prefix_cache_slots.size(); ++idx) {
+        auto & slot = g_prefix_cache_slots[idx];
+        if (!slot.valid || slot.target_prompt_tokens.empty()) {
+            continue;
+        }
+        const bool key_matches = !cache_key.empty() && cache_key == slot.cache_key;
+        if (strict_mode && !key_matches) {
+            continue;
+        }
+        const size_t candidate_reuse = longest_common_prefix(slot.target_prompt_tokens, prompt_tokens);
+        if (candidate_reuse == 0) {
+            continue;
+        }
+        const bool prefer_candidate =
+            best_slot < 0 ||
+            (key_matches && !best_slot_strict_match) ||
+            (key_matches == best_slot_strict_match && candidate_reuse > best_reused_tokens) ||
+            (key_matches == best_slot_strict_match && candidate_reuse == best_reused_tokens &&
+                slot.last_used_epoch > g_prefix_cache_slots[static_cast<size_t>(best_slot)].last_used_epoch);
+        if (!prefer_candidate) {
+            continue;
+        }
+        best_slot = static_cast<int>(idx);
+        best_reused_tokens = candidate_reuse;
+        best_slot_strict_match = key_matches;
+    }
+
+    if (best_slot < 0) {
+        return -1;
+    }
+
+    auto & slot = g_prefix_cache_slots[static_cast<size_t>(best_slot)];
+    slot.last_used_epoch = ++g_prefix_cache_epoch;
+    *strict_key_match = best_slot_strict_match;
+    *reused_tokens = best_reused_tokens;
+    return best_slot;
+}
+
+void log_prefix_cache_state_event(
+    const char * stage,
+    const char * label,
+    int slot_index,
+    size_t bytes,
+    bool success,
+    const char * reason) {
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "PREFIX_CACHE|stage=%s|label=%s|slot=%d|bytes=%zu|success=%s|reason=%s",
+        stage,
+        label,
+        slot_index,
+        bytes,
+        success ? "true" : "false",
+        reason == nullptr ? "none" : reason);
+    const std::string stage_name = stage == nullptr ? "" : stage;
+    const std::string reason_name = reason == nullptr ? "none" : reason;
+    g_prefix_cache_telemetry.last_slot = slot_index;
+    if (stage_name == "store_state") {
+        g_prefix_cache_telemetry.last_store_reason = reason_name;
+        if (success) {
+            g_prefix_cache_telemetry.store_state_success += 1;
+        } else {
+            g_prefix_cache_telemetry.store_state_failure += 1;
+            if (reason_name == "over_budget") {
+                g_prefix_cache_telemetry.store_state_over_budget += 1;
+            }
+        }
+    } else if (stage_name == "restore_state") {
+        g_prefix_cache_telemetry.last_restore_reason = reason_name;
+        if (success) {
+            g_prefix_cache_telemetry.restore_state_success += 1;
+        } else {
+            g_prefix_cache_telemetry.restore_state_failure += 1;
+            if (reason_name == "over_budget") {
+                g_prefix_cache_telemetry.restore_state_over_budget += 1;
+            }
+        }
+    }
+}
+
+std::string prefix_cache_diagnostics_line_locked() {
+    size_t resident_slots = 0;
+    for (const auto & slot : g_prefix_cache_slots) {
+        if (slot.valid) {
+            resident_slots += 1;
+        }
+    }
+    std::ostringstream out;
+    out << "PREFIX_CACHE_DIAG"
+        << "|target_hits=" << g_prefix_cache_telemetry.target_hits
+        << "|target_misses=" << g_prefix_cache_telemetry.target_misses
+        << "|draft_hits=" << g_prefix_cache_telemetry.draft_hits
+        << "|draft_misses=" << g_prefix_cache_telemetry.draft_misses
+        << "|store_state_success=" << g_prefix_cache_telemetry.store_state_success
+        << "|store_state_failure=" << g_prefix_cache_telemetry.store_state_failure
+        << "|store_state_over_budget=" << g_prefix_cache_telemetry.store_state_over_budget
+        << "|restore_state_success=" << g_prefix_cache_telemetry.restore_state_success
+        << "|restore_state_failure=" << g_prefix_cache_telemetry.restore_state_failure
+        << "|restore_state_over_budget=" << g_prefix_cache_telemetry.restore_state_over_budget
+        << "|last_stage=" << (g_prefix_cache_telemetry.last_stage.empty() ? "none" : g_prefix_cache_telemetry.last_stage)
+        << "|last_store_reason=" << (g_prefix_cache_telemetry.last_store_reason.empty() ? "none" : g_prefix_cache_telemetry.last_store_reason)
+        << "|last_restore_reason=" << (g_prefix_cache_telemetry.last_restore_reason.empty() ? "none" : g_prefix_cache_telemetry.last_restore_reason)
+        << "|last_slot=" << g_prefix_cache_telemetry.last_slot
+        << "|active_slot=" << g_active_prefix_cache_slot
+        << "|resident_slots=" << resident_slots;
+    return out.str();
+}
+
+bool capture_seq_state(
+    llama_context * ctx,
+    std::vector<uint8_t> * state,
+    size_t max_bytes,
+    const char * label,
+    int slot_index) {
+    if (state == nullptr) {
+        return false;
+    }
+    state->clear();
+    if (ctx == nullptr) {
+        log_prefix_cache_state_event("store_state", label, slot_index, 0, false, "context_null");
+        return false;
+    }
+    const size_t state_size = llama_state_seq_get_size(ctx, 0);
+    if (state_size == 0) {
+        log_prefix_cache_state_event("store_state", label, slot_index, 0, false, "empty");
+        return false;
+    }
+    if (state_size > max_bytes) {
+        log_prefix_cache_state_event("store_state", label, slot_index, state_size, false, "over_budget");
+        return false;
+    }
+    state->resize(state_size);
+    const size_t written = llama_state_seq_get_data(ctx, state->data(), state->size(), 0);
+    if (written != state_size) {
+        state->clear();
+        log_prefix_cache_state_event("store_state", label, slot_index, written, false, "copy_failed");
+        return false;
+    }
+    log_prefix_cache_state_event("store_state", label, slot_index, written, true, "stored");
+    return true;
+}
+
+bool restore_seq_state(
+    llama_context * ctx,
+    const std::vector<uint8_t> & state,
+    const char * label,
+    int slot_index) {
+    if (ctx == nullptr) {
+        log_prefix_cache_state_event("restore_state", label, slot_index, 0, false, "context_null");
+        return false;
+    }
+    if (state.empty()) {
+        log_prefix_cache_state_event("restore_state", label, slot_index, 0, false, "empty");
+        return false;
+    }
+    llama_memory_clear(llama_get_memory(ctx), false);
+    const size_t restored = llama_state_seq_set_data(ctx, state.data(), state.size(), 0);
+    if (restored == 0) {
+        log_prefix_cache_state_event("restore_state", label, slot_index, state.size(), false, "copy_failed");
+        return false;
+    }
+    log_prefix_cache_state_event("restore_state", label, slot_index, restored, true, "restored");
+    return true;
+}
+
 bool decode_tokens_from_offset(
     llama_context * ctx,
     const std::vector<llama_token> & tokens,
@@ -652,6 +1232,7 @@ bool decode_tokens_from_offset(
         return true;
     }
     const int32_t prompt_decode_batch_size = std::max(1, g_prompt_decode_batch_size);
+    const size_t total_tokens = tokens.size();
     for (size_t idx = offset; idx < tokens.size(); idx += static_cast<size_t>(prompt_decode_batch_size)) {
         if (g_cancel_requested.load(std::memory_order_acquire)) {
             log_error("nativeGenerate cancelled during prompt decode");
@@ -660,6 +1241,15 @@ bool decode_tokens_from_offset(
         const size_t remaining = tokens.size() - idx;
         const int32_t chunk_size = static_cast<int32_t>(
             std::min(remaining, static_cast<size_t>(prompt_decode_batch_size)));
+        const size_t completed = std::min(total_tokens, idx + static_cast<size_t>(chunk_size));
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "PROMPT_DECODE|progress=%zu/%zu|offset=%zu|chunk=%d",
+            completed,
+            total_tokens,
+            idx,
+            static_cast<int>(chunk_size));
         llama_batch prompt_batch = llama_batch_get_one(const_cast<llama_token *>(tokens.data() + idx), chunk_size);
         __android_log_print(
             ANDROID_LOG_INFO,
@@ -699,6 +1289,50 @@ llama_sampler * build_sampler_chain(float temperature, int32_t top_k, float top_
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
     return sampler;
+}
+
+bool apply_sampling_config_locked(float temperature, int32_t top_k, float top_p) {
+    g_sampling_temperature = std::max(0.0f, temperature);
+    g_sampling_top_k = clamp_i32(top_k, 0, 1024);
+    g_sampling_top_p = std::max(0.0f, std::min(1.0f, top_p));
+    if (g_context == nullptr) {
+        return true;
+    }
+
+    llama_sampler * next_sampler = build_sampler_chain(
+        g_sampling_temperature,
+        g_sampling_top_k,
+        g_sampling_top_p);
+    if (next_sampler == nullptr) {
+        return false;
+    }
+
+    llama_sampler * next_draft_sampler = nullptr;
+    if (g_draft_context != nullptr) {
+        next_draft_sampler = build_sampler_chain(
+            g_sampling_temperature,
+            std::max(1, g_sampling_top_k / 2),
+            std::min(0.98f, std::max(0.5f, g_sampling_top_p)));
+        if (next_draft_sampler == nullptr) {
+            llama_sampler_free(next_sampler);
+            return false;
+        }
+    }
+
+    if (g_sampler != nullptr) {
+        llama_sampler_free(g_sampler);
+    }
+    g_sampler = next_sampler;
+    llama_sampler_reset(g_sampler);
+
+    if (g_draft_sampler != nullptr) {
+        llama_sampler_free(g_draft_sampler);
+    }
+    g_draft_sampler = next_draft_sampler;
+    if (g_draft_sampler != nullptr) {
+        llama_sampler_reset(g_draft_sampler);
+    }
+    return true;
 }
 
 bool decode_single_token(llama_context * ctx, llama_token token) {
@@ -763,7 +1397,7 @@ SpeculativeStepResult run_speculative_step(
         return result;
     }
 
-    const int max_draft = std::max(0, std::min(g_speculative_max_draft_tokens, remaining_tokens - 1));
+    const int max_draft = resolve_speculative_max_draft(remaining_tokens);
     if (max_draft < g_speculative_min_draft_tokens) {
         const llama_token token = llama_sampler_sample(g_sampler, g_context, -1);
         if (llama_vocab_is_eog(vocab, token)) {
@@ -782,6 +1416,7 @@ SpeculativeStepResult run_speculative_step(
         }
         *draft_context_tokens += 1;
         result.emitted_tokens.push_back(token);
+        log_speculative_metrics(0, 0, max_draft, remaining_tokens);
         return result;
     }
 
@@ -829,6 +1464,7 @@ SpeculativeStepResult run_speculative_step(
         }
         *draft_context_tokens += 1;
         result.emitted_tokens.push_back(token);
+        log_speculative_metrics(0, draft_tokens.size(), max_draft, remaining_tokens);
         return result;
     }
 
@@ -854,6 +1490,7 @@ SpeculativeStepResult run_speculative_step(
         }
         *draft_context_tokens += 1;
         result.emitted_tokens.push_back(first_token);
+        log_speculative_metrics(0, draft_tokens.size(), max_draft, remaining_tokens);
         return result;
     }
 
@@ -926,24 +1563,45 @@ SpeculativeStepResult run_speculative_step(
         *draft_context_tokens += 1;
     }
 
+    log_speculative_metrics(accepted_drafts, draft_tokens.size(), max_draft, remaining_tokens);
     return result;
 }
 
 void log_prefix_cache_event(
+    const char * stage,
     int policy,
     bool hit,
     size_t reused_tokens,
     size_t prompt_tokens,
-    bool strict_key_match) {
+    bool strict_key_match,
+    int slot_index) {
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "PREFIX_CACHE|policy=%d|hit=%s|reused_tokens=%zu|prompt_tokens=%zu|strict_key_match=%s",
+        "PREFIX_CACHE|stage=%s|policy=%d|hit=%s|reused_tokens=%zu|prompt_tokens=%zu|strict_key_match=%s|slot=%d",
+        stage,
         policy,
         hit ? "true" : "false",
         reused_tokens,
         prompt_tokens,
-        strict_key_match ? "true" : "false");
+        strict_key_match ? "true" : "false",
+        slot_index);
+    g_prefix_cache_telemetry.last_stage = stage == nullptr ? "" : stage;
+    g_prefix_cache_telemetry.last_slot = slot_index;
+    const std::string stage_name = g_prefix_cache_telemetry.last_stage;
+    if (stage_name == "target") {
+        if (hit) {
+            g_prefix_cache_telemetry.target_hits += 1;
+        } else {
+            g_prefix_cache_telemetry.target_misses += 1;
+        }
+    } else if (stage_name == "draft") {
+        if (hit) {
+            g_prefix_cache_telemetry.draft_hits += 1;
+        } else {
+            g_prefix_cache_telemetry.draft_misses += 1;
+        }
+    }
 }
 
 jint generate_locked(
@@ -989,29 +1647,76 @@ jint generate_locked(
     const int runtime_context_size = static_cast<int>(
         llama_n_ctx(g_context) > 0 ? llama_n_ctx(g_context) : static_cast<uint32_t>(g_runtime_context_size));
     const int max_prompt_tokens = std::max(1, runtime_context_size - safe_max_tokens - 1);
-    if (static_cast<int>(prompt_tokens.size()) > max_prompt_tokens) {
-        const size_t trim_count = prompt_tokens.size() - static_cast<size_t>(max_prompt_tokens);
-        prompt_tokens.erase(prompt_tokens.begin(), prompt_tokens.begin() + static_cast<std::ptrdiff_t>(trim_count));
-    }
+
+    auto shift_prefill_window = [&](llama_context * context,
+                                    llama_pos * context_tokens,
+                                    std::vector<llama_token> * cached_tokens,
+                                    const char * label) {
+        if (context == nullptr || context_tokens == nullptr || cached_tokens == nullptr) {
+            return false;
+        }
+        while (static_cast<int>(prompt_tokens.size()) > max_prompt_tokens) {
+            const llama_pos n_keep = resolve_n_keep_tokens(cached_tokens->size());
+            llama_pos discard = resolve_context_shift_discard(
+                static_cast<llama_pos>(prompt_tokens.size()),
+                safe_max_tokens + 1,
+                n_keep);
+            const llama_pos max_discard = std::max<llama_pos>(0, *context_tokens - n_keep);
+            discard = std::min(discard, max_discard);
+            if (discard <= 0) {
+                return false;
+            }
+            if (!shift_context_window_locked(context, context_tokens, cached_tokens, n_keep, discard, label)) {
+                return false;
+            }
+            erase_token_window(&prompt_tokens, n_keep, discard);
+        }
+        return true;
+    };
 
     bool strict_key_match = true;
     size_t reused_tokens = 0;
     size_t decode_offset = 0;
     bool cache_hit = false;
-    bool use_prefix_cache = cache_policy == CACHE_POLICY_PREFIX_REUSE || cache_policy == CACHE_POLICY_PREFIX_REUSE_STRICT;
-    bool strict_mode = cache_policy == CACHE_POLICY_PREFIX_REUSE_STRICT;
+    int cache_slot = -1;
+    const bool use_prefix_cache =
+        cache_policy == CACHE_POLICY_PREFIX_REUSE || cache_policy == CACHE_POLICY_PREFIX_REUSE_STRICT;
+    const int previously_active_cache_slot = g_active_prefix_cache_slot;
     if (use_prefix_cache) {
-        strict_key_match = !strict_mode || (cache_key == g_cached_cache_key && !cache_key.empty());
-        if (strict_key_match && !g_cached_prompt_tokens.empty()) {
-            reused_tokens = longest_common_prefix(g_cached_prompt_tokens, prompt_tokens);
-            if (reused_tokens > 0) {
-                if (llama_memory_seq_rm(llama_get_memory(g_context), -1, static_cast<llama_pos>(reused_tokens), -1)) {
-                    decode_offset = reused_tokens;
-                    cache_hit = true;
-                } else {
-                    reused_tokens = 0;
-                }
+        cache_slot = reuse_prefix_cache_slot(cache_policy, cache_key, prompt_tokens, &strict_key_match, &reused_tokens);
+        if (cache_slot >= 0 && reused_tokens > 0) {
+            auto & selected_slot = g_prefix_cache_slots[static_cast<size_t>(cache_slot)];
+            bool target_state_ready = cache_slot == previously_active_cache_slot;
+            if (!target_state_ready) {
+                target_state_ready = restore_seq_state(
+                    g_context,
+                    selected_slot.target_seq_state,
+                    "target",
+                    cache_slot);
             }
+            if (target_state_ready &&
+                llama_memory_seq_rm(llama_get_memory(g_context), -1, static_cast<llama_pos>(reused_tokens), -1)) {
+                decode_offset = reused_tokens;
+                cache_hit = true;
+                llama_pos reused_context_tokens = static_cast<llama_pos>(reused_tokens);
+                shift_prefill_window(g_context, &reused_context_tokens, &selected_slot.target_prompt_tokens, "target_prefill");
+                reused_tokens = std::min(reused_tokens, static_cast<size_t>(reused_context_tokens));
+                decode_offset = std::min(decode_offset, static_cast<size_t>(reused_context_tokens));
+            } else {
+                reused_tokens = 0;
+                cache_slot = -1;
+            }
+        }
+    }
+
+    if (static_cast<int>(prompt_tokens.size()) > max_prompt_tokens) {
+        trim_prompt_tokens_for_context(&prompt_tokens, static_cast<size_t>(max_prompt_tokens));
+        if (cache_hit) {
+            llama_memory_clear(llama_get_memory(g_context), false);
+            decode_offset = 0;
+            reused_tokens = 0;
+            cache_hit = false;
+            cache_slot = -1;
         }
     }
 
@@ -1029,23 +1734,79 @@ jint generate_locked(
         return cancelled ? STREAM_STATUS_CANCELLED : STREAM_STATUS_RUNTIME_ERROR;
     }
 
-    g_cached_prompt_tokens = prompt_tokens;
-    g_cached_cache_key = cache_key;
-    log_prefix_cache_event(cache_policy, cache_hit, reused_tokens, prompt_tokens.size(), strict_key_match);
+    log_prefix_cache_event("target", cache_policy, cache_hit, reused_tokens, prompt_tokens.size(), strict_key_match, cache_slot);
 
     const bool speculative_ready = g_speculative_enabled &&
         g_draft_model != nullptr &&
         g_draft_context != nullptr &&
         g_draft_sampler != nullptr;
+    bool draft_strict_key_match = true;
+    size_t draft_reused_tokens = 0;
+    bool draft_cache_hit = false;
     llama_pos target_context_tokens = static_cast<llama_pos>(prompt_tokens.size());
     llama_pos draft_context_tokens = static_cast<llama_pos>(prompt_tokens.size());
+    std::vector<llama_token> tracked_target_tokens = prompt_tokens;
+    std::vector<llama_token> tracked_draft_tokens = prompt_tokens;
     if (speculative_ready) {
-        llama_memory_clear(llama_get_memory(g_draft_context), false);
-        if (!decode_tokens_from_offset(g_draft_context, prompt_tokens, 0)) {
+        size_t draft_decode_offset = 0;
+        if (use_prefix_cache && cache_slot >= 0) {
+            auto & selected_slot = g_prefix_cache_slots[static_cast<size_t>(cache_slot)];
+            const bool strict_mode = cache_policy == CACHE_POLICY_PREFIX_REUSE_STRICT;
+            draft_strict_key_match = !strict_mode || (!cache_key.empty() && cache_key == selected_slot.cache_key);
+            if (draft_strict_key_match && !selected_slot.draft_prompt_tokens.empty()) {
+                draft_reused_tokens = longest_common_prefix(selected_slot.draft_prompt_tokens, prompt_tokens);
+                if (draft_reused_tokens > 0) {
+                    bool draft_state_ready = cache_slot == previously_active_cache_slot;
+                    if (!draft_state_ready) {
+                        draft_state_ready = restore_seq_state(
+                            g_draft_context,
+                            selected_slot.draft_seq_state,
+                            "draft",
+                            cache_slot);
+                    }
+                    if (draft_state_ready &&
+                        llama_memory_seq_rm(llama_get_memory(g_draft_context), -1, static_cast<llama_pos>(draft_reused_tokens), -1)) {
+                        draft_decode_offset = draft_reused_tokens;
+                        draft_cache_hit = true;
+                        llama_pos draft_reused_context_tokens = static_cast<llama_pos>(draft_reused_tokens);
+                        shift_prefill_window(
+                            g_draft_context,
+                            &draft_reused_context_tokens,
+                            &selected_slot.draft_prompt_tokens,
+                            "draft_prefill");
+                        draft_reused_tokens = std::min(
+                            draft_reused_tokens,
+                            static_cast<size_t>(draft_reused_context_tokens));
+                        draft_decode_offset = std::min(
+                            draft_decode_offset,
+                            static_cast<size_t>(draft_reused_context_tokens));
+                    } else {
+                        draft_reused_tokens = 0;
+                    }
+                }
+            }
+        }
+        if (!draft_cache_hit) {
+            llama_memory_clear(llama_get_memory(g_draft_context), false);
+            draft_decode_offset = 0;
+        }
+        if (!decode_tokens_from_offset(g_draft_context, prompt_tokens, draft_decode_offset)) {
             log_error("nativeGenerate failed: draft prompt decode failed");
             g_cancel_requested.store(false, std::memory_order_release);
             return STREAM_STATUS_RUNTIME_ERROR;
         }
+        tracked_draft_tokens = prompt_tokens;
+        if (cache_hit) {
+            g_active_prefix_cache_slot = cache_slot;
+        }
+        log_prefix_cache_event(
+            "draft",
+            cache_policy,
+            draft_cache_hit,
+            draft_reused_tokens,
+            prompt_tokens.size(),
+            draft_strict_key_match,
+            cache_slot);
     }
 
     llama_batch batch{};
@@ -1060,6 +1821,45 @@ jint generate_locked(
         }
         std::vector<llama_token> emitted_tokens;
         const int remaining_tokens = safe_max_tokens - emitted_token_count;
+        const int reserved_tokens = remaining_tokens + 1;
+        if (target_context_tokens + reserved_tokens >= static_cast<llama_pos>(runtime_context_size)) {
+            const llama_pos target_n_keep = resolve_n_keep_tokens(tracked_target_tokens.size());
+            const llama_pos target_discard = resolve_context_shift_discard(
+                target_context_tokens,
+                reserved_tokens,
+                target_n_keep);
+            if (target_discard <= 0 ||
+                !shift_context_window_locked(
+                    g_context,
+                    &target_context_tokens,
+                    &tracked_target_tokens,
+                    target_n_keep,
+                    target_discard,
+                    "target_decode")) {
+                log_error("nativeGenerate failed: target context window exhausted");
+                g_cancel_requested.store(false, std::memory_order_release);
+                return STREAM_STATUS_RUNTIME_ERROR;
+            }
+            if (speculative_ready) {
+                const llama_pos draft_n_keep = resolve_n_keep_tokens(tracked_draft_tokens.size());
+                const llama_pos draft_discard = resolve_context_shift_discard(
+                    draft_context_tokens,
+                    reserved_tokens,
+                    draft_n_keep);
+                if (draft_discard <= 0 ||
+                    !shift_context_window_locked(
+                        g_draft_context,
+                        &draft_context_tokens,
+                        &tracked_draft_tokens,
+                        draft_n_keep,
+                        draft_discard,
+                        "draft_decode")) {
+                    log_error("nativeGenerate failed: draft context window exhausted");
+                    g_cancel_requested.store(false, std::memory_order_release);
+                    return STREAM_STATUS_RUNTIME_ERROR;
+                }
+            }
+        }
         if (speculative_ready && remaining_tokens > 1) {
             SpeculativeStepResult step = run_speculative_step(
                 vocab,
@@ -1135,6 +1935,10 @@ jint generate_locked(
                 return STREAM_STATUS_UTF8_STREAM_ERROR;
             }
         }
+        tracked_target_tokens.insert(tracked_target_tokens.end(), emitted_tokens.begin(), emitted_tokens.end());
+        if (speculative_ready) {
+            tracked_draft_tokens.insert(tracked_draft_tokens.end(), emitted_tokens.begin(), emitted_tokens.end());
+        }
         emitted_token_count += static_cast<int>(emitted_tokens.size());
     }
 
@@ -1151,6 +1955,36 @@ jint generate_locked(
             g_cancel_requested.store(false, std::memory_order_release);
             return STREAM_STATUS_CALLBACK_ERROR;
         }
+    }
+    if (cache_hit && !speculative_ready) {
+        g_active_prefix_cache_slot = cache_slot;
+    }
+    cache_slot = store_prefix_cache_slot(
+        tracked_target_tokens,
+        speculative_ready ? &tracked_draft_tokens : nullptr,
+        cache_key);
+    auto & stored_slot = g_prefix_cache_slots[static_cast<size_t>(cache_slot)];
+    capture_seq_state(g_context, &stored_slot.target_seq_state, MAX_TARGET_PREFIX_STATE_BYTES, "target", cache_slot);
+    if (speculative_ready) {
+        capture_seq_state(g_draft_context, &stored_slot.draft_seq_state, MAX_DRAFT_PREFIX_STATE_BYTES, "draft", cache_slot);
+    }
+    log_prefix_cache_event(
+        "target_store",
+        cache_policy,
+        cache_hit,
+        reused_tokens,
+        tracked_target_tokens.size(),
+        strict_key_match,
+        cache_slot);
+    if (speculative_ready) {
+        log_prefix_cache_event(
+            "draft_store",
+            cache_policy,
+            draft_cache_hit,
+            draft_reused_tokens,
+            tracked_draft_tokens.size(),
+            draft_strict_key_match,
+            cache_slot);
     }
     g_cancel_requested.store(false, std::memory_order_release);
     return reached_max_tokens ? STREAM_STATUS_MAX_TOKENS : STREAM_STATUS_COMPLETED;
@@ -1184,7 +2018,11 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     jboolean speculativeEnabled,
     jstring speculativeDraftModelPath,
     jint speculativeMaxDraftTokens,
-    jint speculativeMinDraftTokens) {
+    jint speculativeMinDraftTokens,
+    jint speculativeDraftGpuLayers,
+    jboolean useMmap,
+    jboolean useMlock,
+    jint nKeep) {
     const std::string model_path = to_std_string(env, modelPath);
     const std::string draft_model_path = to_std_string(env, speculativeDraftModelPath);
     if (model_path.empty()) {
@@ -1196,12 +2034,18 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     release_runtime_locked();
     log_gpu_support_once();
     const bool supports_gpu_offload = gpu_offload_supported();
-    const bool request_gpu_layers = static_cast<int32_t>(nGpuLayers) > 0;
+    const int32_t requested_target_gpu_layers =
+        nGpuLayers < 0 ? -1 : clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128);
+    const int32_t requested_draft_gpu_layers =
+        speculativeDraftGpuLayers < 0 ? -1 : clamp_i32(static_cast<int32_t>(speculativeDraftGpuLayers), 0, 128);
+    const bool request_gpu_layers = requested_target_gpu_layers != 0 || requested_draft_gpu_layers != 0;
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = supports_gpu_offload
-        ? clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128)
-        : 0;
-    const bool use_gpu_ops = model_params.n_gpu_layers > 0;
+    model_params.use_mmap = useMmap == JNI_TRUE;
+    model_params.use_mlock = useMlock == JNI_TRUE;
+    model_params.n_gpu_layers = supports_gpu_offload ? requested_target_gpu_layers : 0;
+    g_model_use_mmap = model_params.use_mmap;
+    g_model_use_mlock = model_params.use_mlock;
+    const bool use_gpu_ops = model_params.n_gpu_layers != 0;
     // Keep upstream defaults for split/device selection on GPU paths to avoid driver-specific
     // regressions from aggressive overrides.
     if (!use_gpu_ops) {
@@ -1218,16 +2062,27 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|requested_layers=%d|effective_layers=%d|split_mode=%d|main_gpu=%d",
-        static_cast<int>(nGpuLayers),
+        "GPU_OFFLOAD|requested_layers=%d|effective_layers=%d|requested_draft_layers=%d|split_mode=%d|main_gpu=%d",
+        static_cast<int>(requested_target_gpu_layers),
         static_cast<int>(model_params.n_gpu_layers),
+        static_cast<int>(requested_draft_gpu_layers),
         static_cast<int>(model_params.split_mode),
         static_cast<int>(model_params.main_gpu));
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "MMAP|use_mmap=%s|use_mlock=%s|use_direct_io=%s",
+        model_params.use_mmap ? "true" : "false",
+        model_params.use_mlock ? "true" : "false",
+        model_params.use_direct_io ? "true" : "false");
     g_model = llama_model_load_from_file(model_path.c_str(), model_params);
     if (g_model == nullptr) {
         log_error("nativeLoadModel failed: llama_model_load_from_file returned null");
         return JNI_FALSE;
     }
+    g_model_layer_count = llama_model_n_layer(g_model);
+    g_model_size_bytes = static_cast<uint64_t>(llama_model_size(g_model));
+    madvise_model_readahead(model_path, "target");
 
     llama_context_params context_params = llama_context_default_params();
     context_params.n_ctx = static_cast<uint32_t>(resolve_context_size(nCtx));
@@ -1240,6 +2095,9 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
     context_params.type_k = quantizedKvCache == JNI_TRUE ? GGML_TYPE_Q8_0 : context_params.type_k;
     context_params.type_v = quantizedKvCache == JNI_TRUE ? GGML_TYPE_Q8_0 : context_params.type_v;
+    g_last_flash_attn_requested = context_params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    g_last_flash_attn_gpu_ops = use_gpu_ops;
+    g_last_quantized_kv_cache = quantizedKvCache == JNI_TRUE;
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
@@ -1254,22 +2112,29 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         release_runtime_locked();
         return JNI_FALSE;
     }
+    g_last_flash_attn_active = g_last_flash_attn_requested && g_last_flash_attn_gpu_ops;
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "FLASH_ATTN|requested=%s|type=%s|gpu_ops=%s|type_k=%s|type_v=%s|n_ctx=%u|n_batch=%u|n_ubatch=%u",
+        g_last_flash_attn_requested ? "true" : "false",
+        llama_flash_attn_type_name(context_params.flash_attn_type),
+        g_last_flash_attn_gpu_ops ? "true" : "false",
+        ggml_type_name(context_params.type_k),
+        ggml_type_name(context_params.type_v),
+        context_params.n_ctx,
+        context_params.n_batch,
+        context_params.n_ubatch);
 
     const float resolved_temperature = std::max(0.0f, static_cast<float>(temperature));
     const float resolved_top_p = std::max(0.0f, std::min(1.0f, static_cast<float>(topP)));
     const int32_t resolved_top_k = clamp_i32(static_cast<int32_t>(topK), 0, 1024);
-    g_sampler = build_sampler_chain(
-        resolved_temperature,
-        resolved_top_k,
-        resolved_top_p);
-    if (g_sampler == nullptr) {
-        log_error("nativeLoadModel failed: sampler init returned null");
-        release_runtime_locked();
-        return JNI_FALSE;
-    }
-    llama_sampler_reset(g_sampler);
-    g_prompt_decode_batch_size = resolve_batch(nBatch);
+    g_prompt_decode_batch_size = std::min(resolve_batch(nBatch), resolve_batch(nUbatch));
     g_runtime_context_size = static_cast<int32_t>(context_params.n_ctx);
+    g_runtime_n_keep = clamp_i32(
+        static_cast<int32_t>(nKeep),
+        0,
+        std::max<int32_t>(0, g_runtime_context_size - 1));
     g_speculative_enabled = false;
     g_speculative_max_draft_tokens = clamp_i32(static_cast<int32_t>(speculativeMaxDraftTokens), 1, 16);
     g_speculative_min_draft_tokens = clamp_i32(static_cast<int32_t>(speculativeMinDraftTokens), 1, 16);
@@ -1281,17 +2146,26 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         !draft_model_path.empty() &&
         draft_model_path != model_path) {
         llama_model_params draft_model_params = llama_model_default_params();
-        draft_model_params.n_gpu_layers = 0;
-        draft_model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
-        draft_model_params.main_gpu = -1;
+        draft_model_params.use_mmap = model_params.use_mmap;
+        draft_model_params.use_mlock = model_params.use_mlock;
+        draft_model_params.n_gpu_layers = supports_gpu_offload ? requested_draft_gpu_layers : 0;
+        if (draft_model_params.n_gpu_layers <= 0) {
+            draft_model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
+            draft_model_params.main_gpu = -1;
+        }
         g_draft_model = llama_model_load_from_file(draft_model_path.c_str(), draft_model_params);
+        if (g_draft_model != nullptr) {
+            madvise_model_readahead(draft_model_path, "draft");
+        }
         if (g_draft_model != nullptr && speculative_vocabs_compatible(g_model, g_draft_model)) {
             llama_context_params draft_context_params = llama_context_default_params();
-            draft_context_params.n_ctx = context_params.n_ctx;
+            draft_context_params.n_ctx = std::min<uint32_t>(context_params.n_ctx, 1024u);
             draft_context_params.n_batch = context_params.n_batch;
             draft_context_params.n_ubatch = context_params.n_ubatch;
             draft_context_params.n_threads = resolve_threads(nThreadsBatch);
             draft_context_params.n_threads_batch = resolve_threads(nThreadsBatch);
+            draft_context_params.offload_kqv = draft_model_params.n_gpu_layers != 0;
+            draft_context_params.op_offload = draft_model_params.n_gpu_layers != 0;
             draft_context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
             draft_context_params.type_k = context_params.type_k;
             draft_context_params.type_v = context_params.type_v;
@@ -1324,10 +2198,18 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             __android_log_print(
                 ANDROID_LOG_INFO,
                 TAG,
-                "SPECULATIVE|enabled=true|max=%d|min=%d",
+                "SPECULATIVE|enabled=true|max=%d|min=%d|draft_n_ctx=%u|draft_gpu_layers=%d|acceptance_rate=%.3f",
                 static_cast<int>(g_speculative_max_draft_tokens),
-                static_cast<int>(g_speculative_min_draft_tokens));
+                static_cast<int>(g_speculative_min_draft_tokens),
+                g_draft_context != nullptr ? llama_n_ctx(g_draft_context) : 0u,
+                static_cast<int>(draft_model_params.n_gpu_layers),
+                static_cast<double>(g_speculative_acceptance_rate));
         }
+    }
+    if (!apply_sampling_config_locked(resolved_temperature, resolved_top_k, resolved_top_p)) {
+        log_error("nativeLoadModel failed: sampler config apply failed");
+        release_runtime_locked();
+        return JNI_FALSE;
     }
     g_cancel_requested.store(false, std::memory_order_release);
 
@@ -1366,6 +2248,25 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     }
 
     return env->NewStringUTF(output.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeSetSamplingConfig(
+    JNIEnv * /*env*/,
+    jobject /*thiz*/,
+    jfloat temperature,
+    jint topK,
+    jfloat topP,
+    jint nKeep) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_runtime_n_keep = clamp_i32(
+        static_cast<int32_t>(nKeep),
+        0,
+        std::max<int32_t>(0, g_runtime_context_size - 1));
+    apply_sampling_config_locked(
+        static_cast<float>(temperature),
+        static_cast<int32_t>(topK),
+        static_cast<float>(topP));
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -1486,7 +2387,11 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     jboolean speculativeEnabled,
     jstring speculativeDraftModelPath,
     jint speculativeMaxDraftTokens,
-    jint speculativeMinDraftTokens) {
+    jint speculativeMinDraftTokens,
+    jint speculativeDraftGpuLayers,
+    jboolean useMmap,
+    jboolean useMlock,
+    jint nKeep) {
     return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeLoadModel(
         env,
         thiz,
@@ -1505,7 +2410,28 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
         speculativeEnabled,
         speculativeDraftModelPath,
         speculativeMaxDraftTokens,
-        speculativeMinDraftTokens);
+        speculativeMinDraftTokens,
+        speculativeDraftGpuLayers,
+        useMmap,
+        useMlock,
+        nKeep);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeSetSamplingConfig(
+    JNIEnv * env,
+    jobject thiz,
+    jfloat temperature,
+    jint topK,
+    jfloat topP,
+    jint nKeep) {
+    Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeSetSamplingConfig(
+        env,
+        thiz,
+        temperature,
+        topK,
+        topP,
+        nKeep);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -1569,6 +2495,30 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     log_gpu_support_once();
     return gpu_offload_supported() ? JNI_TRUE : JNI_FALSE;
 }
+extern "C" JNIEXPORT jint JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeModelLayerCount(
+    JNIEnv * /*env*/,
+    jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return static_cast<jint>(g_model_layer_count);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeModelSizeBytes(
+    JNIEnv * /*env*/,
+    jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return static_cast<jlong>(g_model_size_bytes);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeEstimateMaxGpuLayers(
+    JNIEnv * /*env*/,
+    jobject /*thiz*/,
+    jint nCtx) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return static_cast<jint>(estimate_max_gpu_layers_locked(static_cast<int32_t>(nCtx)));
+}
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeVulkanDiagnosticsJson(
@@ -1585,6 +2535,34 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeSupportsGpuOffload(
         env,
         thiz);
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeModelLayerCount(
+    JNIEnv * env,
+    jobject thiz) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeModelLayerCount(
+        env,
+        thiz);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeModelSizeBytes(
+    JNIEnv * env,
+    jobject thiz) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeModelSizeBytes(
+        env,
+        thiz);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeEstimateMaxGpuLayers(
+    JNIEnv * env,
+    jobject thiz,
+    jint nCtx) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeEstimateMaxGpuLayers(
+        env,
+        thiz,
+        nCtx);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -1603,11 +2581,29 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     return static_cast<jdouble>(read_peak_rss_mb());
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativePrefixCacheDiagnosticsLine(
+    JNIEnv * env,
+    jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    const std::string payload = prefix_cache_diagnostics_line_locked();
+    return env->NewStringUTF(payload.c_str());
+}
+
 extern "C" JNIEXPORT jdouble JNICALL
 Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativePeakRssMb(
     JNIEnv * env,
     jobject thiz) {
     return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativePeakRssMb(
+        env,
+        thiz);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativePrefixCacheDiagnosticsLine(
+    JNIEnv * env,
+    jobject thiz) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativePrefixCacheDiagnosticsLine(
         env,
         thiz);
 }

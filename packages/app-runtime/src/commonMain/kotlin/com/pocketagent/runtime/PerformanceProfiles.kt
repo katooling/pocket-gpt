@@ -28,6 +28,10 @@ data class PerformanceRuntimeConfig(
     val speculativeDraftModelId: String?,
     val speculativeMaxDraftTokens: Int,
     val speculativeMinDraftTokens: Int,
+    val speculativeDraftGpuLayers: Int,
+    val useMmap: Boolean,
+    val useMlock: Boolean,
+    val nKeep: Int,
 ) {
     companion object {
         private const val MIN_THREADS = 1
@@ -64,7 +68,7 @@ data class PerformanceRuntimeConfig(
                     maxTokensDefault = 96,
                     threads = cpu.coerceAtMost(6),
                     batch = 512,
-                    ubatch = 512,
+                    ubatch = 256,
                     nCtx = 2048,
                 )
 
@@ -73,8 +77,8 @@ data class PerformanceRuntimeConfig(
                     maxTokensDefault = 128,
                     threads = cpu.coerceAtMost(8),
                     batch = 768,
-                    ubatch = 768,
-                    nCtx = 2048,
+                    ubatch = 384,
+                    nCtx = 4096,
                 )
             }
 
@@ -97,7 +101,30 @@ data class PerformanceRuntimeConfig(
                 speculativeDraftModelId = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
                 speculativeMaxDraftTokens = if (profile == RuntimePerformanceProfile.FAST) 8 else 6,
                 speculativeMinDraftTokens = 2,
+                speculativeDraftGpuLayers = defaultDraftGpuLayers(
+                    profile = profile,
+                    gpuEnabled = gpuEnabled,
+                    gpuLayers = gpuLayers,
+                ),
+                useMmap = true,
+                useMlock = false,
+                nKeep = if (profile == RuntimePerformanceProfile.FAST) 256 else 128,
             )
+        }
+
+        private fun defaultDraftGpuLayers(
+            profile: RuntimePerformanceProfile,
+            gpuEnabled: Boolean,
+            gpuLayers: Int,
+        ): Int {
+            if (!gpuEnabled || profile == RuntimePerformanceProfile.BATTERY || gpuLayers <= 0) {
+                return 0
+            }
+            return when (profile) {
+                RuntimePerformanceProfile.BATTERY -> 0
+                RuntimePerformanceProfile.BALANCED -> (gpuLayers / 16).coerceIn(0, 2)
+                RuntimePerformanceProfile.FAST -> (gpuLayers / 8).coerceIn(0, 4)
+            }
         }
 
         private const val DEFAULT_GPU_LAYERS: Int = 32
@@ -124,6 +151,7 @@ data class PerformanceRuntimeConfig(
                 nCtx = nCtx.coerceAtMost(1024),
                 gpuLayers = (gpuLayers / 2).coerceAtLeast(0),
                 speculativeEnabled = false,
+                speculativeDraftGpuLayers = 0,
             )
             moderatePressure -> copy(
                 nThreads = (nThreads * 3 / 4).coerceAtLeast(2),
@@ -133,14 +161,18 @@ data class PerformanceRuntimeConfig(
                 nCtx = nCtx.coerceAtMost(1536),
                 gpuLayers = (gpuLayers * 3 / 4).coerceAtLeast(0),
                 speculativeEnabled = speculativeEnabled && deviceState.thermalLevel <= 5,
+                speculativeDraftGpuLayers = (speculativeDraftGpuLayers * 3 / 4).coerceAtLeast(0),
             )
             else -> this
         }
     }
 }
 
+const val DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS: Long = 15 * 60 * 1000L
+
 data class ModelResidencyPolicy(
     val keepLoadedWhileAppForeground: Boolean = true,
-    val idleUnloadTtlMs: Long = 10 * 60 * 1000L,
+    val idleUnloadTtlMs: Long = DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS,
     val warmupOnStartup: Boolean = true,
+    val adaptiveIdleTtl: Boolean = true,
 )

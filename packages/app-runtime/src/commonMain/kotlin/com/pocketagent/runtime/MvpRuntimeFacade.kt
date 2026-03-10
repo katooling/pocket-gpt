@@ -210,6 +210,10 @@ interface RuntimeContainer {
     fun runStartupChecks(): List<String>
     fun warmupActiveModel(): WarmupResult = WarmupResult.skipped("warmup_unsupported")
     fun evictResidentModel(reason: String = "manual"): Boolean = false
+    fun touchKeepAlive(): Boolean = false
+    fun shortenKeepAlive(ttlMs: Long): Boolean = false
+    fun onTrimMemory(level: Int): Boolean = false
+    fun onAppBackground(): Boolean = false
     fun restoreSession(sessionId: SessionId, turns: List<Turn>)
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String? = null
@@ -413,6 +417,14 @@ class DefaultMvpRuntimeFacade(
 
     override fun evictResidentModel(reason: String): Boolean = container.evictResidentModel(reason)
 
+    override fun touchKeepAlive(): Boolean = container.touchKeepAlive()
+
+    override fun shortenKeepAlive(ttlMs: Long): Boolean = container.shortenKeepAlive(ttlMs)
+
+    override fun onTrimMemory(level: Int): Boolean = container.onTrimMemory(level)
+
+    override fun onAppBackground(): Boolean = container.onAppBackground()
+
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         container.restoreSession(sessionId = sessionId, turns = turns)
     }
@@ -527,6 +539,14 @@ class DefaultRuntimeContainer(
     override fun warmupActiveModel(): WarmupResult = orchestrator.warmupActiveModel()
 
     override fun evictResidentModel(reason: String): Boolean = orchestrator.evictResidentModel(reason)
+
+    override fun touchKeepAlive(): Boolean = orchestrator.touchKeepAlive()
+
+    override fun shortenKeepAlive(ttlMs: Long): Boolean = orchestrator.shortenKeepAlive(ttlMs)
+
+    override fun onTrimMemory(level: Int): Boolean = orchestrator.onTrimMemory(level)
+
+    override fun onAppBackground(): Boolean = orchestrator.onAppBackground()
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         orchestrator.restoreSession(sessionId = sessionId, turns = turns)

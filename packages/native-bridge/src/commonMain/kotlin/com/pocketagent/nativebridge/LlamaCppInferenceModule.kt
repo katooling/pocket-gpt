@@ -3,11 +3,18 @@ package com.pocketagent.nativebridge
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 
+data class CachedModelRuntimeMetadata(
+    val layerCount: Int? = null,
+    val sizeBytes: Long? = null,
+)
+
 class LlamaCppInferenceModule(
     private val runtimeBridge: LlamaCppRuntimeBridge = NativeJniLlamaCppBridge(),
 ) : InferenceModule {
     private var activeModelId: String? = null
     private val modelPathById: MutableMap<String, String> = mutableMapOf()
+    private val modelMetadataById: MutableMap<String, CachedModelRuntimeMetadata> = mutableMapOf()
+    private val estimatedGpuLayersByModelAndContext: MutableMap<Pair<String, Int>, Int> = mutableMapOf()
     private var runtimeGenerationConfig: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
     private var requiresReloadForConfigChange: Boolean = false
     private var activeRuntimeKey: LoadedRuntimeKey? = null
@@ -47,6 +54,17 @@ class LlamaCppInferenceModule(
         val startedAtMs = System.currentTimeMillis()
         val loaded = runtimeBridge.loadModel(modelId, modelPathById[modelId])
         val completedAtMs = System.currentTimeMillis()
+        if (loaded) {
+            modelMetadataById[modelId] = CachedModelRuntimeMetadata(
+                layerCount = runtimeBridge.modelLayerCount()?.takeIf { it > 0 },
+                sizeBytes = runtimeBridge.modelSizeBytes()?.takeIf { it > 0L },
+            )
+            runtimeBridge.estimateMaxGpuLayers(resolvedConfig.nCtx)
+                ?.takeIf { it >= 0 }
+                ?.let { estimate ->
+                    estimatedGpuLayersByModelAndContext[modelId to resolvedConfig.nCtx] = estimate
+                }
+        }
         activeModelId = if (loaded) modelId else null
         activeRuntimeKey = if (loaded) loadedRuntimeKey else null
         runtimeResidencyState = runtimeResidencyState.copy(
@@ -150,7 +168,47 @@ class LlamaCppInferenceModule(
         modelPathById[modelId] = normalizedPath
     }
 
+    fun registeredModelPath(modelId: String): String? {
+        return modelPathById[modelId]
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    fun cachedModelLayerCount(modelId: String): Int? = modelMetadataById[modelId]?.layerCount
+
+    fun cachedModelSizeBytes(modelId: String): Long? = modelMetadataById[modelId]?.sizeBytes
+
+    fun activeModelLayerCount(): Int? = activeModelId?.let(::cachedModelLayerCount)
+
+    fun activeModelSizeBytes(): Long? = activeModelId?.let(::cachedModelSizeBytes)
+
+    fun cachedEstimatedMaxGpuLayers(modelId: String, nCtx: Int): Int? {
+        val resolvedCtx = nCtx.coerceAtLeast(1)
+        val cacheKey = modelId to resolvedCtx
+        estimatedGpuLayersByModelAndContext[cacheKey]?.let { return it }
+        if (activeModelId != modelId) {
+            return null
+        }
+        val estimate = runtimeBridge.estimateMaxGpuLayers(resolvedCtx)?.takeIf { it >= 0 } ?: return null
+        estimatedGpuLayersByModelAndContext[cacheKey] = estimate
+        return estimate
+    }
+
+    fun updateResidencySlot(slotId: String?, expiresAtEpochMs: Long?) {
+        runtimeResidencyState = runtimeResidencyState.copy(
+            slotId = slotId,
+            expiresAtEpochMs = expiresAtEpochMs,
+            lastAccessAtEpochMs = System.currentTimeMillis(),
+        )
+    }
+
     fun residencyState(): RuntimeResidencyState = runtimeResidencyState
+
+    fun prefixCacheDiagnosticsLine(): String? {
+        return runtimeBridge.prefixCacheDiagnosticsLine()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
 
     fun recordWarmup(durationMs: Long) {
         runtimeResidencyState = runtimeResidencyState.copy(
@@ -161,7 +219,7 @@ class LlamaCppInferenceModule(
 
     private fun resolveRuntimeGenerationConfig(config: RuntimeGenerationConfig): RuntimeGenerationConfig {
         if (!config.speculativeEnabled) {
-            return config.copy(speculativeDraftModelPath = null)
+            return config.copy(speculativeDraftModelPath = null, speculativeDraftGpuLayers = 0)
         }
         val resolvedDraftPath = config.speculativeDraftModelPath
             ?.trim()
@@ -182,21 +240,7 @@ class LlamaCppInferenceModule(
             modelId = modelId,
             modelPath = modelPath?.trim()?.takeIf { it.isNotEmpty() },
             backend = runtimeBridge.runtimeBackend(),
-            nThreads = config.nThreads,
-            nThreadsBatch = config.nThreadsBatch,
-            nBatch = config.nBatch,
-            nUbatch = config.nUbatch,
-            nCtx = config.nCtx,
-            gpuEnabled = config.gpuEnabled,
-            gpuLayers = config.gpuLayers,
-            quantizedKvCache = config.quantizedKvCache,
-            temperature = config.sampling.temperature,
-            topK = config.sampling.topK,
-            topP = config.sampling.topP,
-            speculativeEnabled = config.speculativeEnabled,
-            speculativeDraftModelPath = config.speculativeDraftModelPath,
-            speculativeMaxDraftTokens = config.speculativeMaxDraftTokens,
-            speculativeMinDraftTokens = config.speculativeMinDraftTokens,
+            loadConfig = config.toLoadConfig(),
         )
     }
 

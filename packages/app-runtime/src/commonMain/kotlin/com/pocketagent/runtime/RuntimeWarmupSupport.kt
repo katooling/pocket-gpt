@@ -18,6 +18,7 @@ data class WarmupResult(
     val residentHit: Boolean,
     val loadDurationMs: Long? = null,
     val warmupDurationMs: Long? = null,
+    val speculativePath: Boolean = false,
     val errorCode: String? = null,
 ) {
     companion object {
@@ -26,6 +27,7 @@ data class WarmupResult(
                 attempted = false,
                 warmed = false,
                 residentHit = false,
+                speculativePath = false,
                 errorCode = reason,
             )
         }
@@ -36,9 +38,8 @@ internal class RuntimeWarmupCoordinator(
     private val inferenceModule: InferenceModule,
     private val artifactVerifier: ArtifactVerifier,
     private val observabilityModule: ObservabilityModule,
-    private val cancelIdleUnload: () -> Unit,
-    private val scheduleIdleUnload: (Long) -> Unit,
-    private val unloadNow: () -> Unit,
+    private val runtimeResidencyManager: RuntimeResidencyManager,
+    private val runtimePlanResolver: RuntimePlanResolver,
     private val availableCpuThreads: () -> Int = { Runtime.getRuntime().availableProcessors().coerceAtLeast(1) },
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
@@ -68,51 +69,72 @@ internal class RuntimeWarmupCoordinator(
             availableCpuThreads = availableCpuThreads(),
             gpuEnabled = nativeInference.supportsGpuOffload(),
         )
-        nativeInference.setRuntimeGenerationConfig(performanceConfig.toRuntimeGenerationConfig())
+        val runtimePlan = runtimePlanResolver.resolve(
+            sessionId = "warmup",
+            modelId = modelId,
+            taskType = "warmup",
+            stopSequences = emptyList(),
+            requestConfig = performanceConfig,
+            residencyPolicy = residencyPolicy,
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            nativeInference = nativeInference,
+        )
+        nativeInference.setRuntimeGenerationConfig(runtimePlan.generationConfig)
+        val speculativePath = runtimePlan.generationConfig.speculativeEnabled &&
+            !runtimePlan.generationConfig.speculativeDraftModelPath.isNullOrBlank()
 
-        cancelIdleUnload()
         val loadStartedAtMs = nowMs()
-        val loaded = inferenceModule.loadModel(modelId)
+        val loaded = runtimeResidencyManager.ensureLoaded(
+            modelId = modelId,
+            slotId = runtimePlan.prefixCacheSlotId,
+            keepAliveMs = runtimePlan.keepAliveMs,
+        )
         val loadDurationMs = (nowMs() - loadStartedAtMs).coerceAtLeast(0L)
         if (!loaded) {
-            unloadNow()
+            runtimeResidencyManager.unload(reason = "warmup_load_failed")
             return WarmupResult(
                 attempted = true,
                 warmed = false,
                 residentHit = false,
                 loadDurationMs = loadDurationMs,
+                speculativePath = speculativePath,
                 errorCode = nativeInference.lastBridgeError()?.code ?: "warmup_load_failed",
             )
         }
 
         val warmupStartedAtMs = nowMs()
+        runtimeResidencyManager.onGenerationStarted()
         val warmupResult = runCatching {
             nativeInference.generateStreamWithCache(
                 requestId = "warmup-$modelId-${warmupStartedAtMs}",
-                request = InferenceRequest(prompt = WARMUP_PROMPT, maxTokens = 1),
+                request = InferenceRequest(prompt = WARMUP_PROMPT, maxTokens = WARMUP_MAX_TOKENS),
                 cacheKey = null,
                 cachePolicy = CachePolicy.OFF,
                 onToken = {},
             )
         }.getOrElse { error ->
-            unloadNow()
+            runtimeResidencyManager.unload(reason = "warmup_exception")
+            runtimeResidencyManager.onGenerationFinished(slotId = null, keepAliveMs = null)
             return WarmupResult(
                 attempted = true,
                 warmed = false,
                 residentHit = false,
                 loadDurationMs = loadDurationMs,
+                speculativePath = speculativePath,
                 errorCode = error.message ?: error::class.simpleName,
             )
         }
         val warmupDurationMs = (nowMs() - warmupStartedAtMs).coerceAtLeast(0L)
         if (!warmupResult.success) {
-            unloadNow()
+            runtimeResidencyManager.unload(reason = "warmup_generate_failed")
+            runtimeResidencyManager.onGenerationFinished(slotId = null, keepAliveMs = null)
             return WarmupResult(
                 attempted = true,
                 warmed = false,
                 residentHit = false,
                 loadDurationMs = loadDurationMs,
                 warmupDurationMs = warmupDurationMs,
+                speculativePath = speculativePath,
                 errorCode = warmupResult.errorCode ?: "warmup_generate_failed",
             )
         }
@@ -126,10 +148,18 @@ internal class RuntimeWarmupCoordinator(
             thermalThrottled = false,
         )
         observabilityModule.recordLatencyMetric("inference.warmup_ms", warmupDurationMs.toDouble())
-        if (residencyPolicy.keepLoadedWhileAppForeground) {
-            cancelIdleUnload()
+        observabilityModule.recordLatencyMetric(
+            "inference.warmup.speculative_path",
+            if (speculativePath) 1.0 else 0.0,
+        )
+        if (!residencyPolicy.keepLoadedWhileAppForeground) {
+            runtimeResidencyManager.unload(reason = "warmup_policy")
+            runtimeResidencyManager.onGenerationFinished(slotId = null, keepAliveMs = null)
         } else {
-            scheduleIdleUnload(residencyPolicy.idleUnloadTtlMs)
+            runtimeResidencyManager.onGenerationFinished(
+                slotId = runtimePlan.prefixCacheSlotId,
+                keepAliveMs = runtimePlan.keepAliveMs,
+            )
         }
         return WarmupResult(
             attempted = true,
@@ -137,11 +167,14 @@ internal class RuntimeWarmupCoordinator(
             residentHit = residencyState.residentHit,
             loadDurationMs = loadDurationMs,
             warmupDurationMs = warmupDurationMs,
+            speculativePath = speculativePath,
         )
     }
 
     private companion object {
-        private const val WARMUP_PROMPT = "Warm up the active runtime."
+        private const val WARMUP_MAX_TOKENS = 8
+        private const val WARMUP_PROMPT =
+            "Summarize the resident runtime warmup path in one short sentence for shader and KV cache warmup."
     }
 }
 

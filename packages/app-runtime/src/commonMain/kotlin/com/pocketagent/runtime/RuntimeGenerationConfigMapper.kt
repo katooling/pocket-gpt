@@ -22,5 +22,9 @@ internal fun PerformanceRuntimeConfig.toRuntimeGenerationConfig(): RuntimeGenera
         speculativeDraftModelId = speculativeDraftModelId,
         speculativeMaxDraftTokens = speculativeMaxDraftTokens,
         speculativeMinDraftTokens = speculativeMinDraftTokens,
+        speculativeDraftGpuLayers = speculativeDraftGpuLayers,
+        useMmap = useMmap,
+        useMlock = useMlock,
+        nKeep = nKeep,
     )
 }

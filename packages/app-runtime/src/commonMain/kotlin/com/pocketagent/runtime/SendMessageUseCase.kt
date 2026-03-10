@@ -14,7 +14,6 @@ import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.MemoryChunk
 import com.pocketagent.memory.MemoryModule
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
-import java.security.MessageDigest
 
 internal class SendMessageUseCase(
     private val conversationModule: ConversationModule,
@@ -27,11 +26,9 @@ internal class SendMessageUseCase(
     private val artifactVerifier: ArtifactVerifier,
     private val interactionPlanner: InteractionPlanner,
     private val inferenceExecutor: InferenceExecutor,
-    private val responseCache: RuntimeResponseCache,
     private val modelLifecycleCoordinator: ModelLifecycleCoordinator,
-    private val cancelIdleUnload: () -> Unit,
-    private val unloadNow: () -> Unit,
-    private val scheduleIdleUnload: (Long) -> Unit,
+    private val runtimePlanResolver: RuntimePlanResolver,
+    private val runtimeResidencyManager: RuntimeResidencyManager,
     private val cancelByRequest: (String) -> Boolean,
     private val cancelBySession: (SessionId) -> Boolean,
 ) {
@@ -54,7 +51,6 @@ internal class SendMessageUseCase(
 
     fun execute(request: Request): ChatResponse {
         val latestUserText = request.messages.latestUserMessageText().ifBlank { request.userText }
-        cancelIdleUnload()
         requirePolicyEvent(
             eventType = "routing.model_select",
             failureMessage = "Policy module rejected routing event type.",
@@ -105,17 +101,20 @@ internal class SendMessageUseCase(
             promptCharBudget = minOf(contextBudget * 4, promptCharBudget),
         )
         val prompt = renderedPrompt.prompt
-        val prefixCacheKey = buildPrefixCacheKey(
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule
+        val runtimePlan = runtimePlanResolver.resolve(
+            sessionId = request.sessionId.value,
             modelId = modelId,
             taskType = request.taskType,
-            prompt = prompt,
-            maxTokens = request.maxTokens,
+            stopSequences = renderedPrompt.stopSequences,
+            requestConfig = request.performanceConfig,
+            residencyPolicy = request.residencyPolicy,
+            deviceState = request.deviceState,
+            nativeInference = nativeInference,
         )
-        val responseCacheKey = buildResponseCacheKey(
+        val prefixCacheKey = buildPrefixCacheKey(
+            slotId = runtimePlan.prefixCacheSlotId,
             modelId = modelId,
-            taskType = request.taskType,
-            prompt = prompt,
-            maxTokens = request.maxTokens,
         )
         requirePolicyEvent(
             eventType = "inference.generate",
@@ -123,53 +122,12 @@ internal class SendMessageUseCase(
         )
         val startedMs = System.currentTimeMillis()
 
-        val effectivePerformanceConfig = request.performanceConfig.withThermalAdaptiveOverrides(request.deviceState)
+        val effectivePerformanceConfig = runtimePlan.effectiveConfig
         val thermalThrottled = effectivePerformanceConfig != request.performanceConfig
 
-        responseCache.get(responseCacheKey)?.let { cachedText ->
-            if (cachedText.isNotBlank()) {
-                emitCachedTokens(cachedText, request.onToken)
-                val firstTokenLatencyMs = 1L
-                val totalLatency = (System.currentTimeMillis() - startedMs).coerceAtLeast(1L)
-                requirePolicyEvent(
-                    eventType = "observability.record_runtime_metrics",
-                    failureMessage = "Policy module rejected diagnostics metric event type.",
-                )
-                observabilityModule.recordLatencyMetric("inference.first_token_ms", firstTokenLatencyMs.toDouble())
-                observabilityModule.recordLatencyMetric("inference.total_ms", totalLatency.toDouble())
-                observabilityModule.recordLatencyMetric(
-                    "inference.profile",
-                    effectivePerformanceConfig.profile.ordinal.toDouble(),
-                )
-                observabilityModule.recordLatencyMetric(
-                    "inference.gpu_mode",
-                    if (effectivePerformanceConfig.gpuEnabled && effectivePerformanceConfig.gpuLayers > 0) 1.0 else 0.0,
-                )
-                observabilityModule.recordLatencyMetric(
-                    "inference.thermal_throttled",
-                    if (thermalThrottled) 1.0 else 0.0,
-                )
-                observabilityModule.recordThermalSnapshot(request.deviceState.thermalLevel)
-                conversationModule.appendAssistantTurn(request.sessionId, cachedText)
-                return ChatResponse(
-                    sessionId = request.sessionId,
-                    modelId = modelId,
-                    text = cachedText,
-                    firstTokenLatencyMs = firstTokenLatencyMs,
-                    totalLatencyMs = totalLatency,
-                    requestId = request.requestId,
-                    finishReason = "cached",
-                    runtimeStats = RuntimeExecutionStats(),
-                )
-            }
-        }
+        nativeInference?.setRuntimeGenerationConfig(runtimePlan.generationConfig)
 
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
-        nativeInference?.setRuntimeGenerationConfig(
-            effectivePerformanceConfig.toRuntimeGenerationConfig(),
-        )
-
-        check(inferenceModule.loadModel(modelId)) {
+        check(runtimeResidencyManager.ensureLoaded(modelId, runtimePlan.prefixCacheSlotId, runtimePlan.keepAliveMs)) {
             "Failed to load runtime model: $modelId"
         }
         nativeInference?.residencyState()?.let { state ->
@@ -196,6 +154,7 @@ internal class SendMessageUseCase(
                 }
             },
         )
+        runtimeResidencyManager.onGenerationStarted()
         try {
             executionResult = inferenceExecutor.execute(
                 sessionId = request.sessionId.value,
@@ -228,9 +187,13 @@ internal class SendMessageUseCase(
         } finally {
             timeoutGuard.finish()
             if (!request.keepModelLoaded || !request.residencyPolicy.keepLoadedWhileAppForeground) {
-                unloadNow()
+                runtimeResidencyManager.unload(reason = "request_policy")
+                runtimeResidencyManager.onGenerationFinished(slotId = null, keepAliveMs = null)
             } else {
-                scheduleIdleUnload(request.residencyPolicy.idleUnloadTtlMs)
+                runtimeResidencyManager.onGenerationFinished(
+                    slotId = runtimePlan.prefixCacheSlotId,
+                    keepAliveMs = runtimePlan.keepAliveMs,
+                )
             }
         }
         if (timeoutGuard.timedOut()) {
@@ -251,7 +214,6 @@ internal class SendMessageUseCase(
             } else {
                 0.0
             }
-        responseCache.put(responseCacheKey, responseText)
         requirePolicyEvent(
             eventType = "observability.record_runtime_metrics",
             failureMessage = "Policy module rejected diagnostics metric event type.",
@@ -287,63 +249,29 @@ internal class SendMessageUseCase(
                 decodeMs = decodeMs,
                 tokensPerSec = tokensPerSec,
                 peakRssMb = peakRssMb,
+                appliedGpuLayers = runtimePlan.effectiveConfig.gpuLayers,
+                appliedDraftGpuLayers = runtimePlan.effectiveConfig.speculativeDraftGpuLayers,
+                modelLayerCount = nativeInference?.cachedModelLayerCount(modelId),
+                estimatedMaxGpuLayers = nativeInference?.cachedEstimatedMaxGpuLayers(
+                    modelId = modelId,
+                    nCtx = runtimePlan.generationConfig.nCtx,
+                ),
             ),
         )
     }
-
     private fun buildPrefixCacheKey(
+        slotId: String,
         modelId: String,
-        taskType: String,
-        prompt: String,
-        maxTokens: Int,
-    ): String {
-        val normalizedPrefix = prompt
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(MAX_PREFIX_CACHE_KEY_PROMPT_CHARS)
-        val keyMaterial = buildList {
-            add(CACHE_KEY_VERSION)
-            add(modelId)
-            add(runtimeConfig.runtimeCompatibilityTag)
-            add(taskType)
-            add(runtimeConfig.artifactSha256ByModelId[modelId].orEmpty())
-            add(runtimeConfig.artifactProvenanceSignatureByModelId[modelId].orEmpty())
-            add("max_tokens=$maxTokens")
-            add("decode_profile=$DECODE_PROFILE_STABLE")
-            add(normalizedPrefix)
-        }.joinToString("|")
-        return sha256Hex(keyMaterial)
-    }
-
-    private fun buildResponseCacheKey(
-        modelId: String,
-        taskType: String,
-        prompt: String,
-        maxTokens: Int,
     ): String {
         val keyMaterial = buildList {
             add(CACHE_KEY_VERSION)
+            add(slotId)
             add(modelId)
             add(runtimeConfig.runtimeCompatibilityTag)
-            add(taskType)
             add(runtimeConfig.artifactSha256ByModelId[modelId].orEmpty())
             add(runtimeConfig.artifactProvenanceSignatureByModelId[modelId].orEmpty())
-            add("max_tokens=$maxTokens")
-            add("decode_profile=$DECODE_PROFILE_STABLE")
-            add(prompt)
         }.joinToString("|")
         return sha256Hex(keyMaterial)
-    }
-
-    private fun sha256Hex(value: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray())
-        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-    }
-
-    private fun emitCachedTokens(text: String, onToken: (String) -> Unit) {
-        text.split(Regex("\\s+"))
-            .filter { it.isNotBlank() }
-            .forEach { token -> onToken("$token ") }
     }
 
     private fun requirePolicyEvent(eventType: String, failureMessage: String) {
@@ -352,8 +280,6 @@ internal class SendMessageUseCase(
 
     companion object {
         private const val CACHE_KEY_VERSION = "v1"
-        private const val DECODE_PROFILE_STABLE = "sampler:greedy"
-        private const val MAX_PREFIX_CACHE_KEY_PROMPT_CHARS: Int = 1024
         private const val MAX_PROMPT_CHARS_SHORT: Int = 1024
         private const val MAX_PROMPT_CHARS_LONG: Int = 2048
     }

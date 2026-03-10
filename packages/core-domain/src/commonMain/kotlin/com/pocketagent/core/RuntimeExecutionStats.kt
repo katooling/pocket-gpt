@@ -5,4 +5,8 @@ data class RuntimeExecutionStats(
     val decodeMs: Long? = null,
     val tokensPerSec: Double? = null,
     val peakRssMb: Double? = null,
+    val appliedGpuLayers: Int? = null,
+    val appliedDraftGpuLayers: Int? = null,
+    val modelLayerCount: Int? = null,
+    val estimatedMaxGpuLayers: Int? = null,
 )

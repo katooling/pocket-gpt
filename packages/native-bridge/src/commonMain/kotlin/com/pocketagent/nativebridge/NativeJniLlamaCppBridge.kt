@@ -37,10 +37,71 @@ class NativeJniLlamaCppBridge(
         runtimeGenerationConfig = config
         if (usingFallback) {
             fallbackBridge.setRuntimeGenerationConfig(config)
+            return
+        }
+        if (!runtimeReady) {
+            return
+        }
+        runCatching {
+            nativeApi.setSamplingConfig(
+                temperature = config.sampling.temperature,
+                topK = config.sampling.topK,
+                topP = config.sampling.topP,
+                nKeep = config.nKeep,
+            )
+        }.onSuccess {
+            clearBridgeError()
+        }.onFailure { error ->
+            recordBridgeError("JNI_SET_SAMPLING_CONFIG_EXCEPTION", error)
         }
     }
 
     override fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = runtimeGenerationConfig
+
+    override fun modelLayerCount(): Int? {
+        ensureRuntimeInitialized()
+        if (usingFallback) {
+            return fallbackBridge.modelLayerCount()
+        }
+        if (!runtimeReady) {
+            return null
+        }
+        return runCatching { nativeApi.modelLayerCount() }
+            .onSuccess { clearBridgeError() }
+            .onFailure { error -> recordBridgeError("JNI_MODEL_LAYER_COUNT_EXCEPTION", error) }
+            .getOrNull()
+            ?.takeIf { it > 0 }
+    }
+
+    override fun modelSizeBytes(): Long? {
+        ensureRuntimeInitialized()
+        if (usingFallback) {
+            return fallbackBridge.modelSizeBytes()
+        }
+        if (!runtimeReady) {
+            return null
+        }
+        return runCatching { nativeApi.modelSizeBytes() }
+            .onSuccess { clearBridgeError() }
+            .onFailure { error -> recordBridgeError("JNI_MODEL_SIZE_EXCEPTION", error) }
+            .getOrNull()
+            ?.takeIf { it > 0L }
+    }
+
+    override fun estimateMaxGpuLayers(nCtx: Int): Int? {
+        ensureRuntimeInitialized()
+        if (usingFallback) {
+            return fallbackBridge.estimateMaxGpuLayers(nCtx)
+        }
+        if (!runtimeReady || nCtx <= 0) {
+            return null
+        }
+        return runCatching { nativeApi.estimateMaxGpuLayers(nCtx) }
+            .onSuccess { clearBridgeError() }
+            .onFailure { error -> recordBridgeError("JNI_ESTIMATE_GPU_LAYERS_EXCEPTION", error) }
+            .getOrNull()
+            ?.takeIf { it >= 0 }
+    }
 
     override fun supportsGpuOffload(): Boolean {
         if (!gpuOffloadAllowed) {
@@ -65,6 +126,19 @@ class NativeJniLlamaCppBridge(
         return runCatching { nativeApi.vulkanDiagnosticsJson() }
             .onSuccess { clearBridgeError() }
             .onFailure { error -> recordBridgeError("JNI_GPU_DIAGNOSTICS_EXCEPTION", error) }
+            .getOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    override fun prefixCacheDiagnosticsLine(): String? {
+        ensureRuntimeInitialized()
+        if (usingFallback) {
+            return null
+        }
+        return runCatching { nativeApi.prefixCacheDiagnosticsLine() }
+            .onSuccess { clearBridgeError() }
+            .onFailure { error -> recordBridgeError("JNI_PREFIX_CACHE_DIAGNOSTICS_EXCEPTION", error) }
             .getOrNull()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -117,6 +191,11 @@ class NativeJniLlamaCppBridge(
         val config = runtimeGenerationConfig
         val gpuEnabledAndSupported = gpuOffloadAllowed && config.gpuEnabled && supportsGpuOffload()
         val requestedGpuLayers = if (gpuEnabledAndSupported) config.gpuLayers else 0
+        val requestedDraftGpuLayers = if (gpuEnabledAndSupported && config.speculativeEnabled) {
+            config.speculativeDraftGpuLayers.coerceAtLeast(0)
+        } else {
+            0
+        }
         val primaryAttempt = runCatching {
             nativeApi.loadModel(
                 modelId = modelId,
@@ -135,6 +214,10 @@ class NativeJniLlamaCppBridge(
                 speculativeDraftModelPath = config.speculativeDraftModelPath,
                 speculativeMaxDraftTokens = config.speculativeMaxDraftTokens,
                 speculativeMinDraftTokens = config.speculativeMinDraftTokens,
+                speculativeDraftGpuLayers = requestedDraftGpuLayers,
+                useMmap = config.useMmap,
+                useMlock = config.useMlock,
+                nKeep = config.nKeep,
             )
         }
         if (primaryAttempt.getOrNull() == true) {
@@ -142,7 +225,7 @@ class NativeJniLlamaCppBridge(
             return true
         }
 
-        if (requestedGpuLayers > 0) {
+        if (requestedGpuLayers > 0 || requestedDraftGpuLayers > 0) {
             val cpuFallbackAttempt = runCatching {
                 nativeApi.loadModel(
                     modelId = modelId,
@@ -161,6 +244,10 @@ class NativeJniLlamaCppBridge(
                     speculativeDraftModelPath = config.speculativeDraftModelPath,
                     speculativeMaxDraftTokens = config.speculativeMaxDraftTokens,
                     speculativeMinDraftTokens = config.speculativeMinDraftTokens,
+                    speculativeDraftGpuLayers = 0,
+                    useMmap = config.useMmap,
+                    useMlock = config.useMlock,
+                    nKeep = config.nKeep,
                 )
             }
             if (cpuFallbackAttempt.getOrNull() == true) {
@@ -171,7 +258,10 @@ class NativeJniLlamaCppBridge(
             if (finalError != null) {
                 recordBridgeError("JNI_LOAD_EXCEPTION", finalError)
             } else {
-                recordBridgeError("JNI_LOAD_FAILED", "modelId=$modelId|gpu_layers=$requestedGpuLayers|cpu_retry=true")
+                recordBridgeError(
+                    "JNI_LOAD_FAILED",
+                    "modelId=$modelId|gpu_layers=$requestedGpuLayers|draft_gpu_layers=$requestedDraftGpuLayers|cpu_retry=true",
+                )
             }
             return false
         }
@@ -418,7 +508,17 @@ class NativeJniLlamaCppBridge(
             speculativeDraftModelPath: String?,
             speculativeMaxDraftTokens: Int,
             speculativeMinDraftTokens: Int,
+            speculativeDraftGpuLayers: Int,
+            useMmap: Boolean,
+            useMlock: Boolean,
+            nKeep: Int,
         ): Boolean
+        fun setSamplingConfig(
+            temperature: Float,
+            topK: Int,
+            topP: Float,
+            nKeep: Int,
+        )
         fun generateStream(
             requestId: String,
             prompt: String,
@@ -431,8 +531,12 @@ class NativeJniLlamaCppBridge(
         fun cancelGeneration(): Boolean
         fun unloadModel()
         fun supportsGpuOffload(): Boolean
+        fun modelLayerCount(): Int? = null
+        fun modelSizeBytes(): Long? = null
+        fun estimateMaxGpuLayers(nCtx: Int): Int? = null
         fun vulkanDiagnosticsJson(): String
         fun peakRssMb(): Double? = null
+        fun prefixCacheDiagnosticsLine(): String? = null
     }
 
     private class JniNativeApi : NativeApi {
@@ -454,7 +558,17 @@ class NativeJniLlamaCppBridge(
             speculativeDraftModelPath: String?,
             speculativeMaxDraftTokens: Int,
             speculativeMinDraftTokens: Int,
+            speculativeDraftGpuLayers: Int,
+            useMmap: Boolean,
+            useMlock: Boolean,
+            nKeep: Int,
         ): Boolean
+        external fun nativeSetSamplingConfig(
+            temperature: Float,
+            topK: Int,
+            topP: Float,
+            nKeep: Int,
+        )
         external fun nativeGenerateStream(
             requestId: String,
             prompt: String,
@@ -467,8 +581,12 @@ class NativeJniLlamaCppBridge(
         external fun nativeCancelGeneration(): Boolean
         external fun nativeUnloadModel()
         external fun nativeSupportsGpuOffload(): Boolean
+        external fun nativeModelLayerCount(): Int
+        external fun nativeModelSizeBytes(): Long
+        external fun nativeEstimateMaxGpuLayers(nCtx: Int): Int
         external fun nativeVulkanDiagnosticsJson(): String
         external fun nativePeakRssMb(): Double
+        external fun nativePrefixCacheDiagnosticsLine(): String
 
         override fun initialize(): Boolean = nativeInitialize()
 
@@ -489,6 +607,10 @@ class NativeJniLlamaCppBridge(
             speculativeDraftModelPath: String?,
             speculativeMaxDraftTokens: Int,
             speculativeMinDraftTokens: Int,
+            speculativeDraftGpuLayers: Int,
+            useMmap: Boolean,
+            useMlock: Boolean,
+            nKeep: Int,
         ): Boolean {
             return nativeLoadModel(
                 modelId,
@@ -507,6 +629,10 @@ class NativeJniLlamaCppBridge(
                 speculativeDraftModelPath,
                 speculativeMaxDraftTokens,
                 speculativeMinDraftTokens,
+                speculativeDraftGpuLayers,
+                useMmap,
+                useMlock,
+                nKeep,
             )
         }
 
@@ -530,6 +656,20 @@ class NativeJniLlamaCppBridge(
             }
         }
 
+        override fun setSamplingConfig(
+            temperature: Float,
+            topK: Int,
+            topP: Float,
+            nKeep: Int,
+        ) {
+            nativeSetSamplingConfig(
+                temperature = temperature,
+                topK = topK,
+                topP = topP,
+                nKeep = nKeep,
+            )
+        }
+
         override fun generate(prompt: String, maxTokens: Int, cacheKey: String?, cachePolicyCode: Int): String =
             nativeGenerate(prompt, maxTokens, cacheKey, cachePolicyCode)
 
@@ -539,12 +679,20 @@ class NativeJniLlamaCppBridge(
 
         override fun supportsGpuOffload(): Boolean = nativeSupportsGpuOffload()
 
+        override fun modelLayerCount(): Int? = nativeModelLayerCount().takeIf { it > 0 }
+
+        override fun modelSizeBytes(): Long? = nativeModelSizeBytes().takeIf { it > 0L }
+
+        override fun estimateMaxGpuLayers(nCtx: Int): Int? = nativeEstimateMaxGpuLayers(nCtx).takeIf { it >= 0 }
+
         override fun vulkanDiagnosticsJson(): String = nativeVulkanDiagnosticsJson()
 
         override fun peakRssMb(): Double? {
             val value = nativePeakRssMb()
             return value.takeIf { !it.isNaN() && it >= 0.0 }
         }
+
+        override fun prefixCacheDiagnosticsLine(): String = nativePrefixCacheDiagnosticsLine()
     }
 
     companion object {

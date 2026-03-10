@@ -22,6 +22,25 @@ data class RuntimeSamplingConfig(
     val topP: Float = 0.95f,
 )
 
+data class RuntimeLoadConfig(
+    val nThreads: Int = 0,
+    val nThreadsBatch: Int = 0,
+    val nBatch: Int = 512,
+    val nUbatch: Int = 512,
+    val nCtx: Int = 2048,
+    val gpuEnabled: Boolean = false,
+    val gpuLayers: Int = 0,
+    val quantizedKvCache: Boolean = true,
+    val speculativeEnabled: Boolean = false,
+    val speculativeDraftModelId: String? = null,
+    val speculativeDraftModelPath: String? = null,
+    val speculativeMaxDraftTokens: Int = 6,
+    val speculativeMinDraftTokens: Int = 2,
+    val speculativeDraftGpuLayers: Int = 0,
+    val useMmap: Boolean = true,
+    val useMlock: Boolean = false,
+)
+
 data class RuntimeGenerationConfig(
     val nThreads: Int = 0,
     val nThreadsBatch: Int = 0,
@@ -37,11 +56,36 @@ data class RuntimeGenerationConfig(
     val speculativeDraftModelPath: String? = null,
     val speculativeMaxDraftTokens: Int = 6,
     val speculativeMinDraftTokens: Int = 2,
+    val speculativeDraftGpuLayers: Int = 0,
+    val useMmap: Boolean = true,
+    val useMlock: Boolean = false,
+    val nKeep: Int = 128,
 ) {
     companion object {
         fun default(): RuntimeGenerationConfig {
             return RuntimeGenerationConfig()
         }
+    }
+
+    fun toLoadConfig(): RuntimeLoadConfig {
+        return RuntimeLoadConfig(
+            nThreads = nThreads,
+            nThreadsBatch = nThreadsBatch,
+            nBatch = nBatch,
+            nUbatch = nUbatch,
+            nCtx = nCtx,
+            gpuEnabled = gpuEnabled,
+            gpuLayers = gpuLayers,
+            quantizedKvCache = quantizedKvCache,
+            speculativeEnabled = speculativeEnabled,
+            speculativeDraftModelId = speculativeDraftModelId,
+            speculativeDraftModelPath = speculativeDraftModelPath,
+            speculativeMaxDraftTokens = speculativeMaxDraftTokens,
+            speculativeMinDraftTokens = speculativeMinDraftTokens,
+            speculativeDraftGpuLayers = speculativeDraftGpuLayers,
+            useMmap = useMmap,
+            useMlock = useMlock,
+        )
     }
 }
 
@@ -49,21 +93,7 @@ data class LoadedRuntimeKey(
     val modelId: String,
     val modelPath: String?,
     val backend: RuntimeBackend,
-    val nThreads: Int,
-    val nThreadsBatch: Int,
-    val nBatch: Int,
-    val nUbatch: Int,
-    val nCtx: Int,
-    val gpuEnabled: Boolean,
-    val gpuLayers: Int,
-    val quantizedKvCache: Boolean,
-    val temperature: Float,
-    val topK: Int,
-    val topP: Float,
-    val speculativeEnabled: Boolean,
-    val speculativeDraftModelPath: String?,
-    val speculativeMaxDraftTokens: Int,
-    val speculativeMinDraftTokens: Int,
+    val loadConfig: RuntimeLoadConfig,
 )
 
 enum class RuntimeReloadReason {
@@ -80,6 +110,8 @@ data class RuntimeResidencyState(
     val resident: Boolean = false,
     val residentHit: Boolean = false,
     val residentHitCount: Long = 0L,
+    val slotId: String? = null,
+    val expiresAtEpochMs: Long? = null,
     val reloadReason: RuntimeReloadReason? = null,
     val lastLoadDurationMs: Long? = null,
     val lastWarmupDurationMs: Long? = null,
@@ -120,6 +152,9 @@ interface LlamaCppRuntimeBridge {
     fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {}
     fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = RuntimeGenerationConfig.default()
     fun supportsGpuOffload(): Boolean = false
+    fun modelLayerCount(): Int? = null
+    fun modelSizeBytes(): Long? = null
+    fun estimateMaxGpuLayers(nCtx: Int): Int? = null
     fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): GenerationResult =
         generate(
             requestId = "legacy",
@@ -143,6 +178,7 @@ interface LlamaCppRuntimeBridge {
     fun runtimeBackend(): RuntimeBackend
     fun lastError(): BridgeError? = null
     fun vulkanDiagnosticsJson(): String? = null
+    fun prefixCacheDiagnosticsLine(): String? = null
 }
 
 data class CommandResult(
@@ -165,7 +201,7 @@ internal class ProcessCommandRunner : CommandRunner {
                 process.inputStream.use { input -> input.copyTo(stdoutBytes) }
             }
             val stderrDrain = thread(name = "process-command-runner-stderr", start = true) {
-                process.errorStream.use { error -> error.copyTo(stderrBytes) }
+                process.errorStream.use { input -> input.copyTo(stderrBytes) }
             }
             val exitCode = process.waitFor()
             stdoutDrain.join()
@@ -177,9 +213,9 @@ internal class ProcessCommandRunner : CommandRunner {
             )
         }.getOrElse { error ->
             CommandResult(
-                exitCode = 127,
+                exitCode = -1,
                 stdout = "",
-                stderr = error.message ?: "Command execution failed.",
+                stderr = error.message ?: error::class.simpleName.orEmpty(),
             )
         }
     }

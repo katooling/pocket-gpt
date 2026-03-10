@@ -51,11 +51,8 @@ class RuntimeOrchestrator(
         runtimeConfig = runtimeConfig,
     )
     private val toolLoopCoordinator = ToolLoopCoordinator(toolModule)
-    private val responseCache = RuntimeResponseCache(
-        maxEntries = runtimeConfig.responseCacheMaxEntries,
-        ttlMs = runtimeConfig.responseCacheTtlSec.coerceAtLeast(0L) * 1000L,
-    )
-    private val idleUnloadGuard = IdleModelUnloadGuard(inferenceModule)
+    private val runtimePlanResolver = RuntimePlanResolver()
+    private val runtimeResidencyManager = RuntimeResidencyManager(inferenceModule)
     private var routingMode: RoutingMode = RoutingMode.AUTO
     private val modelLifecycleCoordinator = ModelLifecycleCoordinator(
         inferenceModule = inferenceModule,
@@ -73,11 +70,9 @@ class RuntimeOrchestrator(
         artifactVerifier = artifactVerifier,
         interactionPlanner = interactionPlanner,
         inferenceExecutor = inferenceExecutor,
-        responseCache = responseCache,
         modelLifecycleCoordinator = modelLifecycleCoordinator,
-        cancelIdleUnload = idleUnloadGuard::cancel,
-        unloadNow = idleUnloadGuard::unloadNow,
-        scheduleIdleUnload = idleUnloadGuard::schedule,
+        runtimePlanResolver = runtimePlanResolver,
+        runtimeResidencyManager = runtimeResidencyManager,
         cancelByRequest = ::cancelGenerationByRequest,
         cancelBySession = ::cancelGeneration,
     )
@@ -114,9 +109,8 @@ class RuntimeOrchestrator(
         inferenceModule = inferenceModule,
         artifactVerifier = artifactVerifier,
         observabilityModule = observabilityModule,
-        cancelIdleUnload = idleUnloadGuard::cancel,
-        scheduleIdleUnload = idleUnloadGuard::schedule,
-        unloadNow = idleUnloadGuard::unloadNow,
+        runtimeResidencyManager = runtimeResidencyManager,
+        runtimePlanResolver = runtimePlanResolver,
     )
 
     init {
@@ -278,7 +272,18 @@ class RuntimeOrchestrator(
     }
 
     override fun exportDiagnostics(): String {
-        return diagnosticsUseCase.export()
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule
+        val nativeResidencyState = nativeInference?.residencyState()
+        val prefixCacheDiagnostics = nativeInference?.prefixCacheDiagnosticsLine()
+        return buildString {
+            append(diagnosticsUseCase.export())
+            append('\n')
+            append(runtimeResidencyManager.diagnosticsLine(nativeResidencyState))
+            prefixCacheDiagnostics?.let {
+                append('\n')
+                append(it)
+            }
+        }
     }
 
     override fun setRoutingMode(mode: RoutingMode) {
@@ -296,13 +301,21 @@ class RuntimeOrchestrator(
     }
 
     override fun evictResidentModel(reason: String): Boolean {
-        idleUnloadGuard.unloadNow()
+        runtimeResidencyManager.unload(reason)
         observabilityModule.recordLatencyMetric(
             "inference.resident_eviction.${sanitizeMetricSegment(reason)}",
             1.0,
         )
         return true
     }
+
+    override fun touchKeepAlive(): Boolean = runtimeResidencyManager.touchKeepAlive()
+
+    override fun shortenKeepAlive(ttlMs: Long): Boolean = runtimeResidencyManager.shortenKeepAlive(ttlMs)
+
+    override fun onTrimMemory(level: Int): Boolean = runtimeResidencyManager.onTrimMemory(level)
+
+    override fun onAppBackground(): Boolean = runtimeResidencyManager.onAppBackground()
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         sessionManager.restoreSession(sessionId, turns)
@@ -356,42 +369,6 @@ class RuntimeGenerationFailureException(
     message: String,
     val errorCode: String? = null,
 ) : RuntimeException(message)
-
-private class IdleModelUnloadGuard(
-    private val inferenceModule: InferenceModule,
-) {
-    private val lock = Any()
-    private var timer: Timer? = null
-
-    fun schedule(delayMs: Long) {
-        val safeDelay = delayMs.coerceAtLeast(1L)
-        synchronized(lock) {
-            timer?.cancel()
-            timer = Timer("runtime-idle-unload", true).also { idleTimer ->
-                idleTimer.schedule(
-                    object : TimerTask() {
-                        override fun run() {
-                            inferenceModule.unloadModel()
-                        }
-                    },
-                    safeDelay,
-                )
-            }
-        }
-    }
-
-    fun cancel() {
-        synchronized(lock) {
-            timer?.cancel()
-            timer = null
-        }
-    }
-
-    fun unloadNow() {
-        cancel()
-        inferenceModule.unloadModel()
-    }
-}
 
 internal class GenerationTimeoutGuard(
     timeoutMs: Long,

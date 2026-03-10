@@ -12,6 +12,7 @@ import com.pocketagent.nativebridge.RuntimeBackend
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class RuntimeWarmupCoordinatorTest {
@@ -22,13 +23,13 @@ class RuntimeWarmupCoordinatorTest {
         val runtimeConfig = warmupRuntimeConfig()
         val artifactVerifier = ArtifactVerifier(runtimeConfig)
         val observability = WarmupObservabilityModule()
+        val residencyManager = RuntimeResidencyManager(inferenceModule, nowMs = monotonicClock())
         val coordinator = RuntimeWarmupCoordinator(
             inferenceModule = inferenceModule,
             artifactVerifier = artifactVerifier,
             observabilityModule = observability,
-            cancelIdleUnload = {},
-            scheduleIdleUnload = {},
-            unloadNow = {},
+            runtimeResidencyManager = residencyManager,
+            runtimePlanResolver = RuntimePlanResolver(availableCpuThreads = { 6 }),
             availableCpuThreads = { 6 },
             nowMs = monotonicClock(),
         )
@@ -38,13 +39,18 @@ class RuntimeWarmupCoordinatorTest {
 
         assertTrue(first.attempted)
         assertTrue(first.warmed)
+        assertFalse(first.speculativePath)
         assertTrue(second.attempted)
         assertTrue(second.warmed)
         assertTrue(second.residentHit)
         assertEquals(1, bridge.loadCalls)
         assertEquals(2, bridge.generateCalls)
+        assertEquals(8, bridge.lastMaxTokens)
+        assertTrue(bridge.lastPrompt.contains("shader") || bridge.lastPrompt.contains("warmup"))
+        assertEquals(1, residencyManager.listResident().size)
         assertTrue(observability.metrics.keys.contains("inference.model_load_ms"))
         assertTrue(observability.metrics.keys.contains("inference.warmup_ms"))
+        assertTrue(observability.metrics.keys.contains("inference.warmup.speculative_path"))
         assertTrue(observability.metrics.keys.contains("inference.resident_hit"))
     }
 }
@@ -52,6 +58,8 @@ class RuntimeWarmupCoordinatorTest {
 private class WarmupFakeBridge : LlamaCppRuntimeBridge {
     var loadCalls: Int = 0
     var generateCalls: Int = 0
+    var lastMaxTokens: Int = 0
+    var lastPrompt: String = ""
 
     override fun isReady(): Boolean = true
 
@@ -71,6 +79,8 @@ private class WarmupFakeBridge : LlamaCppRuntimeBridge {
         onToken: (String) -> Unit,
     ): GenerationResult {
         generateCalls += 1
+        lastPrompt = prompt
+        lastMaxTokens = maxTokens
         onToken("ok")
         return GenerationResult(
             finishReason = GenerationFinishReason.COMPLETED,
