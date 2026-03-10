@@ -203,6 +203,6 @@ class AndroidMvpContainer(
 
         fun baselineModels(): List<String> = ModelCatalog.baselineModels()
 
-        private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 90_000L
+        private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 600_000L
     }
 }

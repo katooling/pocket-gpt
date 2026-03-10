@@ -25,15 +25,16 @@ import com.pocketagent.runtime.RuntimeCompositionRoot
 import com.pocketagent.runtime.RuntimeResourceControl
 import com.pocketagent.runtime.RuntimeWarmupSupport
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.runtime.WarmupResult
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.locks.ReentrantReadWriteLock
-import kotlin.concurrent.thread
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
@@ -44,6 +45,12 @@ object AppRuntimeDependencies {
     private var modelManifestProvider: ModelDistributionManifestProvider? = null
     private var sharedConversationModule: ConversationModule? = null
     private var sharedMemoryModule: MemoryModule? = null
+    private var runtimeGraph: AppRuntimeGraph? = null
+    private val warmupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val warmupOrchestrator = RuntimeWarmupOrchestrator(
+        scope = warmupScope,
+        logger = { message -> runCatching { Log.i("AppRuntimeDeps", message) } },
+    )
     private val hotSwappableRuntimeFacade = HotSwappableRuntimeFacade(
         RuntimeCompositionRoot.createFacade(
             conversationModule = getOrCreateConversationModule(),
@@ -57,6 +64,14 @@ object AppRuntimeDependencies {
 
     fun resetRuntimeFacadeFactoryForTests() {
         runtimeFacadeFactory = productionRuntimeFacadeFactory
+        warmupOrchestrator.cancelActiveWarmup()
+        synchronized(lock) {
+            runtimeGraph = null
+        }
+    }
+
+    internal fun cancelBackgroundWorkForTests() {
+        warmupOrchestrator.cancelActiveWarmup()
     }
 
     fun installProductionRuntime(context: Context) {
@@ -64,15 +79,15 @@ object AppRuntimeDependencies {
             return
         }
         synchronized(lock) {
-            val store = runtimeProvisioningStore
-                ?: AndroidRuntimeProvisioningStore(context.applicationContext).also { runtimeProvisioningStore = it }
+            val graph = getOrCreateRuntimeGraph(context)
+            val store = graph.provisioningStore
             val newFacade = RuntimeCompositionRoot.createFacade(
                 runtimeConfig = store.runtimeConfig(),
-                conversationModule = getOrCreateConversationModule(),
-                memoryModule = getOrCreateMemoryModule(),
+                conversationModule = graph.conversationModule,
+                memoryModule = graph.memoryModule,
                 inferenceModule = createDefaultAndroidInferenceModule(context.applicationContext),
             )
-            hotSwappableRuntimeFacade.replace(newFacade)
+            graph.runtimeFacade.replace(newFacade)
             if (startupWarmupEnabled()) {
                 scheduleWarmupIfSupported(newFacade)
             } else {
@@ -90,30 +105,11 @@ object AppRuntimeDependencies {
     }
 
     private fun scheduleWarmupIfSupported(facade: MvpRuntimeFacade) {
-        val warmupSupport = facade as? RuntimeWarmupSupport ?: return
-        thread(name = "pocketgpt-runtime-warmup", start = true, isDaemon = true) {
-            runCatching { warmupSupport.warmupActiveModel() }
-                .onSuccess { result ->
-                    runCatching {
-                        Log.i(
-                            "AppRuntimeDeps",
-                            "WARMUP|attempted=${result.attempted}|warmed=${result.warmed}|resident_hit=${result.residentHit}|" +
-                                "load_ms=${result.loadDurationMs ?: -1}|warmup_ms=${result.warmupDurationMs ?: -1}|" +
-                                "speculative_path=${result.speculativePath}|error=${result.errorCode ?: "none"}",
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    runCatching {
-                        Log.w("AppRuntimeDeps", "WARMUP|failed|reason=${error.message ?: error::class.simpleName}")
-                    }
-                }
-        }
+        warmupOrchestrator.scheduleWarmupIfSupported(facade as? RuntimeWarmupSupport)
     }
 
     fun currentProvisioningSnapshot(context: Context): RuntimeProvisioningSnapshot {
-        val store = getOrCreateProvisioningStore(context)
-        return store.snapshot()
+        return getOrCreateRuntimeGraph(context).provisioningStore.snapshot()
     }
 
     suspend fun importModelFromUri(
@@ -121,10 +117,11 @@ object AppRuntimeDependencies {
         modelId: String,
         sourceUri: Uri,
     ): RuntimeModelImportResult {
-        val store = getOrCreateProvisioningStore(context)
+        val graph = getOrCreateRuntimeGraph(context)
+        val store = graph.provisioningStore
         val result = store.importModel(modelId = modelId, sourceUri = sourceUri)
         installProductionRuntime(context)
-        getOrCreateDownloadManager(context).refresh()
+        graph.modelDownloadManager.refresh()
         return result
     }
 
@@ -133,24 +130,25 @@ object AppRuntimeDependencies {
         modelId: String,
         absolutePath: String,
     ): RuntimeModelImportResult {
-        val store = getOrCreateProvisioningStore(context)
+        val graph = getOrCreateRuntimeGraph(context)
+        val store = graph.provisioningStore
         val result = store.seedModelFromAbsolutePath(modelId = modelId, absolutePath = absolutePath)
         installProductionRuntime(context)
-        getOrCreateDownloadManager(context).refresh()
+        graph.modelDownloadManager.refresh()
         return result
     }
 
     fun listInstalledVersions(
         context: Context,
         modelId: String,
-    ) = getOrCreateProvisioningStore(context).listInstalledVersions(modelId)
+    ) = getOrCreateRuntimeGraph(context).provisioningStore.listInstalledVersions(modelId)
 
     fun setActiveVersion(
         context: Context,
         modelId: String,
         version: String,
     ): Boolean {
-        val changed = getOrCreateProvisioningStore(context).setActiveVersion(modelId, version)
+        val changed = getOrCreateRuntimeGraph(context).provisioningStore.setActiveVersion(modelId, version)
         if (changed) {
             installProductionRuntime(context)
         }
@@ -162,70 +160,79 @@ object AppRuntimeDependencies {
         modelId: String,
         version: String,
     ): Boolean {
-        val removed = getOrCreateProvisioningStore(context).removeVersion(modelId, version)
+        val graph = getOrCreateRuntimeGraph(context)
+        val removed = graph.provisioningStore.removeVersion(modelId, version)
         if (removed) {
             installProductionRuntime(context)
-            getOrCreateDownloadManager(context).refresh()
+            graph.modelDownloadManager.refresh()
         }
         return removed
     }
 
     fun storageSummary(context: Context): StorageSummary {
-        return getOrCreateProvisioningStore(context).storageSummary()
+        return getOrCreateRuntimeGraph(context).provisioningStore.storageSummary()
     }
 
     suspend fun loadModelDistributionManifest(context: Context): ModelDistributionManifest {
-        return synchronized(lock) {
-            modelManifestProvider
-                ?: ModelDistributionManifestProvider(context.applicationContext)
-                    .also { modelManifestProvider = it }
-        }.loadManifest()
+        return getOrCreateRuntimeGraph(context).modelManifestProvider.loadManifest()
     }
 
     fun enqueueDownload(
         context: Context,
         version: ModelDistributionVersion,
     ): String {
-        return getOrCreateDownloadManager(context).enqueueDownload(version)
+        return getOrCreateRuntimeGraph(context).modelDownloadManager.enqueueDownload(version)
     }
 
     fun pauseDownload(context: Context, taskId: String) {
-        getOrCreateDownloadManager(context).pauseDownload(taskId)
+        getOrCreateRuntimeGraph(context).modelDownloadManager.pauseDownload(taskId)
     }
 
     fun resumeDownload(context: Context, taskId: String) {
-        getOrCreateDownloadManager(context).resumeDownload(taskId)
+        getOrCreateRuntimeGraph(context).modelDownloadManager.resumeDownload(taskId)
     }
 
     fun retryDownload(context: Context, taskId: String) {
-        getOrCreateDownloadManager(context).retryDownload(taskId)
+        getOrCreateRuntimeGraph(context).modelDownloadManager.retryDownload(taskId)
     }
 
     fun cancelDownload(context: Context, taskId: String) {
-        getOrCreateDownloadManager(context).cancelDownload(taskId)
+        getOrCreateRuntimeGraph(context).modelDownloadManager.cancelDownload(taskId)
     }
 
     fun observeDownloads(context: Context): StateFlow<List<DownloadTaskState>> {
-        return getOrCreateDownloadManager(context).observeDownloads()
+        return getOrCreateRuntimeGraph(context).modelDownloadManager.observeDownloads()
     }
 
-    private fun getOrCreateProvisioningStore(context: Context): AndroidRuntimeProvisioningStore {
+    private fun getOrCreateRuntimeGraph(context: Context): AppRuntimeGraph {
         return synchronized(lock) {
-            runtimeProvisioningStore
-                ?: AndroidRuntimeProvisioningStore(context.applicationContext).also { runtimeProvisioningStore = it }
+            runtimeGraph ?: createRuntimeGraph(context.applicationContext).also { runtimeGraph = it }
         }
     }
 
-    private fun getOrCreateDownloadManager(context: Context): ModelDownloadManager {
-        return synchronized(lock) {
-            modelDownloadManager ?: ModelDownloadManager(
-                context = context.applicationContext,
-                provisioningStore = getOrCreateProvisioningStore(context),
-            ).also { manager ->
-                modelDownloadManager = manager
-                manager.syncFromWorkManagerState()
-            }
+    private fun createRuntimeGraph(context: Context): AppRuntimeGraph {
+        val provisioningStore = runtimeProvisioningStore
+            ?: AndroidRuntimeProvisioningStore(context.applicationContext).also { runtimeProvisioningStore = it }
+        val conversationModule = getOrCreateConversationModule()
+        val memoryModule = getOrCreateMemoryModule()
+        val downloadManager = modelDownloadManager ?: ModelDownloadManager(
+            context = context.applicationContext,
+            provisioningStore = provisioningStore,
+        ).also { manager ->
+            modelDownloadManager = manager
+            manager.syncFromWorkManagerState()
         }
+        val manifestProvider = modelManifestProvider
+            ?: ModelDistributionManifestProvider(context.applicationContext)
+                .also { modelManifestProvider = it }
+        return AppRuntimeGraph(
+            provisioningStore = provisioningStore,
+            modelDownloadManager = downloadManager,
+            modelManifestProvider = manifestProvider,
+            conversationModule = conversationModule,
+            memoryModule = memoryModule,
+            runtimeFacade = hotSwappableRuntimeFacade,
+        )
     }
 
     private fun getOrCreateConversationModule(): ConversationModule {
@@ -258,7 +265,8 @@ internal class HotSwappableRuntimeFacade(
 
     override fun createSession(): SessionId = withDelegate { it.createSession() }
 
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
+    @Suppress("DEPRECATION")
+    override fun streamUserMessage(request: com.pocketagent.runtime.StreamUserMessageRequest): Flow<ChatStreamEvent> {
         return withDelegate { it.streamUserMessage(request) }
     }
 

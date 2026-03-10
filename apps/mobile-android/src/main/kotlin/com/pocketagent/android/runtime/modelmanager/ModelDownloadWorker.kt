@@ -19,10 +19,12 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -247,7 +249,38 @@ class ModelDownloadWorker(
                 message = "Download timed out.",
             )
             if (retryAllowed) Result.retry() else Result.failure(outputDataOf(taskId))
-        } catch (cancellation: Exception) {
+        } catch (cancellation: CancellationException) {
+            if (isStopped) {
+                val current = ModelDownloadTaskStateStore.get(appContext, taskId)
+                if (
+                    current?.status == DownloadTaskStatus.PAUSED ||
+                    current?.status == DownloadTaskStatus.CANCELLED
+                ) {
+                    return@withContext Result.success(outputDataOf(taskId))
+                }
+                fail(
+                    taskId = taskId,
+                    modelId = modelId,
+                    version = version,
+                    reason = DownloadFailureReason.CANCELLED,
+                    processingStage = current?.processingStage ?: DownloadProcessingStage.DOWNLOADING,
+                    message = "Download cancelled.",
+                )
+                return@withContext Result.failure(outputDataOf(taskId))
+            }
+            throw cancellation
+        } catch (error: IOException) {
+            fail(
+                taskId = taskId,
+                modelId = modelId,
+                version = version,
+                reason = DownloadFailureReason.NETWORK_ERROR,
+                processingStage = ModelDownloadTaskStateStore.get(appContext, taskId)?.processingStage
+                    ?: DownloadProcessingStage.DOWNLOADING,
+                message = error.message ?: "Download failed.",
+            )
+            if (retryAllowed) Result.retry() else Result.failure(outputDataOf(taskId))
+        } catch (error: RuntimeException) {
             if (isStopped) {
                 val current = ModelDownloadTaskStateStore.get(appContext, taskId)
                 if (
@@ -270,10 +303,10 @@ class ModelDownloadWorker(
                 taskId = taskId,
                 modelId = modelId,
                 version = version,
-                reason = DownloadFailureReason.NETWORK_ERROR,
+                reason = DownloadFailureReason.UNKNOWN,
                 processingStage = ModelDownloadTaskStateStore.get(appContext, taskId)?.processingStage
                     ?: DownloadProcessingStage.DOWNLOADING,
-                message = cancellation.message ?: "Download failed.",
+                message = error.message ?: "Download failed unexpectedly.",
             )
             if (retryAllowed) Result.retry() else Result.failure(outputDataOf(taskId))
         }

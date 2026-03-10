@@ -2,6 +2,9 @@ package com.pocketagent.android.runtime.modelmanager
 
 import android.content.Context
 import com.pocketagent.android.BuildConfig
+import com.pocketagent.android.runtime.RuntimeDomainError
+import com.pocketagent.android.runtime.RuntimeDomainException
+import com.pocketagent.android.runtime.RuntimeErrorCodes
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -344,7 +347,13 @@ class ModelDistributionManifestProvider(
             return try {
                 val responseCode = connection.responseCode
                 if (responseCode !in 200..299) {
-                    error("HTTP $responseCode")
+                    throw RuntimeDomainException(
+                        domainError = RuntimeDomainError(
+                            code = RuntimeErrorCodes.MODEL_MANIFEST_HTTP_ERROR,
+                            userMessage = "Model catalog refresh failed. Falling back to bundled catalog.",
+                            technicalDetail = "endpoint=$endpoint;http=$responseCode",
+                        ),
+                    )
                 }
                 connection.inputStream.bufferedReader().use { it.readText() }
             } finally {

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.pocketagent.android.runtime.ProvisioningGateway
+import com.pocketagent.android.runtime.RuntimeDomainException
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
@@ -86,6 +87,12 @@ class ModelProvisioningViewModel(
             withContext(ioDispatcher) {
                 gateway.importModelFromUri(modelId = modelId, sourceUri = sourceUri)
             }
+        }.recoverCatching { error ->
+            throw ProvisioningUserFacingException(
+                message = userMessageFor(error),
+                code = (error as? RuntimeDomainException)?.domainError?.code,
+                cause = error,
+            )
         }
         refreshSnapshot()
         _uiState.update { state -> state.copy(isImporting = false) }
@@ -157,7 +164,18 @@ class ModelProvisioningViewModel(
     fun cancelDownload(taskId: String) {
         gateway.cancelDownload(taskId)
     }
+
+    private fun userMessageFor(error: Throwable): String {
+        return (error as? RuntimeDomainException)?.domainError?.userMessage
+            ?: "Model import failed. Please try again."
+    }
 }
+
+class ProvisioningUserFacingException(
+    message: String,
+    val code: String?,
+    cause: Throwable? = null,
+) : IllegalStateException(message, cause)
 
 class ModelProvisioningViewModelFactory(
     private val gateway: ProvisioningGateway,

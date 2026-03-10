@@ -1,5 +1,8 @@
 package com.pocketagent.android.runtime.modelmanager
 
+import com.pocketagent.android.runtime.RuntimeDomainError
+import com.pocketagent.android.runtime.RuntimeDomainException
+import com.pocketagent.android.runtime.RuntimeErrorCodes
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -197,6 +200,28 @@ class ModelDistributionManifestProviderTest {
         val manifest = provider.loadManifest()
 
         assertTrue(manifest.lastError?.contains("MODEL_MANIFEST_REMOTE_FETCH_FAILED:") == true)
+    }
+
+    @Test
+    fun `remote manifest runtime domain error keeps stable machine code`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "https://example.test/catalog.json",
+            bundledManifestLoader = { bundledManifestJson() },
+            remoteManifestLoader = {
+                throw RuntimeDomainException(
+                    domainError = RuntimeDomainError(
+                        code = RuntimeErrorCodes.MODEL_MANIFEST_HTTP_ERROR,
+                        userMessage = "Model catalog refresh failed. Falling back to bundled catalog.",
+                        technicalDetail = "endpoint=https://example.test/catalog.json;http=503",
+                    ),
+                )
+            },
+        )
+
+        val manifest = provider.loadManifest()
+
+        assertTrue(manifest.lastError?.contains(RuntimeErrorCodes.MODEL_MANIFEST_HTTP_ERROR) == true)
     }
 }
 

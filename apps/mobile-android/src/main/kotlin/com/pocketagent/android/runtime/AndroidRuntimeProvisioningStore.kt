@@ -5,7 +5,6 @@ import android.net.Uri
 import com.pocketagent.android.runtime.modelmanager.ModelDownloadWorker
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
-import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.ModelRuntimeProfile
 import com.pocketagent.runtime.ModelRegistry
 import com.pocketagent.runtime.RuntimeConfig
@@ -19,77 +18,13 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class ProvisionedModelState(
-    val modelId: String,
-    val displayName: String,
-    val fileName: String,
-    val absolutePath: String?,
-    val sha256: String?,
-    val importedAtEpochMs: Long?,
-    val activeVersion: String?,
-    val installedVersions: List<ModelVersionDescriptor>,
-    val localFileMissing: Boolean = false,
-) {
-    val isProvisioned: Boolean
-        get() = !localFileMissing && !absolutePath.isNullOrBlank() && !sha256.isNullOrBlank()
-}
-
-data class ProvisioningRecoverySignal(
-    val code: String,
-    val message: String,
-    val technicalDetail: String,
-)
-
-data class RuntimeProvisioningSnapshot(
-    val models: List<ProvisionedModelState>,
-    val storageSummary: StorageSummary,
-    val requiredModelIds: Set<String>,
-    val recoverableCorruptions: List<ProvisioningRecoverySignal> = emptyList(),
-) {
-    val verifiedActiveModelCount: Int
-        get() = models.count { it.modelId in requiredModelIds && it.isProvisioned && !it.activeVersion.isNullOrBlank() }
-
-    val missingRequiredModelIds: Set<String>
-        get() = requiredModelIds.filterNot { modelId ->
-            models.any { it.modelId == modelId && it.isProvisioned && !it.activeVersion.isNullOrBlank() }
-        }.toSet()
-
-    val readiness: ProvisioningReadiness
-        get() = when {
-            verifiedActiveModelCount <= 0 -> ProvisioningReadiness.BLOCKED
-            missingRequiredModelIds.isEmpty() -> ProvisioningReadiness.READY
-            else -> ProvisioningReadiness.DEGRADED
-        }
-
-    val allRequiredModelsProvisioned: Boolean
-        get() = models.filter { it.modelId in requiredModelIds }.all { it.isProvisioned }
-
-    val hasRecoverableCorruption: Boolean
-        get() = recoverableCorruptions.isNotEmpty()
-}
-
-enum class ProvisioningReadiness {
-    READY,
-    DEGRADED,
-    BLOCKED,
-}
-
-data class RuntimeModelImportResult(
-    val modelId: String,
-    val version: String,
-    val absolutePath: String,
-    val sha256: String,
-    val copiedBytes: Long,
-    val isActive: Boolean,
-)
-
 class AndroidRuntimeProvisioningStore(
-    private val context: Context,
+    internal val context: Context,
 ) {
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    internal val prefs = context.getSharedPreferences(PROVISIONING_PREFS_NAME, Context.MODE_PRIVATE)
     private val modelLocks: MutableMap<String, Any> = mutableMapOf()
     private val migrationCorruptionSignals: MutableList<ProvisioningRecoverySignal> = mutableListOf()
-    private val baselineModelIdSet = BASELINE_MODEL_SPECS.mapTo(linkedSetOf()) { it.modelId }
+    internal val baselineModelIdSet = BASELINE_MODEL_SPECS.mapTo(linkedSetOf()) { it.modelId }
     private val runtimeProfile: ModelRuntimeProfile = ModelRuntimeProfile.PROD
     private val startupCandidateModelIds: Set<String> = ModelRegistry.default()
         .startupPolicy(profile = runtimeProfile)
@@ -97,7 +32,7 @@ class AndroidRuntimeProvisioningStore(
         .toSet()
         .ifEmpty { baselineModelIdSet }
     @Volatile
-    private var migrationEnsured: Boolean = false
+    internal var migrationEnsured: Boolean = false
 
     fun snapshot(): RuntimeProvisioningSnapshot {
         ensureMigrated()
@@ -160,7 +95,7 @@ class AndroidRuntimeProvisioningStore(
                 val copiedBytes = context.contentResolver.openInputStream(sourceUri)?.use { input ->
                     BufferedInputStream(input).use { bufferedInput ->
                         BufferedOutputStream(tempFile.outputStream()).use { output ->
-                            val buffer = ByteArray(COPY_BUFFER_SIZE_BYTES)
+                            val buffer = ByteArray(PROVISIONING_COPY_BUFFER_SIZE_BYTES)
                             var total = 0L
                             while (true) {
                                 val read = bufferedInput.read(buffer)
@@ -175,13 +110,25 @@ class AndroidRuntimeProvisioningStore(
                             total
                         }
                     }
-                } ?: error("Unable to open selected model file.")
+                } ?: throw RuntimeDomainException(
+                    domainError = RuntimeDomainError(
+                        code = RuntimeErrorCodes.PROVISIONING_IMPORT_SOURCE_UNREADABLE,
+                        userMessage = "Unable to read the selected model file.",
+                        technicalDetail = "model=$modelId;source_uri=$sourceUri",
+                    ),
+                )
 
                 if (destinationFile.exists()) {
                     destinationFile.delete()
                 }
                 if (!tempFile.renameTo(destinationFile)) {
-                    error("Unable to persist imported model file.")
+                    throw RuntimeDomainException(
+                        domainError = RuntimeDomainError(
+                            code = RuntimeErrorCodes.PROVISIONING_IMPORT_PERSIST_FAILED,
+                            userMessage = "Unable to save the imported model file.",
+                            technicalDetail = "model=$modelId;destination=${destinationFile.absolutePath}",
+                        ),
+                    )
                 }
 
                 val sha = digest.digest().toHex()
@@ -190,9 +137,9 @@ class AndroidRuntimeProvisioningStore(
                     version = version,
                     absolutePath = destinationFile.absolutePath,
                     sha = sha,
-                    provenanceIssuer = DEFAULT_ISSUER,
-                    provenanceSignature = sha256Hex("$DEFAULT_ISSUER|${spec.modelId}|$sha|v1".encodeToByteArray()),
-                    runtimeCompatibility = RUNTIME_COMPATIBILITY_TAG,
+                    provenanceIssuer = PROVISIONING_DEFAULT_ISSUER,
+                    provenanceSignature = sha256Hex("$PROVISIONING_DEFAULT_ISSUER|${spec.modelId}|$sha|v1".encodeToByteArray()),
+                    runtimeCompatibility = PROVISIONING_RUNTIME_COMPATIBILITY_TAG,
                     fileSizeBytes = copiedBytes,
                     makeActive = false,
                 )
@@ -220,9 +167,9 @@ class AndroidRuntimeProvisioningStore(
                     version = version,
                     absolutePath = file.absolutePath,
                     sha = sha,
-                    provenanceIssuer = DEFAULT_ISSUER,
-                    provenanceSignature = sha256Hex("$DEFAULT_ISSUER|${spec.modelId}|$sha|v1".encodeToByteArray()),
-                    runtimeCompatibility = RUNTIME_COMPATIBILITY_TAG,
+                    provenanceIssuer = PROVISIONING_DEFAULT_ISSUER,
+                    provenanceSignature = sha256Hex("$PROVISIONING_DEFAULT_ISSUER|${spec.modelId}|$sha|v1".encodeToByteArray()),
+                    runtimeCompatibility = PROVISIONING_RUNTIME_COMPATIBILITY_TAG,
                     fileSizeBytes = file.length().coerceAtLeast(0L),
                     makeActive = false,
                 )
@@ -250,11 +197,11 @@ class AndroidRuntimeProvisioningStore(
                 version = version,
                 absolutePath = absolutePath,
                 sha = sha256,
-                provenanceIssuer = provenanceIssuer.ifBlank { DEFAULT_ISSUER },
+                provenanceIssuer = provenanceIssuer.ifBlank { PROVISIONING_DEFAULT_ISSUER },
                 provenanceSignature = provenanceSignature.ifBlank {
-                    sha256Hex("${provenanceIssuer.ifBlank { DEFAULT_ISSUER }}|${spec.modelId}|$sha256|v1".encodeToByteArray())
+                    sha256Hex("${provenanceIssuer.ifBlank { PROVISIONING_DEFAULT_ISSUER }}|${spec.modelId}|$sha256|v1".encodeToByteArray())
                 },
-                runtimeCompatibility = runtimeCompatibility.ifBlank { RUNTIME_COMPATIBILITY_TAG },
+                runtimeCompatibility = runtimeCompatibility.ifBlank { PROVISIONING_RUNTIME_COMPATIBILITY_TAG },
                 fileSizeBytes = fileSizeBytes.coerceAtLeast(0L),
                 makeActive = makeActive,
             )
@@ -263,7 +210,7 @@ class AndroidRuntimeProvisioningStore(
     }
 
     fun managedModelDirectory(): File {
-        return File(managedStorageRoot(), MANAGED_MODELS_DIR_NAME).apply { mkdirs() }
+        return File(managedStorageRoot(), PROVISIONING_MANAGED_MODELS_DIR_NAME).apply { mkdirs() }
     }
 
     fun managedDownloadWorkspaceDirectory(): File {
@@ -351,7 +298,7 @@ class AndroidRuntimeProvisioningStore(
 
             val path = active?.absolutePath?.trim().orEmpty()
             val sha = active?.sha256?.takeIf { it.isNotBlank() }.orEmpty()
-            val issuer = active?.provenanceIssuer?.takeIf { it.isNotBlank() } ?: DEFAULT_ISSUER
+            val issuer = active?.provenanceIssuer?.takeIf { it.isNotBlank() } ?: PROVISIONING_DEFAULT_ISSUER
             val signature = active?.provenanceSignature?.takeIf { it.isNotBlank() }.orEmpty()
 
             filePathByModelId[spec.modelId] = path
@@ -366,7 +313,7 @@ class AndroidRuntimeProvisioningStore(
             artifactSha256ByModelId = shaByModelId,
             artifactProvenanceIssuerByModelId = issuerByModelId,
             artifactProvenanceSignatureByModelId = signatureByModelId,
-            runtimeCompatibilityTag = RUNTIME_COMPATIBILITY_TAG,
+            runtimeCompatibilityTag = PROVISIONING_RUNTIME_COMPATIBILITY_TAG,
             requireNativeRuntimeForStartupChecks = true,
             prefixCacheEnabled = true,
             prefixCacheStrict = false,
@@ -377,7 +324,7 @@ class AndroidRuntimeProvisioningStore(
         )
     }
 
-    fun expectedRuntimeCompatibilityTag(): String = RUNTIME_COMPATIBILITY_TAG
+    fun expectedRuntimeCompatibilityTag(): String = PROVISIONING_RUNTIME_COMPATIBILITY_TAG
 
     private fun upsertInstalledVersion(
         spec: ModelSpec,
@@ -518,17 +465,17 @@ class AndroidRuntimeProvisioningStore(
             }
     }
 
-    private fun runPathAliasMigrationLocked() {
+    internal fun runPathAliasMigrationLocked() {
         var updatedAny = false
         allModelSpecs().forEach { spec ->
             updatedAny = migratePathAliasesForSpec(spec) || updatedAny
         }
-        if (updatedAny || !prefs.getBoolean(PATH_ALIAS_MIGRATION_DONE_KEY, false)) {
-            prefs.edit().putBoolean(PATH_ALIAS_MIGRATION_DONE_KEY, true).apply()
+        if (updatedAny || !prefs.getBoolean(PROVISIONING_PATH_ALIAS_MIGRATION_DONE_KEY, false)) {
+            prefs.edit().putBoolean(PROVISIONING_PATH_ALIAS_MIGRATION_DONE_KEY, true).apply()
         }
     }
 
-    private fun migratePathAliasesForSpec(spec: ModelSpec): Boolean {
+    internal fun migratePathAliasesForSpec(spec: ModelSpec): Boolean {
         val entries = readStoredVersionEntries(spec)
         if (entries.isEmpty()) {
             return false
@@ -554,11 +501,11 @@ class AndroidRuntimeProvisioningStore(
         return changed
     }
 
-    private fun readStoredVersionEntries(spec: ModelSpec): List<StoredVersionEntry> {
+    internal fun readStoredVersionEntries(spec: ModelSpec): List<StoredVersionEntry> {
         return readStoredVersionEntriesWithDiagnostics(spec).entries
     }
 
-    private fun readStoredVersionEntriesWithDiagnostics(spec: ModelSpec): StoredEntriesReadResult {
+    internal fun readStoredVersionEntriesWithDiagnostics(spec: ModelSpec): StoredEntriesReadResult {
         val raw = prefs.getString(versionsKey(spec), null).orEmpty().trim()
         if (raw.isEmpty()) {
             return StoredEntriesReadResult(entries = emptyList())
@@ -651,7 +598,7 @@ class AndroidRuntimeProvisioningStore(
         }
     }
 
-    private fun recoverStoredEntriesFromDiscovery(
+    internal fun recoverStoredEntriesFromDiscovery(
         spec: ModelSpec,
         corruptionCode: String,
         corruptionDetail: String,
@@ -675,484 +622,11 @@ class AndroidRuntimeProvisioningStore(
         )
     }
 
-    private fun writeStoredVersionEntries(spec: ModelSpec, entries: List<StoredVersionEntry>) {
-        val array = JSONArray()
-        entries.forEach { entry ->
-            array.put(
-                JSONObject()
-                    .put("version", entry.version)
-                    .put("absolutePath", entry.absolutePath)
-                    .put("sha256", entry.sha256)
-                    .put("provenanceIssuer", entry.provenanceIssuer)
-                    .put("provenanceSignature", entry.provenanceSignature)
-                    .put("runtimeCompatibility", entry.runtimeCompatibility)
-                    .put("fileSizeBytes", entry.fileSizeBytes)
-                    .put("importedAtEpochMs", entry.importedAtEpochMs),
-            )
-        }
-        prefs.edit().putString(versionsKey(spec), array.toString()).apply()
+    internal fun writeStoredVersionEntries(spec: ModelSpec, entries: List<StoredVersionEntry>) {
+        prefs.edit().putString(versionsKey(spec), encodeStoredVersions(entries).toString()).apply()
     }
 
-    private fun decodeStoredVersion(json: JSONObject): StoredVersionEntry? {
-        val version = sanitizeVersion(json.optString("version", "").trim())
-        val absolutePath = normalizeAbsolutePath(json.optString("absolutePath", "").trim())
-        val sha = json.optString("sha256", "").trim()
-        if (version.isEmpty() || absolutePath.isEmpty() || sha.isEmpty()) {
-            return null
-        }
-        return StoredVersionEntry(
-            version = version,
-            absolutePath = absolutePath,
-            sha256 = sha,
-            provenanceIssuer = json.optString("provenanceIssuer", DEFAULT_ISSUER).trim().ifEmpty { DEFAULT_ISSUER },
-            provenanceSignature = json.optString("provenanceSignature", "").trim(),
-            runtimeCompatibility = json.optString("runtimeCompatibility", RUNTIME_COMPATIBILITY_TAG)
-                .trim()
-                .ifEmpty { RUNTIME_COMPATIBILITY_TAG },
-            fileSizeBytes = json.optLong("fileSizeBytes", 0L).coerceAtLeast(0L),
-            importedAtEpochMs = json.optLong("importedAtEpochMs", System.currentTimeMillis()),
-        )
-    }
-
-    private fun ensureMigrated() {
-        if (migrationEnsured) {
-            return
-        }
-        synchronized(MIGRATION_LOCK) {
-            if (migrationEnsured) {
-                return
-            }
-            BASELINE_MODEL_SPECS.forEach(::migrateSpecIfNeeded)
-            val discoveredDynamicIds = discoverDynamicModelIdsFromMetadata()
-            val mergedDynamicIds = (readDynamicModelIds() + discoveredDynamicIds)
-                .filterNot(::isBaselineModel)
-                .toSortedSet()
-            writeDynamicModelIds(mergedDynamicIds)
-            mergedDynamicIds
-                .map(::dynamicModelSpec)
-                .forEach(::migrateSpecIfNeeded)
-            // Run alias migration once per process start to self-heal stale metadata
-            // without repeating full migration work on every snapshot call.
-            runPathAliasMigrationLocked()
-            migrationEnsured = true
-        }
-    }
-
-    private fun migrateSpecIfNeeded(spec: ModelSpec) {
-        if (prefs.contains(versionsKey(spec))) {
-            return
-        }
-        val legacyPath = prefs.readOptional(spec.pathKey)
-        val legacySha = prefs.readOptional(spec.shaKey)
-        if (legacyPath.isNullOrBlank() || legacySha.isNullOrBlank()) {
-            val discovered = discoverPersistedEntries(spec)
-            prefs.edit()
-                .putString(versionsKey(spec), encodeStoredVersions(discovered).toString())
-                .apply()
-            if (discovered.isEmpty()) {
-                prefs.edit().remove(activeVersionKey(spec)).apply()
-            } else {
-                val latestVersion = discovered.maxByOrNull { it.importedAtEpochMs }?.version
-                prefs.edit().putString(activeVersionKey(spec), latestVersion).apply()
-            }
-            prefs.edit()
-                .remove(spec.pathKey)
-                .remove(spec.shaKey)
-                .remove(spec.issuerKey)
-                .remove(spec.signatureKey)
-                .remove(spec.importedAtKey)
-                .apply()
-            return
-        }
-        val version = INITIAL_MIGRATION_VERSION
-        val issuer = prefs.readOptional(spec.issuerKey) ?: DEFAULT_ISSUER
-        val signature = prefs.readOptional(spec.signatureKey)
-            ?: sha256Hex("$issuer|${spec.modelId}|$legacySha|v1".encodeToByteArray())
-        val importedAt = prefs.readOptionalLong(spec.importedAtKey) ?: System.currentTimeMillis()
-        val fileSizeBytes = File(legacyPath).takeIf { it.exists() && it.isFile }?.length()?.coerceAtLeast(0L) ?: 0L
-        val entry = StoredVersionEntry(
-            version = version,
-            absolutePath = normalizeAbsolutePath(legacyPath),
-            sha256 = legacySha,
-            provenanceIssuer = issuer,
-            provenanceSignature = signature,
-            runtimeCompatibility = RUNTIME_COMPATIBILITY_TAG,
-            fileSizeBytes = fileSizeBytes,
-            importedAtEpochMs = importedAt,
-        )
-        writeStoredVersionEntries(spec, listOf(entry))
-        prefs.edit()
-            .putString(activeVersionKey(spec), version)
-            .remove(spec.pathKey)
-            .remove(spec.shaKey)
-            .remove(spec.issuerKey)
-            .remove(spec.signatureKey)
-            .remove(spec.importedAtKey)
-            .apply()
-    }
-
-    private fun discoverDynamicModelIdsFromMetadata(): Set<String> {
-        val metadataFiles = discoveryModelDirectories()
-            .asSequence()
-            .flatMap { dir -> dir.listFiles()?.asSequence() ?: emptySequence() }
-            .filter { file -> file.isFile && file.name.endsWith(METADATA_SUFFIX, ignoreCase = true) }
-            .toList()
-        if (metadataFiles.isEmpty()) {
-            return emptySet()
-        }
-        return metadataFiles.mapNotNull { metadataFile ->
-            val json = runCatching { JSONObject(metadataFile.readText()) }.getOrNull() ?: return@mapNotNull null
-            val modelId = json.optString("modelId", "").trim()
-            if (modelId.isBlank() || isBaselineModel(modelId)) {
-                return@mapNotNull null
-            }
-            val absolutePath = normalizeAbsolutePath(json.optString("absolutePath", "").trim())
-            val modelFile = File(absolutePath)
-            if (absolutePath.isBlank() || !modelFile.exists() || !modelFile.isFile) {
-                return@mapNotNull null
-            }
-            modelId
-        }.toSet()
-    }
-
-    private fun allModelSpecs(dynamicIds: Set<String> = readDynamicModelIds()): List<ModelSpec> {
-        val dynamicSpecs = dynamicIds
-            .filterNot { modelId -> baselineModelIdSet.contains(modelId) }
-            .sorted()
-            .map { modelId -> dynamicModelSpec(modelId) }
-        return BASELINE_MODEL_SPECS + dynamicSpecs
-    }
-
-    private fun modelSpecFor(modelId: String): ModelSpec {
-        BASELINE_MODEL_SPECS.firstOrNull { it.modelId == modelId }?.let { return it }
-        registerDynamicModelId(modelId)
-        return dynamicModelSpec(modelId)
-    }
-
-    private fun isBaselineModel(modelId: String): Boolean = baselineModelIdSet.contains(modelId)
-
-    private fun readDynamicModelIds(): Set<String> {
-        return readDynamicModelIdsWithDiagnostics().ids
-    }
-
-    private fun readDynamicModelIdsWithDiagnostics(): DynamicModelIdsReadResult {
-        val raw = prefs.getString(DYNAMIC_MODEL_IDS_KEY, null).orEmpty().trim()
-        if (raw.isEmpty()) {
-            return DynamicModelIdsReadResult(ids = emptySet())
-        }
-        return runCatching {
-            val array = JSONArray(raw)
-            val ids = buildSet {
-                for (index in 0 until array.length()) {
-                    val modelId = array.optString(index, "").trim()
-                    if (modelId.isNotEmpty()) {
-                        add(modelId)
-                    }
-                }
-            }
-            DynamicModelIdsReadResult(ids = ids)
-        }.getOrElse { error ->
-            backupCorruptPayload(
-                key = DYNAMIC_MODEL_IDS_KEY,
-                raw = raw,
-                code = "PROVISIONING_DYNAMIC_MODEL_IDS_CORRUPT",
-                detail = "error=${error.message ?: "json_parse_failed"}",
-            )
-            prefs.edit().putString(DYNAMIC_MODEL_IDS_KEY, "[]").apply()
-            DynamicModelIdsReadResult(
-                ids = emptySet(),
-                signal = ProvisioningRecoverySignal(
-                    code = "PROVISIONING_DYNAMIC_MODEL_IDS_CORRUPT",
-                    message = "Dynamic model registry was corrupted and has been reset.",
-                    technicalDetail = "error=${error.message ?: "json_parse_failed"}",
-                ),
-            )
-        }
-    }
-
-    private fun registerDynamicModelId(modelId: String) {
-        val normalized = modelId.trim()
-        if (normalized.isEmpty() || isBaselineModel(normalized)) {
-            return
-        }
-        val updated = (readDynamicModelIds() + normalized)
-        writeDynamicModelIds(updated)
-    }
-
-    private fun unregisterDynamicModelId(modelId: String) {
-        if (isBaselineModel(modelId)) {
-            return
-        }
-        val updated = readDynamicModelIds()
-            .filterNot { candidate -> candidate == modelId }
-            .toSet()
-        writeDynamicModelIds(updated)
-    }
-
-    private fun writeDynamicModelIds(ids: Set<String>) {
-        val sanitized = ids
-            .map { id -> id.trim() }
-            .filter { id -> id.isNotEmpty() && !isBaselineModel(id) }
-            .sorted()
-        val encoded = JSONArray().apply {
-            sanitized.forEach { value -> put(value) }
-        }
-        prefs.edit().putString(DYNAMIC_MODEL_IDS_KEY, encoded.toString()).apply()
-    }
-
-    private fun dynamicModelSpec(modelId: String): ModelSpec {
-        val prefTag = "dyn_${sha256Hex(modelId.encodeToByteArray()).take(12)}"
-        val safeFileName = modelId
-            .trim()
-            .ifEmpty { "model" }
-            .replace(Regex("[^a-zA-Z0-9._-]"), "-")
-            .lowercase(Locale.US)
-        return ModelSpec(
-            modelId = modelId,
-            displayName = modelId,
-            fileName = "$safeFileName.gguf",
-            prefTag = prefTag,
-            pathKey = "legacy_path_$prefTag",
-            shaKey = "legacy_sha_$prefTag",
-            issuerKey = "legacy_issuer_$prefTag",
-            signatureKey = "legacy_signature_$prefTag",
-            importedAtKey = "legacy_imported_at_$prefTag",
-        )
-    }
-
-    private fun versionsKey(spec: ModelSpec): String = "model_versions_json_${spec.prefTag}"
-
-    private fun activeVersionKey(spec: ModelSpec): String = "model_active_version_${spec.prefTag}"
-
-    private fun fileNameForVersion(spec: ModelSpec, version: String): String {
-        val suffix = sanitizeVersion(version)
-        val dotIndex = spec.fileName.lastIndexOf('.')
-        return if (dotIndex <= 0) {
-            "${spec.fileName}-$suffix"
-        } else {
-            val base = spec.fileName.substring(0, dotIndex)
-            val ext = spec.fileName.substring(dotIndex)
-            "$base-$suffix$ext"
-        }
-    }
-
-    private fun generatedVersion(prefix: String): String {
-        return "$prefix-${System.currentTimeMillis()}"
-    }
-
-    private fun discoverPersistedEntries(spec: ModelSpec): List<StoredVersionEntry> {
-        val metadataEntries = discoverPersistedEntriesFromMetadata(spec)
-        if (metadataEntries.isNotEmpty()) {
-            return metadataEntries
-        }
-        val files = discoveryModelDirectories()
-            .asSequence()
-            .flatMap { dir -> dir.listFiles()?.asSequence() ?: emptySequence() }
-            .filter { file -> file.isFile && file.name.endsWith(".gguf", ignoreCase = true) }
-            .toList()
-        if (files.isEmpty()) {
-            return emptyList()
-        }
-        val discovered = mutableListOf<StoredVersionEntry>()
-        var droppedCount = 0
-        val droppedSamples = mutableListOf<String>()
-        files.forEach { file ->
-            val version = parseVersionFromFileName(spec, file.name)
-            if (version.isNullOrBlank()) {
-                droppedCount += 1
-                if (droppedSamples.size < 3) {
-                    droppedSamples += "${file.name}:version_unrecognized"
-                }
-                return@forEach
-            }
-            val sha = runCatching { sha256HexFromFile(file) }.getOrNull()
-            if (sha.isNullOrBlank()) {
-                droppedCount += 1
-                if (droppedSamples.size < 3) {
-                    droppedSamples += "${file.name}:sha_compute_failed"
-                }
-                return@forEach
-            }
-            val normalizedPath = normalizeAbsolutePath(file.absolutePath)
-            discovered += StoredVersionEntry(
-                version = sanitizeVersion(version),
-                absolutePath = normalizedPath,
-                sha256 = sha,
-                provenanceIssuer = DEFAULT_ISSUER,
-                provenanceSignature = sha256Hex("$DEFAULT_ISSUER|${spec.modelId}|$sha|v1".encodeToByteArray()),
-                runtimeCompatibility = RUNTIME_COMPATIBILITY_TAG,
-                fileSizeBytes = file.length().coerceAtLeast(0L),
-                importedAtEpochMs = file.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis(),
-            )
-        }
-        if (droppedCount > 0) {
-            recordMigrationCorruption(
-                ProvisioningRecoverySignal(
-                    code = "PROVISIONING_DISCOVERY_FILES_SKIPPED",
-                    message = "Some discovered model files were skipped during migration for ${spec.modelId}.",
-                    technicalDetail = "model=${spec.modelId};dropped=$droppedCount;samples=${droppedSamples.joinToString(",")}",
-                ),
-            )
-        }
-        return discovered.sortedByDescending { it.importedAtEpochMs }
-    }
-
-    private fun discoverPersistedEntriesFromMetadata(spec: ModelSpec): List<StoredVersionEntry> {
-        val metadataFiles = discoveryModelDirectories()
-            .asSequence()
-            .flatMap { dir -> dir.listFiles()?.asSequence() ?: emptySequence() }
-            .filter { file -> file.isFile && file.name.endsWith(METADATA_SUFFIX, ignoreCase = true) }
-            .toList()
-        if (metadataFiles.isEmpty()) {
-            return emptyList()
-        }
-        val discovered = mutableListOf<StoredVersionEntry>()
-        var droppedCount = 0
-        var parseFailureCount = 0
-        val droppedSamples = mutableListOf<String>()
-        metadataFiles.forEach { metadataFile ->
-            val raw = runCatching { metadataFile.readText() }.getOrNull()
-            if (raw == null) {
-                droppedCount += 1
-                if (droppedSamples.size < 3) {
-                    droppedSamples += "${metadataFile.name}:read_failed"
-                }
-                return@forEach
-            }
-            val json = runCatching { JSONObject(raw) }.getOrElse { error ->
-                droppedCount += 1
-                parseFailureCount += 1
-                if (droppedSamples.size < 3) {
-                    droppedSamples += "${metadataFile.name}:json_parse_failed"
-                }
-                backupCorruptPayload(
-                    key = "migration_metadata_${spec.prefTag}_${metadataFile.name.hashCode()}",
-                    raw = raw,
-                    code = "PROVISIONING_METADATA_JSON_CORRUPT",
-                    detail = "model=${spec.modelId};file=${metadataFile.name};error=${error.message ?: "json_parse_failed"}",
-                )
-                return@forEach
-            }
-            val modelId = json.optString("modelId", "").trim()
-            if (modelId != spec.modelId) {
-                return@forEach
-            }
-            val absolutePath = normalizeAbsolutePath(json.optString("absolutePath", "").trim())
-            val sha = json.optString("sha256", "").trim()
-            val version = sanitizeVersion(json.optString("version", "").trim())
-            val modelFile = File(absolutePath)
-            if (
-                absolutePath.isBlank() ||
-                !modelFile.exists() ||
-                !modelFile.isFile ||
-                sha.isBlank() ||
-                version.isBlank()
-            ) {
-                droppedCount += 1
-                if (droppedSamples.size < 3) {
-                    droppedSamples += "${metadataFile.name}:missing_required_fields"
-                }
-                return@forEach
-            }
-            val issuer = json.optString("provenanceIssuer", DEFAULT_ISSUER).trim().ifBlank { DEFAULT_ISSUER }
-            discovered += StoredVersionEntry(
-                version = version,
-                absolutePath = absolutePath,
-                sha256 = sha,
-                provenanceIssuer = issuer,
-                provenanceSignature = json.optString("provenanceSignature", "").trim().ifBlank {
-                    sha256Hex("$issuer|${spec.modelId}|$sha|v1".encodeToByteArray())
-                },
-                runtimeCompatibility = json.optString("runtimeCompatibility", RUNTIME_COMPATIBILITY_TAG)
-                    .trim()
-                    .ifBlank { RUNTIME_COMPATIBILITY_TAG },
-                fileSizeBytes = json.optLong("fileSizeBytes", modelFile.length().coerceAtLeast(0L)).coerceAtLeast(0L),
-                importedAtEpochMs = json.optLong("importedAtEpochMs", modelFile.lastModified()).takeIf { it > 0L }
-                    ?: System.currentTimeMillis(),
-            )
-        }
-        if (droppedCount > 0) {
-            recordMigrationCorruption(
-                ProvisioningRecoverySignal(
-                    code = "PROVISIONING_DISCOVERY_METADATA_SKIPPED",
-                    message = "Some stored metadata entries were skipped during migration for ${spec.modelId}.",
-                    technicalDetail = buildString {
-                        append("model=${spec.modelId};dropped=$droppedCount;parse_failures=$parseFailureCount")
-                        if (droppedSamples.isNotEmpty()) {
-                            append(";samples=${droppedSamples.joinToString(",")}")
-                        }
-                    },
-                ),
-            )
-        }
-        return discovered.sortedByDescending { it.importedAtEpochMs }
-    }
-
-    private fun discoveryModelDirectories(): List<File> {
-        val packageName = context.packageName
-        val candidates = listOf(
-            managedModelDirectory(),
-            managedDownloadWorkspaceDirectory(),
-            File("/sdcard/Android/media/$packageName/models"),
-            File("/storage/emulated/0/Android/media/$packageName/models"),
-            File("/sdcard/Download/$packageName/models"),
-            File("/storage/emulated/0/Download/$packageName/models"),
-        )
-        val seen = mutableSetOf<String>()
-        return candidates
-            .map { candidate -> File(normalizeAbsolutePath(candidate.absolutePath)) }
-            .filter { candidate -> seen.add(candidate.absolutePath) }
-    }
-
-    private fun parseVersionFromFileName(spec: ModelSpec, fileName: String): String? {
-        val baseName = spec.fileName.substringBeforeLast('.', missingDelimiterValue = spec.fileName)
-        val extension = spec.fileName.substringAfterLast('.', missingDelimiterValue = "gguf")
-
-        val canonicalPrefix = "$baseName-"
-        val canonicalSuffix = ".$extension"
-        if (fileName.startsWith(canonicalPrefix) && fileName.endsWith(canonicalSuffix)) {
-            val parsed = fileName.removePrefix(canonicalPrefix).removeSuffix(canonicalSuffix)
-            if (parsed.isNotBlank()) {
-                return parsed
-            }
-        }
-        if (fileName.equals(spec.fileName, ignoreCase = true)) {
-            return DISCOVERED_VERSION_FALLBACK
-        }
-
-        val legacyPrefix = "${sanitizeLegacyModelId(spec.modelId)}-"
-        if (fileName.startsWith(legacyPrefix) && fileName.endsWith(".gguf")) {
-            val parsed = fileName.removePrefix(legacyPrefix).removeSuffix(".gguf")
-            if (parsed.isNotBlank()) {
-                return parsed
-            }
-        }
-        return null
-    }
-
-    private fun sanitizeLegacyModelId(modelId: String): String {
-        return modelId.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-    }
-
-    private fun encodeStoredVersions(entries: List<StoredVersionEntry>): JSONArray {
-        val array = JSONArray()
-        entries.forEach { entry ->
-            array.put(
-                JSONObject()
-                    .put("version", entry.version)
-                    .put("absolutePath", entry.absolutePath)
-                    .put("sha256", entry.sha256)
-                    .put("provenanceIssuer", entry.provenanceIssuer)
-                    .put("provenanceSignature", entry.provenanceSignature)
-                    .put("runtimeCompatibility", entry.runtimeCompatibility)
-                    .put("fileSizeBytes", entry.fileSizeBytes)
-                    .put("importedAtEpochMs", entry.importedAtEpochMs),
-            )
-        }
-        return array
-    }
-
-    private fun normalizeAbsolutePath(rawPath: String): String {
+    internal fun normalizeAbsolutePath(rawPath: String): String {
         val trimmed = rawPath.trim()
         if (trimmed.isEmpty()) {
             return trimmed
@@ -1179,10 +653,10 @@ class AndroidRuntimeProvisioningStore(
         metadataFileFor(target.absolutePath).takeIf { it.exists() }?.delete()
     }
 
-    private fun isManagedModelFile(file: File): Boolean {
+    internal fun isManagedModelFile(file: File): Boolean {
         val managedRuntimeDir = managedModelDirectory()
         val managedDownloadDir = managedDownloadWorkspaceDirectory()
-        val legacyRuntimeDir = File(context.filesDir, MODEL_DIR_NAME)
+        val legacyRuntimeDir = File(context.filesDir, PROVISIONING_LEGACY_MODEL_DIR_NAME)
         val legacyDownloadDir = File(context.filesDir, ModelDownloadWorker.DOWNLOAD_DIR)
         return isPathWithin(file, managedRuntimeDir) ||
             isPathWithin(file, managedDownloadDir) ||
@@ -1196,18 +670,18 @@ class AndroidRuntimeProvisioningStore(
         return candidatePath == rootPath || candidatePath.startsWith("$rootPath${File.separator}")
     }
 
-    private fun sanitizeVersion(raw: String): String {
+    internal fun sanitizeVersion(raw: String): String {
         return raw
             .trim()
             .ifEmpty { generatedVersion(prefix = "v") }
-            .replace(Regex("[^a-zA-Z0-9._-]"), "-")
+            .replace(PROVISIONING_MODEL_TOKEN_SANITIZE_REGEX, "-")
             .lowercase(Locale.US)
     }
 
-    private fun sha256HexFromFile(file: File): String {
+    internal fun sha256HexFromFile(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(COPY_BUFFER_SIZE_BYTES)
+            val buffer = ByteArray(PROVISIONING_COPY_BUFFER_SIZE_BYTES)
             while (true) {
                 val read = input.read(buffer)
                 if (read <= 0) {
@@ -1219,61 +693,32 @@ class AndroidRuntimeProvisioningStore(
         return digest.digest().toHex()
     }
 
-    private fun sha256Hex(bytes: ByteArray): String {
+    internal fun sha256Hex(bytes: ByteArray): String {
         return MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
     }
 
-    private fun writeManagedMetadataIfApplicable(
-        modelId: String,
-        entry: StoredVersionEntry,
-    ) {
-        val target = File(entry.absolutePath)
-        if (!target.exists() || !target.isFile || !isManagedModelFile(target)) {
-            return
-        }
-        val metadataFile = metadataFileFor(entry.absolutePath)
-        val payload = JSONObject()
-            .put("modelId", modelId)
-            .put("version", entry.version)
-            .put("absolutePath", entry.absolutePath)
-            .put("sha256", entry.sha256)
-            .put("provenanceIssuer", entry.provenanceIssuer)
-            .put("provenanceSignature", entry.provenanceSignature)
-            .put("runtimeCompatibility", entry.runtimeCompatibility)
-            .put("fileSizeBytes", entry.fileSizeBytes)
-            .put("importedAtEpochMs", entry.importedAtEpochMs)
-        runCatching {
-            metadataFile.parentFile?.mkdirs()
-            metadataFile.writeText(payload.toString())
-        }
-    }
-
-    private fun metadataFileFor(absolutePath: String): File {
-        return File("$absolutePath$METADATA_SUFFIX")
-    }
-
-    private fun backupCorruptPayload(
+    internal fun backupCorruptPayload(
         key: String,
         raw: String,
         code: String,
         detail: String,
     ) {
         prefs.edit()
-            .putString("$CORRUPT_BACKUP_PREFIX.$key.payload", raw)
-            .putString("$CORRUPT_BACKUP_PREFIX.$key.code", code)
-            .putString("$CORRUPT_BACKUP_PREFIX.$key.detail", detail)
-            .putLong("$CORRUPT_BACKUP_PREFIX.$key.saved_at", System.currentTimeMillis())
+            .putString("$PROVISIONING_CORRUPT_BACKUP_PREFIX.$key.payload", raw)
+            .putString("$PROVISIONING_CORRUPT_BACKUP_PREFIX.$key.code", code)
+            .putString("$PROVISIONING_CORRUPT_BACKUP_PREFIX.$key.detail", detail)
+            .putLong("$PROVISIONING_CORRUPT_BACKUP_PREFIX.$key.saved_at", System.currentTimeMillis())
             .apply()
     }
 
-    private fun recordMigrationCorruption(signal: ProvisioningRecoverySignal) {
-        synchronized(MIGRATION_SIGNAL_LOCK) {
+    internal fun recordMigrationCorruption(signal: ProvisioningRecoverySignal) {
+        synchronized(PROVISIONING_MIGRATION_SIGNAL_LOCK) {
             migrationCorruptionSignals += signal
         }
     }
 
     private fun drainMigrationCorruptionSignals(): List<ProvisioningRecoverySignal> {
-        synchronized(MIGRATION_SIGNAL_LOCK) {
+        synchronized(PROVISIONING_MIGRATION_SIGNAL_LOCK) {
             if (migrationCorruptionSignals.isEmpty()) {
                 return emptyList()
             }
@@ -1312,149 +757,13 @@ class AndroidRuntimeProvisioningStore(
         }
     }
 
-    private data class StoredVersionEntry(
-        val version: String,
-        val absolutePath: String,
-        val sha256: String,
-        val provenanceIssuer: String,
-        val provenanceSignature: String,
-        val runtimeCompatibility: String,
-        val fileSizeBytes: Long,
-        val importedAtEpochMs: Long,
-    )
-
-    private data class ModelSpec(
-        val modelId: String,
-        val displayName: String,
-        val fileName: String,
-        val prefTag: String,
-        val pathKey: String,
-        val shaKey: String,
-        val issuerKey: String,
-        val signatureKey: String,
-        val importedAtKey: String,
-    )
-
-    private data class StoredEntriesReadResult(
-        val entries: List<StoredVersionEntry>,
-        val signal: ProvisioningRecoverySignal? = null,
-    )
-
-    private data class DynamicModelIdsReadResult(
-        val ids: Set<String>,
-        val signal: ProvisioningRecoverySignal? = null,
-    )
-
-    private data class VersionReadResult(
-        val versions: List<ModelVersionDescriptor>,
-        val signal: ProvisioningRecoverySignal? = null,
-    )
-
     companion object {
-        private const val PREFS_NAME = "pocketagent_runtime_models"
-        private const val MODEL_DIR_NAME = "runtime-models"
-        private const val DEFAULT_ISSUER = "internal-release"
-        private const val RUNTIME_COMPATIBILITY_TAG = "android-arm64-v8a"
-        private const val COPY_BUFFER_SIZE_BYTES = 1024 * 1024
-        private const val INITIAL_MIGRATION_VERSION = "1.0.0-initial"
-        private const val DISCOVERED_VERSION_FALLBACK = "discovered"
-        private const val DYNAMIC_MODEL_IDS_KEY = "dynamic_model_ids_json"
-        private const val PATH_ALIAS_MIGRATION_DONE_KEY = "path_alias_migration_done_v1"
-        private const val CORRUPT_BACKUP_PREFIX = "runtime_provisioning_corrupt_backup"
-        private const val MANAGED_MODELS_DIR_NAME = "models"
-        private const val METADATA_SUFFIX = ".meta.json"
-        private val MIGRATION_LOCK = Any()
-        private val MIGRATION_SIGNAL_LOCK = Any()
-
-        private data class LegacySpecOverride(
-            val displayName: String,
-            val fileName: String,
-            val prefTag: String,
-            val pathKey: String,
-            val shaKey: String,
-            val issuerKey: String,
-            val signatureKey: String,
-            val importedAtKey: String,
-        )
-
-        private val LEGACY_BASELINE_OVERRIDES: Map<String, LegacySpecOverride> = mapOf(
-            ModelCatalog.QWEN_3_5_0_8B_Q4 to LegacySpecOverride(
-                displayName = "Qwen 3.5 0.8B (Q4)",
-                fileName = "qwen3.5-0.8b-q4.gguf",
-                prefTag = "0_8b",
-                pathKey = "model_0_8b_path",
-                shaKey = "model_0_8b_sha256",
-                issuerKey = "model_0_8b_issuer",
-                signatureKey = "model_0_8b_signature",
-                importedAtKey = "model_0_8b_imported_at",
-            ),
-            ModelCatalog.QWEN_3_5_2B_Q4 to LegacySpecOverride(
-                displayName = "Qwen 3.5 2B (Q4)",
-                fileName = "qwen3.5-2b-q4.gguf",
-                prefTag = "2b",
-                pathKey = "model_2b_path",
-                shaKey = "model_2b_sha256",
-                issuerKey = "model_2b_issuer",
-                signatureKey = "model_2b_signature",
-                importedAtKey = "model_2b_imported_at",
-            ),
-        )
-
-        private val BASELINE_MODEL_SPECS: List<ModelSpec> = ModelCatalog.modelDescriptors()
-            .asSequence()
-            .filter { descriptor -> descriptor.bridgeSupported || descriptor.startupCandidate }
-            .map { descriptor ->
-                val modelId = descriptor.modelId
-                val legacy = LEGACY_BASELINE_OVERRIDES[modelId]
-                if (legacy != null) {
-                    return@map ModelSpec(
-                        modelId = modelId,
-                        displayName = legacy.displayName,
-                        fileName = legacy.fileName,
-                        prefTag = legacy.prefTag,
-                        pathKey = legacy.pathKey,
-                        shaKey = legacy.shaKey,
-                        issuerKey = legacy.issuerKey,
-                        signatureKey = legacy.signatureKey,
-                        importedAtKey = legacy.importedAtKey,
-                    )
-                }
-                val derivedPrefTag = "cat_${descriptor.envKeyToken.lowercase(Locale.US)}"
-                val displayName = descriptor.modelId
-                val fileName = "${descriptor.modelId}.gguf"
-                ModelSpec(
-                    modelId = modelId,
-                    displayName = displayName,
-                    fileName = fileName,
-                    prefTag = derivedPrefTag,
-                    pathKey = "legacy_path_$derivedPrefTag",
-                    shaKey = "legacy_sha_$derivedPrefTag",
-                    issuerKey = "legacy_issuer_$derivedPrefTag",
-                    signatureKey = "legacy_signature_$derivedPrefTag",
-                    importedAtKey = "legacy_imported_at_$derivedPrefTag",
-                )
-            }
-            .sortedBy { spec -> spec.modelId }
-            .toList()
-
         internal fun baselineModelIdsForTesting(): Set<String> {
-            return BASELINE_MODEL_SPECS.mapTo(linkedSetOf()) { spec -> spec.modelId }
+            return provisioningBaselineModelIdsForTesting()
         }
 
         internal fun legacyPathKeyForTesting(modelId: String): String? {
-            return BASELINE_MODEL_SPECS.firstOrNull { spec -> spec.modelId == modelId }?.pathKey
+            return provisioningLegacyPathKeyForTesting(modelId)
         }
     }
-}
-
-private fun ByteArray.toHex(): String {
-    return joinToString(separator = "") { byte -> "%02x".format(byte) }
-}
-
-private fun android.content.SharedPreferences.readOptional(key: String): String? {
-    return getString(key, null)?.trim()?.takeIf { it.isNotEmpty() }
-}
-
-private fun android.content.SharedPreferences.readOptionalLong(key: String): Long? {
-    return if (contains(key)) getLong(key, 0L) else null
 }

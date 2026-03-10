@@ -3,6 +3,9 @@ package com.pocketagent.android.ui
 import android.net.Uri
 import com.pocketagent.android.runtime.ProvisionedModelState
 import com.pocketagent.android.runtime.ProvisioningGateway
+import com.pocketagent.android.runtime.RuntimeDomainError
+import com.pocketagent.android.runtime.RuntimeDomainException
+import com.pocketagent.android.runtime.RuntimeErrorCodes
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
@@ -46,7 +49,7 @@ class ModelProvisioningViewModelTest {
     @Test
     fun `init loads snapshot and observes download flow updates`() = runTest(dispatcher) {
         val gateway = FakeProvisioningGateway()
-        val viewModel = ModelProvisioningViewModel(gateway)
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
         advanceUntilIdle()
 
         assertEquals("qwen3.5-0.8b-q4", viewModel.uiState.value.snapshot?.models?.firstOrNull()?.modelId)
@@ -61,7 +64,7 @@ class ModelProvisioningViewModelTest {
     @Test
     fun `import model updates importing state and refreshes snapshot`() = runTest(dispatcher) {
         val gateway = FakeProvisioningGateway()
-        val viewModel = ModelProvisioningViewModel(gateway)
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
         advanceUntilIdle()
 
         val result = viewModel.importModelFromUri(
@@ -77,9 +80,37 @@ class ModelProvisioningViewModelTest {
     }
 
     @Test
+    fun `import model maps runtime domain error to user safe message`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway().apply {
+            importFailure = RuntimeDomainException(
+                domainError = RuntimeDomainError(
+                    code = RuntimeErrorCodes.PROVISIONING_IMPORT_SOURCE_UNREADABLE,
+                    userMessage = "Unable to read the selected model file.",
+                    technicalDetail = "source uri unreadable",
+                ),
+            )
+        }
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+
+        val result = viewModel.importModelFromUri(
+            modelId = "qwen3.5-0.8b-q4",
+            sourceUri = fakeUri(),
+        )
+        advanceUntilIdle()
+
+        assertTrue(result.isFailure)
+        val error = result.exceptionOrNull()
+        assertTrue(error is ProvisioningUserFacingException)
+        assertEquals("Unable to read the selected model file.", error?.message)
+        val userFacing = error as ProvisioningUserFacingException
+        assertEquals(RuntimeErrorCodes.PROVISIONING_IMPORT_SOURCE_UNREADABLE, userFacing.code)
+    }
+
+    @Test
     fun `manifest and version actions delegate through gateway`() = runTest(dispatcher) {
         val gateway = FakeProvisioningGateway()
-        val viewModel = ModelProvisioningViewModel(gateway)
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
         advanceUntilIdle()
 
         viewModel.refreshManifest()
@@ -102,6 +133,7 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     var setActiveCalls: Int = 0
     var removeCalls: Int = 0
     var cancelCalls: Int = 0
+    var importFailure: Throwable? = null
 
     override fun currentSnapshot(): RuntimeProvisioningSnapshot {
         snapshotCalls += 1
@@ -111,6 +143,7 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     override fun observeDownloads() = downloads
 
     override suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult {
+        importFailure?.let { throw it }
         importCalls += 1
         return RuntimeModelImportResult(
             modelId = modelId,
