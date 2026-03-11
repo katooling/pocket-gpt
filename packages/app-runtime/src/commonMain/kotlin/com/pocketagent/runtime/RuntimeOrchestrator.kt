@@ -27,6 +27,8 @@ import com.pocketagent.tools.ToolModule
 import java.util.Timer
 import java.util.TimerTask
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
 
 class RuntimeOrchestrator(
     private val conversationModule: ConversationModule = InMemoryConversationModule(),
@@ -56,6 +58,8 @@ class RuntimeOrchestrator(
     private val runtimePlanResolver = RuntimePlanResolver()
     private val runtimeResidencyManager = RuntimeResidencyManager(inferenceModule)
     private var routingMode: RoutingMode = RoutingMode.AUTO
+    private val modelLifecycleLock = ReentrantLock()
+    private val pendingLoadModelId = AtomicReference<String?>(null)
     private val modelLifecycleCoordinator = ModelLifecycleCoordinator(
         inferenceModule = inferenceModule,
         routingModule = routingModule,
@@ -312,6 +316,7 @@ class RuntimeOrchestrator(
     }
 
     override fun loadModel(modelId: String, modelVersion: String?): RuntimeModelLifecycleCommandResult {
+        // Pre-flight checks (outside lock) — fast rejection without blocking other operations.
         val availableModels = inferenceModule.listAvailableModels().toSet()
         if (!availableModels.contains(modelId)) {
             return RuntimeModelLifecycleCommandResult.rejected(
@@ -349,59 +354,107 @@ class RuntimeOrchestrator(
                 code = ModelLifecycleErrorCode.BACKEND_INIT_FAILED,
                 detail = "runtime_load_requires_native_bridge",
             )
-        val performanceConfig = PerformanceRuntimeConfig.forProfile(
-            profile = RuntimePerformanceProfile.BALANCED,
-            availableCpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
-            gpuEnabled = nativeInference.supportsGpuOffload(),
-        )
-        val runtimePlan = runtimePlanResolver.resolve(
-            sessionId = "manual-load",
-            modelId = modelId,
-            taskType = "manual_load",
-            stopSequences = emptyList(),
-            requestConfig = performanceConfig,
-            residencyPolicy = ModelResidencyPolicy(),
-            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
-            nativeInference = nativeInference,
-        )
-        nativeInference.setRuntimeGenerationConfig(runtimePlan.generationConfig)
-        val loaded = nativeInference.loadModel(
-            modelId = modelId,
-            modelVersion = modelVersion,
-            strictGpuOffload = runtimePlan.generationConfig.strictGpuOffload,
-        )
-        if (!loaded) {
-            val bridgeError = nativeInference.lastBridgeError()
-            return RuntimeModelLifecycleCommandResult.rejected(
-                code = mapBridgeLifecycleCode(bridgeError?.code),
-                detail = bridgeError?.detail,
-                loadedModel = loadedModel(),
+
+        // Register intent for last-one-wins tracking.
+        pendingLoadModelId.set(modelId)
+
+        // Acquire lifecycle lock — serializes all load/unload operations.
+        modelLifecycleLock.lock()
+        try {
+            // Last-one-wins check: if a newer load was requested while we waited, abort.
+            if (pendingLoadModelId.get() != modelId) {
+                return RuntimeModelLifecycleCommandResult.rejected(
+                    code = ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST,
+                    detail = "superseded_by_pending_load:${pendingLoadModelId.get()}",
+                )
+            }
+
+            // Stop-Await-Release: cancel active generations and wait for them to finish.
+            if (!inferenceExecutor.isIdle()) {
+                inferenceExecutor.cancelAllAndAwaitIdle(timeoutMs = STOP_AWAIT_TIMEOUT_MS)
+            }
+
+            // Unload previous model if one is resident.
+            if (runtimeResidencyManager.loadedModelId() != null) {
+                runtimeResidencyManager.unload(reason = "model_switch")
+                // Brief delay for native deallocation to complete.
+                Thread.sleep(NATIVE_CLEANUP_DELAY_MS)
+            }
+
+            // Re-check last-one-wins after awaiting + unload.
+            if (pendingLoadModelId.get() != modelId) {
+                return RuntimeModelLifecycleCommandResult.rejected(
+                    code = ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST,
+                    detail = "superseded_after_unload:${pendingLoadModelId.get()}",
+                )
+            }
+
+            val performanceConfig = PerformanceRuntimeConfig.forProfile(
+                profile = RuntimePerformanceProfile.BALANCED,
+                availableCpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
+                gpuEnabled = nativeInference.supportsGpuOffload(),
             )
-        }
-        runtimeResidencyManager.attachResidentSlot(
-            modelId = modelId,
-            slotId = runtimePlan.prefixCacheSlotId,
-            keepAliveMs = runtimePlan.keepAliveMs,
-        )
-        return RuntimeModelLifecycleCommandResult.applied(
-            loadedModel = RuntimeLoadedModel(
+            val runtimePlan = runtimePlanResolver.resolve(
+                sessionId = "manual-load",
+                modelId = modelId,
+                taskType = "manual_load",
+                stopSequences = emptyList(),
+                requestConfig = performanceConfig,
+                residencyPolicy = ModelResidencyPolicy(),
+                deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+                nativeInference = nativeInference,
+            )
+            nativeInference.setRuntimeGenerationConfig(runtimePlan.generationConfig)
+            val loaded = nativeInference.loadModel(
                 modelId = modelId,
                 modelVersion = modelVersion,
-            ),
-        )
+                strictGpuOffload = runtimePlan.generationConfig.strictGpuOffload,
+            )
+            if (!loaded) {
+                val bridgeError = nativeInference.lastBridgeError()
+                return RuntimeModelLifecycleCommandResult.rejected(
+                    code = mapBridgeLifecycleCode(bridgeError?.code),
+                    detail = bridgeError?.detail,
+                    loadedModel = loadedModel(),
+                )
+            }
+            runtimeResidencyManager.attachResidentSlot(
+                modelId = modelId,
+                slotId = runtimePlan.prefixCacheSlotId,
+                keepAliveMs = runtimePlan.keepAliveMs,
+            )
+            return RuntimeModelLifecycleCommandResult.applied(
+                loadedModel = RuntimeLoadedModel(
+                    modelId = modelId,
+                    modelVersion = modelVersion,
+                ),
+            )
+        } finally {
+            pendingLoadModelId.compareAndSet(modelId, null)
+            modelLifecycleLock.unlock()
+        }
     }
 
     override fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
-        val currentlyLoaded = loadedModel()
-        return when (runtimeResidencyManager.requestUnload(reason = reason)) {
-            RuntimeUnloadDisposition.UNLOADED,
-            RuntimeUnloadDisposition.NO_RESIDENT_MODEL,
-            -> RuntimeModelLifecycleCommandResult.applied(loadedModel = null)
+        modelLifecycleLock.lock()
+        try {
+            // Stop-Await-Release: cancel active generations before offloading.
+            if (!inferenceExecutor.isIdle()) {
+                inferenceExecutor.cancelAllAndAwaitIdle(timeoutMs = STOP_AWAIT_TIMEOUT_MS)
+            }
+            val currentlyLoaded = loadedModel()
+            return when (runtimeResidencyManager.requestUnload(reason = reason)) {
+                RuntimeUnloadDisposition.UNLOADED,
+                RuntimeUnloadDisposition.NO_RESIDENT_MODEL,
+                -> RuntimeModelLifecycleCommandResult.applied(loadedModel = null)
 
-            RuntimeUnloadDisposition.QUEUED -> RuntimeModelLifecycleCommandResult.queued(
-                loadedModel = currentlyLoaded,
-                detail = "offload_queued_while_generation_active",
-            )
+                RuntimeUnloadDisposition.QUEUED -> RuntimeModelLifecycleCommandResult.queued(
+                    loadedModel = currentlyLoaded,
+                    detail = "offload_queued_while_generation_active",
+                )
+            }
+        } finally {
+            modelLifecycleLock.unlock()
         }
     }
 
@@ -419,6 +472,24 @@ class RuntimeOrchestrator(
     override fun onTrimMemory(level: Int): Boolean = runtimeResidencyManager.onTrimMemory(level)
 
     override fun onAppBackground(): Boolean = runtimeResidencyManager.onAppBackground()
+
+    override fun onAppForeground(): Boolean {
+        if (!runtimeResidencyManager.wasAutoReleased) {
+            return false
+        }
+        val modelId = runtimeResidencyManager.lastAutoReleasedModelId ?: return false
+        runtimeResidencyManager.clearAutoReleasedState()
+        val result = loadModel(modelId = modelId)
+        return result.success
+    }
+
+    override fun addAutoReleaseDisableReason(reason: String) {
+        runtimeResidencyManager.addAutoReleaseDisableReason(reason)
+    }
+
+    override fun removeAutoReleaseDisableReason(reason: String) {
+        runtimeResidencyManager.removeAutoReleaseDisableReason(reason)
+    }
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         sessionManager.restoreSession(sessionId, turns)
@@ -452,6 +523,9 @@ class RuntimeOrchestrator(
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
     }
 }
+
+private const val STOP_AWAIT_TIMEOUT_MS = 5_000L
+private const val NATIVE_CLEANUP_DELAY_MS = 100L
 
 private fun mapBridgeLifecycleCode(errorCode: String?): ModelLifecycleErrorCode {
     val normalized = errorCode?.trim()?.uppercase().orEmpty()
