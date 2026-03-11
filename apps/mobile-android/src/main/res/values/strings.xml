@@ -70,6 +70,7 @@
     <string name="ui_gpu_acceleration_reason_model_required">download a model to validate</string>
     <string name="ui_gpu_acceleration_reason_unknown">unknown</string>
     <string name="ui_gpu_acceleration_hint">GPU is opt-in. Explicit accelerator backends (Hexagon/OpenCL) fail fast with an explicit error when unsupported. Auto may continue on CPU when no accelerator is available.</string>
+    <string name="ui_gpu_acceleration_opencl_quant_warning">The active model quantization is likely unsupported for OpenCL (supported: Q4_0, Q6_K, Q8_0, F16/F32, MXFP4; Q4_0 is usually fastest). GPU offload may fall back to CPU and run much slower.</string>
     <string name="ui_gpu_backend_auto">Auto</string>
     <string name="ui_gpu_backend_hexagon">Hexagon</string>
     <string name="ui_gpu_backend_opencl">OpenCL</string>
@@ -194,6 +195,16 @@
     <string name="ui_model_runtime_error_busy_generation">Runtime is busy generating. Wait for completion, then offload.</string>
     <string name="ui_model_runtime_error_cancelled_newer_request">Load/offload request cancelled by a newer action.</string>
     <string name="ui_model_runtime_error_unknown">Runtime model action failed: %1$s</string>
+    <string name="ui_model_search_placeholder">Search models…</string>
+    <string name="ui_model_filter_downloaded">Downloaded</string>
+    <string name="ui_model_filter_in_progress">In progress</string>
+    <string name="ui_model_filter_available">Available</string>
+    <string name="ui_model_refresh_all">Refresh all</string>
+    <string name="ui_model_storage_section_title">Device storage</string>
+    <string name="ui_model_storage_models_label">Models: %1$s</string>
+    <string name="ui_model_storage_free_label">Free: %1$s</string>
+    <string name="ui_model_storage_temp_label">Temp downloads: %1$s</string>
+    <string name="ui_model_storage_total_label">Total: %1$s</string>
     <string name="ui_model_storage_summary">Storage • total=%1$d free=%2$d models=%3$d temp=%4$d bytes</string>
     <string name="ui_model_storage_summary_human">Storage • total=%1$s free=%2$s models=%3$s temp=%4$s</string>
     <string name="ui_model_download_notification_title">Downloading model</string>

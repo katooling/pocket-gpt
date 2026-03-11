@@ -72,6 +72,10 @@ endif()
 set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
 set(GGML_VULKAN_CHECK_RESULTS OFF CACHE BOOL "" FORCE)
 set(GGML_OPENCL ON CACHE BOOL "" FORCE)
+# Target OpenCL 2.0 for compatibility with Adreno 6xx GPUs (Snapdragon 855-870)
+# which only support CL 2.0. CL 3.0 APIs cause compilation constant errors on
+# these devices. CL 2.0 target still works correctly on CL 3.0 capable GPUs.
+set(GGML_OPENCL_TARGET_VERSION "200" CACHE STRING "" FORCE)
 set(GGML_CUDA OFF CACHE BOOL "" FORCE)
 set(GGML_HIP OFF CACHE BOOL "" FORCE)
 set(GGML_METAL OFF CACHE BOOL "" FORCE)

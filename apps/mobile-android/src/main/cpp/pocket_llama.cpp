@@ -104,6 +104,9 @@ bool g_last_flash_attn_requested = false;
 bool g_last_flash_attn_gpu_ops = false;
 bool g_last_flash_attn_active = false;
 bool g_last_quantized_kv_cache = false;
+bool g_last_opencl_flash_guard_applied = false;
+bool g_last_opencl_quant_kv_guard_applied = false;
+std::string g_last_model_quantization = "unknown";
 std::string g_backend_profile = "auto";
 std::string g_active_backend = "cpu";
 uint64_t g_active_backend_memory_bytes = 0;
@@ -387,6 +390,122 @@ std::string lowercase_copy(const std::string & value) {
     return lower;
 }
 
+std::string safe_string(const char * value) {
+    return value != nullptr ? value : "";
+}
+
+int parse_adreno_generation(const std::string & text) {
+    const std::string lower = lowercase_copy(text);
+    size_t marker = lower.find("adreno");
+    while (marker != std::string::npos) {
+        size_t cursor = marker + 6;
+        while (cursor < lower.size() && !std::isdigit(static_cast<unsigned char>(lower[cursor]))) {
+            cursor += 1;
+        }
+        if (cursor + 2 < lower.size() &&
+            std::isdigit(static_cast<unsigned char>(lower[cursor])) &&
+            std::isdigit(static_cast<unsigned char>(lower[cursor + 1])) &&
+            std::isdigit(static_cast<unsigned char>(lower[cursor + 2]))) {
+            return lower[cursor] - '0';
+        }
+        marker = lower.find("adreno", marker + 6);
+    }
+    return 0;
+}
+
+std::string extract_opencl_version(const std::string & description) {
+    const std::string lower = lowercase_copy(description);
+    const size_t marker = lower.find("opencl");
+    if (marker == std::string::npos) {
+        return "";
+    }
+    size_t start = marker + 6;
+    while (start < lower.size() && !std::isdigit(static_cast<unsigned char>(lower[start]))) {
+        start += 1;
+    }
+    if (start >= lower.size()) {
+        return "";
+    }
+    size_t end = start;
+    while (end < lower.size()) {
+        const unsigned char ch = static_cast<unsigned char>(lower[end]);
+        if (!(std::isdigit(ch) || ch == '.')) {
+            break;
+        }
+        end += 1;
+    }
+    if (end <= start) {
+        return "";
+    }
+    return description.substr(start, end - start);
+}
+
+bool contains_quant_token(const std::string & normalized_filename, const std::string & token) {
+    size_t pos = normalized_filename.find(token);
+    while (pos != std::string::npos) {
+        const bool left_ok = pos == 0 ||
+            !std::isalnum(static_cast<unsigned char>(normalized_filename[pos - 1]));
+        const size_t right_pos = pos + token.size();
+        const bool right_ok = right_pos >= normalized_filename.size() ||
+            !std::isalnum(static_cast<unsigned char>(normalized_filename[right_pos]));
+        if (left_ok && right_ok) {
+            return true;
+        }
+        pos = normalized_filename.find(token, pos + 1);
+    }
+    return false;
+}
+
+ggml_type resolve_kv_cache_type(jint code) {
+    switch (code) {
+        case 0: return GGML_TYPE_F16;
+        case 1: return GGML_TYPE_Q8_0;
+        case 2: return GGML_TYPE_Q4_0;
+        case 3: return GGML_TYPE_Q4_1;
+        case 4: return GGML_TYPE_Q5_0;
+        case 5: return GGML_TYPE_Q5_1;
+        default: return GGML_TYPE_F16;
+    }
+}
+
+std::string extract_quantization_tag_from_path(const std::string & model_path) {
+    if (model_path.empty()) {
+        return "unknown";
+    }
+    std::string filename = model_path.substr(model_path.find_last_of("/\\") + 1);
+    if (!filename.empty()) {
+        const size_t dot = filename.find_last_of('.');
+        if (dot != std::string::npos) {
+            filename = filename.substr(0, dot);
+        }
+    }
+    const std::string normalized = lowercase_copy(filename);
+    static const std::array<const char *, 16> kQuantTokens = {
+        "q6_k",
+        "q5_k_m",
+        "q5_k_s",
+        "q4_k_m",
+        "q4_k_s",
+        "q8_0",
+        "q4_1",
+        "q4_0",
+        "iq4_nl",
+        "iq4_xs",
+        "iq3_xs",
+        "iq3_s",
+        "iq2_xs",
+        "iq2_s",
+        "f16",
+        "f32",
+    };
+    for (const char * token : kQuantTokens) {
+        if (contains_quant_token(normalized, token)) {
+            return token;
+        }
+    }
+    return "unknown";
+}
+
 void apply_android_backend_profile_env() {
     const char * env_profile = std::getenv("POCKETGPT_BACKEND_PROFILE");
     const std::string resolved = lowercase_copy(env_profile != nullptr ? env_profile : g_backend_profile);
@@ -446,6 +565,10 @@ struct BackendDiagnosticsSnapshot {
     ggml_backend_dev_t hexagon_device = nullptr;
     uint64_t opencl_memory_bytes = 0;
     uint64_t hexagon_memory_bytes = 0;
+    std::string opencl_device_name;
+    std::string opencl_device_description;
+    std::string opencl_device_version;
+    int opencl_adreno_generation = 0;
 };
 
 struct BackendSelection {
@@ -529,6 +652,11 @@ BackendDiagnosticsSnapshot collect_backend_diagnostics() {
             if (info.opencl_device == nullptr || memory_bytes > info.opencl_memory_bytes) {
                 info.opencl_device = dev;
                 info.opencl_memory_bytes = memory_bytes;
+                info.opencl_device_name = safe_string(ggml_backend_dev_name(dev));
+                info.opencl_device_description = safe_string(ggml_backend_dev_description(dev));
+                info.opencl_device_version = extract_opencl_version(info.opencl_device_description);
+                info.opencl_adreno_generation = parse_adreno_generation(
+                    info.opencl_device_name + " " + info.opencl_device_description);
             }
         }
     }
@@ -591,6 +719,8 @@ std::string backend_diagnostics_json() {
     std::ostringstream out;
     const bool strict_accelerator_fail_fast = g_backend_profile == "hexagon" || g_backend_profile == "opencl";
     const bool auto_backend_cpu_fallback = g_backend_profile == "auto";
+    const std::string flash_attn_guard_reason = g_last_opencl_flash_guard_applied ? "opencl_backend" : "";
+    const std::string quantized_kv_guard_reason = g_last_opencl_quant_kv_guard_applied ? "opencl_backend" : "";
     out << "{"
         << "\"compiled_backend\":\"" << json_escape(compiled_gpu_backends()) << "\","
         << "\"backend_profile\":\"" << json_escape(g_backend_profile) << "\","
@@ -604,7 +734,14 @@ std::string backend_diagnostics_json() {
         << "\"accel_device_count\":" << diag.accel_device_count << ","
         << "\"opencl_memory_bytes\":" << static_cast<unsigned long long>(diag.opencl_memory_bytes) << ","
         << "\"hexagon_memory_bytes\":" << static_cast<unsigned long long>(diag.hexagon_memory_bytes) << ","
+        << "\"opencl_device_name\":\"" << json_escape(diag.opencl_device_name) << "\","
+        << "\"opencl_device_description\":\"" << json_escape(diag.opencl_device_description) << "\","
+        << "\"opencl_device_version\":\"" << json_escape(diag.opencl_device_version) << "\","
+        << "\"opencl_adreno_generation\":" << diag.opencl_adreno_generation << ","
+        << "\"active_model_quantization\":\"" << json_escape(g_last_model_quantization) << "\","
         << "\"flashAttnActive\":" << (g_last_flash_attn_active ? "true" : "false") << ","
+        << "\"flash_attn_guard_reason\":\"" << json_escape(flash_attn_guard_reason) << "\","
+        << "\"quantized_kv_guard_reason\":\"" << json_escape(quantized_kv_guard_reason) << "\","
         << "\"device_local_heap_bytes\":" << static_cast<unsigned long long>(g_active_backend_memory_bytes) << ","
         << "\"last_error_code\":\"" << json_escape(g_last_backend_error_code) << "\","
         << "\"last_error_detail\":\"" << json_escape(g_last_backend_error_detail) << "\""
@@ -890,6 +1027,9 @@ void release_runtime_locked() {
     g_last_flash_attn_gpu_ops = false;
     g_last_flash_attn_active = false;
     g_last_quantized_kv_cache = false;
+    g_last_opencl_flash_guard_applied = false;
+    g_last_opencl_quant_kv_guard_applied = false;
+    g_last_model_quantization = "unknown";
     g_active_backend = "cpu";
     g_active_backend_memory_bytes = 0;
     g_speculative_acceptance_rate = 0.65f;
@@ -1205,6 +1345,118 @@ bool restore_seq_state(
         return false;
     }
     log_prefix_cache_state_event("restore_state", label, slot_index, restored, true, "restored");
+    return true;
+}
+
+// -- Disk-backed session cache --
+// File format (little-endian):
+//   u32  magic  (0x50475343 = "PGSC")
+//   u32  version (1)
+//   u32  token_count
+//   token_count * i32  tokens
+//   u32  cache_key_len
+//   cache_key_len bytes  cache_key (UTF-8, no NUL)
+//   u64  state_size
+//   state_size bytes  state data
+
+constexpr uint32_t SESSION_CACHE_MAGIC   = 0x50475343u;
+constexpr uint32_t SESSION_CACHE_VERSION = 1u;
+
+template <typename T>
+bool write_val(std::ofstream & out, T val) {
+    out.write(reinterpret_cast<const char *>(&val), sizeof(val));
+    return out.good();
+}
+
+template <typename T>
+bool read_val(std::ifstream & in, T & val) {
+    in.read(reinterpret_cast<char *>(&val), sizeof(val));
+    return in.good();
+}
+
+bool save_prefix_cache_slot_to_disk(
+    const PrefixCacheSlot & slot,
+    const std::string & file_path) {
+    if (!slot.valid || slot.target_seq_state.empty()) {
+        return false;
+    }
+    std::ofstream out(file_path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        __android_log_print(ANDROID_LOG_WARN, TAG, "SESSION_CACHE|save_open_failed|path=%s", file_path.c_str());
+        return false;
+    }
+    const auto token_count = static_cast<uint32_t>(slot.target_prompt_tokens.size());
+    const auto key_len = static_cast<uint32_t>(slot.cache_key.size());
+    const auto state_size = static_cast<uint64_t>(slot.target_seq_state.size());
+    if (!write_val(out, SESSION_CACHE_MAGIC)) return false;
+    if (!write_val(out, SESSION_CACHE_VERSION)) return false;
+    if (!write_val(out, token_count)) return false;
+    if (token_count > 0) {
+        out.write(reinterpret_cast<const char *>(slot.target_prompt_tokens.data()),
+                  static_cast<std::streamsize>(token_count * sizeof(llama_token)));
+        if (!out.good()) return false;
+    }
+    if (!write_val(out, key_len)) return false;
+    if (key_len > 0) {
+        out.write(slot.cache_key.data(), key_len);
+        if (!out.good()) return false;
+    }
+    if (!write_val(out, state_size)) return false;
+    out.write(reinterpret_cast<const char *>(slot.target_seq_state.data()),
+              static_cast<std::streamsize>(state_size));
+    const bool ok = out.good();
+    out.close();
+    __android_log_print(ANDROID_LOG_INFO, TAG,
+        "SESSION_CACHE|saved|tokens=%u|state_bytes=%llu|key=%s|ok=%s",
+        token_count, (unsigned long long)state_size, slot.cache_key.c_str(), ok ? "true" : "false");
+    return ok;
+}
+
+bool load_prefix_cache_slot_from_disk(
+    const std::string & file_path,
+    PrefixCacheSlot & slot) {
+    slot.valid = false;
+    slot.target_prompt_tokens.clear();
+    slot.target_seq_state.clear();
+    slot.cache_key.clear();
+    std::ifstream in(file_path, std::ios::binary);
+    if (!in) {
+        return false;
+    }
+    uint32_t magic = 0, version = 0, token_count = 0, key_len = 0;
+    uint64_t state_size = 0;
+    if (!read_val(in, magic) || magic != SESSION_CACHE_MAGIC) return false;
+    if (!read_val(in, version) || version != SESSION_CACHE_VERSION) return false;
+    if (!read_val(in, token_count)) return false;
+    if (token_count > 0) {
+        slot.target_prompt_tokens.resize(token_count);
+        in.read(reinterpret_cast<char *>(slot.target_prompt_tokens.data()),
+                static_cast<std::streamsize>(token_count * sizeof(llama_token)));
+        if (!in.good()) return false;
+    }
+    if (!read_val(in, key_len)) return false;
+    if (key_len > 0) {
+        std::string key(key_len, '\0');
+        in.read(&key[0], key_len);
+        if (!in.good()) return false;
+        slot.cache_key = std::move(key);
+    }
+    if (!read_val(in, state_size)) return false;
+    if (state_size > MAX_PREFIX_STATE_BYTES) {
+        __android_log_print(ANDROID_LOG_WARN, TAG,
+            "SESSION_CACHE|load_over_budget|state_bytes=%llu|max=%zu",
+            (unsigned long long)state_size, MAX_PREFIX_STATE_BYTES);
+        return false;
+    }
+    slot.target_seq_state.resize(static_cast<size_t>(state_size));
+    in.read(reinterpret_cast<char *>(slot.target_seq_state.data()),
+            static_cast<std::streamsize>(state_size));
+    if (!in.good()) return false;
+    slot.valid = true;
+    slot.last_used_epoch = 0;
+    __android_log_print(ANDROID_LOG_INFO, TAG,
+        "SESSION_CACHE|loaded|tokens=%u|state_bytes=%llu|key=%s",
+        token_count, (unsigned long long)state_size, slot.cache_key.c_str());
     return true;
 }
 
@@ -1995,7 +2247,7 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     jint nUbatch,
     jint nCtx,
     jint nGpuLayers,
-    jboolean quantizedKvCache,
+    jint kvCacheTypeCode,
     jfloat temperature,
     jint topK,
     jfloat topP,
@@ -2017,6 +2269,7 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     std::lock_guard<std::mutex> lock(g_mutex);
     release_runtime_locked();
     clear_backend_error_locked();
+    g_last_model_quantization = extract_quantization_tag_from_path(model_path);
     const int32_t requested_target_gpu_layers =
         nGpuLayers < 0 ? -1 : clamp_i32(static_cast<int32_t>(nGpuLayers), 0, 128);
     const int32_t requested_draft_gpu_layers =
@@ -2109,14 +2362,36 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     context_params.n_threads_batch = resolve_threads(nThreadsBatch);
     context_params.offload_kqv = use_gpu_ops;
     context_params.op_offload = use_gpu_ops;
-    context_params.flash_attn_type = use_gpu_ops ? LLAMA_FLASH_ATTN_TYPE_AUTO : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    // Use unified KV buffer for single-sequence inference (n_seq_max=1).
+    // Reduces memory fragmentation and improves allocation efficiency.
+    context_params.kv_unified = true;
+    // OpenCL flash attention kernels are buggy on Adreno GPUs (incorrect output,
+    // crashes). OpenCL also lacks the SET_ROWS op needed for quantized KV cache.
+    // Disable both when the active backend is OpenCL.
+    const bool is_opencl_backend = (g_active_backend == "opencl");
+    const bool opencl_flash_guard_applied = use_gpu_ops && is_opencl_backend;
+    context_params.flash_attn_type = (use_gpu_ops && !is_opencl_backend)
+        ? LLAMA_FLASH_ATTN_TYPE_AUTO
+        : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    const ggml_type requested_kv_type = resolve_kv_cache_type(kvCacheTypeCode);
+    const bool quantized_kv_requested = requested_kv_type != GGML_TYPE_F16;
+    // OpenCL lacks SET_ROWS needed for quantized KV; flash attention is also
+    // required for quantized types.  Fall back to F16 when either condition fails.
     const bool quantized_kv_enabled =
-        quantizedKvCache == JNI_TRUE &&
+        quantized_kv_requested &&
+        !is_opencl_backend &&
         context_params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
-    context_params.type_k = quantized_kv_enabled ? GGML_TYPE_Q8_0 : context_params.type_k;
-    context_params.type_v = quantized_kv_enabled ? GGML_TYPE_Q8_0 : context_params.type_v;
+    if (quantized_kv_enabled) {
+        context_params.type_k = requested_kv_type;
+        context_params.type_v = requested_kv_type;
+    } else {
+        context_params.type_k = GGML_TYPE_F16;
+        context_params.type_v = GGML_TYPE_F16;
+    }
     g_last_flash_attn_requested = context_params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
     g_last_flash_attn_gpu_ops = use_gpu_ops;
+    g_last_opencl_flash_guard_applied = opencl_flash_guard_applied;
+    g_last_opencl_quant_kv_guard_applied = quantized_kv_requested && is_opencl_backend;
     g_last_quantized_kv_cache = quantized_kv_enabled;
     __android_log_print(
         ANDROID_LOG_INFO,
@@ -2193,8 +2468,9 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             draft_context_params.n_threads_batch = resolve_threads(nThreadsBatch);
             draft_context_params.offload_kqv = draft_model_params.n_gpu_layers != 0;
             draft_context_params.op_offload = draft_model_params.n_gpu_layers != 0;
+            draft_context_params.kv_unified = true;
             draft_context_params.flash_attn_type =
-                draft_model_params.n_gpu_layers != 0
+                (draft_model_params.n_gpu_layers != 0 && !is_opencl_backend)
                     ? LLAMA_FLASH_ATTN_TYPE_AUTO
                     : LLAMA_FLASH_ATTN_TYPE_DISABLED;
             draft_context_params.type_k = context_params.type_k;
@@ -2412,7 +2688,7 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     jint nUbatch,
     jint nCtx,
     jint nGpuLayers,
-    jboolean quantizedKvCache,
+    jint kvCacheTypeCode,
     jfloat temperature,
     jint topK,
     jfloat topP,
@@ -2435,7 +2711,7 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
         nUbatch,
         nCtx,
         nGpuLayers,
-        quantizedKvCache,
+        kvCacheTypeCode,
         temperature,
         topK,
         topP,
@@ -2668,6 +2944,47 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
             profile_value.c_str());
         env->ReleaseStringUTFChars(profile, profileChars);
     }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeSaveSessionCache(
+    JNIEnv * env,
+    jobject /*thiz*/,
+    jstring filePath) {
+    const std::string path = to_std_string(env, filePath);
+    if (path.empty()) {
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_active_prefix_cache_slot < 0 ||
+        g_active_prefix_cache_slot >= static_cast<int>(g_prefix_cache_slots.size())) {
+        return JNI_FALSE;
+    }
+    const auto & slot = g_prefix_cache_slots[static_cast<size_t>(g_active_prefix_cache_slot)];
+    return save_prefix_cache_slot_to_disk(slot, path) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeLoadSessionCache(
+    JNIEnv * env,
+    jobject /*thiz*/,
+    jstring filePath) {
+    const std::string path = to_std_string(env, filePath);
+    if (path.empty()) {
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> lock(g_mutex);
+    const int slot_index = select_prefix_cache_slot_for_store();
+    if (slot_index < 0) {
+        return JNI_FALSE;
+    }
+    auto & slot = g_prefix_cache_slots[static_cast<size_t>(slot_index)];
+    if (!load_prefix_cache_slot_from_disk(path, slot)) {
+        return JNI_FALSE;
+    }
+    slot.last_used_epoch = ++g_prefix_cache_epoch;
+    g_active_prefix_cache_slot = slot_index;
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM * /*vm*/, void * /*reserved*/) {
