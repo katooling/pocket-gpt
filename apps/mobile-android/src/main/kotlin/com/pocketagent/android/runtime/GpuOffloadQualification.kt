@@ -133,7 +133,13 @@ private data class GpuProbePolicy(
             layer <= 16 -> 38_000L
             else -> 45_000L
         }
-        return layerTimeout.coerceIn(PROBE_MIN_LAYER_TIMEOUT_MS, PROBE_MAX_LAYER_TIMEOUT_MS)
+        // OpenCL kernel JIT can take several seconds on first probe.
+        val openclWarmupBudget = if (nativeDiagnostics.compiledBackend.contains("opencl", ignoreCase = true)) {
+            10_000L
+        } else {
+            0L
+        }
+        return (layerTimeout + openclWarmupBudget).coerceIn(PROBE_MIN_LAYER_TIMEOUT_MS, PROBE_MAX_LAYER_TIMEOUT_MS)
     }
 }
 
