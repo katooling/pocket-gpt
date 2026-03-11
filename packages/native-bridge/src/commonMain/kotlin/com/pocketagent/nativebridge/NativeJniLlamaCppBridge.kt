@@ -163,6 +163,22 @@ class NativeJniLlamaCppBridge(
             ?.takeIf { it.isNotEmpty() }
     }
 
+    override fun saveSessionCache(filePath: String): Boolean {
+        ensureRuntimeInitialized()
+        if (usingFallback || !runtimeReady) return false
+        return runCatching { nativeApi.saveSessionCache(filePath) }
+            .onFailure { error -> recordBridgeError("JNI_SESSION_CACHE_SAVE_EXCEPTION", error) }
+            .getOrElse { false }
+    }
+
+    override fun loadSessionCache(filePath: String): Boolean {
+        ensureRuntimeInitialized()
+        if (usingFallback || !runtimeReady) return false
+        return runCatching { nativeApi.loadSessionCache(filePath) }
+            .onFailure { error -> recordBridgeError("JNI_SESSION_CACHE_LOAD_EXCEPTION", error) }
+            .getOrElse { false }
+    }
+
     fun generateSyncProbe(
         prompt: String,
         maxTokens: Int,
@@ -287,6 +303,24 @@ class NativeJniLlamaCppBridge(
         } else {
             0
         }
+        // Demote GPU layers to 0 if the model quantization is unsupported by OpenCL.
+        // In this llama.cpp tree, OpenCL supports Q4_0 / Q6_K / Q8_0 / F16 / F32 / MXFP4,
+        // while K- and I-quants (for example Q4_K_M and IQ variants) can fall back to CPU.
+        val openclQuantDemoted = gpuEnabledAndSupported &&
+            isOpenClBackendActive() &&
+            !isOpenClCompatibleQuantization(
+                modelPath = normalizedModelPath,
+                modelId = modelId,
+            )
+        val effectiveGpuLayers = if (openclQuantDemoted) 0 else requestedGpuLayers
+        val effectiveDraftGpuLayers = if (openclQuantDemoted) 0 else requestedDraftGpuLayers
+        if (openclQuantDemoted) {
+            logBridge(
+                "OPENCL_QUANT_DEMOTE",
+                "model=$normalizedModelPath|model_id=$modelId|demoted_to_cpu=true|reason=unsupported_quantization_for_opencl",
+            )
+        }
+
         val strictGpuOffload = options.strictGpuOffload && isStrictBackendSelection(config)
         val gpuRequested = gpuEnabledRequested && (
             config.gpuLayers > 0 ||
@@ -312,8 +346,8 @@ class NativeJniLlamaCppBridge(
                 nBatch = config.nBatch,
                 nUbatch = config.nUbatch,
                 nCtx = config.nCtx,
-                nGpuLayers = requestedGpuLayers,
-                quantizedKvCache = config.quantizedKvCache,
+                nGpuLayers = effectiveGpuLayers,
+                kvCacheTypeCode = config.kvCacheType.code,
                 temperature = config.sampling.temperature,
                 topK = config.sampling.topK,
                 topP = config.sampling.topP,
@@ -321,7 +355,7 @@ class NativeJniLlamaCppBridge(
                 speculativeDraftModelPath = config.speculativeDraftModelPath,
                 speculativeMaxDraftTokens = config.speculativeMaxDraftTokens,
                 speculativeMinDraftTokens = config.speculativeMinDraftTokens,
-                speculativeDraftGpuLayers = requestedDraftGpuLayers,
+                speculativeDraftGpuLayers = effectiveDraftGpuLayers,
                 useMmap = config.useMmap,
                 useMlock = config.useMlock,
                 nKeep = config.nKeep,
@@ -762,6 +796,45 @@ class NativeJniLlamaCppBridge(
         return code to detail
     }
 
+    private fun isOpenClBackendActive(): Boolean {
+        val diagnostics = backendDiagnosticsJson().orEmpty()
+        if (diagnostics.isBlank()) return false
+        val openclCount = parseBackendDeviceCount(diagnostics, OPENCL_DEVICE_COUNT_REGEX) ?: 0
+        val hexagonCount = parseBackendDeviceCount(diagnostics, HEXAGON_DEVICE_COUNT_REGEX) ?: 0
+        // If the profile is explicitly opencl, or auto with opencl devices available
+        val profile = runtimeGenerationConfig.gpuBackend
+        return when (profile) {
+            GpuExecutionBackend.OPENCL -> openclCount > 0
+            // In AUTO mode native backend selection prefers Hexagon over OpenCL.
+            // Apply OpenCL quantization gating only when OpenCL is the only
+            // accelerator option to avoid unnecessary CPU demotion.
+            GpuExecutionBackend.AUTO -> openclCount > 0 && hexagonCount == 0
+            else -> false
+        }
+    }
+
+    private fun isOpenClCompatibleQuantization(modelPath: String, modelId: String): Boolean {
+        val filenameStem = modelPath
+            .substringAfterLast('/')
+            .substringBeforeLast('.')
+            .lowercase()
+        val normalizedModelId = modelId.trim().lowercase()
+        val candidates = buildList {
+            if (filenameStem.isNotBlank()) add(filenameStem)
+            if (normalizedModelId.isNotBlank()) add(normalizedModelId)
+        }
+        if (candidates.any { candidate -> OPENCL_SAFE_QUANT_REGEX.containsMatchIn(candidate) }) {
+            return true
+        }
+        // If we can't determine quantization from filename/model id, allow it (don't block).
+        return !candidates.any { candidate -> KNOWN_QUANT_REGEX.containsMatchIn(candidate) }
+    }
+
+    private fun logBridge(tag: String, message: String) {
+        // Uses println as a cross-platform fallback; Android Logcat captures stdout.
+        println("NativeJniLlamaCppBridge|$tag|$message")
+    }
+
     private fun isStrictBackendSelection(config: RuntimeGenerationConfig): Boolean {
         if (!config.strictGpuOffload) {
             return false
@@ -796,7 +869,7 @@ class NativeJniLlamaCppBridge(
             nUbatch: Int,
             nCtx: Int,
             nGpuLayers: Int,
-            quantizedKvCache: Boolean,
+            kvCacheTypeCode: Int,
             temperature: Float,
             topK: Int,
             topP: Float,
@@ -834,6 +907,8 @@ class NativeJniLlamaCppBridge(
         fun peakRssMb(): Double? = null
         fun prefixCacheDiagnosticsLine(): String? = null
         fun setBackendProfile(profile: String) {}
+        fun saveSessionCache(filePath: String): Boolean = false
+        fun loadSessionCache(filePath: String): Boolean = false
     }
 
     private class JniNativeApi : NativeApi {
@@ -847,7 +922,7 @@ class NativeJniLlamaCppBridge(
             nUbatch: Int,
             nCtx: Int,
             nGpuLayers: Int,
-            quantizedKvCache: Boolean,
+            kvCacheTypeCode: Int,
             temperature: Float,
             topK: Int,
             topP: Float,
@@ -885,6 +960,8 @@ class NativeJniLlamaCppBridge(
         external fun nativePeakRssMb(): Double
         external fun nativePrefixCacheDiagnosticsLine(): String
         external fun nativeSetBackendProfile(profile: String)
+        external fun nativeSaveSessionCache(filePath: String): Boolean
+        external fun nativeLoadSessionCache(filePath: String): Boolean
 
         override fun initialize(): Boolean = nativeInitialize()
 
@@ -897,7 +974,7 @@ class NativeJniLlamaCppBridge(
             nUbatch: Int,
             nCtx: Int,
             nGpuLayers: Int,
-            quantizedKvCache: Boolean,
+            kvCacheTypeCode: Int,
             temperature: Float,
             topK: Int,
             topP: Float,
@@ -919,7 +996,7 @@ class NativeJniLlamaCppBridge(
                 nUbatch,
                 nCtx,
                 nGpuLayers,
-                quantizedKvCache,
+                kvCacheTypeCode,
                 temperature,
                 topK,
                 topP,
@@ -993,6 +1070,10 @@ class NativeJniLlamaCppBridge(
         override fun prefixCacheDiagnosticsLine(): String = nativePrefixCacheDiagnosticsLine()
 
         override fun setBackendProfile(profile: String) = nativeSetBackendProfile(profile)
+
+        override fun saveSessionCache(filePath: String): Boolean = nativeSaveSessionCache(filePath)
+
+        override fun loadSessionCache(filePath: String): Boolean = nativeLoadSessionCache(filePath)
     }
 
     companion object {
@@ -1012,6 +1093,17 @@ class NativeJniLlamaCppBridge(
         )
         private val LAST_ERROR_DETAIL_REGEX = "\"last_error_detail\"\\s*:\\s*\"([^\"]*)\"".toRegex(
             option = RegexOption.IGNORE_CASE,
+        )
+        // OpenCL-safe quantizations (supported in current upstream docs/backend):
+        // Q4_0, Q6_K, Q8_0, F16/F32, and MXFP4.
+        private val OPENCL_SAFE_QUANT_REGEX = Regex(
+            """(?:^|[._-])(q4[._-]?0|q6[._-]?k|q8[._-]?0|f16|f32|fp16|fp32|mxfp4(?:[._-]moe)?)(?:[._-]|$)""",
+            RegexOption.IGNORE_CASE,
+        )
+        // Any recognizable quantization tag in a GGUF filename
+        private val KNOWN_QUANT_REGEX = Regex(
+            """(?:^|[._-])(q[2-8](?:[._-][0-9a-z_]+)|iq[1-4](?:[._-][a-z]+)?|f16|f32|fp16|fp32)(?:[._-]|$)""",
+            RegexOption.IGNORE_CASE,
         )
 
         private fun defaultFallbackEnabled(): Boolean {

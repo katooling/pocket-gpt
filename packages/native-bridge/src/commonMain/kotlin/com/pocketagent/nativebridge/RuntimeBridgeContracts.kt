@@ -23,6 +23,20 @@ enum class CachePolicy(val code: Int) {
     PREFIX_KV_REUSE_STRICT(2),
 }
 
+enum class KvCacheType(val code: Int) {
+    F16(0),
+    Q8_0(1),
+    Q4_0(2),
+    Q4_1(3),
+    Q5_0(4),
+    Q5_1(5);
+
+    companion object {
+        fun fromCode(code: Int): KvCacheType = entries.firstOrNull { it.code == code } ?: F16
+        fun fromBoolean(quantized: Boolean): KvCacheType = if (quantized) Q8_0 else F16
+    }
+}
+
 data class RuntimeSamplingConfig(
     val temperature: Float = 0.7f,
     val topK: Int = 40,
@@ -39,7 +53,7 @@ data class RuntimeLoadConfig(
     val gpuLayers: Int = 0,
     val gpuBackend: GpuExecutionBackend = GpuExecutionBackend.AUTO,
     val strictGpuOffload: Boolean = true,
-    val quantizedKvCache: Boolean = true,
+    val kvCacheType: KvCacheType = KvCacheType.Q8_0,
     val speculativeEnabled: Boolean = false,
     val speculativeDraftModelId: String? = null,
     val speculativeDraftModelPath: String? = null,
@@ -60,7 +74,7 @@ data class RuntimeGenerationConfig(
     val gpuLayers: Int = 0,
     val gpuBackend: GpuExecutionBackend = GpuExecutionBackend.AUTO,
     val strictGpuOffload: Boolean = true,
-    val quantizedKvCache: Boolean = true,
+    val kvCacheType: KvCacheType = KvCacheType.Q8_0,
     val sampling: RuntimeSamplingConfig = RuntimeSamplingConfig(),
     val speculativeEnabled: Boolean = false,
     val speculativeDraftModelId: String? = null,
@@ -89,7 +103,7 @@ data class RuntimeGenerationConfig(
             gpuLayers = gpuLayers,
             gpuBackend = gpuBackend,
             strictGpuOffload = strictGpuOffload,
-            quantizedKvCache = quantizedKvCache,
+            kvCacheType = kvCacheType,
             speculativeEnabled = speculativeEnabled,
             speculativeDraftModelId = speculativeDraftModelId,
             speculativeDraftModelPath = speculativeDraftModelPath,
@@ -171,6 +185,7 @@ data class ModelLifecycleEvent(
     val modelVersion: String? = null,
     val timestampEpochMs: Long = System.currentTimeMillis(),
     val error: ModelLifecycleError? = null,
+    val loadingDetail: String? = null,
 )
 
 enum class GenerationFinishReason {
@@ -257,6 +272,8 @@ interface LlamaCppRuntimeBridge {
     fun backendDiagnosticsJson(): String? = null
     fun setBackendProfile(profile: String) {}
     fun prefixCacheDiagnosticsLine(): String? = null
+    fun saveSessionCache(filePath: String): Boolean = false
+    fun loadSessionCache(filePath: String): Boolean = false
 }
 
 data class CommandResult(

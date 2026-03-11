@@ -310,6 +310,142 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
+    fun `opencl demotes gpu layers when model id quantization is unsupported`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.OPENCL,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                modelPath = "/tmp/model.gguf",
+            ),
+        )
+        assertEquals(listOf(0), nativeApi.loadGpuLayers)
+    }
+
+    @Test
+    fun `opencl keeps gpu layers when quantization is explicitly q4_0`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.OPENCL,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                modelPath = "/tmp/qwen-model-q4_0.gguf",
+            ),
+        )
+        assertEquals(listOf(20), nativeApi.loadGpuLayers)
+    }
+
+    @Test
+    fun `opencl keeps gpu layers when quantization is explicitly q8_0`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.OPENCL,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                modelPath = "/tmp/qwen-model-q8_0.gguf",
+            ),
+        )
+        assertEquals(listOf(20), nativeApi.loadGpuLayers)
+    }
+
+    @Test
+    fun `auto backend does not apply opencl quant demotion when hexagon is available`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"hexagon,opencl","hexagon_device_count":1,"opencl_device_count":1}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.AUTO,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                modelPath = "/tmp/model.gguf",
+            ),
+        )
+        assertEquals(listOf(20), nativeApi.loadGpuLayers)
+    }
+
+    @Test
     fun `auto backend can downgrade to cpu when gpu offload is disabled`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
@@ -474,7 +610,7 @@ private class FakeNativeApi(
         nUbatch: Int,
         nCtx: Int,
         nGpuLayers: Int,
-        quantizedKvCache: Boolean,
+        kvCacheTypeCode: Int,
         temperature: Float,
         topK: Int,
         topP: Float,
