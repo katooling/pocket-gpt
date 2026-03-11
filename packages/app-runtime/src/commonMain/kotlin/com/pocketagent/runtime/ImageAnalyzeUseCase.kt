@@ -22,6 +22,15 @@ internal class ImageAnalyzeUseCase(
         prompt: String,
         deviceState: DeviceState,
     ): ImageAnalysisResult {
+        if (!isMultimodalCapable(deviceState)) {
+            return ImageAnalysisResult.Failure(
+                failure = ImageFailure.Runtime(
+                    code = "device_insufficient",
+                    userMessage = "This device doesn't have enough resources for image analysis.",
+                    technicalDetail = "multimodal_gate: ram=${deviceState.ramClassGb}GB cores=${Runtime.getRuntime().availableProcessors()}",
+                ),
+            )
+        }
         if (!policyModule.enforceDataBoundary("routing.image_model_select")) {
             return ImageAnalysisResult.Failure(
                 failure = ImageFailure.PolicyDenied(
@@ -103,5 +112,17 @@ internal class ImageAnalyzeUseCase(
 
     private fun requirePolicyEvent(eventType: String, failureMessage: String) {
         check(policyModule.enforceDataBoundary(eventType)) { failureMessage }
+    }
+
+    private fun isMultimodalCapable(deviceState: DeviceState): Boolean {
+        val minRamGb = MIN_MULTIMODAL_RAM_GB
+        val minCores = MIN_MULTIMODAL_CORES
+        return deviceState.ramClassGb >= minRamGb &&
+            Runtime.getRuntime().availableProcessors() >= minCores
+    }
+
+    companion object {
+        const val MIN_MULTIMODAL_RAM_GB = 6
+        const val MIN_MULTIMODAL_CORES = 6
     }
 }

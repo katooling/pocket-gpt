@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        runtimeGateway.onAppForeground()
         runtimeGateway.touchKeepAlive()
     }
 

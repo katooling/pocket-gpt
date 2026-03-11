@@ -15,7 +15,7 @@ val nativeHexagonEnabled = providers.gradleProperty("pocketgpt.enableHexagonBuil
     .map { it.isTruthyFlag() }
     .get()
 val nativeArmI8mmEnabled = providers.gradleProperty("pocketgpt.enableArmI8mm")
-    .orElse("true")
+    .orElse("false")
     .map { it.isTruthyFlag() }
     .get()
 val nativeAbiFilters = providers.gradleProperty("pocketgpt.nativeAbiFilters")

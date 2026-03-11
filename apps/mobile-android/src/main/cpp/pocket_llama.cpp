@@ -1442,10 +1442,10 @@ bool load_prefix_cache_slot_from_disk(
         slot.cache_key = std::move(key);
     }
     if (!read_val(in, state_size)) return false;
-    if (state_size > MAX_PREFIX_STATE_BYTES) {
+    if (state_size > MAX_TARGET_PREFIX_STATE_BYTES) {
         __android_log_print(ANDROID_LOG_WARN, TAG,
             "SESSION_CACHE|load_over_budget|state_bytes=%llu|max=%zu",
-            (unsigned long long)state_size, MAX_PREFIX_STATE_BYTES);
+            (unsigned long long)state_size, MAX_TARGET_PREFIX_STATE_BYTES);
         return false;
     }
     slot.target_seq_state.resize(static_cast<size_t>(state_size));
@@ -2338,6 +2338,9 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         model_params.use_mmap ? "true" : "false",
         model_params.use_mlock ? "true" : "false",
         model_params.use_direct_io ? "true" : "false");
+    // Hint the kernel to start readahead BEFORE loading so pages are being
+    // faulted in while llama_model_load_from_file parses the GGUF header.
+    madvise_model_readahead(model_path, "target");
     g_model = load_model_with_mmap_retry(model_path, &model_params, "target");
     g_model_use_mmap = model_params.use_mmap;
     g_model_use_mlock = model_params.use_mlock;
@@ -2352,7 +2355,6 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     }
     g_model_layer_count = llama_model_n_layer(g_model);
     g_model_size_bytes = static_cast<uint64_t>(llama_model_size(g_model));
-    madvise_model_readahead(model_path, "target");
 
     llama_context_params context_params = llama_context_default_params();
     context_params.n_ctx = static_cast<uint32_t>(resolve_context_size(nCtx));
@@ -2365,14 +2367,14 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     // Use unified KV buffer for single-sequence inference (n_seq_max=1).
     // Reduces memory fragmentation and improves allocation efficiency.
     context_params.kv_unified = true;
-    // OpenCL flash attention kernels are buggy on Adreno GPUs (incorrect output,
-    // crashes). OpenCL also lacks the SET_ROWS op needed for quantized KV cache.
-    // Disable both when the active backend is OpenCL.
+    // Flash attention is supported on both CPU (ARM NEON) and GPU backends.
+    // Only disable on OpenCL where the kernels are buggy on Adreno GPUs
+    // (incorrect output, crashes) and the SET_ROWS op is missing.
     const bool is_opencl_backend = (g_active_backend == "opencl");
     const bool opencl_flash_guard_applied = use_gpu_ops && is_opencl_backend;
-    context_params.flash_attn_type = (use_gpu_ops && !is_opencl_backend)
-        ? LLAMA_FLASH_ATTN_TYPE_AUTO
-        : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+    context_params.flash_attn_type = is_opencl_backend
+        ? LLAMA_FLASH_ATTN_TYPE_DISABLED
+        : LLAMA_FLASH_ATTN_TYPE_AUTO;
     const ggml_type requested_kv_type = resolve_kv_cache_type(kvCacheTypeCode);
     const bool quantized_kv_requested = requested_kv_type != GGML_TYPE_F16;
     // OpenCL lacks SET_ROWS needed for quantized KV; flash attention is also
@@ -2410,7 +2412,7 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         release_runtime_locked();
         return JNI_FALSE;
     }
-    g_last_flash_attn_active = g_last_flash_attn_requested && g_last_flash_attn_gpu_ops;
+    g_last_flash_attn_active = g_last_flash_attn_requested;
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
@@ -2423,6 +2425,20 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         context_params.n_ctx,
         context_params.n_batch,
         context_params.n_ubatch);
+
+    // Warmup: run a single-token dummy decode to force all tensor pages into
+    // memory.  With mmap this eliminates the page-fault storm on the first real
+    // prompt, moving the latency into the load phase where the user already
+    // expects a wait.
+    {
+        llama_set_warmup(g_context, true);
+        llama_token bos = llama_vocab_bos(llama_model_get_vocab(g_model));
+        llama_batch warmup_batch = llama_batch_get_one(&bos, 1);
+        const int warmup_rc = llama_decode(g_context, warmup_batch);
+        llama_set_warmup(g_context, false);
+        llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
+        __android_log_print(ANDROID_LOG_INFO, TAG, "WARMUP|target|rc=%d", warmup_rc);
+    }
 
     const float resolved_temperature = std::max(0.0f, static_cast<float>(temperature));
     const float resolved_top_p = std::max(0.0f, std::min(1.0f, static_cast<float>(topP)));
@@ -2455,10 +2471,8 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             draft_model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
             draft_model_params.main_gpu = 0;
         }
+        madvise_model_readahead(draft_model_path, "draft");
         g_draft_model = load_model_with_mmap_retry(draft_model_path, &draft_model_params, "draft");
-        if (g_draft_model != nullptr) {
-            madvise_model_readahead(draft_model_path, "draft");
-        }
         if (g_draft_model != nullptr && speculative_vocabs_compatible(g_model, g_draft_model)) {
             llama_context_params draft_context_params = llama_context_default_params();
             draft_context_params.n_ctx = std::min<uint32_t>(context_params.n_ctx, 1024u);
@@ -2469,10 +2483,9 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             draft_context_params.offload_kqv = draft_model_params.n_gpu_layers != 0;
             draft_context_params.op_offload = draft_model_params.n_gpu_layers != 0;
             draft_context_params.kv_unified = true;
-            draft_context_params.flash_attn_type =
-                (draft_model_params.n_gpu_layers != 0 && !is_opencl_backend)
-                    ? LLAMA_FLASH_ATTN_TYPE_AUTO
-                    : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+            draft_context_params.flash_attn_type = is_opencl_backend
+                ? LLAMA_FLASH_ATTN_TYPE_DISABLED
+                : LLAMA_FLASH_ATTN_TYPE_AUTO;
             draft_context_params.type_k = context_params.type_k;
             draft_context_params.type_v = context_params.type_v;
             g_draft_context = llama_init_from_model(g_draft_model, draft_context_params);
@@ -2483,6 +2496,16 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                     std::min(0.98f, std::max(0.5f, resolved_top_p)));
                 if (g_draft_sampler != nullptr) {
                     g_speculative_enabled = true;
+                    // Warmup draft model to pre-fault its tensor pages.
+                    llama_set_warmup(g_draft_context, true);
+                    llama_token draft_bos = llama_vocab_bos(
+                        llama_model_get_vocab(g_draft_model));
+                    llama_batch draft_warmup = llama_batch_get_one(&draft_bos, 1);
+                    const int draft_warmup_rc = llama_decode(g_draft_context, draft_warmup);
+                    llama_set_warmup(g_draft_context, false);
+                    llama_memory_seq_rm(llama_get_memory(g_draft_context), 0, -1, -1);
+                    __android_log_print(ANDROID_LOG_INFO, TAG,
+                        "WARMUP|draft|rc=%d", draft_warmup_rc);
                 }
             }
         }

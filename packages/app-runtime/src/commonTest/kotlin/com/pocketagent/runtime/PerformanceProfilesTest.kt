@@ -19,7 +19,7 @@ class PerformanceProfilesTest {
     }
 
     @Test
-    fun `balanced and fast presets keep ubatch below batch and fast expands context`() {
+    fun `balanced and fast presets match ubatch to batch and fast expands context`() {
         val balanced = PerformanceRuntimeConfig.forProfile(
             profile = RuntimePerformanceProfile.BALANCED,
             availableCpuThreads = 8,
@@ -32,13 +32,13 @@ class PerformanceProfilesTest {
         )
 
         assertEquals(512, balanced.nBatch)
-        assertEquals(256, balanced.nUbatch)
+        assertEquals(512, balanced.nUbatch)
         assertEquals(1, balanced.speculativeDraftGpuLayers)
         assertEquals(true, balanced.useMmap)
         assertEquals(false, balanced.useMlock)
         assertEquals(128, balanced.nKeep)
         assertEquals(768, fast.nBatch)
-        assertEquals(384, fast.nUbatch)
+        assertEquals(768, fast.nUbatch)
         assertEquals(2, fast.speculativeDraftGpuLayers)
         assertEquals(true, fast.useMmap)
         assertEquals(false, fast.useMlock)

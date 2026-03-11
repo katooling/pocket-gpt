@@ -1,8 +1,8 @@
 package com.pocketagent.android.runtime.modelmanager
 
 import android.util.Log
-import com.arm.aichat.gguf.GgufMetadata
-import com.arm.aichat.internal.gguf.GgufMetadataReaderImpl
+import com.pocketagent.android.runtime.modelmanager.gguf.GgufMetadata
+import com.pocketagent.android.runtime.modelmanager.gguf.GgufMetadataReaderImpl
 import java.io.File
 import org.json.JSONObject
 

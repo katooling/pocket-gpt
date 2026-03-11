@@ -72,7 +72,7 @@ data class PerformanceRuntimeConfig(
                     maxTokensDefault = 256,
                     threads = cpu.coerceAtMost(6),
                     batch = 512,
-                    ubatch = 256,
+                    ubatch = 512,
                     nCtx = 2048,
                 )
 
@@ -81,7 +81,7 @@ data class PerformanceRuntimeConfig(
                     maxTokensDefault = 384,
                     threads = cpu.coerceAtMost(8),
                     batch = 768,
-                    ubatch = 384,
+                    ubatch = 768,
                     nCtx = 4096,
                 )
             }
@@ -91,7 +91,10 @@ data class PerformanceRuntimeConfig(
                 requestTimeoutMs = profilePreset.timeoutMs,
                 maxTokensDefault = profilePreset.maxTokensDefault,
                 nThreads = profilePreset.threads.coerceIn(MIN_THREADS, MAX_THREADS),
-                nThreadsBatch = profilePreset.threads.coerceIn(MIN_THREADS, MAX_THREADS),
+                // Prefill is a burst operation that benefits from more parallelism
+                // than steady-state generation.  Use 1.5x the generation thread count
+                // so prompt processing saturates the available performance cores.
+                nThreadsBatch = (profilePreset.threads * 3 / 2).coerceIn(MIN_THREADS, MAX_THREADS),
                 nBatch = profilePreset.batch.coerceIn(MIN_BATCH, MAX_BATCH),
                 nUbatch = profilePreset.ubatch.coerceIn(MIN_BATCH, MAX_BATCH),
                 nCtx = profilePreset.nCtx,
