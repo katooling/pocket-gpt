@@ -12,7 +12,7 @@ internal fun PerformanceRuntimeConfig.toRuntimeGenerationConfig(): RuntimeGenera
         nCtx = nCtx,
         gpuEnabled = gpuEnabled,
         gpuLayers = gpuLayers,
-        quantizedKvCache = quantizedKvCache,
+        kvCacheType = kvCacheType,
         sampling = RuntimeSamplingConfig(
             temperature = temperature,
             topK = topK,

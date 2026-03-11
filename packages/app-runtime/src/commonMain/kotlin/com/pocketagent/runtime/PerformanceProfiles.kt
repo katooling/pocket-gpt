@@ -2,6 +2,7 @@ package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.nativebridge.KvCacheType
 
 enum class RuntimePerformanceProfile {
     BATTERY,
@@ -20,7 +21,7 @@ data class PerformanceRuntimeConfig(
     val nCtx: Int,
     val gpuEnabled: Boolean,
     val gpuLayers: Int,
-    val quantizedKvCache: Boolean,
+    val kvCacheType: KvCacheType,
     val temperature: Float,
     val topK: Int,
     val topP: Float,
@@ -53,6 +54,9 @@ data class PerformanceRuntimeConfig(
             gpuLayers: Int = DEFAULT_GPU_LAYERS,
         ): PerformanceRuntimeConfig {
             val cpu = availableCpuThreads.coerceAtLeast(1)
+            val profileAllowsGpu = profile != RuntimePerformanceProfile.BATTERY
+            val effectiveGpuEnabled = gpuEnabled && profileAllowsGpu
+            val effectiveGpuLayers = if (effectiveGpuEnabled) gpuLayers.coerceAtLeast(0) else 0
             val profilePreset = when (profile) {
                 RuntimePerformanceProfile.BATTERY -> Preset(
                     timeoutMs = 900_000L,
@@ -91,9 +95,9 @@ data class PerformanceRuntimeConfig(
                 nBatch = profilePreset.batch.coerceIn(MIN_BATCH, MAX_BATCH),
                 nUbatch = profilePreset.ubatch.coerceIn(MIN_BATCH, MAX_BATCH),
                 nCtx = profilePreset.nCtx,
-                gpuEnabled = gpuEnabled,
-                gpuLayers = gpuLayers.coerceAtLeast(0),
-                quantizedKvCache = true,
+                gpuEnabled = effectiveGpuEnabled,
+                gpuLayers = effectiveGpuLayers,
+                kvCacheType = KvCacheType.Q8_0,
                 temperature = if (profile == RuntimePerformanceProfile.BATTERY) 0.6f else 0.7f,
                 topK = if (profile == RuntimePerformanceProfile.BATTERY) 24 else 40,
                 topP = if (profile == RuntimePerformanceProfile.BATTERY) 0.92f else 0.95f,
@@ -103,8 +107,8 @@ data class PerformanceRuntimeConfig(
                 speculativeMinDraftTokens = 2,
                 speculativeDraftGpuLayers = defaultDraftGpuLayers(
                     profile = profile,
-                    gpuEnabled = gpuEnabled,
-                    gpuLayers = gpuLayers,
+                    gpuEnabled = effectiveGpuEnabled,
+                    gpuLayers = effectiveGpuLayers,
                 ),
                 useMmap = true,
                 useMlock = false,
@@ -127,7 +131,11 @@ data class PerformanceRuntimeConfig(
             }
         }
 
-        private const val DEFAULT_GPU_LAYERS: Int = 32
+        // Conservative starting point for GPU layers. The GPU probe will
+        // determine the actual safe maximum and RuntimeTuningStore will clamp
+        // to that value. 16 is a safer default for OpenCL (Adreno max allocation
+        // is typically 1024 MB) while still providing meaningful acceleration.
+        private const val DEFAULT_GPU_LAYERS: Int = 16
     }
 
     private data class Preset(

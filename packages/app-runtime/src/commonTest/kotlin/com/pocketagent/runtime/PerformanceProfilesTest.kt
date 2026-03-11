@@ -5,6 +5,20 @@ import kotlin.test.assertEquals
 
 class PerformanceProfilesTest {
     @Test
+    fun `battery profile always resolves to cpu-only even when gpu is requested`() {
+        val battery = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.BATTERY,
+            availableCpuThreads = 8,
+            gpuEnabled = true,
+            gpuLayers = 24,
+        )
+
+        assertEquals(false, battery.gpuEnabled)
+        assertEquals(0, battery.gpuLayers)
+        assertEquals(0, battery.speculativeDraftGpuLayers)
+    }
+
+    @Test
     fun `balanced and fast presets keep ubatch below batch and fast expands context`() {
         val balanced = PerformanceRuntimeConfig.forProfile(
             profile = RuntimePerformanceProfile.BALANCED,
@@ -19,13 +33,13 @@ class PerformanceProfilesTest {
 
         assertEquals(512, balanced.nBatch)
         assertEquals(256, balanced.nUbatch)
-        assertEquals(2, balanced.speculativeDraftGpuLayers)
+        assertEquals(1, balanced.speculativeDraftGpuLayers)
         assertEquals(true, balanced.useMmap)
         assertEquals(false, balanced.useMlock)
         assertEquals(128, balanced.nKeep)
         assertEquals(768, fast.nBatch)
         assertEquals(384, fast.nUbatch)
-        assertEquals(4, fast.speculativeDraftGpuLayers)
+        assertEquals(2, fast.speculativeDraftGpuLayers)
         assertEquals(true, fast.useMmap)
         assertEquals(false, fast.useMlock)
         assertEquals(256, fast.nKeep)
