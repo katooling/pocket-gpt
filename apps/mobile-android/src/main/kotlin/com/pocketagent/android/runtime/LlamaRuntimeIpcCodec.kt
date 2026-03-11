@@ -3,6 +3,7 @@ package com.pocketagent.android.runtime
 import android.os.Bundle
 import com.pocketagent.nativebridge.GenerationResult
 import com.pocketagent.nativebridge.GpuExecutionBackend
+import com.pocketagent.nativebridge.KvCacheType
 import com.pocketagent.nativebridge.RuntimeGenerationConfig
 
 internal fun Bundle?.toProbeRequestOrNull(): GpuProbeRequest? {
@@ -39,7 +40,7 @@ internal fun RuntimeGenerationConfig.toBundle(): Bundle {
         putInt(LlamaRuntimeIpc.EXTRA_GPU_LAYERS, gpuLayers)
         putString(LlamaRuntimeIpc.EXTRA_GPU_BACKEND, gpuBackend.name)
         putBoolean(LlamaRuntimeIpc.EXTRA_STRICT_GPU_OFFLOAD, strictGpuOffload)
-        putBoolean(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, quantizedKvCache)
+        putInt(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, kvCacheType.code)
         putFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TEMPERATURE, sampling.temperature)
         putInt(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_K, sampling.topK)
         putFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_P, sampling.topP)
@@ -68,7 +69,7 @@ internal fun Bundle.toRuntimeGenerationConfig(): RuntimeGenerationConfig {
             ?.let { raw -> runCatching { GpuExecutionBackend.valueOf(raw) }.getOrNull() }
             ?: GpuExecutionBackend.AUTO,
         strictGpuOffload = getBoolean(LlamaRuntimeIpc.EXTRA_STRICT_GPU_OFFLOAD, true),
-        quantizedKvCache = getBoolean(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, true),
+        kvCacheType = KvCacheType.fromCode(getInt(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, KvCacheType.Q8_0.code)),
         sampling = com.pocketagent.nativebridge.RuntimeSamplingConfig(
             temperature = getFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TEMPERATURE, 0.7f),
             topK = getInt(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_K, 40),

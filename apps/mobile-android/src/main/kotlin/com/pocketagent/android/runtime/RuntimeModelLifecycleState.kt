@@ -11,6 +11,7 @@ data class RuntimeModelLifecycleSnapshot(
     val lastUsedModel: RuntimeLoadedModel? = null,
     val errorCode: ModelLifecycleErrorCode? = null,
     val errorDetail: String? = null,
+    val loadingDetail: String? = null,
     val queuedOffload: Boolean = false,
     val updatedAtEpochMs: Long = System.currentTimeMillis(),
 ) {

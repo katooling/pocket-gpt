@@ -9,9 +9,15 @@ import kotlinx.serialization.json.jsonPrimitive
 data class RuntimeDiagnosticsSnapshot(
     val backendProfile: String? = null,
     val compiledBackend: String? = null,
+    val activeBackend: String? = null,
     val nativeRuntimeSupported: Boolean? = null,
     val strictAcceleratorFailFast: Boolean? = null,
     val autoBackendCpuFallback: Boolean? = null,
+    val openclDeviceVersion: String? = null,
+    val openclAdrenoGeneration: Int? = null,
+    val activeModelQuantization: String? = null,
+    val flashAttnGuardReason: String? = null,
+    val quantizedKvGuardReason: String? = null,
 )
 
 internal object RuntimeDiagnosticsSnapshotParser {
@@ -32,19 +38,31 @@ internal object RuntimeDiagnosticsSnapshotParser {
         val backendProfile = nativePayloadRoot.stringOrNull("backend_profile")
             ?: offloadFields["backend_profile"]?.trim()?.takeIf { value -> value.isNotEmpty() }
         val compiledBackend = nativePayloadRoot.stringOrNull("compiled_backend")
+        val activeBackend = nativePayloadRoot.stringOrNull("active_backend")
         val runtimeSupported = nativePayloadRoot.booleanOrNull("runtime_supported")
             ?: offloadFields["runtime_supported"].toBooleanOrNullCompat()
         val strictAcceleratorFailFast = nativePayloadRoot.booleanOrNull("strict_accelerator_fail_fast")
             ?: offloadFields["strict_accelerator_fail_fast"].toBooleanOrNullCompat()
         val autoBackendCpuFallback = nativePayloadRoot.booleanOrNull("auto_backend_cpu_fallback")
             ?: offloadFields["auto_backend_cpu_fallback"].toBooleanOrNullCompat()
+        val openclDeviceVersion = nativePayloadRoot.stringOrNull("opencl_device_version")
+        val openclAdrenoGeneration = nativePayloadRoot.intOrNull("opencl_adreno_generation")
+        val activeModelQuantization = nativePayloadRoot.stringOrNull("active_model_quantization")
+        val flashAttnGuardReason = nativePayloadRoot.stringOrNull("flash_attn_guard_reason")
+        val quantizedKvGuardReason = nativePayloadRoot.stringOrNull("quantized_kv_guard_reason")
 
         return RuntimeDiagnosticsSnapshot(
             backendProfile = backendProfile,
             compiledBackend = compiledBackend,
+            activeBackend = activeBackend,
             nativeRuntimeSupported = runtimeSupported,
             strictAcceleratorFailFast = strictAcceleratorFailFast,
             autoBackendCpuFallback = autoBackendCpuFallback,
+            openclDeviceVersion = openclDeviceVersion,
+            openclAdrenoGeneration = openclAdrenoGeneration,
+            activeModelQuantization = activeModelQuantization,
+            flashAttnGuardReason = flashAttnGuardReason,
+            quantizedKvGuardReason = quantizedKvGuardReason,
         )
     }
 
@@ -105,6 +123,14 @@ internal object RuntimeDiagnosticsSnapshotParser {
             ?.jsonPrimitive
             ?.contentOrNull
             .toBooleanOrNullCompat()
+    }
+
+    private fun JsonObject.intOrNull(key: String): Int? {
+        return this[key]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.trim()
+            ?.toIntOrNull()
     }
 
     private fun String?.toBooleanOrNullCompat(): Boolean? {

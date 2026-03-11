@@ -212,6 +212,20 @@ class ModelDownloadWorker(
                 fileSizeBytes = destinationFile.length().coerceAtLeast(0L),
                 makeActive = verificationPolicy.enforcesProvenance,
             )
+
+            runCatching {
+                val metadataFile = File("${destinationFile.absolutePath}.meta.json")
+                GgufMetadataExtractor.extractAndPersist(
+                    modelFile = destinationFile,
+                    metadataFile = metadataFile,
+                )
+            }.onFailure { error ->
+                Log.w(
+                    LOG_TAG,
+                    "GGUF metadata extraction failed for $modelId@$version: ${error.message}",
+                )
+            }
+
             runCatching {
                 RuntimeBootstrapper.installProductionRuntime(appContext)
             }.onFailure { error ->

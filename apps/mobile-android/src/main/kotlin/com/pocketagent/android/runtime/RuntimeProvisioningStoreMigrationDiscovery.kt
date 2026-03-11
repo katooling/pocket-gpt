@@ -384,8 +384,15 @@ internal fun AndroidRuntimeProvisioningStore.discoveryModelDirectories(): List<F
     val candidates = listOf(
         managedModelDirectory(),
         managedDownloadWorkspaceDirectory(),
+        // Legacy internal storage paths (generation 1)
+        File(context.filesDir, PROVISIONING_LEGACY_MODEL_DIR_NAME),
+        File(context.filesDir, "models"),
+        // Legacy cache directory (generation 1.5)
+        File(context.cacheDir, "models"),
+        // External media paths (generation 2)
         File("/sdcard/Android/media/$packageName/models"),
         File("/storage/emulated/0/Android/media/$packageName/models"),
+        // Public downloads paths (generation 2)
         File("/sdcard/Download/$packageName/models"),
         File("/storage/emulated/0/Download/$packageName/models"),
     )

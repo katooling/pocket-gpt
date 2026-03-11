@@ -555,23 +555,37 @@ class AndroidRuntimeProvisioningStore(
     private fun resolveFallbackModelPath(spec: ModelSpec, missingPath: String): String? {
         val packageName = context.packageName
         val fileName = spec.fileName
-        val staticCandidates = listOf(
+        // Generation 1: internal filesDir (oldest path scheme)
+        val gen1Candidates = listOf(
+            "${context.filesDir.absolutePath}/${PROVISIONING_LEGACY_MODEL_DIR_NAME}/$fileName",
+            "${context.filesDir.absolutePath}/models/$fileName",
+            "${context.cacheDir.absolutePath}/models/$fileName",
+        )
+        // Generation 2: external media and downloads
+        val gen2Candidates = listOf(
             "/storage/emulated/0/Android/media/$packageName/models/$fileName",
             "/storage/emulated/0/Download/$packageName/models/$fileName",
             "/sdcard/Android/media/$packageName/models/$fileName",
             "/sdcard/Download/$packageName/models/$fileName",
         )
+        // Generation 3: current managed storage root
+        val gen3Candidates = listOf(
+            "${managedModelDirectory().absolutePath}/$fileName",
+        )
+        // Alias-based candidates (swap between media and download directories)
         val aliasCandidates = listOf(
             missingPath.replace("/Android/media/", "/Download/"),
             missingPath.replace("/storage/emulated/0/Android/media/", "/storage/emulated/0/Download/"),
             missingPath.replace("/sdcard/Android/media/", "/sdcard/Download/"),
+            missingPath.replace("/Download/", "/Android/media/"),
         )
 
-        return (staticCandidates + aliasCandidates)
+        return (gen3Candidates + gen2Candidates + gen1Candidates + aliasCandidates)
             .asSequence()
             .map { candidate -> candidate.trim() }
             .filter { candidate -> candidate.isNotEmpty() }
             .map { candidate -> normalizeAbsolutePath(candidate) }
+            .filter { candidate -> candidate != normalizeAbsolutePath(missingPath) }
             .firstOrNull { candidate ->
                 val file = File(candidate)
                 file.exists() && file.isFile
@@ -593,10 +607,29 @@ class AndroidRuntimeProvisioningStore(
         if (entries.isEmpty()) {
             return false
         }
+        val managedDir = managedModelDirectory()
         var changed = false
         val migrated = entries.map { entry ->
             val currentFile = File(entry.absolutePath)
             if (currentFile.exists() && currentFile.isFile) {
+                // File exists at current path — check if it should be relocated to managed dir
+                if (!isManagedModelFile(currentFile)) {
+                    val targetFile = File(managedDir, currentFile.name)
+                    if (!targetFile.exists()) {
+                        val relocated = runCatching {
+                            currentFile.copyTo(targetFile, overwrite = false)
+                            true
+                        }.getOrElse { false }
+                        if (relocated && targetFile.exists() && targetFile.length() == currentFile.length()) {
+                            changed = true
+                            Log.i(LOG_TAG, "Relocated ${spec.modelId} from legacy path ${entry.absolutePath} to ${targetFile.absolutePath}")
+                            return@map entry.copy(
+                                absolutePath = normalizeAbsolutePath(targetFile.absolutePath),
+                                fileSizeBytes = targetFile.length().coerceAtLeast(0L),
+                            )
+                        }
+                    }
+                }
                 entry
             } else {
                 val fallbackPath = resolveFallbackModelPath(spec, entry.absolutePath) ?: return@map entry

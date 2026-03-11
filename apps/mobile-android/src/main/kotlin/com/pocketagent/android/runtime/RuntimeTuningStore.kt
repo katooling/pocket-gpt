@@ -5,6 +5,8 @@ import android.os.Build
 import com.pocketagent.core.RuntimeExecutionStats
 import com.pocketagent.inference.ModelRuntimeProfile
 import com.pocketagent.runtime.ModelRegistry
+import com.pocketagent.nativebridge.KvCacheType
+import com.pocketagent.runtime.MemoryBudgetTracker
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import org.json.JSONArray
 import org.json.JSONObject
@@ -41,7 +43,7 @@ interface RuntimeTuning {
 
 data class RuntimeTuningRecommendation(
     val gpuLayers: Int? = null,
-    val quantizedKvCache: Boolean? = null,
+    val kvCacheType: KvCacheType? = null,
     val speculativeEnabled: Boolean? = null,
     val speculativeDraftGpuLayers: Int? = null,
     val useMmap: Boolean? = null,
@@ -101,7 +103,7 @@ class RuntimeTuningDecider(
     ): RuntimeTuningRecommendation {
         val previous = current ?: RuntimeTuningRecommendation(
             gpuLayers = appliedConfig.gpuLayers,
-            quantizedKvCache = appliedConfig.quantizedKvCache,
+            kvCacheType = appliedConfig.kvCacheType,
             speculativeEnabled = appliedConfig.speculativeEnabled,
             speculativeDraftGpuLayers = appliedConfig.speculativeDraftGpuLayers,
             useMmap = appliedConfig.useMmap,
@@ -109,7 +111,7 @@ class RuntimeTuningDecider(
             nUbatch = appliedConfig.nUbatch,
         )
         var gpuLayers = previous.gpuLayers ?: appliedConfig.gpuLayers
-        var quantizedKvCache = previous.quantizedKvCache ?: appliedConfig.quantizedKvCache
+        var kvCacheType = previous.kvCacheType ?: appliedConfig.kvCacheType
         var speculativeEnabled = previous.speculativeEnabled ?: appliedConfig.speculativeEnabled
         var speculativeDraftGpuLayers = previous.speculativeDraftGpuLayers ?: appliedConfig.speculativeDraftGpuLayers
         var useMmap = previous.useMmap ?: appliedConfig.useMmap
@@ -155,7 +157,7 @@ class RuntimeTuningDecider(
 
         when {
             memoryPressure -> {
-                quantizedKvCache = true
+                kvCacheType = KvCacheType.Q8_0
                 nBatch = demotedBatch(nBatch)
                 nUbatch = demotedBatch(nUbatch)
                 gpuLayers = demotedGpuLayers(gpuLayers)
@@ -249,7 +251,7 @@ class RuntimeTuningDecider(
 
         return previous.copy(
             gpuLayers = gpuLayers.coerceAtLeast(0),
-            quantizedKvCache = quantizedKvCache,
+            kvCacheType = kvCacheType,
             speculativeEnabled = speculativeEnabled,
             speculativeDraftGpuLayers = speculativeDraftGpuLayers.coerceAtLeast(0),
             useMmap = useMmap,
@@ -321,6 +323,7 @@ class AndroidRuntimeTuningStore(
     private val nowMs: () -> Long = { System.currentTimeMillis() },
     private val provisioningStore: AndroidRuntimeProvisioningStore = AndroidRuntimeProvisioningStore(context.applicationContext),
     private val decider: RuntimeTuningDecider = RuntimeTuningDecider(nowMs),
+    val memoryBudgetTracker: MemoryBudgetTracker = MemoryBudgetTracker(nowMs),
 ) : RuntimeTuning {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -340,7 +343,7 @@ class AndroidRuntimeTuningStore(
             } else {
                 0
             },
-            quantizedKvCache = recommendation.quantizedKvCache ?: baseConfig.quantizedKvCache,
+            kvCacheType = recommendation.kvCacheType ?: baseConfig.kvCacheType,
             speculativeEnabled = speculativeEnabled,
             speculativeDraftGpuLayers = if (baseConfig.gpuEnabled && speculativeEnabled) {
                 (recommendation.speculativeDraftGpuLayers ?: baseConfig.speculativeDraftGpuLayers)
@@ -377,6 +380,9 @@ class AndroidRuntimeTuningStore(
             ),
         )
         writeRecommendation(prefKey, resolvedModelId, targetConfig, next)
+        runtimeStats?.peakRssMb?.let { peakRss ->
+            memoryBudgetTracker.recordSuccessfulLoad(resolvedModelId, peakRss)
+        }
         appendSample(
             historyKey = historyKeyFor(resolvedModelId, targetConfig),
             sample = RuntimeTuningSample(
@@ -444,7 +450,7 @@ class AndroidRuntimeTuningStore(
             .filter { it.startsWith(RECOMMENDATION_KEY_PREFIX) }
             .sorted()
         if (recommendationKeys.isEmpty()) {
-            return "RUNTIME_TUNING|device_key=${sanitizeDiagnosticValue(deviceKey)}|entries=0"
+            return "RUNTIME_TUNING|device_key=${sanitizeDiagnosticValue(deviceKey)}|entries=0\n${memoryBudgetTracker.diagnosticsLine()}"
         }
         return buildString {
             recommendationKeys.forEachIndexed { index, prefKey ->
@@ -463,6 +469,8 @@ class AndroidRuntimeTuningStore(
                     append(sampleDiagnosticsLine(payload = payload, sample = sample, exportIndex = sampleIndex - startIndex))
                 }
             }
+            appendLine()
+            append(memoryBudgetTracker.diagnosticsLine())
         }
     }
 
@@ -558,7 +566,11 @@ class AndroidRuntimeTuningStore(
         val payload = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         return RuntimeTuningRecommendation(
             gpuLayers = payload.takeIf { it.has("gpuLayers") }?.getInt("gpuLayers"),
-            quantizedKvCache = payload.takeIf { it.has("quantizedKvCache") }?.getBoolean("quantizedKvCache"),
+            kvCacheType = when {
+                payload.has("kvCacheTypeCode") -> KvCacheType.fromCode(payload.getInt("kvCacheTypeCode"))
+                payload.has("quantizedKvCache") -> KvCacheType.fromBoolean(payload.getBoolean("quantizedKvCache"))
+                else -> null
+            },
             speculativeEnabled = payload.takeIf { it.has("speculativeEnabled") }?.getBoolean("speculativeEnabled"),
             speculativeDraftGpuLayers = payload.takeIf { it.has("speculativeDraftGpuLayers") }?.getInt("speculativeDraftGpuLayers"),
             useMmap = payload.takeIf { it.has("useMmap") }?.getBoolean("useMmap"),
@@ -594,7 +606,7 @@ class AndroidRuntimeTuningStore(
             put("profile", targetConfig.profile.name)
             put("mode", if (targetConfig.gpuEnabled) "gpu" else "cpu")
             recommendation.gpuLayers?.let { put("gpuLayers", it) }
-            recommendation.quantizedKvCache?.let { put("quantizedKvCache", it) }
+            recommendation.kvCacheType?.let { put("kvCacheTypeCode", it.code) }
             recommendation.speculativeEnabled?.let { put("speculativeEnabled", it) }
             recommendation.speculativeDraftGpuLayers?.let { put("speculativeDraftGpuLayers", it) }
             recommendation.useMmap?.let { put("useMmap", it) }

@@ -27,6 +27,7 @@ interface ProvisioningGateway {
     fun resumeDownload(taskId: String)
     fun retryDownload(taskId: String)
     fun cancelDownload(taskId: String)
+    fun syncDownloadsFromWorkManager()
 }
 
 class DefaultProvisioningGateway(
@@ -106,6 +107,10 @@ class DefaultProvisioningGateway(
     override fun cancelDownload(taskId: String) {
         dependencies.cancelDownload(taskId)
     }
+
+    override fun syncDownloadsFromWorkManager() {
+        dependencies.syncDownloadsFromWorkManager()
+    }
 }
 
 interface ProvisioningDependencyAccess {
@@ -131,6 +136,7 @@ interface ProvisioningDependencyAccess {
     fun resumeDownload(taskId: String)
     fun retryDownload(taskId: String)
     fun cancelDownload(taskId: String)
+    fun syncDownloadsFromWorkManager()
 }
 
 class AppProvisioningDependencyAccess(
@@ -211,5 +217,9 @@ class AppProvisioningDependencyAccess(
 
     override fun cancelDownload(taskId: String) {
         AppRuntimeDependencies.cancelDownload(context, taskId)
+    }
+
+    override fun syncDownloadsFromWorkManager() {
+        AppRuntimeDependencies.syncDownloadsFromWorkManager(context)
     }
 }

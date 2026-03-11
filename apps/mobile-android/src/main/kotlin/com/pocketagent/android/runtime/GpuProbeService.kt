@@ -24,7 +24,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.max
@@ -115,6 +114,10 @@ internal class GpuProbeRunner(
                 gpuBackend = request.backendProfile.toGpuExecutionBackend(),
                 nBatch = safeBatch,
                 nUbatch = safeBatch,
+                // Force safe defaults for probing: use F16 KV cache since
+                // OpenCL lacks SET_ROWS support needed for quantized types, and the
+                // probe should test the most compatible configuration.
+                kvCacheType = com.pocketagent.nativebridge.KvCacheType.F16,
             )
             bridge.setRuntimeGenerationConfig(config)
             val loaded = runCatching {

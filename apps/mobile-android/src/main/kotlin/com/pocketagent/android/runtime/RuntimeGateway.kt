@@ -55,6 +55,9 @@ interface RuntimeGateway {
     fun shortenKeepAlive(ttlMs: Long): Boolean = false
     fun onTrimMemory(level: Int): Boolean = false
     fun onAppBackground(): Boolean = false
+    fun onAppForeground(): Boolean = false
+    fun addAutoReleaseDisableReason(reason: String) = Unit
+    fun removeAutoReleaseDisableReason(reason: String) = Unit
     fun gpuOffloadStatus(): GpuProbeResult = if (supportsGpuOffload()) {
         GpuProbeResult(status = GpuProbeStatus.QUALIFIED, maxStableGpuLayers = 32)
     } else {
@@ -198,6 +201,18 @@ class MvpRuntimeGateway(
 
     override fun onAppBackground(): Boolean {
         return (facade as? RuntimeResourceControl)?.onAppBackground() ?: false
+    }
+
+    override fun onAppForeground(): Boolean {
+        return (facade as? RuntimeResourceControl)?.onAppForeground() ?: false
+    }
+
+    override fun addAutoReleaseDisableReason(reason: String) {
+        (facade as? RuntimeResourceControl)?.addAutoReleaseDisableReason(reason)
+    }
+
+    override fun removeAutoReleaseDisableReason(reason: String) {
+        (facade as? RuntimeResourceControl)?.removeAutoReleaseDisableReason(reason)
     }
 
     override fun supportsGpuOffload(): Boolean {
