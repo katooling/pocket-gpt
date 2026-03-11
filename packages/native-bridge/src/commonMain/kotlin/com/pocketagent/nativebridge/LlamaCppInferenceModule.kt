@@ -254,6 +254,16 @@ class LlamaCppInferenceModule(
             ?.takeIf { it.isNotEmpty() }
     }
 
+    fun saveSessionCache(filePath: String): Boolean {
+        if (activeModelId == null) return false
+        return runtimeBridge.saveSessionCache(filePath)
+    }
+
+    fun loadSessionCache(filePath: String): Boolean {
+        if (activeModelId == null) return false
+        return runtimeBridge.loadSessionCache(filePath)
+    }
+
     fun recordWarmup(durationMs: Long) {
         runtimeResidencyState = runtimeResidencyState.copy(
             lastWarmupDurationMs = durationMs.coerceAtLeast(0L),
