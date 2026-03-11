@@ -208,6 +208,10 @@ class ModelProvisioningViewModel(
         gateway.cancelDownload(taskId)
     }
 
+    fun refreshDownloads() {
+        gateway.syncDownloadsFromWorkManager()
+    }
+
     private fun userMessageFor(error: Throwable): String {
         return (error as? RuntimeDomainException)?.domainError?.userMessage
             ?: "Model import failed. Please try again."

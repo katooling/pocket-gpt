@@ -1,6 +1,8 @@
 package com.pocketagent.android
 
+import android.app.ActivityManager
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -81,23 +83,43 @@ class MainActivity : ComponentActivity() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        when {
+        val evicted = when {
             level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> runtimeGateway.evictResidentModel("trim_complete")
             level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> runtimeGateway.evictResidentModel("trim_background")
             level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> runtimeGateway.evictResidentModel("trim_critical")
-            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> runtimeGateway.shortenKeepAlive(15_000L)
-            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> runtimeGateway.shortenKeepAlive(60_000L)
-            level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> runtimeGateway.shortenKeepAlive(120_000L)
+            else -> {
+                when {
+                    level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> runtimeGateway.shortenKeepAlive(15_000L)
+                    level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> runtimeGateway.shortenKeepAlive(60_000L)
+                    level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> runtimeGateway.shortenKeepAlive(120_000L)
+                }
+                false
+            }
+        }
+        if (evicted) {
+            recordAvailableMemoryBudget()
         }
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
         runtimeGateway.evictResidentModel(reason = "low_memory")
+        recordAvailableMemoryBudget()
     }
 
     override fun onStop() {
         runtimeGateway.onAppBackground()
+        recordAvailableMemoryBudget()
         super.onStop()
+    }
+
+    private fun recordAvailableMemoryBudget() {
+        runCatching {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return
+            val memInfo = ActivityManager.MemoryInfo()
+            am.getMemoryInfo(memInfo)
+            val availMb = memInfo.availMem.toDouble() / (1024.0 * 1024.0)
+            runtimeTuning.memoryBudgetTracker.recordAvailableMemoryAfterRelease(availMb)
+        }
     }
 }

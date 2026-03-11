@@ -1,9 +1,11 @@
 package com.pocketagent.android
 
+import android.app.ActivityManager
 import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
+import com.pocketagent.android.runtime.ModelMemoryEstimator
 import com.pocketagent.android.runtime.createDefaultAndroidInferenceModule
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
@@ -73,6 +75,10 @@ object AppRuntimeDependencies {
     private val productionRuntimeFacadeFactory: () -> MvpRuntimeFacade = { hotSwappableRuntimeFacade }
 
     @Volatile
+    var lastMemoryEstimate: ModelMemoryEstimator.EstimationResult? = null
+        internal set
+
+    @Volatile
     var runtimeFacadeFactory: () -> MvpRuntimeFacade = productionRuntimeFacadeFactory
 
     fun resetRuntimeFacadeFactoryForTests() {
@@ -80,6 +86,7 @@ object AppRuntimeDependencies {
         warmupOrchestrator.cancelActiveWarmup()
         lifecycleState.value = RuntimeModelLifecycleSnapshot.initial()
         lifecycleActionToken = 0L
+        lastMemoryEstimate = null
         synchronized(lock) {
             runtimeGraph = null
         }
@@ -223,6 +230,10 @@ object AppRuntimeDependencies {
         getOrCreateRuntimeGraph(context).modelDownloadManager.cancelDownload(taskId)
     }
 
+    fun syncDownloadsFromWorkManager(context: Context) {
+        getOrCreateRuntimeGraph(context).modelDownloadManager.syncFromWorkManagerState()
+    }
+
     fun observeDownloads(context: Context): StateFlow<List<DownloadTaskState>> {
         return getOrCreateRuntimeGraph(context).modelDownloadManager.observeDownloads()
     }
@@ -249,6 +260,7 @@ object AppRuntimeDependencies {
             requestedModel = requestedModel,
             errorCode = null,
             errorDetail = null,
+            loadingDetail = "Checking model availability...",
             queuedOffload = false,
             updatedAtEpochMs = System.currentTimeMillis(),
         )
@@ -279,6 +291,30 @@ object AppRuntimeDependencies {
                 applyLifecycleCommandResult(missing, requestedModel = requestedModel)
                 return@withLock missing
             }
+            lifecycleState.value = lifecycleState.value.copy(
+                loadingDetail = "Checking available memory...",
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+            val memoryEstimate = runCatching {
+                val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                val memInfo = ActivityManager.MemoryInfo()
+                activityManager?.getMemoryInfo(memInfo)
+                val availableBytes = memInfo.availMem.takeIf { it > 0L }
+                ModelMemoryEstimator.estimate(
+                    modelFilePath = installed.absolutePath,
+                    availableMemoryBytes = availableBytes,
+                )
+            }.getOrNull()
+            lastMemoryEstimate = memoryEstimate
+            if (memoryEstimate?.fitsInMemory == false) {
+                Log.w("AppRuntimeDeps",
+                    "MEMORY_WARNING|model=$modelId|estimated_mb=%.0f|available_mb=%.0f".format(
+                        memoryEstimate.estimatedMb,
+                        memoryEstimate.availableMemoryMb ?: 0.0,
+                    ),
+                )
+            }
+
             val activated = graph.provisioningStore.setActiveVersion(modelId = modelId, version = version)
             if (!activated) {
                 val failed = RuntimeModelLifecycleCommandResult.rejected(
@@ -288,7 +324,22 @@ object AppRuntimeDependencies {
                 applyLifecycleCommandResult(failed, requestedModel = requestedModel)
                 return@withLock failed
             }
+            val previousModelLoaded = lifecycleState.value.loadedModel != null
+            if (previousModelLoaded) {
+                lifecycleState.value = lifecycleState.value.copy(
+                    loadingDetail = "Releasing previous model...",
+                    updatedAtEpochMs = System.currentTimeMillis(),
+                )
+            }
+            lifecycleState.value = lifecycleState.value.copy(
+                loadingDetail = "Initializing runtime...",
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
             installProductionRuntime(context)
+            lifecycleState.value = lifecycleState.value.copy(
+                loadingDetail = "Loading model...",
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
             val result = graph.runtimeFacade.loadModel(modelId = modelId, modelVersion = version)
             if (token != lifecycleActionToken) {
                 if (result.success) {

@@ -1,23 +1,32 @@
 package com.pocketagent.android.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -63,12 +72,18 @@ internal fun ModelProvisioningSheet(
     onRemoveVersion: (String, String) -> Unit,
     onRefreshManifest: () -> Unit,
     onRefreshRuntime: () -> Unit,
+    onRefreshAll: () -> Unit,
     onClose: () -> Unit,
 ) {
     val defaultModelVersion = resolveDefaultGetReadyVersion(
         manifest = manifest,
         defaultModelId = defaultGetReadyModelId,
     )
+
+    var searchQuery by remember { mutableStateOf("") }
+    var filterDownloaded by remember { mutableStateOf(false) }
+    var filterInProgress by remember { mutableStateOf(false) }
+    var filterAvailable by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -78,11 +93,23 @@ internal fun ModelProvisioningSheet(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text(
-                text = stringResource(id = R.string.ui_model_provisioning_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(id = R.string.ui_model_provisioning_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                OutlinedButton(
+                    onClick = onRefreshAll,
+                    enabled = !isImporting,
+                ) {
+                    Text(stringResource(id = R.string.ui_model_refresh_all))
+                }
+            }
         }
         item {
             Text(
@@ -90,6 +117,39 @@ internal fun ModelProvisioningSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("model_search_field"),
+                placeholder = { Text(stringResource(id = R.string.ui_model_search_placeholder)) },
+                singleLine = true,
+            )
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = filterDownloaded,
+                    onClick = { filterDownloaded = !filterDownloaded },
+                    label = { Text(stringResource(id = R.string.ui_model_filter_downloaded)) },
+                )
+                FilterChip(
+                    selected = filterInProgress,
+                    onClick = { filterInProgress = !filterInProgress },
+                    label = { Text(stringResource(id = R.string.ui_model_filter_in_progress)) },
+                )
+                FilterChip(
+                    selected = filterAvailable,
+                    onClick = { filterAvailable = !filterAvailable },
+                    label = { Text(stringResource(id = R.string.ui_model_filter_available)) },
+                )
+            }
         }
         if (snapshot.recoverableCorruptions.isNotEmpty()) {
             item {
@@ -348,9 +408,28 @@ internal fun ModelProvisioningSheet(
             }
         }
 
-        val versions = manifest.models
+        val allVersions = manifest.models
             .flatMap { it.versions }
             .distinctBy { version -> "${version.modelId}:${version.version}" }
+        val versions = allVersions.filter { version ->
+            val matchesSearch = searchQuery.isBlank() ||
+                version.modelId.contains(searchQuery, ignoreCase = true) ||
+                version.version.contains(searchQuery, ignoreCase = true)
+            if (!matchesSearch) return@filter false
+            if (!filterDownloaded && !filterInProgress && !filterAvailable) return@filter true
+            val latestTask = downloads.firstOrNull {
+                it.modelId == version.modelId && it.version == version.version
+            }
+            val isInstalled = latestTask?.terminal == true &&
+                (latestTask.status == DownloadTaskStatus.COMPLETED || latestTask.status == DownloadTaskStatus.INSTALLED_INACTIVE)
+            val isActive = latestTask != null && !latestTask.terminal
+            val isAvail = latestTask == null || latestTask.terminal &&
+                latestTask.status != DownloadTaskStatus.COMPLETED &&
+                latestTask.status != DownloadTaskStatus.INSTALLED_INACTIVE
+            (filterDownloaded && isInstalled) ||
+                (filterInProgress && isActive) ||
+                (filterAvailable && isAvail)
+        }
         if (versions.isEmpty()) {
             item {
                 Text(
@@ -533,7 +612,12 @@ internal fun ModelProvisioningSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        snapshot.models.forEach { model ->
+        val filteredModels = snapshot.models.filter { model ->
+            searchQuery.isBlank() ||
+                model.modelId.contains(searchQuery, ignoreCase = true) ||
+                model.displayName.contains(searchQuery, ignoreCase = true)
+        }
+        filteredModels.forEach { model ->
             items(
                 model.installedVersions,
                 key = { version ->
@@ -675,24 +759,91 @@ internal fun ModelProvisioningSheet(
 
         item {
             val storage = snapshot.storageSummary
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(
-                        id = R.string.ui_model_storage_summary_human,
-                        storage.totalBytes.formatAsGiB(),
-                        storage.freeBytes.formatAsGiB(),
-                        storage.usedByModelsBytes.formatAsGiB(),
-                        storage.tempDownloadBytes.formatAsGiB(),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                snapshot.storageRootLabel?.takeIf { it.isNotBlank() }?.let { rootLabel ->
+            Card {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Text(
-                        text = stringResource(id = R.string.ui_model_storage_root_label, rootLabel),
+                        text = stringResource(id = R.string.ui_model_storage_section_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (storage.totalBytes > 0L) {
+                        val usedFraction = ((storage.usedByModelsBytes + storage.tempDownloadBytes).toFloat() / storage.totalBytes).coerceIn(0f, 1f)
+                        val totalUsedFraction = (1f - (storage.freeBytes.toFloat() / storage.totalBytes)).coerceIn(0f, 1f)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(MaterialTheme.shapes.small),
+                        ) {
+                            LinearProgressIndicator(
+                                progress = { totalUsedFraction },
+                                modifier = Modifier.fillMaxWidth().height(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            )
+                            LinearProgressIndicator(
+                                progress = { usedFraction },
+                                modifier = Modifier.fillMaxWidth().height(8.dp),
+                                color = if (usedFraction > 0.85f) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0f),
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_storage_models_label,
+                                storage.usedByModelsBytes.formatAsGiB(),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_storage_free_label,
+                                storage.freeBytes.formatAsGiB(),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (storage.tempDownloadBytes > 0L) {
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_storage_temp_label,
+                                storage.tempDownloadBytes.formatAsGiB(),
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_model_storage_total_label,
+                            storage.totalBytes.formatAsGiB(),
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    snapshot.storageRootLabel?.takeIf { it.isNotBlank() }?.let { rootLabel ->
+                        Text(
+                            text = stringResource(id = R.string.ui_model_storage_root_label, rootLabel),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
