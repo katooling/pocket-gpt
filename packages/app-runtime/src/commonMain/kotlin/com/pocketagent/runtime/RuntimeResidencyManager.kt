@@ -24,6 +24,13 @@ internal class RuntimeResidencyManager(
     private var activeRequestCount: Int = 0
     private var pendingUnloadReason: String? = null
     private var lastUnloadReason: String = "none"
+    private val autoReleaseDisableReasons: MutableSet<String> = mutableSetOf()
+    @Volatile
+    var wasAutoReleased: Boolean = false
+        private set
+    @Volatile
+    var lastAutoReleasedModelId: String? = null
+        private set
 
     fun ensureLoaded(modelId: String, slotId: String, keepAliveMs: Long): Boolean {
         val safeKeepAliveMs = keepAliveMs.coerceAtLeast(1L)
@@ -122,11 +129,49 @@ internal class RuntimeResidencyManager(
         }
     }
 
-    fun onAppBackground(): Boolean = unload(reason = "app_background")
+    fun onAppBackground(): Boolean {
+        synchronized(lock) {
+            if (autoReleaseDisableReasons.isNotEmpty()) {
+                return false
+            }
+            val modelId = residentSlot?.modelId
+            if (modelId != null) {
+                wasAutoReleased = true
+                lastAutoReleasedModelId = modelId
+            }
+        }
+        return unload(reason = "app_background")
+    }
+
+    fun addAutoReleaseDisableReason(reason: String) {
+        synchronized(lock) {
+            autoReleaseDisableReasons.add(reason)
+        }
+    }
+
+    fun removeAutoReleaseDisableReason(reason: String) {
+        synchronized(lock) {
+            autoReleaseDisableReasons.remove(reason)
+        }
+    }
+
+    fun shouldAutoRelease(): Boolean {
+        synchronized(lock) {
+            return autoReleaseDisableReasons.isEmpty()
+        }
+    }
+
+    fun clearAutoReleasedState() {
+        wasAutoReleased = false
+        lastAutoReleasedModelId = null
+    }
 
     fun onGenerationStarted() {
         synchronized(lock) {
             activeRequestCount += 1
+            if (activeRequestCount == 1) {
+                autoReleaseDisableReasons.add(AUTO_RELEASE_REASON_ACTIVE_GENERATION)
+            }
             cancelTimerLocked()
         }
     }
@@ -135,6 +180,9 @@ internal class RuntimeResidencyManager(
         var queuedReason: String? = null
         synchronized(lock) {
             activeRequestCount = (activeRequestCount - 1).coerceAtLeast(0)
+            if (activeRequestCount == 0) {
+                autoReleaseDisableReasons.remove(AUTO_RELEASE_REASON_ACTIVE_GENERATION)
+            }
             if (slotId != null && keepAliveMs != null) {
                 val current = residentSlot
                 if (current != null && current.slotId == slotId) {
@@ -282,6 +330,7 @@ internal class RuntimeResidencyManager(
         private const val TRIM_MEMORY_RUNNING_MODERATE = 5
         private const val TRIM_MEMORY_RUNNING_LOW = 10
         private const val TRIM_MEMORY_RUNNING_CRITICAL = 15
+        private const val AUTO_RELEASE_REASON_ACTIVE_GENERATION = "active_generation"
     }
 
     private fun sanitizeReason(reason: String): String {

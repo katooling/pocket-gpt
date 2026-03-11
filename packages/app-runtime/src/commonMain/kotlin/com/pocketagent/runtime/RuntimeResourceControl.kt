@@ -17,4 +17,7 @@ interface RuntimeResourceControl {
     fun shortenKeepAlive(ttlMs: Long): Boolean = false
     fun onTrimMemory(level: Int): Boolean = false
     fun onAppBackground(): Boolean = false
+    fun onAppForeground(): Boolean = false
+    fun addAutoReleaseDisableReason(reason: String) = Unit
+    fun removeAutoReleaseDisableReason(reason: String) = Unit
 }

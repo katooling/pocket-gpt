@@ -225,6 +225,9 @@ interface RuntimeContainer {
     fun shortenKeepAlive(ttlMs: Long): Boolean = false
     fun onTrimMemory(level: Int): Boolean = false
     fun onAppBackground(): Boolean = false
+    fun onAppForeground(): Boolean = false
+    fun addAutoReleaseDisableReason(reason: String) = Unit
+    fun removeAutoReleaseDisableReason(reason: String) = Unit
     fun restoreSession(sessionId: SessionId, turns: List<Turn>)
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String? = null
@@ -448,6 +451,12 @@ class DefaultMvpRuntimeFacade(
 
     override fun onAppBackground(): Boolean = container.onAppBackground()
 
+    override fun onAppForeground(): Boolean = container.onAppForeground()
+
+    override fun addAutoReleaseDisableReason(reason: String) = container.addAutoReleaseDisableReason(reason)
+
+    override fun removeAutoReleaseDisableReason(reason: String) = container.removeAutoReleaseDisableReason(reason)
+
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         container.restoreSession(sessionId = sessionId, turns = turns)
     }
@@ -582,6 +591,12 @@ class DefaultRuntimeContainer(
     override fun onTrimMemory(level: Int): Boolean = orchestrator.onTrimMemory(level)
 
     override fun onAppBackground(): Boolean = orchestrator.onAppBackground()
+
+    override fun onAppForeground(): Boolean = orchestrator.onAppForeground()
+
+    override fun addAutoReleaseDisableReason(reason: String) = orchestrator.addAutoReleaseDisableReason(reason)
+
+    override fun removeAutoReleaseDisableReason(reason: String) = orchestrator.removeAutoReleaseDisableReason(reason)
 
     override fun restoreSession(sessionId: SessionId, turns: List<Turn>) {
         orchestrator.restoreSession(sessionId = sessionId, turns = turns)

@@ -5,6 +5,9 @@ import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class InferenceExecutor(
     private val inferenceModule: InferenceModule,
@@ -12,6 +15,7 @@ class InferenceExecutor(
 ) {
     private val activeByRequestId = ConcurrentHashMap<String, ActiveGenerationState>()
     private val activeBySessionId = ConcurrentHashMap<String, ActiveGenerationState>()
+    private val idleLatch = AtomicReference<CountDownLatch?>(null)
 
     fun execute(
         sessionId: String,
@@ -135,6 +139,9 @@ class InferenceExecutor(
         } finally {
             activeByRequestId.remove(requestId)
             activeBySessionId.remove(sessionId)
+            if (activeByRequestId.isEmpty()) {
+                idleLatch.getAndSet(null)?.countDown()
+            }
         }
     }
 
@@ -186,6 +193,25 @@ class InferenceExecutor(
                 detail = "sessionId=$sessionId",
             )
         return cancelByRequestDetailed(active.requestId)
+    }
+
+    fun isIdle(): Boolean = activeByRequestId.isEmpty()
+
+    fun cancelAllAndAwaitIdle(timeoutMs: Long = 5_000L): Boolean {
+        if (activeByRequestId.isEmpty()) {
+            return true
+        }
+        val latch = CountDownLatch(1)
+        idleLatch.set(latch)
+        if (activeByRequestId.isEmpty()) {
+            idleLatch.set(null)
+            return true
+        }
+        val native = inferenceModule as? LlamaCppInferenceModule
+        for (requestId in activeByRequestId.keys.toList()) {
+            native?.cancelGeneration(requestId) ?: break
+        }
+        return latch.await(timeoutMs, TimeUnit.MILLISECONDS)
     }
 }
 
