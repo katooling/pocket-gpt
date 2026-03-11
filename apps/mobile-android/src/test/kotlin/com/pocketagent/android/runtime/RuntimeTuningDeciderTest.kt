@@ -32,7 +32,7 @@ class RuntimeTuningDeciderTest {
         assertEquals(384, next.nBatch)
         assertEquals(192, next.nUbatch)
         assertEquals(1, next.speculativeDraftGpuLayers)
-        assertTrue(next.quantizedKvCache == true)
+        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, next.kvCacheType)
         assertEquals(42L, next.updatedAtEpochMs)
         assertEquals("demote_memory_pressure", next.lastDecision)
     }
@@ -120,7 +120,7 @@ class RuntimeTuningDeciderTest {
         )
         val demoted = RuntimeTuningRecommendation(
             gpuLayers = 4,
-            quantizedKvCache = true,
+            kvCacheType = com.pocketagent.nativebridge.KvCacheType.Q8_0,
             speculativeEnabled = true,
             nBatch = 256,
             nUbatch = 256,

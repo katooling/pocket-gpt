@@ -197,7 +197,7 @@ class GpuOffloadQualificationTest {
     }
 
     @Test
-    fun `qualification uses adaptive per-layer timeout for default policy`() = runTest {
+    fun `qualification adds opencl warmup budget to per-layer timeout policy`() = runTest {
         val probeClient = RecordingProbeClient(
             responseForRequest = { request ->
                 val layer = request.layerLadder.singleOrNull() ?: 0
@@ -212,6 +212,36 @@ class GpuOffloadQualificationTest {
         val qualifier = buildQualifier(
             probeClient = probeClient,
             probeRequestResolver = { testProbeRequest() },
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        val result = qualifier.evaluate(runtimeSupported = true)
+        assertEquals(GpuProbeStatus.QUALIFIED, result.status)
+        assertEquals(32, result.maxStableGpuLayers)
+        assertEquals(listOf(30_000L, 30_000L, 35_000L, 40_000L, 45_000L, 45_000L), probeClient.timeoutHistory)
+    }
+
+    @Test
+    fun `qualification keeps baseline timeout policy when opencl is not compiled`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = { request ->
+                val layer = request.layerLadder.singleOrNull() ?: 0
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = layer,
+                    detail = "probe_success",
+                )
+            },
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            diagnosticsReader = NativeBackendDiagnosticsReader(
+                payloadProvider = { diagnosticsJson(driverVersion = 1L, compiledBackend = "hexagon") },
+            ),
             scope = TestScope(dispatcher),
         )
 

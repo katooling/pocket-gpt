@@ -51,6 +51,7 @@ class AndroidGpuOffloadSupportTest {
                 override fun isAdrenoFamily(): Boolean = error("probe failed")
                 override fun hasArmDotProd(): Boolean = true
                 override fun hasArmI8mm(): Boolean = true
+                override fun adrenoGeneration(): Int = 0
             },
         )
 
@@ -62,10 +63,13 @@ private class FakeDeviceProbe(
     private val adreno: Boolean,
     private val dotProd: Boolean,
     private val i8mm: Boolean,
+    private val adrenoGeneration: Int = 7,
 ) : AndroidGpuOffloadSupport.DeviceProbe {
     override fun isAdrenoFamily(): Boolean = adreno
 
     override fun hasArmDotProd(): Boolean = dotProd
 
     override fun hasArmI8mm(): Boolean = i8mm
+
+    override fun adrenoGeneration(): Int = adrenoGeneration
 }

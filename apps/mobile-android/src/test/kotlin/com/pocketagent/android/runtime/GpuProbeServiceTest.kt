@@ -101,6 +101,7 @@ class GpuProbeServiceTest {
         assertEquals(32, result.maxStableGpuLayers)
         assertEquals(listOf(1, 2, 4, 8, 16, 32), bridge.seenLayers)
         assertTrue(bridge.generationConfigs.all { cfg -> cfg.nBatch == 256 && cfg.nUbatch == 256 })
+        assertTrue(bridge.generationConfigs.all { cfg -> cfg.kvCacheType == com.pocketagent.nativebridge.KvCacheType.F16 })
     }
 }
 
