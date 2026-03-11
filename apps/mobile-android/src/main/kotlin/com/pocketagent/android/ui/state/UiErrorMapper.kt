@@ -1,13 +1,27 @@
 package com.pocketagent.android.ui.state
 
+import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.runtime.ImageAnalysisResult
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.ToolExecutionResult
+
+enum class RecoveryAction {
+    RETRY_LOAD,
+    REDOWNLOAD_MODEL,
+    CHANGE_MODEL,
+    RESTART_APP,
+    REFRESH_CHECKS,
+    NONE,
+}
 
 data class UiError(
     val code: String,
     val userMessage: String,
     val technicalDetail: String? = null,
-)
+    val recoveryAction: RecoveryAction = RecoveryAction.NONE,
+) {
+    val recoverable: Boolean get() = recoveryAction != RecoveryAction.NONE
+}
 
 object UiErrorMapper {
     private const val STARTUP_CODE = "UI-STARTUP-001"
@@ -21,35 +35,36 @@ object UiErrorMapper {
         }
         val detail = startupChecks.joinToString(" | ")
         val normalized = detail.lowercase()
-        val userMessage = when {
+        val (userMessage, recovery) = when {
             normalized.contains("missing runtime model") ->
-                "Runtime setup is incomplete. Download or import required models, then refresh checks."
+                "Runtime setup is incomplete. Download or import required models, then refresh checks." to RecoveryAction.REDOWNLOAD_MODEL
             normalized.contains("model_artifact_config_missing") ->
-                "Runtime artifact metadata is missing. Reinstall or re-provision models, then refresh checks."
+                "Runtime artifact metadata is missing. Reinstall or re-provision models, then refresh checks." to RecoveryAction.REDOWNLOAD_MODEL
             normalized.contains("checksum_mismatch") || normalized.contains("checksum mismatch") ->
-                "Model verification failed (checksum mismatch). Re-download or re-import the model."
+                "Model verification failed (checksum mismatch). Re-download or re-import the model." to RecoveryAction.REDOWNLOAD_MODEL
             normalized.contains("provenance_issuer_mismatch") ||
                 normalized.contains("provenance_signature_mismatch") ||
                 normalized.contains("provenance") ->
-                "Model verification failed (provenance mismatch). Use a trusted model source and retry."
+                "Model verification failed (provenance mismatch). Use a trusted model source and retry." to RecoveryAction.REDOWNLOAD_MODEL
             normalized.contains("runtime_incompatible") || normalized.contains("runtime compatibility") ->
-                "Model runtime compatibility failed. Import a compatible model build and refresh checks."
+                "Model runtime compatibility failed. Import a compatible model build and refresh checks." to RecoveryAction.CHANGE_MODEL
             normalized.contains("build is missing native runtime library") ||
                 normalized.contains("libpocket_llama.so") ->
-                "This app build is missing the native runtime. Install a full build and retry."
+                "This app build is missing the native runtime. Install a full build and retry." to RecoveryAction.RESTART_APP
             normalized.contains("runtime backend is adb_fallback") || normalized.contains("runtime backend is unavailable") ->
-                "Native runtime backend is unavailable. Confirm device/runtime setup and retry."
+                "Native runtime backend is unavailable. Confirm device/runtime setup and retry." to RecoveryAction.RESTART_APP
             normalized.contains("template_unavailable") || normalized.contains("model profile missing") ->
-                "Model interaction template is unavailable. Reinstall/update model setup, then refresh checks."
+                "Model interaction template is unavailable. Reinstall/update model setup, then refresh checks." to RecoveryAction.CHANGE_MODEL
             normalized.contains("startup checks timed out") || normalized.contains("timed out") ->
-                "Runtime checks timed out. Refresh runtime checks before sending a message."
+                "Runtime checks timed out. Refresh runtime checks before sending a message." to RecoveryAction.REFRESH_CHECKS
             else ->
-                "Runtime setup is incomplete. Open model setup, refresh checks, and retry."
+                "Runtime setup is incomplete. Open model setup, refresh checks, and retry." to RecoveryAction.REFRESH_CHECKS
         }
         return UiError(
             code = STARTUP_CODE,
             userMessage = userMessage,
             technicalDetail = detail,
+            recoveryAction = recovery,
         )
     }
 
@@ -126,6 +141,7 @@ object UiErrorMapper {
             code = RUNTIME_CODE,
             userMessage = "Request failed. Please try again.",
             technicalDetail = detail,
+            recoveryAction = RecoveryAction.RETRY_LOAD,
         )
     }
 
@@ -144,6 +160,34 @@ object UiErrorMapper {
             code = RUNTIME_CODE,
             userMessage = "Request timed out. Confirm runtime readiness and retry.",
             technicalDetail = "Generation timed out after ${seconds}s.",
+            recoveryAction = RecoveryAction.REFRESH_CHECKS,
+        )
+    }
+
+    private const val MODEL_LIFECYCLE_CODE = "UI-MODEL-LIFECYCLE-001"
+
+    fun fromModelLifecycleResult(result: RuntimeModelLifecycleCommandResult): UiError? {
+        if (result.success) return null
+        val errorCode = result.errorCode ?: ModelLifecycleErrorCode.UNKNOWN
+        val (userMessage, recovery) = when (errorCode) {
+            ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE ->
+                "Model file is unavailable. Re-download or re-import the model." to RecoveryAction.REDOWNLOAD_MODEL
+            ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE ->
+                "Model is not compatible with this runtime. Choose a different model." to RecoveryAction.CHANGE_MODEL
+            ModelLifecycleErrorCode.BACKEND_INIT_FAILED ->
+                "Runtime backend failed to initialize. Restart the app and try again." to RecoveryAction.RESTART_APP
+            ModelLifecycleErrorCode.BUSY_GENERATION ->
+                "Model is busy with an active generation. Try loading again shortly." to RecoveryAction.RETRY_LOAD
+            ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST ->
+                "Load was superseded by a newer request." to RecoveryAction.NONE
+            ModelLifecycleErrorCode.UNKNOWN ->
+                "Model failed to load. Please try again." to RecoveryAction.RETRY_LOAD
+        }
+        return UiError(
+            code = MODEL_LIFECYCLE_CODE,
+            userMessage = userMessage,
+            technicalDetail = result.detail,
+            recoveryAction = recovery,
         )
     }
 }

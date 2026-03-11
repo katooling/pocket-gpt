@@ -25,12 +25,17 @@ data class MessageUiModel(
     val timestampEpochMs: Long,
     val kind: MessageKind = MessageKind.TEXT,
     val imagePath: String? = null,
+    val imagePaths: List<String> = emptyList(),
     val toolName: String? = null,
     val isStreaming: Boolean = false,
     val requestId: String? = null,
     val finishReason: String? = null,
     val terminalEventSeen: Boolean = false,
     val interaction: PersistedInteractionMessage? = null,
+    val reasoningContent: String? = null,
+    val firstTokenMs: Long? = null,
+    val tokensPerSec: Double? = null,
+    val totalLatencyMs: Long? = null,
 )
 
 data class PersistedInteractionMessage(
@@ -60,17 +65,31 @@ enum class PersistedToolCallStatus {
     FAILED,
 }
 
+data class CompletionSettings(
+    val temperature: Float = 0.7f,
+    val topP: Float = 0.9f,
+    val topK: Int = 40,
+    val maxTokens: Int = 2048,
+    val repeatPenalty: Float = 1.1f,
+    val frequencyPenalty: Float = 0.0f,
+    val presencePenalty: Float = 0.0f,
+    val systemPrompt: String = "",
+)
+
 data class ChatSessionUiModel(
     val id: String,
     val title: String,
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
     val messages: List<MessageUiModel>,
+    val completionSettings: CompletionSettings = CompletionSettings(),
 )
 
 data class ComposerUiState(
     val text: String = "",
     val isSending: Boolean = false,
+    val editingMessageId: String? = null,
+    val attachedImages: List<String> = emptyList(),
 )
 
 data class RuntimeUiState(
@@ -84,8 +103,10 @@ data class RuntimeUiState(
     val gpuProbeFailureReason: String? = null,
     val gpuMaxQualifiedLayers: Int = 0,
     val runtimeBackend: String? = null,
+    val activeBackend: String? = null,
     val backendProfile: String? = null,
     val compiledBackend: String? = null,
+    val activeModelQuantization: String? = null,
     val nativeRuntimeSupported: Boolean? = null,
     val strictAcceleratorFailFast: Boolean? = null,
     val autoBackendCpuFallback: Boolean? = null,
@@ -125,6 +146,21 @@ enum class ModelRuntimeStatus {
     ERROR,
 }
 
+enum class ModelLoadingSubState(val displayText: String) {
+    CHECKING_AVAILABILITY("Checking model availability..."),
+    RELEASING_PREVIOUS("Releasing previous model..."),
+    INITIALIZING_RUNTIME("Initializing runtime..."),
+    LOADING("Loading model..."),
+    WARMING_UP("Warming up...");
+
+    companion object {
+        fun fromDetail(detail: String?): ModelLoadingSubState? {
+            if (detail == null) return null
+            return entries.firstOrNull { it.displayText == detail }
+        }
+    }
+}
+
 enum class StartupProbeState {
     IDLE,
     RUNNING,
@@ -157,6 +193,7 @@ data class ChatUiState(
     val isAdvancedSheetOpen: Boolean = false,
     val isToolDialogOpen: Boolean = false,
     val isPrivacySheetOpen: Boolean = false,
+    val isCompletionSettingsOpen: Boolean = false,
     val showOnboarding: Boolean = false,
     val onboardingPage: Int = 0,
     val firstSessionStage: FirstSessionStage = FirstSessionStage.ONBOARDING,

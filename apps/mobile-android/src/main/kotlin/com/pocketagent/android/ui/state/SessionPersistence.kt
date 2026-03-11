@@ -180,6 +180,16 @@ internal object PersistedChatStateCodec {
                                 put("title", JsonPrimitive(session.title))
                                 put("createdAtEpochMs", JsonPrimitive(session.createdAtEpochMs))
                                 put("updatedAtEpochMs", JsonPrimitive(session.updatedAtEpochMs))
+                                put("completionSettings", buildJsonObject {
+                                    put("temperature", JsonPrimitive(session.completionSettings.temperature))
+                                    put("topP", JsonPrimitive(session.completionSettings.topP))
+                                    put("topK", JsonPrimitive(session.completionSettings.topK))
+                                    put("maxTokens", JsonPrimitive(session.completionSettings.maxTokens))
+                                    put("repeatPenalty", JsonPrimitive(session.completionSettings.repeatPenalty))
+                                    put("frequencyPenalty", JsonPrimitive(session.completionSettings.frequencyPenalty))
+                                    put("presencePenalty", JsonPrimitive(session.completionSettings.presencePenalty))
+                                    put("systemPrompt", JsonPrimitive(session.completionSettings.systemPrompt))
+                                })
                                 put(
                                     "messages",
                                     buildJsonArray {
@@ -192,12 +202,21 @@ internal object PersistedChatStateCodec {
                                                     put("timestampEpochMs", JsonPrimitive(message.timestampEpochMs))
                                                     put("kind", JsonPrimitive(message.kind.name))
                                                     message.imagePath?.let { put("imagePath", JsonPrimitive(it)) }
+                                                    if (message.imagePaths.isNotEmpty()) {
+                                                        put("imagePaths", buildJsonArray {
+                                                            message.imagePaths.forEach { add(JsonPrimitive(it)) }
+                                                        })
+                                                    }
                                                     message.toolName?.let { put("toolName", JsonPrimitive(it)) }
                                                     put("isStreaming", JsonPrimitive(message.isStreaming))
                                                     message.requestId?.let { put("requestId", JsonPrimitive(it)) }
                                                     message.finishReason?.let { put("finishReason", JsonPrimitive(it)) }
                                                     put("terminalEventSeen", JsonPrimitive(message.terminalEventSeen))
                                                     put("interaction", encodeInteraction(message))
+                                                    message.reasoningContent?.let { put("reasoningContent", JsonPrimitive(it)) }
+                                                    message.firstTokenMs?.let { put("firstTokenMs", JsonPrimitive(it)) }
+                                                    message.tokensPerSec?.let { put("tokensPerSec", JsonPrimitive(it)) }
+                                                    message.totalLatencyMs?.let { put("totalLatencyMs", JsonPrimitive(it)) }
                                                 },
                                             )
                                         }
@@ -234,8 +253,23 @@ internal object PersistedChatStateCodec {
                 createdAtEpochMs = obj.longOrDefault("createdAtEpochMs", 0L),
                 updatedAtEpochMs = obj.longOrDefault("updatedAtEpochMs", 0L),
                 messages = parseMessages(obj["messages"]),
+                completionSettings = parseCompletionSettings(obj["completionSettings"]),
             )
         }
+    }
+
+    private fun parseCompletionSettings(element: JsonElement?): CompletionSettings {
+        val obj = element?.asObjectOrNull() ?: return CompletionSettings()
+        return CompletionSettings(
+            temperature = obj.floatOrDefault("temperature", 0.7f),
+            topP = obj.floatOrDefault("topP", 0.9f),
+            topK = obj.intOrDefault("topK", 40),
+            maxTokens = obj.intOrDefault("maxTokens", 2048),
+            repeatPenalty = obj.floatOrDefault("repeatPenalty", 1.1f),
+            frequencyPenalty = obj.floatOrDefault("frequencyPenalty", 0.0f),
+            presencePenalty = obj.floatOrDefault("presencePenalty", 0.0f),
+            systemPrompt = obj.stringOrDefault("systemPrompt", ""),
+        )
     }
 
     private fun parseMessages(element: JsonElement?): List<MessageUiModel> {
@@ -249,12 +283,17 @@ internal object PersistedChatStateCodec {
                 timestampEpochMs = obj.longOrDefault("timestampEpochMs", 0L),
                 kind = parseKind(obj.stringOrDefault("kind", MessageKind.TEXT.name)),
                 imagePath = obj.stringOrNull("imagePath"),
+                imagePaths = parseStringList(obj["imagePaths"]),
                 toolName = obj.stringOrNull("toolName"),
                 isStreaming = obj.booleanOrDefault("isStreaming", false),
                 requestId = obj.stringOrNull("requestId"),
                 finishReason = obj.stringOrNull("finishReason"),
                 terminalEventSeen = obj.booleanOrDefault("terminalEventSeen", false),
                 interaction = decodeInteraction(obj),
+                reasoningContent = obj.stringOrNull("reasoningContent"),
+                firstTokenMs = obj.longOrNull("firstTokenMs"),
+                tokensPerSec = obj.doubleOrNull("tokensPerSec"),
+                totalLatencyMs = obj.longOrNull("totalLatencyMs"),
             )
         }
     }
@@ -418,6 +457,37 @@ private fun JsonObject.longOrDefault(key: String, default: Long): Long {
     val raw = runCatching { value.jsonPrimitive.content }.getOrNull()
         ?: throw IllegalArgumentException("CHAT_STATE_INVALID_LONG:$key")
     return raw.toLongOrNull() ?: throw IllegalArgumentException("CHAT_STATE_INVALID_LONG:$key")
+}
+
+private fun JsonObject.floatOrDefault(key: String, default: Float): Float {
+    val value = this[key] ?: return default
+    val raw = runCatching { value.jsonPrimitive.content }.getOrNull() ?: return default
+    return raw.toFloatOrNull() ?: default
+}
+
+private fun JsonObject.intOrDefault(key: String, default: Int): Int {
+    val value = this[key] ?: return default
+    val raw = runCatching { value.jsonPrimitive.content }.getOrNull() ?: return default
+    return raw.toIntOrNull() ?: default
+}
+
+private fun JsonObject.longOrNull(key: String): Long? {
+    val value = this[key] ?: return null
+    val raw = runCatching { value.jsonPrimitive.content }.getOrNull() ?: return null
+    return raw.toLongOrNull()
+}
+
+private fun JsonObject.doubleOrNull(key: String): Double? {
+    val value = this[key] ?: return null
+    val raw = runCatching { value.jsonPrimitive.content }.getOrNull() ?: return null
+    return raw.toDoubleOrNull()
+}
+
+private fun parseStringList(element: JsonElement?): List<String> {
+    val array = element as? JsonArray ?: return emptyList()
+    return array.mapNotNull { item ->
+        runCatching { item.jsonPrimitive.content }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
 }
 
 private fun JsonObject.booleanOrDefault(key: String, default: Boolean): Boolean {
