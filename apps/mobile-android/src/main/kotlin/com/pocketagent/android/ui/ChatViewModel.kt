@@ -26,6 +26,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
+import com.pocketagent.android.ui.state.CompletionSettings
 import com.pocketagent.android.ui.state.ComposerUiState
 import com.pocketagent.android.ui.state.FirstSessionStage
 import com.pocketagent.android.ui.state.FirstSessionTelemetryEvent
@@ -159,6 +160,132 @@ class ChatViewModel(
 
     fun sendMessage() {
         sendMessageInternal()
+    }
+
+    fun editMessage(messageId: String) {
+        val snapshot = _uiState.value
+        val activeSession = snapshot.activeSession ?: return
+        val message = activeSession.messages.firstOrNull { it.id == messageId } ?: return
+        if (message.role != MessageRole.USER) return
+        _uiState.update { state ->
+            state.copy(
+                composer = state.composer.copy(
+                    text = message.content,
+                    editingMessageId = messageId,
+                    attachedImages = message.imagePaths.ifEmpty {
+                        listOfNotNull(message.imagePath)
+                    },
+                ),
+            )
+        }
+    }
+
+    fun cancelEdit() {
+        _uiState.update { state ->
+            state.copy(
+                composer = state.composer.copy(
+                    text = "",
+                    editingMessageId = null,
+                    attachedImages = emptyList(),
+                ),
+            )
+        }
+    }
+
+    fun submitEdit() {
+        val snapshot = _uiState.value
+        val activeSession = snapshot.activeSession ?: return
+        val editingId = snapshot.composer.editingMessageId ?: return
+        val editIndex = activeSession.messages.indexOfFirst { it.id == editingId }
+        if (editIndex < 0) return
+
+        // Remove the edited message and all subsequent messages
+        val trimmedMessages = activeSession.messages.take(editIndex)
+        updateActiveSession(activeSession.id) { session ->
+            session.copy(
+                messages = trimmedMessages,
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+        }
+        _uiState.update { state ->
+            state.copy(
+                composer = state.composer.copy(editingMessageId = null),
+            )
+        }
+        persistState()
+        // Now send the edited text as a new message
+        sendMessage()
+    }
+
+    fun regenerateResponse(messageId: String) {
+        val snapshot = _uiState.value
+        val activeSession = snapshot.activeSession ?: return
+        val messageIndex = activeSession.messages.indexOfFirst { it.id == messageId }
+        if (messageIndex < 0) return
+        val message = activeSession.messages[messageIndex]
+        if (message.role != MessageRole.ASSISTANT) return
+
+        // Find the last user message before this assistant message
+        val userMessage = activeSession.messages.take(messageIndex)
+            .lastOrNull { it.role == MessageRole.USER }
+            ?: return
+
+        // Remove the assistant message and everything after it
+        val trimmedMessages = activeSession.messages.take(messageIndex)
+        updateActiveSession(activeSession.id) { session ->
+            session.copy(
+                messages = trimmedMessages,
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
+        }
+
+        // Re-send from the last user message's content
+        _uiState.update { state ->
+            state.copy(
+                composer = state.composer.copy(
+                    text = userMessage.content,
+                    attachedImages = userMessage.imagePaths.ifEmpty {
+                        listOfNotNull(userMessage.imagePath)
+                    },
+                ),
+            )
+        }
+        persistState()
+        sendMessage()
+    }
+
+    fun updateSessionCompletionSettings(settings: CompletionSettings) {
+        val activeSession = _uiState.value.activeSession ?: return
+        updateActiveSession(activeSession.id) { session ->
+            session.copy(completionSettings = settings)
+        }
+        persistState()
+    }
+
+    fun setCompletionSettingsOpen(isOpen: Boolean) {
+        _uiState.update { it.copy(isCompletionSettingsOpen = isOpen) }
+    }
+
+    fun addAttachedImage(imagePath: String) {
+        _uiState.update { state ->
+            val current = state.composer.attachedImages
+            if (current.size >= 5) return@update state
+            state.copy(
+                composer = state.composer.copy(
+                    attachedImages = current + imagePath,
+                ),
+            )
+        }
+    }
+
+    fun removeAttachedImage(index: Int) {
+        _uiState.update { state ->
+            val current = state.composer.attachedImages.toMutableList()
+            if (index in current.indices) current.removeAt(index)
+            state.copy(
+                composer = state.composer.copy(attachedImages = current),
+            )
+        }
     }
 
     fun cancelActiveSend() {
@@ -669,11 +796,16 @@ class ChatViewModel(
         viewModelScope.launch(ioDispatcher) {
             val diagnostics = runCatching { runtimeFacade.runtimeDiagnosticsSnapshot() }
                 .getOrDefault(com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshot())
+            val loadedModel = runCatching { runtimeFacade.loadedModel() }.getOrNull()
             _uiState.update { state ->
                 state.copy(
                     runtime = state.runtime.copy(
+                        activeModelId = loadedModel?.modelId ?: state.runtime.activeModelId,
+                        activeBackend = diagnostics.activeBackend ?: state.runtime.activeBackend,
                         backendProfile = diagnostics.backendProfile ?: state.runtime.backendProfile,
                         compiledBackend = diagnostics.compiledBackend ?: state.runtime.compiledBackend,
+                        activeModelQuantization = diagnostics.activeModelQuantization
+                            ?: state.runtime.activeModelQuantization,
                         nativeRuntimeSupported = diagnostics.nativeRuntimeSupported
                             ?: state.runtime.nativeRuntimeSupported,
                         strictAcceleratorFailFast = diagnostics.strictAcceleratorFailFast
@@ -736,6 +868,9 @@ class ChatViewModel(
         requestId: String? = null,
         finishReason: String? = null,
         terminalEventSeen: Boolean = true,
+        firstTokenMs: Long? = null,
+        tokensPerSec: Double? = null,
+        totalLatencyMs: Long? = null,
     ) {
         updateActiveSession(sessionId) { session ->
             val updatedMessages = session.messages.map { message ->
@@ -758,6 +893,9 @@ class ChatViewModel(
                             parts = listOf(PersistedInteractionPart(type = "text", text = finalText)),
                             metadata = (message.interaction?.metadata ?: emptyMap()) + ("state" to "final"),
                         ),
+                        firstTokenMs = firstTokenMs,
+                        tokensPerSec = tokensPerSec,
+                        totalLatencyMs = totalLatencyMs,
                     )
                 }
             }
@@ -860,6 +998,7 @@ class ChatViewModel(
         content: String,
         kind: MessageKind,
         imagePath: String? = null,
+        imagePaths: List<String> = emptyList(),
         toolName: String? = null,
         toolArgsJson: String? = null,
         toolCallId: String? = null,
@@ -873,6 +1012,7 @@ class ChatViewModel(
             content = content,
             kind = kind,
             imagePath = imagePath,
+            imagePaths = imagePaths,
             toolName = toolName,
             toolArgsJson = toolArgsJson,
             toolCallId = toolCallId,

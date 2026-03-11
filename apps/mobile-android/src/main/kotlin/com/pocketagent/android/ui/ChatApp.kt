@@ -171,7 +171,7 @@ fun PocketAgentApp(
         }
     }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { viewModel.attachImage(it.toString()) }
+        uri?.let { viewModel.addAttachedImage(it.toString()) }
     }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         val modelId = selectedModelIdForImport ?: return@rememberLauncherForActivityResult
@@ -375,12 +375,18 @@ fun PocketAgentApp(
                     text = state.composer.text,
                     isSending = state.composer.isSending,
                     chatGateState = chatGateState,
+                    editingMessageId = state.composer.editingMessageId,
+                    attachedImages = state.composer.attachedImages,
                     onTextChanged = viewModel::onComposerChanged,
                     onSend = viewModel::sendMessage,
                     onCancelSend = viewModel::cancelActiveSend,
+                    onSubmitEdit = viewModel::submitEdit,
+                    onCancelEdit = viewModel::cancelEdit,
                     onAttachImage = {
                         imagePicker.launch("image/*")
                     },
+                    onRemoveImage = viewModel::removeAttachedImage,
+                    onOpenCompletionSettings = { viewModel.setCompletionSettingsOpen(true) },
                     onBlockedAction = onBlockedAction,
                 )
             },
@@ -415,6 +421,8 @@ fun PocketAgentApp(
                 activeRuntimeModelSourceLabel = activeRuntimeModelSourceLabel,
                 onOpenAdvanced = { viewModel.setAdvancedSheetOpen(true) },
                 onRefreshRuntimeChecks = refreshRuntimeChecksAction,
+                onEditMessage = viewModel::editMessage,
+                onRegenerateMessage = viewModel::regenerateResponse,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -456,6 +464,20 @@ fun PocketAgentApp(
                     provisioningViewModel.refreshSnapshot()
                     modelSheetOpen = true
                 },
+            )
+        }
+    }
+
+    if (state.isCompletionSettingsOpen) {
+        val completionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.setCompletionSettingsOpen(false) },
+            sheetState = completionSheetState,
+        ) {
+            CompletionSettingsSheet(
+                settings = state.activeSession?.completionSettings ?: com.pocketagent.android.ui.state.CompletionSettings(),
+                onSettingsChanged = viewModel::updateSessionCompletionSettings,
+                onClose = { viewModel.setCompletionSettingsOpen(false) },
             )
         }
     }
@@ -621,6 +643,17 @@ fun PocketAgentApp(
                     provisioningViewModel.setStatusMessage(
                         context.getString(R.string.ui_model_refresh_runtime_feedback),
                     )
+                },
+                onRefreshAll = {
+                    scope.launch {
+                        provisioningViewModel.refreshManifest()
+                        provisioningViewModel.refreshDownloads()
+                        provisioningViewModel.refreshSnapshot()
+                        viewModel.refreshRuntimeReadiness()
+                        provisioningViewModel.setStatusMessage(
+                            context.getString(R.string.ui_model_refresh_runtime_feedback),
+                        )
+                    }
                 },
                 onClose = { modelSheetOpen = false },
             )

@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -15,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,7 +29,64 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
+import java.util.Calendar
+import java.util.concurrent.TimeUnit
+
+private enum class SessionDateGroup(val label: String) {
+    TODAY("Today"),
+    YESTERDAY("Yesterday"),
+    THIS_WEEK("This Week"),
+    LAST_WEEK("Last Week"),
+    THIS_MONTH("This Month"),
+    OLDER("Older"),
+}
+
+private fun classifyDateGroup(timestampMs: Long, nowMs: Long): SessionDateGroup {
+    val cal = Calendar.getInstance().apply { timeInMillis = nowMs }
+    val todayStart = Calendar.getInstance().apply {
+        timeInMillis = nowMs
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val yesterdayStart = todayStart - TimeUnit.DAYS.toMillis(1)
+    val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+    val daysFromMonday = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
+    val thisWeekStart = todayStart - TimeUnit.DAYS.toMillis(daysFromMonday.toLong())
+    val lastWeekStart = thisWeekStart - TimeUnit.DAYS.toMillis(7)
+    val thisMonthStart = Calendar.getInstance().apply {
+        timeInMillis = nowMs
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    return when {
+        timestampMs >= todayStart -> SessionDateGroup.TODAY
+        timestampMs >= yesterdayStart -> SessionDateGroup.YESTERDAY
+        timestampMs >= thisWeekStart -> SessionDateGroup.THIS_WEEK
+        timestampMs >= lastWeekStart -> SessionDateGroup.LAST_WEEK
+        timestampMs >= thisMonthStart -> SessionDateGroup.THIS_MONTH
+        else -> SessionDateGroup.OLDER
+    }
+}
+
+private fun groupSessionsByDate(
+    sessions: List<ChatSessionUiModel>,
+): List<Pair<SessionDateGroup, List<ChatSessionUiModel>>> {
+    val nowMs = System.currentTimeMillis()
+    val grouped = sessions
+        .sortedByDescending { it.updatedAtEpochMs }
+        .groupBy { classifyDateGroup(it.updatedAtEpochMs, nowMs) }
+    return SessionDateGroup.entries.mapNotNull { group ->
+        grouped[group]?.let { group to it }
+    }
+}
 
 @Composable
 internal fun SessionDrawer(
@@ -36,77 +96,116 @@ internal fun SessionDrawer(
     onDeleteSession: (String) -> Unit,
 ) {
     val createSessionDescription = stringResource(id = R.string.a11y_create_session)
+    val groupedSessions = remember(state.sessions) {
+        groupSessionsByDate(state.sessions)
+    }
+
+    LazyColumn {
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(id = R.string.ui_sessions_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                IconButton(onClick = onCreateSession) {
+                    Icon(Icons.Default.Add, contentDescription = createSessionDescription)
+                }
+            }
+            HorizontalDivider()
+        }
+
+        if (state.sessions.isEmpty()) {
+            item {
+                Text(
+                    text = stringResource(id = R.string.ui_no_sessions_yet),
+                    modifier = Modifier.padding(16.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        groupedSessions.forEach { (group, sessions) ->
+            item(key = "header-${group.name}") {
+                Text(
+                    text = group.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            items(sessions, key = { it.id }) { session ->
+                SessionRow(
+                    session = session,
+                    isActive = session.id == state.activeSessionId,
+                    onSwitchSession = onSwitchSession,
+                    onDeleteSession = onDeleteSession,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionRow(
+    session: ChatSessionUiModel,
+    isActive: Boolean,
+    onSwitchSession: (String) -> Unit,
+    onDeleteSession: (String) -> Unit,
+) {
+    val activeStateDescription = if (isActive) {
+        stringResource(id = R.string.a11y_session_active)
+    } else {
+        stringResource(id = R.string.a11y_session_inactive)
+    }
+    val switchSessionDescription = stringResource(
+        id = R.string.a11y_switch_session,
+        session.title,
+    )
+    val deleteSessionDescription = stringResource(
+        id = R.string.a11y_delete_session,
+        session.title,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(if (isActive) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .semantics {
+                selected = isActive
+                stateDescription = activeStateDescription
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(id = R.string.ui_sessions_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        IconButton(onClick = onCreateSession) {
-            Icon(Icons.Default.Add, contentDescription = createSessionDescription)
-        }
-    }
-    HorizontalDivider()
-    if (state.sessions.isEmpty()) {
-        Text(
-            text = stringResource(id = R.string.ui_no_sessions_yet),
-            modifier = Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    state.sessions.forEach { session ->
-        val isActive = session.id == state.activeSessionId
-        val activeStateDescription = if (isActive) {
-            stringResource(id = R.string.a11y_session_active)
-        } else {
-            stringResource(id = R.string.a11y_session_inactive)
-        }
-        val switchSessionDescription = stringResource(
-            id = R.string.a11y_switch_session,
-            session.title,
-        )
-        val deleteSessionDescription = stringResource(
-            id = R.string.a11y_delete_session,
-            session.title,
-        )
-        Row(
+        TextButton(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(if (isActive) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                .weight(1f)
                 .semantics {
-                    selected = isActive
-                    stateDescription = activeStateDescription
-                }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(
-                modifier = Modifier.semantics {
                     contentDescription = switchSessionDescription
                 },
-                onClick = { onSwitchSession(session.id) },
-            ) {
-                Text(
-                    text = session.title,
-                    maxLines = 1,
-                    color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            IconButton(
-                modifier = Modifier.semantics {
-                    contentDescription = deleteSessionDescription
-                },
-                onClick = { onDeleteSession(session.id) },
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-            }
+            onClick = { onSwitchSession(session.id) },
+        ) {
+            Text(
+                text = session.title,
+                maxLines = 1,
+                color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        IconButton(
+            modifier = Modifier.semantics {
+                contentDescription = deleteSessionDescription
+            },
+            onClick = { onDeleteSession(session.id) },
+        ) {
+            Icon(Icons.Default.Delete, contentDescription = null)
         }
     }
 }

@@ -43,10 +43,13 @@ internal fun ChatViewModel.sendMessageInternal() {
     val performanceConfig = performancePlan.effectiveConfig
     val targetPerformanceConfig = performancePlan.baseConfig
     val requestTimeoutMs = sendFlow.resolveRequestTimeoutMs(performanceConfig)
+    val attachedImages = snapshot.composer.attachedImages
     val userMessage = createMessage(
         role = MessageRole.USER,
         content = prompt,
-        kind = MessageKind.TEXT,
+        kind = if (attachedImages.isNotEmpty()) MessageKind.IMAGE else MessageKind.TEXT,
+        imagePath = attachedImages.firstOrNull(),
+        imagePaths = attachedImages,
     )
 
     updateActiveSession(activeSession.id) { session ->
@@ -206,14 +209,6 @@ internal fun ChatViewModel.sendMessageInternal() {
                 return
             }
             val finalText = terminal.responseText?.trim().orEmpty()
-            finalizeStreamingMessage(
-                sessionId = activeSession.id,
-                messageId = assistantMessageId,
-                finalText = finalText,
-                requestId = terminal.requestId,
-                finishReason = terminal.finishReason,
-                terminalEventSeen = terminal.terminalEventSeen,
-            )
             val effectiveFirstToken = terminal.firstTokenMs
             val effectiveCompletion = terminal.completionMs ?: (System.currentTimeMillis() - sendStartedAtMs)
             val runtimeStats = terminal.runtimeStats
@@ -233,6 +228,18 @@ internal fun ChatViewModel.sendMessageInternal() {
             } else {
                 null
             }
+            // Finalize the message with per-message generation metrics
+            finalizeStreamingMessage(
+                sessionId = activeSession.id,
+                messageId = assistantMessageId,
+                finalText = finalText,
+                requestId = terminal.requestId,
+                finishReason = terminal.finishReason,
+                terminalEventSeen = terminal.terminalEventSeen,
+                firstTokenMs = effectiveFirstToken,
+                tokensPerSec = tokensPerSecEstimate,
+                totalLatencyMs = effectiveCompletion,
+            )
             val resolvedRuntimeStats = runtimeStats ?: RuntimeExecutionStats(
                 prefillMs = effectivePrefill,
                 decodeMs = effectiveDecode,

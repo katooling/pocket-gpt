@@ -35,6 +35,7 @@ import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
+import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.runtime.RuntimePerformanceProfile
@@ -178,6 +179,13 @@ internal fun AdvancedSettingsSheet(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (shouldShowOpenClQuantizationWarning(state)) {
+            Text(
+                text = stringResource(id = R.string.ui_gpu_acceleration_opencl_quant_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
 
         HorizontalDivider()
         Text(stringResource(id = R.string.ui_model_selection_title), style = MaterialTheme.typography.labelLarge)
@@ -316,3 +324,48 @@ private fun keepAlivePreferenceLabel(preference: RuntimeKeepAlivePreference): St
         RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY -> stringResource(id = R.string.ui_keep_alive_unload_immediately)
     }
 }
+
+private fun shouldShowOpenClQuantizationWarning(state: ChatUiState): Boolean {
+    return shouldShowOpenClQuantizationWarning(runtime = state.runtime)
+}
+
+internal fun shouldShowOpenClQuantizationWarning(runtime: RuntimeUiState): Boolean {
+    if (!runtime.gpuAccelerationEnabled) {
+        return false
+    }
+    val activeBackend = runtime.activeBackend?.trim()?.lowercase().orEmpty()
+    val backendProfile = runtime.backendProfile?.trim()?.lowercase().orEmpty()
+    val compiledBackends = runtime.compiledBackend?.trim()?.lowercase().orEmpty()
+    // Keep warning visible even if load was demoted to CPU because the selected
+    // profile can still be OpenCL, and unsupported quantization is the reason.
+    val backendMayUseOpenCl = activeBackend == "opencl" ||
+        backendProfile == "opencl" ||
+        (backendProfile == "auto" && compiledBackends.contains("opencl"))
+    if (!backendMayUseOpenCl) {
+        return false
+    }
+    val quantHint = runtime.activeModelQuantization?.trim()?.lowercase().orEmpty()
+    val modelId = runtime.activeModelId?.trim()?.lowercase().orEmpty()
+    val quantSource = when {
+        quantHint.isNotBlank() && quantHint != "unknown" -> quantHint
+        modelId.isNotBlank() -> modelId
+        else -> ""
+    }
+    if (quantSource.isBlank()) {
+        return false
+    }
+    if (OPENCL_SAFE_QUANT_MODEL_REGEX.containsMatchIn(quantSource)) {
+        return false
+    }
+    return OPENCL_UNSUPPORTED_QUANT_MODEL_REGEX.containsMatchIn(quantSource)
+}
+
+private val OPENCL_SAFE_QUANT_MODEL_REGEX = Regex(
+    """(?:^|[._-])(q4[._-]?0|q6[._-]?k|q8[._-]?0|f16|f32|fp16|fp32|mxfp4(?:[._-]moe)?)(?:[._-]|$)""",
+    RegexOption.IGNORE_CASE,
+)
+
+private val OPENCL_UNSUPPORTED_QUANT_MODEL_REGEX = Regex(
+    """(?:^|[._-])(q(?:[2-8][._-](?:k|[0-9])[._-]?[a-z0-9_]*|5|8)|iq[1-4](?:[._-][a-z]+)?)(?:[._-]|$)""",
+    RegexOption.IGNORE_CASE,
+)
