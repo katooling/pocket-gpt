@@ -86,11 +86,11 @@ class ChatStreamRequestPlanner(
     private fun prepare(
         command: ChatStreamCommand,
         performancePlan: ResolvedPerformancePlan,
-        requestTimeoutMs: Long,
+        requestTimeoutOverrideMs: Long,
     ): PreparedChatStream {
         val requestTimeoutMs = resolveRequestTimeoutMs(
             performanceConfig = performancePlan.effectiveConfig,
-            overrideTimeoutMs = requestTimeoutMs,
+            overrideTimeoutMs = requestTimeoutOverrideMs,
         )
         val runtimeRequest = StreamChatRequestV2(
             sessionId = command.sessionId,
