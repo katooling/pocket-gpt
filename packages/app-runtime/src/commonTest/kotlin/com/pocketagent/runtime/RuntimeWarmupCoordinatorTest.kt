@@ -8,6 +8,7 @@ import com.pocketagent.nativebridge.GenerationFinishReason
 import com.pocketagent.nativebridge.GenerationResult
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.LlamaCppRuntimeBridge
+import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.RuntimeBackend
 import java.security.MessageDigest
 import kotlin.test.Test
@@ -24,6 +25,7 @@ class RuntimeWarmupCoordinatorTest {
         val artifactVerifier = ArtifactVerifier(runtimeConfig)
         val observability = WarmupObservabilityModule()
         val residencyManager = RuntimeResidencyManager(inferenceModule, nowMs = monotonicClock())
+        val lifecycleStages = mutableListOf<ModelLoadingStage>()
         val coordinator = RuntimeWarmupCoordinator(
             inferenceModule = inferenceModule,
             artifactVerifier = artifactVerifier,
@@ -32,6 +34,7 @@ class RuntimeWarmupCoordinatorTest {
             runtimePlanResolver = RuntimePlanResolver(availableCpuThreads = { 6 }),
             availableCpuThreads = { 6 },
             nowMs = monotonicClock(),
+            onWarmupStage = { _, stage, _ -> lifecycleStages += stage },
         )
 
         val first = coordinator.warmup()
@@ -52,6 +55,7 @@ class RuntimeWarmupCoordinatorTest {
         assertTrue(observability.metrics.keys.contains("inference.warmup_ms"))
         assertTrue(observability.metrics.keys.contains("inference.warmup.speculative_path"))
         assertTrue(observability.metrics.keys.contains("inference.resident_hit"))
+        assertTrue(lifecycleStages.contains(ModelLoadingStage.WARMING_UP))
     }
 }
 
