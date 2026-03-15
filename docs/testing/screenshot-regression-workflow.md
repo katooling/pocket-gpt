@@ -1,6 +1,6 @@
 # Screenshot Regression Workflow
 
-Last updated: 2026-03-06
+Last updated: 2026-03-15
 
 Source of truth for command syntax: `scripts/dev/README.md`.
 
@@ -39,11 +39,11 @@ python3 tools/devctl/main.py governance screenshot-inventory-check
 
 Per run output:
 
-- `scripts/benchmarks/runs/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/instrumented/`
-- `scripts/benchmarks/runs/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/maestro/`
-- `scripts/benchmarks/runs/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/combined/`
-- `scripts/benchmarks/runs/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/inventory-report.json`
-- `scripts/benchmarks/runs/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/inventory-report.md`
+- `tmp/devctl-artifacts/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/instrumented/`
+- `tmp/devctl-artifacts/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/maestro/`
+- `tmp/devctl-artifacts/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/combined/`
+- `tmp/devctl-artifacts/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/inventory-report.json`
+- `tmp/devctl-artifacts/YYYY-MM-DD/<serial>/screenshot-pack/<stamp>/inventory-report.md`
 
 Reference pack (in-repo):
 

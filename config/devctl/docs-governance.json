@@ -52,7 +52,7 @@
     "inventory_path": "tests/ui-screenshots/inventory.yaml",
     "inventory_schema": "ui-screenshot-inventory-v1",
     "reference_dir": "tests/ui-screenshots/reference/sm-a515f-android13",
-    "report_glob": "scripts/benchmarks/runs/*/*/screenshot-pack/*/inventory-report.json",
+    "report_glob": "tmp/devctl-artifacts/*/*/screenshot-pack/*/inventory-report.json",
     "report_schema": "ui-screenshot-inventory-report-v2",
     "report_max_age_days": 30,
     "required_report_fields": [

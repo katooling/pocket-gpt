@@ -58,7 +58,15 @@ STAGE_EVIDENCE_PATTERN = (
     r"and linked it below\."
 )
 
-RUN_PATH_REGEX = r"scripts/benchmarks/runs/[^\s)`\"]+"
+CURRENT_DEVCTL_ARTIFACT_ROOT = "tmp/devctl-artifacts"
+LEGACY_BENCHMARK_ARTIFACT_ROOT = "scripts/benchmarks/runs"
+RUN_PATH_REGEX = (
+    r"(?:"
+    + re.escape(CURRENT_DEVCTL_ARTIFACT_ROOT)
+    + r"|"
+    + re.escape(LEGACY_BENCHMARK_ARTIFACT_ROOT)
+    + r")/[^\s)`\"]+"
+)
 MARKDOWN_LINK_REGEX = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 BACKTICK_SPAN_REGEX = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
 STATUS_LINE_REGEX = re.compile(r"^Status:\s*", re.MULTILINE)
@@ -99,7 +107,7 @@ DEFAULT_DOCS_GOVERNANCE_CONFIG: dict[str, object] = {
         "inventory_path": "tests/ui-screenshots/inventory.yaml",
         "inventory_schema": "ui-screenshot-inventory-v1",
         "reference_dir": "tests/ui-screenshots/reference/sm-a515f-android13",
-        "report_glob": "scripts/benchmarks/runs/*/*/screenshot-pack/*/inventory-report.json",
+        "report_glob": "tmp/devctl-artifacts/*/*/screenshot-pack/*/inventory-report.json",
         "report_schema": "ui-screenshot-inventory-report-v2",
         "report_max_age_days": 30,
         "required_report_fields": [
@@ -243,7 +251,9 @@ def _is_likely_repo_backtick_target(target: str) -> bool:
         return False
     if target.startswith("tmp/"):
         return False
-    if target.startswith("scripts/benchmarks/runs/"):
+    if target.startswith(f"{LEGACY_BENCHMARK_ARTIFACT_ROOT}/"):
+        return False
+    if target.startswith(f"{CURRENT_DEVCTL_ARTIFACT_ROOT}/"):
         return False
 
     normalized = target[2:] if target.startswith("./") else target
@@ -524,8 +534,14 @@ def _load_screenshot_inventory_entries(repo_root: Path, config: dict[str, object
 
 
 def _latest_screenshot_inventory_report(repo_root: Path, report_glob: str) -> Path | None:
+    candidate_globs = [report_glob]
+    if report_glob.startswith(f"{CURRENT_DEVCTL_ARTIFACT_ROOT}/"):
+        candidate_globs.append(report_glob.replace(CURRENT_DEVCTL_ARTIFACT_ROOT, LEGACY_BENCHMARK_ARTIFACT_ROOT, 1))
+    elif report_glob.startswith(f"{LEGACY_BENCHMARK_ARTIFACT_ROOT}/"):
+        candidate_globs.append(report_glob.replace(LEGACY_BENCHMARK_ARTIFACT_ROOT, CURRENT_DEVCTL_ARTIFACT_ROOT, 1))
+
     reports = sorted(
-        repo_root.glob(report_glob),
+        {path for pattern in candidate_globs for path in repo_root.glob(pattern)},
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -968,7 +984,7 @@ def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
     with tempfile.TemporaryDirectory(prefix="devctl-gov-") as tmp:
         sandbox = Path(tmp)
         date_dir = datetime.now().strftime("%Y-%m-%d")
-        run_rel = Path("scripts/benchmarks/runs") / date_dir / "SELFTEST" / "governance-self-test"
+        run_rel = Path(CURRENT_DEVCTL_ARTIFACT_ROOT) / date_dir / "SELFTEST" / "governance-self-test"
         run_dir = sandbox / run_rel
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "artifact.txt").write_text("selftest\n", encoding="utf-8")
@@ -1046,7 +1062,7 @@ def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
             "- [x] If this is stage/work-package work, I added/updated evidence under `docs/operations/evidence/` and linked it below.\n\n"
             "Stage close: yes\n\n"
             f"Evidence note(s): {evidence_note_rel}\n"
-            f"Raw run artifacts (`scripts/benchmarks/runs/...`): {run_rel}/artifact.txt\n",
+            f"Raw run artifacts (`tmp/devctl-artifacts/...`): {run_rel}/artifact.txt\n",
             encoding="utf-8",
         )
         validate_pr_body(str(pr_stage_close), repo_root=sandbox)
