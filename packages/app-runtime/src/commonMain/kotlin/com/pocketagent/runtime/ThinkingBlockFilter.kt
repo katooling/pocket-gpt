@@ -15,6 +15,7 @@ internal class ThinkingBlockFilter(
 ) {
     private var insideThinkBlock = false
     private val pendingBuffer = StringBuilder()
+    private val thinkingBuffer = StringBuilder()
 
     /**
      * Accepts a token from the stream and returns the text that should be
@@ -41,9 +42,20 @@ internal class ThinkingBlockFilter(
             result.append(pendingBuffer)
             pendingBuffer.clear()
         } else {
+            if (insideThinkBlock && pendingBuffer.isNotEmpty()) {
+                thinkingBuffer.append(pendingBuffer)
+            }
             pendingBuffer.clear()
         }
         return result.toString()
+    }
+
+    /**
+     * Returns captured reasoning text from `<think>...</think>` blocks.
+     */
+    fun capturedThinking(): String {
+        if (!enabled) return ""
+        return thinkingBuffer.toString().trim()
     }
 
     private fun drainBuffer(output: StringBuilder) {
@@ -52,13 +64,22 @@ internal class ThinkingBlockFilter(
             if (insideThinkBlock) {
                 val closeIdx = buf.indexOf(CLOSE_TAG)
                 if (closeIdx >= 0) {
+                    if (closeIdx > 0) {
+                        thinkingBuffer.append(buf, 0, closeIdx)
+                    }
                     pendingBuffer.delete(0, closeIdx + CLOSE_TAG.length)
                     insideThinkBlock = false
                     continue
                 }
                 if (couldBePartialTag(buf, CLOSE_TAG)) {
+                    val safeLength = buf.length - (CLOSE_TAG.length - 1)
+                    if (safeLength > 0) {
+                        thinkingBuffer.append(buf, 0, safeLength)
+                        pendingBuffer.delete(0, safeLength)
+                    }
                     return
                 }
+                thinkingBuffer.append(buf)
                 pendingBuffer.clear()
                 return
             }

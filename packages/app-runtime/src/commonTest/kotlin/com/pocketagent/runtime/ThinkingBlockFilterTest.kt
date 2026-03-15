@@ -58,6 +58,7 @@ class ThinkingBlockFilterTest {
         output.append(filter.flush())
 
         assertEquals("Hello world", output.toString())
+        assertEquals("hidden", filter.capturedThinking())
     }
 
     @Test
@@ -85,6 +86,7 @@ class ThinkingBlockFilterTest {
         assertEquals("visible", filter.filterToken("visible"))
         assertEquals("</think>", filter.filterToken("</think>"))
         assertEquals("", filter.flush())
+        assertEquals("", filter.capturedThinking())
     }
 
     @Test
