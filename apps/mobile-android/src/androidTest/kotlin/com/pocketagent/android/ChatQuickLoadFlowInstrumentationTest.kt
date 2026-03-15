@@ -65,6 +65,7 @@ class ChatQuickLoadFlowInstrumentationTest {
                     advancedUnlocked = true,
                 ),
             ),
+            provisioningGateway = provisioningGateway,
         )
         val provisioningViewModel = ModelProvisioningViewModel(gateway = provisioningGateway)
 

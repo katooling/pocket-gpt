@@ -55,6 +55,26 @@ class StartupReadinessCoordinatorTest {
     }
 
     @Test
+    fun `optional warning details are summarized without verbose diagnostics`() {
+        val decision = coordinator.decide(
+            startupChecks = listOf(
+                "Optional runtime model unavailable: qwen3.5-0.8b-q4. Artifact verification failed for qwen3.5-0.8b-q4: MODEL_ARTIFACT_VERIFICATION_ERROR:MISSING_PAYLOAD:model=qwen3.5-0.8b-q4;version=1;expected_sha=abc;actual_sha=none",
+                "Optional runtime model unavailable: qwen3.5-2b-q4. Artifact verification failed for qwen3.5-2b-q4: MODEL_ARTIFACT_VERIFICATION_ERROR:MISSING_PAYLOAD:model=qwen3.5-2b-q4;version=1;expected_sha=def;actual_sha=none",
+                "Optional runtime model unavailable: smollm3-3b-q4_k_m. MODEL_ARTIFACT_CONFIG_MISSING:model=smollm3-3b-q4_k_m;field=payload_or_path,sha256",
+                "Optional runtime model unavailable: phi-4-mini-instruct-q4_k_m. MODEL_ARTIFACT_CONFIG_MISSING:model=phi-4-mini-instruct-q4_k_m;field=payload_or_path,sha256",
+            ),
+            runtimeBackend = null,
+            statusDetailOverride = null,
+        )
+
+        assertEquals(StartupProbeState.READY, decision.startupProbeState)
+        assertTrue(decision.modelStatusDetail.contains("optional model unavailable"))
+        assertTrue(decision.modelStatusDetail.contains("+1 more"))
+        assertTrue(!decision.modelStatusDetail.contains("MODEL_ARTIFACT_VERIFICATION_ERROR"))
+        assertTrue(!decision.modelStatusDetail.contains("expected_sha"))
+    }
+
+    @Test
     fun `blocking startup checks return blocked state and mapped startup error`() {
         val decision = coordinator.decide(
             startupChecks = listOf("Missing runtime model(s): qwen3.5-0.8b-q4."),

@@ -24,6 +24,7 @@ import com.pocketagent.android.ui.state.ComposerUiState
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
+import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
@@ -58,6 +59,7 @@ class ChatScreenComposeContractTest {
                         ComposerBar(
                             text = "blocked",
                             isSending = false,
+                            isCancelling = false,
                             chatGateState = gate,
                             onTextChanged = {},
                             onSend = {},
@@ -69,6 +71,7 @@ class ChatScreenComposeContractTest {
                 ) { innerPadding ->
                     ChatScreenBody(
                         state = state,
+                        modelLoadingState = ModelLoadingState.Idle(),
                         onSuggestedPrompt = {},
                         onGetReadyTapped = {},
                         onOpenModelLibrary = {},
@@ -124,6 +127,7 @@ class ChatScreenComposeContractTest {
             MaterialTheme {
                 ChatScreenBody(
                     state = currentState,
+                    modelLoadingState = ModelLoadingState.Idle(),
                     onSuggestedPrompt = {},
                     onGetReadyTapped = {},
                     onOpenModelLibrary = {},

@@ -5,6 +5,7 @@ import com.pocketagent.runtime.ChatStreamEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class StreamStateReducerTest {
     private val reducer = StreamStateReducer(requestTimeoutMs = 30_000L)
@@ -59,6 +60,23 @@ class StreamStateReducerTest {
         assertNotNull(terminal)
         assertEquals("timeout", terminal.finishReason)
         assertEquals("UI-RUNTIME-001", terminal.uiError?.code)
+    }
+
+    @Test
+    fun `reducer keeps user cancellation non-error`() {
+        val initial = StreamReducerState.initial(requestId = "req-1")
+        val terminal = reducer.onEvent(
+            state = initial,
+            event = ChatStreamEvent.Cancelled(
+                requestId = "req-1",
+                reason = "cancelled",
+            ),
+            elapsedMs = 80L,
+        ).terminal
+
+        assertNotNull(terminal)
+        assertEquals("cancelled", terminal.finishReason)
+        assertNull(terminal.uiError)
     }
 
     @Test
