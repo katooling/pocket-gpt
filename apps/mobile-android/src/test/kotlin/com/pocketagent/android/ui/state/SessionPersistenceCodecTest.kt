@@ -119,6 +119,37 @@ class SessionPersistenceCodecTest {
     }
 
     @Test
+    fun `decode normalizes legacy imagePath into imagePaths`() {
+        val decoded = PersistedChatStateCodec.decode(
+            """
+            {
+              "activeSessionId": "s1",
+              "sessions": [
+                {
+                  "id": "s1",
+                  "title": "Legacy image",
+                  "messages": [
+                    {
+                      "id": "m1",
+                      "role": "USER",
+                      "content": "see attachment",
+                      "timestampEpochMs": 1,
+                      "kind": "IMAGE",
+                      "imagePath": "/tmp/legacy.png"
+                    }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val message = decoded.sessions.single().messages.single()
+        assertEquals("/tmp/legacy.png", message.imagePath)
+        assertEquals(listOf("/tmp/legacy.png"), message.imagePaths)
+    }
+
+    @Test
     fun `decode preserves explicit interaction payload when present`() {
         val decoded = PersistedChatStateCodec.decode(
             """
