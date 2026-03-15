@@ -738,6 +738,9 @@ class ChatViewModelTest {
         val afterCancelMessages = viewModel.uiState.value.activeSession!!.messages
         assertFalse(afterCancelMessages.any(::shouldRenderInThreadLoadingPlaceholder))
         assertFalse(viewModel.uiState.value.composer.isSending)
+        assertFalse(viewModel.uiState.value.composer.isCancelling)
+        assertEquals(null, viewModel.uiState.value.runtime.lastErrorCode)
+        assertEquals("Generation cancelled.", viewModel.uiState.value.runtime.modelStatusDetail)
     }
 
     @Test
@@ -783,15 +786,13 @@ class ChatViewModelTest {
 
         val active = viewModel.uiState.value.activeSession!!
         val assistant = active.messages.lastOrNull { it.role == MessageRole.ASSISTANT && it.content.contains("partial") }
-        val terminalSystem = active.messages.lastOrNull { it.role == MessageRole.SYSTEM && it.finishReason == "cancelled" }
 
         assertTrue(assistant != null)
         assertEquals("cancelled", assistant?.finishReason)
         assertTrue(assistant?.terminalEventSeen == true)
         assertTrue(assistant?.requestId?.isNotBlank() == true)
-        assertTrue(terminalSystem != null)
-        assertEquals(assistant?.requestId, terminalSystem?.requestId)
-        assertEquals("UI-RUNTIME-001", viewModel.uiState.value.runtime.lastErrorCode)
+        assertFalse(active.messages.any { it.role == MessageRole.SYSTEM && it.content.contains("UI-RUNTIME-001") })
+        assertEquals(null, viewModel.uiState.value.runtime.lastErrorCode)
         assertFalse(viewModel.uiState.value.composer.isSending)
     }
 
@@ -974,9 +975,14 @@ class ChatViewModelTest {
         viewModel.onComposerChanged("cancel me")
         viewModel.sendMessage()
         viewModel.cancelActiveSend()
+
+        assertTrue(viewModel.uiState.value.composer.isCancelling)
+        assertEquals("Cancelling generation...", viewModel.uiState.value.runtime.modelStatusDetail)
+
         advanceUntilIdle()
 
         assertTrue(runtime.cancelledRequestIds.isNotEmpty())
+        assertFalse(viewModel.uiState.value.composer.isCancelling)
     }
 
     @Test

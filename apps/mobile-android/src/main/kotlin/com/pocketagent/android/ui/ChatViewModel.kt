@@ -7,7 +7,9 @@ import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeResult
 import com.pocketagent.android.runtime.GpuProbeStatus
+import com.pocketagent.android.runtime.ProvisioningGateway
 import com.pocketagent.android.runtime.RuntimeTuning
+import com.pocketagent.android.runtime.errorCodeName
 import com.pocketagent.android.ui.controllers.ChatPersistenceFlow
 import com.pocketagent.android.ui.controllers.ChatStreamCoordinator
 import com.pocketagent.android.ui.controllers.ChatPersistenceCoordinator
@@ -37,6 +39,7 @@ import com.pocketagent.android.ui.state.FirstSessionTelemetryEvent
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
+import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedInteractionMessage
 import com.pocketagent.android.ui.state.PersistedInteractionPart
@@ -48,9 +51,13 @@ import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.android.ui.state.UiError
 import com.pocketagent.android.ui.state.UiErrorMapper
+import com.pocketagent.android.ui.state.toModelLoadingState
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
+import com.pocketagent.nativebridge.ModelLifecycleErrorCode
+import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimePerformanceProfile
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -64,6 +71,7 @@ import kotlinx.coroutines.launch
 class ChatViewModel(
     internal val runtimeFacade: ChatRuntimeService,
     sessionPersistence: SessionPersistence,
+    private val provisioningGateway: ProvisioningGateway? = null,
     internal val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     internal val runtimeGenerationTimeoutMs: Long = 0L,
     private val runtimeStartupProbeTimeoutMs: Long = DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS,
@@ -97,14 +105,26 @@ class ChatViewModel(
     ),
     internal val sendReducer: SendReducer = SendReducer(),
     internal val toolLoopUseCase: ToolLoopUseCase = ToolLoopUseCase(sendController),
-) : ViewModel() {
+) : ViewModel(), ModelOperationHandler {
     internal val _uiState = MutableStateFlow(ChatUiState())
     val uiState = _uiState.asStateFlow()
+    internal val _modelLoadingState = MutableStateFlow<ModelLoadingState>(ModelLoadingState.Idle())
+    val modelLoadingState = _modelLoadingState.asStateFlow()
     internal var gpuProbeRefreshJob: Job? = null
+    internal var modelLifecycleSyncJob: Job? = null
     @Volatile
     internal var activeSendRequestId: String? = null
     @Volatile
     internal var lastKeepAliveTouchAtMs: Long = 0L
+    @Volatile
+    private var lastModelOperationToken: Long = 0L
+    @Volatile
+    private var lastModelOperationAtMs: Long = 0L
+    @Volatile
+    private var lastModelOperationKey: String? = null
+    private val userCancellationRequestIds: MutableSet<String> = mutableSetOf()
+    private val userCancellationRequestIdsLock = Any()
+    private val modelOperationStateLock = Any()
     internal val persistenceQueue = ChatPersistenceQueue(
         scope = viewModelScope,
         ioDispatcher = ioDispatcher,
@@ -149,6 +169,7 @@ class ChatViewModel(
 
     init {
         bootstrapStateInternal()
+        observeModelLifecycleIfAvailable()
     }
 
     fun onComposerChanged(text: String) {
@@ -203,12 +224,14 @@ class ChatViewModel(
 
     fun cancelActiveSend() {
         val requestId = activeSendRequestId ?: return
+        markUserCancellationRequested(requestId)
         runtimeFacade.cancelGenerationByRequest(requestId)
         _uiState.update { state ->
             state.copy(
+                composer = state.composer.copy(isCancelling = true),
                 runtime = state.runtime.copy(
                     modelStatusDetail = "Cancelling generation...",
-                ),
+                ).clearError(),
             )
         }
     }
@@ -287,6 +310,97 @@ class ChatViewModel(
 
     fun refreshRuntimeReadiness(statusDetailOverride: String? = null) {
         refreshRuntimeReadinessInternal(statusDetailOverride)
+    }
+
+    override suspend fun loadModel(
+        modelId: String,
+        version: String,
+    ): RuntimeModelLifecycleCommandResult? {
+        val gateway = provisioningGateway ?: return RuntimeModelLifecycleCommandResult.rejected(
+            code = ModelLifecycleErrorCode.UNKNOWN,
+            detail = "provisioning_gateway_unavailable",
+        )
+        val requestKey = "load:$modelId@$version"
+        if (shouldDebounceModelOperation(requestKey)) {
+            return null
+        }
+        val token = nextModelOperationToken()
+        applyImmediateModelLoadingState(
+            ModelLoadingState.Loading(
+                requestedModel = RuntimeLoadedModel(modelId = modelId, modelVersion = version),
+                loadedModel = _modelLoadingState.value.loadedModel,
+                lastUsedModel = _modelLoadingState.value.lastUsedModel,
+                progress = 0f,
+                stage = "Starting model load...",
+                timestampMs = System.currentTimeMillis(),
+            ),
+        )
+        val result = gateway.loadInstalledModel(modelId = modelId, version = version)
+        return finalizeModelOperation(
+            token = token,
+            result = result,
+            fallbackModelId = modelId,
+            fallbackVersion = version,
+        )
+    }
+
+    override suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult? {
+        val gateway = provisioningGateway ?: return RuntimeModelLifecycleCommandResult.rejected(
+            code = ModelLifecycleErrorCode.UNKNOWN,
+            detail = "provisioning_gateway_unavailable",
+        )
+        val lastUsed = _modelLoadingState.value.lastUsedModel
+        val requestKey = "load-last-used:${lastUsed?.modelId.orEmpty()}@${lastUsed?.modelVersion.orEmpty()}"
+        if (shouldDebounceModelOperation(requestKey)) {
+            return null
+        }
+        val token = nextModelOperationToken()
+        applyImmediateModelLoadingState(
+            ModelLoadingState.Loading(
+                requestedModel = lastUsed,
+                loadedModel = _modelLoadingState.value.loadedModel,
+                lastUsedModel = lastUsed,
+                progress = 0f,
+                stage = "Starting model load...",
+                timestampMs = System.currentTimeMillis(),
+            ),
+        )
+        val result = gateway.loadLastUsedModel()
+        return finalizeModelOperation(
+            token = token,
+            result = result,
+            fallbackModelId = lastUsed?.modelId,
+            fallbackVersion = lastUsed?.modelVersion,
+        )
+    }
+
+    override suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult? {
+        val gateway = provisioningGateway ?: return RuntimeModelLifecycleCommandResult.rejected(
+            code = ModelLifecycleErrorCode.UNKNOWN,
+            detail = "provisioning_gateway_unavailable",
+        )
+        val currentModel = _modelLoadingState.value.loadedModel ?: _modelLoadingState.value.lastUsedModel
+        val requestKey = "offload:${currentModel?.modelId.orEmpty()}@${currentModel?.modelVersion.orEmpty()}:$reason"
+        if (shouldDebounceModelOperation(requestKey)) {
+            return null
+        }
+        val token = nextModelOperationToken()
+        applyImmediateModelLoadingState(
+            ModelLoadingState.Offloading(
+                loadedModel = _modelLoadingState.value.loadedModel,
+                lastUsedModel = _modelLoadingState.value.lastUsedModel,
+                reason = reason,
+                queued = false,
+                timestampMs = System.currentTimeMillis(),
+            ),
+        )
+        val result = gateway.offloadModel(reason = reason)
+        return finalizeModelOperation(
+            token = token,
+            result = result,
+            fallbackModelId = currentModel?.modelId,
+            fallbackVersion = currentModel?.modelVersion,
+        )
     }
 
     fun onGetReadyTapped() {
@@ -442,6 +556,7 @@ class ChatViewModel(
     override fun onCleared() {
         startupProbeOrchestrator.cancel()
         gpuProbeRefreshJob?.cancel()
+        modelLifecycleSyncJob?.cancel()
         persistenceQueue.close()
         super.onCleared()
     }
@@ -514,4 +629,228 @@ class ChatViewModel(
         recordFirstSessionEventOnceInternal(eventName)
     }
 
+    internal fun markUserCancellationRequested(requestId: String) {
+        synchronized(userCancellationRequestIdsLock) {
+            userCancellationRequestIds += requestId
+        }
+    }
+
+    internal fun isUserCancellationRequested(requestId: String): Boolean {
+        return synchronized(userCancellationRequestIdsLock) {
+            requestId in userCancellationRequestIds
+        }
+    }
+
+    internal fun consumeUserCancellationRequest(requestId: String): Boolean {
+        return synchronized(userCancellationRequestIdsLock) {
+            userCancellationRequestIds.remove(requestId)
+        }
+    }
+
+    private fun observeModelLifecycleIfAvailable() {
+        val gateway = provisioningGateway ?: return
+        applyLifecycleSnapshot(gateway.currentModelLifecycle().toModelLoadingState())
+        modelLifecycleSyncJob?.cancel()
+        modelLifecycleSyncJob = viewModelScope.launch {
+            gateway.observeModelLifecycle().collect { snapshot ->
+                applyLifecycleSnapshot(snapshot.toModelLoadingState())
+            }
+        }
+    }
+
+    private fun applyLifecycleSnapshot(nextState: ModelLoadingState) {
+        _modelLoadingState.value = nextState
+        when (nextState) {
+            is ModelLoadingState.Idle -> {
+                _uiState.update { state ->
+                    val activeModelId = nextState.loadedModel?.modelId
+                    state.copy(
+                        runtime = state.runtime.copy(
+                            activeModelId = activeModelId,
+                            modelRuntimeStatus = if (activeModelId == null) {
+                                ModelRuntimeStatus.NOT_READY
+                            } else {
+                                state.runtime.modelRuntimeStatus
+                            },
+                            modelStatusDetail = if (activeModelId == null) {
+                                "No model loaded."
+                            } else {
+                                state.runtime.modelStatusDetail
+                            },
+                            startupProbeState = if (activeModelId == null) {
+                                StartupProbeState.IDLE
+                            } else {
+                                state.runtime.startupProbeState
+                            },
+                        ).clearError(),
+                    )
+                }
+            }
+
+            is ModelLoadingState.Loading -> {
+                _uiState.update { state ->
+                    state.copy(
+                        runtime = state.runtime.copy(
+                            activeModelId = nextState.loadedModel?.modelId,
+                            modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+                            modelStatusDetail = nextState.stage,
+                            startupProbeState = StartupProbeState.RUNNING,
+                        ).clearError(),
+                    )
+                }
+            }
+
+            is ModelLoadingState.Loaded -> {
+                _uiState.update { state ->
+                    state.copy(
+                        runtime = state.runtime.copy(
+                            activeModelId = nextState.model.modelId,
+                            modelRuntimeStatus = ModelRuntimeStatus.READY,
+                            modelStatusDetail = buildString {
+                                append("Runtime model loaded (")
+                                append(nextState.model.modelId)
+                                nextState.model.modelVersion?.takeIf { it.isNotBlank() }?.let { version ->
+                                    append("@")
+                                    append(version)
+                                }
+                                append(")")
+                            },
+                            startupProbeState = StartupProbeState.READY,
+                        ).clearError(),
+                    )
+                }
+            }
+
+            is ModelLoadingState.Offloading -> {
+                _uiState.update { state ->
+                    state.copy(
+                        runtime = state.runtime.copy(
+                            modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+                            modelStatusDetail = if (nextState.queued) {
+                                "Offload queued until the active task finishes."
+                            } else {
+                                "Offloading model..."
+                            },
+                        ).clearError(),
+                    )
+                }
+            }
+
+            is ModelLoadingState.Error -> {
+                _uiState.update { state ->
+                    state.copy(
+                        runtime = state.runtime.copy(
+                            activeModelId = nextState.loadedModel?.modelId,
+                            modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                            modelStatusDetail = nextState.message,
+                            startupProbeState = StartupProbeState.BLOCKED,
+                            lastErrorCode = nextState.code,
+                            lastErrorUserMessage = nextState.message,
+                            lastErrorTechnicalDetail = nextState.detail,
+                            lastError = nextState.detail ?: nextState.message,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun applyImmediateModelLoadingState(nextState: ModelLoadingState) {
+        applyLifecycleSnapshot(nextState)
+    }
+
+    private fun finalizeModelOperation(
+        token: Long,
+        result: RuntimeModelLifecycleCommandResult,
+        fallbackModelId: String?,
+        fallbackVersion: String?,
+    ): RuntimeModelLifecycleCommandResult? {
+        val latestToken = synchronized(modelOperationStateLock) { lastModelOperationToken }
+        if (token != latestToken) {
+            return null
+        }
+        if (result.success && !result.queued) {
+            val loadedModel = result.loadedModel
+            refreshRuntimeReadiness(
+                statusDetailOverride = when {
+                    loadedModel != null -> buildString {
+                        append("Runtime model loaded (")
+                        append(loadedModel.modelId)
+                        loadedModel.modelVersion?.takeIf { it.isNotBlank() }?.let { version ->
+                            append("@")
+                            append(version)
+                        }
+                        append(")")
+                    }
+
+                    else -> "Runtime model offloaded"
+                },
+            )
+        } else if (!result.success) {
+            applyLifecycleSnapshot(
+                ModelLoadingState.Error(
+                    requestedModel = fallbackModelId?.let { RuntimeLoadedModel(it, fallbackVersion) },
+                    loadedModel = _modelLoadingState.value.loadedModel,
+                    lastUsedModel = _modelLoadingState.value.lastUsedModel,
+                    message = lifecycleErrorMessage(
+                        result = result,
+                        fallbackModelId = fallbackModelId,
+                        fallbackVersion = fallbackVersion,
+                    ),
+                    code = result.errorCodeName(),
+                    detail = result.detail,
+                    timestampMs = System.currentTimeMillis(),
+                ),
+            )
+        }
+        return result
+    }
+
+    private fun shouldDebounceModelOperation(requestKey: String): Boolean {
+        synchronized(modelOperationStateLock) {
+            val now = System.currentTimeMillis()
+            val shouldDebounce = lastModelOperationKey == requestKey &&
+                now - lastModelOperationAtMs < MODEL_OPERATION_DEBOUNCE_MS
+            if (!shouldDebounce) {
+                lastModelOperationKey = requestKey
+                lastModelOperationAtMs = now
+            }
+            return shouldDebounce
+        }
+    }
+
+    private fun nextModelOperationToken(): Long {
+        synchronized(modelOperationStateLock) {
+            lastModelOperationToken += 1L
+            return lastModelOperationToken
+        }
+    }
+
 }
+
+private fun lifecycleErrorMessage(
+    result: RuntimeModelLifecycleCommandResult,
+    fallbackModelId: String?,
+    fallbackVersion: String?,
+): String {
+    val modelLabel = buildString {
+        append(fallbackModelId.orEmpty())
+        fallbackVersion?.takeIf { it.isNotBlank() }?.let { version ->
+            if (isNotBlank()) {
+                append(" ")
+            }
+            append(version)
+        }
+    }.ifBlank { "selected model" }
+    return when (result.errorCodeName()) {
+        "MODEL_FILE_UNAVAILABLE" -> "Model file unavailable for $modelLabel."
+        "RUNTIME_INCOMPATIBLE" -> "Model is incompatible with this runtime."
+        "BACKEND_INIT_FAILED" -> "Runtime backend failed to initialize."
+        "OUT_OF_MEMORY" -> "Not enough memory to load $modelLabel."
+        "BUSY_GENERATION" -> "Wait for the current response to finish before changing models."
+        "CANCELLED_BY_NEWER_REQUEST" -> "Model change was superseded by a newer request."
+        else -> result.detail ?: "Model operation failed."
+    }
+}
+
+private const val MODEL_OPERATION_DEBOUNCE_MS = 500L
