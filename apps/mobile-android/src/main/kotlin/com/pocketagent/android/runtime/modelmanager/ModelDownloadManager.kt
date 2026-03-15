@@ -6,13 +6,16 @@ import android.os.Build
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
 import java.io.File
 import java.util.UUID
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -36,6 +39,9 @@ class ModelDownloadManager(
             scheduler.observeTaskInfos().collectLatest { infos ->
                 syncFromSchedulerInfos(infos)
             }
+        }
+        scope.launch {
+            pollActiveDownloadProgress()
         }
     }
 
@@ -320,6 +326,21 @@ class ModelDownloadManager(
         }
     }
 
+    private suspend fun pollActiveDownloadProgress() {
+        while (coroutineContext.isActive) {
+            val hasActiveTasks = _downloads.value.any { it.shouldPollProgress }
+            if (hasActiveTasks) {
+                val latest = ModelDownloadTaskStateStore.list(appContext)
+                if (latest != _downloads.value) {
+                    _downloads.value = latest
+                }
+                delay(ACTIVE_PROGRESS_POLL_MS)
+            } else {
+                delay(IDLE_PROGRESS_POLL_MS)
+            }
+        }
+    }
+
     private fun defaultRequestOptions(version: ModelDistributionVersion): DownloadRequestOptions {
         val prefs = currentDownloadPreferences()
         return DownloadRequestOptions(
@@ -348,5 +369,10 @@ class ModelDownloadManager(
     companion object {
         private const val ORPHANED_ACTIVE_TASK_STALE_MS = 2 * 60 * 1000L
         private const val MAX_CONCURRENT_DOWNLOADS = 2
+        private const val ACTIVE_PROGRESS_POLL_MS = 500L
+        private const val IDLE_PROGRESS_POLL_MS = 2_000L
     }
 }
+
+private val DownloadTaskState.shouldPollProgress: Boolean
+    get() = !terminal && status != DownloadTaskStatus.PAUSED
