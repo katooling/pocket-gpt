@@ -27,6 +27,7 @@ dependencies {
     implementation(project(":packages:memory"))
     implementation(project(":packages:native-bridge"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     testImplementation(kotlin("test"))
 }
 

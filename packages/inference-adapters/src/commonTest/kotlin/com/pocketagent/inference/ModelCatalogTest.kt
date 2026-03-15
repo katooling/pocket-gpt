@@ -22,10 +22,11 @@ class ModelCatalogTest {
     @Test
     fun `bridge supported model list is descriptor driven`() {
         val supported = ModelCatalog.bridgeSupportedModels().toSet()
-        assertTrue(supported.contains(ModelCatalog.QWEN_3_5_0_8B_Q4))
-        assertTrue(supported.contains(ModelCatalog.QWEN_3_5_2B_Q4))
-        assertTrue(supported.contains(ModelCatalog.SMOLLM3_3B_Q4_K_M))
-        assertTrue(supported.contains(ModelCatalog.PHI_4_MINI_Q4_K_M))
+        val expected = ModelCatalog.modelDescriptors()
+            .filter { it.bridgeSupported }
+            .map { it.modelId }
+            .toSet()
+        assertEquals(expected, supported)
         assertTrue(!supported.contains(ModelCatalog.SMOKE_ECHO_120M))
     }
 
@@ -66,42 +67,49 @@ class ModelCatalogTest {
 
     @Test
     fun `explicit routing model lookup is descriptor driven`() {
-        assertEquals(
-            ModelCatalog.QWEN_3_5_0_8B_Q4,
-            ModelCatalog.modelIdForRoutingMode(RoutingMode.QWEN_0_8B),
-        )
-        assertEquals(
-            ModelCatalog.QWEN_3_5_2B_Q4,
-            ModelCatalog.modelIdForRoutingMode(RoutingMode.QWEN_2B),
-        )
-        assertEquals(
-            ModelCatalog.SMOLLM3_3B_Q4_K_M,
-            ModelCatalog.modelIdForRoutingMode(RoutingMode.SMOLLM3_3B),
-        )
-        assertEquals(
-            ModelCatalog.PHI_4_MINI_Q4_K_M,
-            ModelCatalog.modelIdForRoutingMode(RoutingMode.PHI_4_MINI),
-        )
+        ModelCatalog.modelDescriptors()
+            .flatMap { descriptor ->
+                descriptor.explicitRoutingModes.map { mode -> mode to descriptor.modelId }
+            }
+            .forEach { (mode, expectedModelId) ->
+                assertEquals(expectedModelId, ModelCatalog.modelIdForRoutingMode(mode), "routing mode $mode")
+            }
         assertNull(ModelCatalog.modelIdForRoutingMode(RoutingMode.AUTO))
     }
 
     @Test
     fun `routing modes for model include auto for auto-routing models`() {
-        assertEquals(
-            setOf(RoutingMode.AUTO, RoutingMode.QWEN_0_8B),
-            ModelCatalog.routingModesForModel(ModelCatalog.QWEN_3_5_0_8B_Q4),
-        )
-        assertEquals(
-            setOf(RoutingMode.AUTO, RoutingMode.SMOLLM3_3B),
-            ModelCatalog.routingModesForModel(ModelCatalog.SMOLLM3_3B_Q4_K_M),
-        )
+        ModelCatalog.modelDescriptors()
+            .filter { it.includeAutoRoutingMode }
+            .forEach { descriptor ->
+                val modes = ModelCatalog.routingModesForModel(descriptor.modelId)
+                assertTrue(
+                    modes.contains(RoutingMode.AUTO),
+                    "model ${descriptor.modelId} should include AUTO routing mode",
+                )
+                assertTrue(
+                    modes.containsAll(descriptor.explicitRoutingModes),
+                    "model ${descriptor.modelId} should include its explicit routing modes",
+                )
+            }
+    }
+
+    @Test
+    fun `draft model is not a startup candidate or auto-routing candidate`() {
+        val descriptor = ModelCatalog.descriptorFor(ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS)!!
+        assertEquals(false, descriptor.startupCandidate)
+        assertEquals(false, descriptor.autoRoutingEnabled)
+        assertEquals(ModelTier.DEBUG, descriptor.tier)
     }
 
     @Test
     fun `descriptors expose env key tokens`() {
-        assertEquals(
-            ModelCatalog.QWEN_3_5_0_8B_Q4,
-            ModelCatalog.descriptorForEnvKeyToken("QWEN_3_5_0_8B_Q4")?.modelId,
-        )
+        ModelCatalog.modelDescriptors().forEach { descriptor ->
+            assertEquals(
+                descriptor.modelId,
+                ModelCatalog.descriptorForEnvKeyToken(descriptor.envKeyToken)?.modelId,
+                "env key token lookup failed for ${descriptor.envKeyToken}",
+            )
+        }
     }
 }

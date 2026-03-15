@@ -38,7 +38,7 @@ class ModelRegistry(
 ) {
     fun metadataForModel(modelId: String): RuntimeModelMetadata? = metadataByModelId[modelId]
 
-    fun allMetadata(): List<RuntimeModelMetadata> = metadataByModelId.values.sortedBy { it.modelId }
+    fun allMetadata(): List<RuntimeModelMetadata> = metadataByModelId.values.toList()
 
     fun templateProfilesByModelId(): Map<String, ModelTemplateProfile> {
         return metadataByModelId.mapValues { (_, metadata) -> metadata.templateProfile }
@@ -72,9 +72,7 @@ class ModelRegistry(
     private fun startupMetadataForProfile(profile: ModelRuntimeProfile): List<RuntimeModelMetadata> {
         if (profile == ModelRuntimeProfile.DEV_FAST) {
             val fastTierMetadata = allMetadata()
-                .filter { metadata ->
-                    metadata.tier == RuntimeModelTier.FAST || metadata.tier == RuntimeModelTier.DEBUG
-                }
+                .filter { metadata -> metadata.tier == RuntimeModelTier.FAST }
             if (fastTierMetadata.isNotEmpty()) {
                 return fastTierMetadata
             }
@@ -111,10 +109,7 @@ class ModelRegistry(
                 .map { descriptor ->
                     RuntimeModelMetadata(
                         modelId = descriptor.modelId,
-                        templateProfile = when (descriptor.modelId) {
-                            ModelCatalog.PHI_4_MINI_Q4_K_M -> ModelTemplateProfile.PHI
-                            else -> ModelTemplateProfile.CHATML
-                        },
+                        templateProfile = ModelTemplateProfile.valueOf(descriptor.chatTemplateId),
                         tier = descriptor.tier.toRuntimeTier(),
                         startupRequirement = when {
                             descriptor.startupRequired -> StartupRequirement.REQUIRED

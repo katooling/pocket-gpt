@@ -34,6 +34,7 @@ data class ModelDescriptor(
     val startupRequired: Boolean,
     val defaultGetReadyProfiles: Set<ModelRuntimeProfile>,
     val envKeyToken: String,
+    val chatTemplateId: String = "CHATML",
     val includeAutoRoutingMode: Boolean = false,
     val explicitRoutingModes: Set<RoutingMode> = emptySet(),
 )
@@ -167,6 +168,7 @@ object ModelCatalog {
             startupRequired = false,
             defaultGetReadyProfiles = emptySet(),
             envKeyToken = "PHI_4_MINI_INSTRUCT_Q4_K_M",
+            chatTemplateId = "PHI",
             includeAutoRoutingMode = true,
             explicitRoutingModes = setOf(RoutingMode.PHI_4_MINI),
         ),
