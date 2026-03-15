@@ -706,6 +706,7 @@ private object SessionEntityCodec {
             put("frequencyPenalty", JsonPrimitive(settings.frequencyPenalty))
             put("presencePenalty", JsonPrimitive(settings.presencePenalty))
             put("systemPrompt", JsonPrimitive(settings.systemPrompt))
+            put("showThinking", JsonPrimitive(settings.showThinking))
         }
     }
 
@@ -742,14 +743,15 @@ private object SessionEntityCodec {
 private fun parseCompletionSettings(element: JsonElement?): CompletionSettings {
     val obj = element?.asObjectOrNull() ?: return CompletionSettings()
     return CompletionSettings(
-        temperature = obj.floatOrDefault("temperature", 0.7f),
-        topP = obj.floatOrDefault("topP", 0.9f),
+        temperature = obj.floatOrDefault("temperature", 0.6f),
+        topP = obj.floatOrDefault("topP", 0.95f),
         topK = obj.intOrDefault("topK", 40),
         maxTokens = obj.intOrDefault("maxTokens", 2048),
         repeatPenalty = obj.floatOrDefault("repeatPenalty", 1.1f),
         frequencyPenalty = obj.floatOrDefault("frequencyPenalty", 0.0f),
         presencePenalty = obj.floatOrDefault("presencePenalty", 0.0f),
         systemPrompt = obj.stringOrDefault("systemPrompt", ""),
+        showThinking = obj.booleanOrDefault("showThinking", false),
     )
 }
 

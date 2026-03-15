@@ -69,6 +69,8 @@
     <string name="ui_completion_presence_penalty_desc">Encourages the model to introduce new topics.</string>
     <string name="ui_completion_system_prompt_label">System prompt</string>
     <string name="ui_completion_system_prompt_placeholder">Enter a system prompt…</string>
+    <string name="ui_completion_show_thinking_label">Show thinking</string>
+    <string name="ui_completion_show_thinking_desc">Display model reasoning in a collapsible bubble when available.</string>
     <string name="ui_completion_reset_defaults">Reset to defaults</string>
     <string name="ui_completion_done">Done</string>
     <string name="ui_tool_dialog_subtitle">Tap a suggestion to prefill the composer.</string>

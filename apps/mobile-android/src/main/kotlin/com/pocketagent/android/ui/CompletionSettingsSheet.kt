@@ -17,6 +17,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +50,7 @@ internal fun CompletionSettingsSheet(
     var frequencyPenalty by remember(settings) { mutableFloatStateOf(settings.frequencyPenalty) }
     var presencePenalty by remember(settings) { mutableFloatStateOf(settings.presencePenalty) }
     var systemPrompt by remember(settings) { mutableStateOf(settings.systemPrompt) }
+    var showThinking by remember(settings) { mutableStateOf(settings.showThinking) }
     var showAdvanced by remember { mutableStateOf(false) }
 
     fun emitUpdate() {
@@ -62,6 +64,7 @@ internal fun CompletionSettingsSheet(
                 frequencyPenalty = frequencyPenalty,
                 presencePenalty = presencePenalty,
                 systemPrompt = systemPrompt,
+                showThinking = showThinking,
             ),
         )
     }
@@ -76,6 +79,7 @@ internal fun CompletionSettingsSheet(
         frequencyPenalty = defaults.frequencyPenalty
         presencePenalty = defaults.presencePenalty
         systemPrompt = defaults.systemPrompt
+        showThinking = defaults.showThinking
         onSettingsChanged(defaults)
     }
 
@@ -130,6 +134,31 @@ internal fun CompletionSettingsSheet(
             onValueChange = { maxTokens = it.roundToInt() },
             onValueChangeFinished = { emitUpdate() },
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(id = R.string.ui_completion_show_thinking_label),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = stringResource(id = R.string.ui_completion_show_thinking_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = showThinking,
+                onCheckedChange = { checked ->
+                    showThinking = checked
+                    emitUpdate()
+                },
+            )
+        }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
