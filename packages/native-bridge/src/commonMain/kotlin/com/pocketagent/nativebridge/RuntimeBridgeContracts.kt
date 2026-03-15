@@ -17,6 +17,16 @@ enum class GpuExecutionBackend {
     CPU,
 }
 
+enum class FlashAttnMode(val code: Int) {
+    AUTO(0),
+    ON(1),
+    OFF(2);
+
+    companion object {
+        fun fromCode(code: Int): FlashAttnMode = entries.firstOrNull { it.code == code } ?: AUTO
+    }
+}
+
 enum class CachePolicy(val code: Int) {
     OFF(0),
     PREFIX_KV_REUSE(1),
@@ -41,6 +51,18 @@ data class RuntimeSamplingConfig(
     val temperature: Float = 0.7f,
     val topK: Int = 40,
     val topP: Float = 0.95f,
+    val minP: Float = 0.0f,
+    val typicalP: Float = 1.0f,
+    val repeatLastN: Int = 64,
+    val repeatPenalty: Float = 1.0f,
+    val frequencyPenalty: Float = 0.0f,
+    val presencePenalty: Float = 0.0f,
+    val mirostat: Int = 0,
+    val mirostatTau: Float = 5.0f,
+    val mirostatEta: Float = 0.1f,
+    val xtcThreshold: Float = 0.1f,
+    val xtcProbability: Float = 0.0f,
+    val seed: Int = -1,
 )
 
 data class RuntimeLoadConfig(
@@ -52,8 +74,13 @@ data class RuntimeLoadConfig(
     val gpuEnabled: Boolean = false,
     val gpuLayers: Int = 0,
     val gpuBackend: GpuExecutionBackend = GpuExecutionBackend.AUTO,
+    val flashAttnMode: FlashAttnMode = FlashAttnMode.AUTO,
     val strictGpuOffload: Boolean = true,
+    @Deprecated("Use kvCacheTypeK and kvCacheTypeV.")
     val kvCacheType: KvCacheType = KvCacheType.Q8_0,
+    val kvCacheTypeK: KvCacheType = kvCacheType,
+    val kvCacheTypeV: KvCacheType = kvCacheType,
+    val kvUnified: Boolean = true,
     val speculativeEnabled: Boolean = false,
     val speculativeDraftModelId: String? = null,
     val speculativeDraftModelPath: String? = null,
@@ -73,8 +100,13 @@ data class RuntimeGenerationConfig(
     val gpuEnabled: Boolean = false,
     val gpuLayers: Int = 0,
     val gpuBackend: GpuExecutionBackend = GpuExecutionBackend.AUTO,
+    val flashAttnMode: FlashAttnMode = FlashAttnMode.AUTO,
     val strictGpuOffload: Boolean = true,
+    @Deprecated("Use kvCacheTypeK and kvCacheTypeV.")
     val kvCacheType: KvCacheType = KvCacheType.Q8_0,
+    val kvCacheTypeK: KvCacheType = kvCacheType,
+    val kvCacheTypeV: KvCacheType = kvCacheType,
+    val kvUnified: Boolean = true,
     val sampling: RuntimeSamplingConfig = RuntimeSamplingConfig(),
     val speculativeEnabled: Boolean = false,
     val speculativeDraftModelId: String? = null,
@@ -102,8 +134,12 @@ data class RuntimeGenerationConfig(
             gpuEnabled = gpuEnabled,
             gpuLayers = gpuLayers,
             gpuBackend = gpuBackend,
+            flashAttnMode = flashAttnMode,
             strictGpuOffload = strictGpuOffload,
             kvCacheType = kvCacheType,
+            kvCacheTypeK = kvCacheTypeK,
+            kvCacheTypeV = kvCacheTypeV,
+            kvUnified = kvUnified,
             speculativeEnabled = speculativeEnabled,
             speculativeDraftModelId = speculativeDraftModelId,
             speculativeDraftModelPath = speculativeDraftModelPath,
@@ -121,6 +157,19 @@ data class LoadedRuntimeKey(
     val modelPath: String?,
     val backend: RuntimeBackend,
     val loadConfig: RuntimeLoadConfig,
+)
+
+data class ModelRuntimeMetadata(
+    val layerCount: Int? = null,
+    val sizeBytes: Long? = null,
+    val contextLength: Int? = null,
+    val embeddingSize: Int? = null,
+    val headCountKv: Int? = null,
+    val keyLength: Int? = null,
+    val valueLength: Int? = null,
+    val vocabSize: Int? = null,
+    val slidingWindow: Int? = null,
+    val architecture: String? = null,
 )
 
 enum class RuntimeReloadReason {
@@ -154,10 +203,21 @@ enum class ModelLifecycleState {
     FAILED,
 }
 
+enum class ModelLoadingStage {
+    PRECHECK,
+    UNLOADING_PREVIOUS,
+    INITIALIZING_RUNTIME,
+    LOADING_MODEL,
+    RESTORING_SESSION_CACHE,
+    WARMING_UP,
+    COMPLETED,
+}
+
 enum class ModelLifecycleErrorCode {
     MODEL_FILE_UNAVAILABLE,
     RUNTIME_INCOMPATIBLE,
     BACKEND_INIT_FAILED,
+    OUT_OF_MEMORY,
     BUSY_GENERATION,
     CANCELLED_BY_NEWER_REQUEST,
     UNKNOWN,
@@ -186,6 +246,8 @@ data class ModelLifecycleEvent(
     val timestampEpochMs: Long = System.currentTimeMillis(),
     val error: ModelLifecycleError? = null,
     val loadingDetail: String? = null,
+    val loadingStage: ModelLoadingStage? = null,
+    val loadingProgress: Float? = null,
 )
 
 enum class GenerationFinishReason {
@@ -226,6 +288,11 @@ interface LlamaCppRuntimeBridge {
     fun modelLayerCount(): Int? = null
     fun modelSizeBytes(): Long? = null
     fun estimateMaxGpuLayers(nCtx: Int): Int? = null
+    fun actualGpuLayers(): Int? = null
+    fun actualDraftGpuLayers(): Int? = null
+    fun lastGpuLoadRetryCount(): Int? = null
+    fun currentRssMb(): Double? = null
+    fun isRuntimeReleased(): Boolean = true
     fun generate(prompt: String, maxTokens: Int, onToken: (String) -> Unit): GenerationResult =
         generate(
             requestId = "legacy",

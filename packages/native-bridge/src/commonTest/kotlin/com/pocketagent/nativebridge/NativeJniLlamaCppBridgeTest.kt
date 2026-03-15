@@ -4,6 +4,7 @@ import com.pocketagent.inference.ModelCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NativeJniLlamaCppBridgeTest {
@@ -61,6 +62,9 @@ class NativeJniLlamaCppBridgeTest {
                     temperature = 0.2f,
                     topK = 8,
                     topP = 0.6f,
+                    minP = 0.1f,
+                    repeatPenalty = 1.3f,
+                    mirostat = 2,
                 ),
                 nKeep = 96,
             ),
@@ -71,7 +75,46 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals(0.2f, nativeApi.lastSamplingTemperature)
         assertEquals(8, nativeApi.lastSamplingTopK)
         assertEquals(0.6f, nativeApi.lastSamplingTopP)
+        assertEquals(0.1f, nativeApi.lastSamplingMinP)
+        assertEquals(1.3f, nativeApi.lastSamplingRepeatPenalty)
+        assertEquals(2, nativeApi.lastSamplingMirostat)
         assertEquals(96, nativeApi.lastSamplingNKeep)
+    }
+
+    @Test
+    fun `forwards flash attention mode kv unified and split kv cache types to native load`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 16,
+                flashAttnMode = FlashAttnMode.OFF,
+                kvUnified = false,
+                kvCacheType = KvCacheType.Q8_0,
+                kvCacheTypeK = KvCacheType.Q8_0,
+                kvCacheTypeV = KvCacheType.Q4_0,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(listOf(FlashAttnMode.OFF.code), nativeApi.loadFlashAttnCodes)
+        assertEquals(listOf(false), nativeApi.loadKvUnified)
+        assertEquals(listOf(KvCacheType.Q8_0.code), nativeApi.loadKvCacheTypeCodes)
+        assertEquals(listOf(KvCacheType.Q8_0.code), nativeApi.loadKvCacheTypeKCodes)
+        assertEquals(listOf(KvCacheType.Q4_0.code), nativeApi.loadKvCacheTypeVCodes)
     }
 
     @Test
@@ -195,6 +238,45 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals(listOf(32), nativeApi.loadGpuLayers)
         assertEquals(listOf(2), nativeApi.loadDraftGpuLayers)
         assertEquals("GPU_BACKEND_LOAD_FAILED", bridge.lastError()?.code)
+    }
+
+    @Test
+    fun `gpu load backoff retries with fewer layers and records actual applied values`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = false,
+            loadResults = mutableListOf(false, false, true),
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """
+                {"compiled_backend":"opencl","last_error_code":"GPU_BACKEND_LOAD_FAILED","last_error_detail":"opencl out_of_memory"}
+            """.trimIndent(),
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 32,
+                gpuBackend = GpuExecutionBackend.AUTO,
+                strictGpuOffload = false,
+                speculativeEnabled = true,
+                speculativeDraftGpuLayers = 4,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(listOf(32, 24, 16), nativeApi.loadGpuLayers)
+        assertEquals(listOf(4, 3, 2), nativeApi.loadDraftGpuLayers)
+        assertEquals(16, bridge.actualGpuLayers())
+        assertEquals(2, bridge.actualDraftGpuLayers())
+        assertEquals(2, bridge.lastGpuLoadRetryCount())
     }
 
     @Test
@@ -551,12 +633,111 @@ class NativeJniLlamaCppBridgeTest {
         assertTrue(bridge.offloadModel("test"))
         assertEquals(null, bridge.getLoadedModel())
 
+        waitForLifecycleStates(
+            states = states,
+            expected = setOf(
+                ModelLifecycleState.LOADING,
+                ModelLifecycleState.LOADED,
+                ModelLifecycleState.OFFLOADING,
+                ModelLifecycleState.UNLOADED,
+            ),
+        )
+
         subscription.close()
 
         assertTrue(states.contains(ModelLifecycleState.LOADING))
         assertTrue(states.contains(ModelLifecycleState.LOADED))
         assertTrue(states.contains(ModelLifecycleState.OFFLOADING))
         assertTrue(states.contains(ModelLifecycleState.UNLOADED))
+    }
+
+    @Test
+    fun `load progress events are monotonic and complete at one`() {
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(
+                initializeOk = true,
+                loadOk = true,
+                generatedText = "ok",
+                loadProgressSteps = listOf(0.01f, 0.10f, 0.55f, 0.55f, 1.0f),
+            ),
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+        val observedProgress = mutableListOf<Float>()
+        val subscription = bridge.observeModelLifecycleState { event ->
+            if (event.state == ModelLifecycleState.LOADING && event.loadingProgress != null) {
+                observedProgress += event.loadingProgress
+            }
+        }
+
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+
+        subscription.close()
+        assertTrue(observedProgress.isNotEmpty())
+        assertEquals(observedProgress.sorted(), observedProgress)
+        assertEquals(1.0f, observedProgress.last())
+    }
+
+    @Test
+    fun `newer offload request cancels in progress native load`() {
+        lateinit var bridge: NativeJniLlamaCppBridge
+        bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(
+                initializeOk = true,
+                loadOk = true,
+                generatedText = "ok",
+                loadProgressSteps = listOf(0.15f, 0.30f, 0.60f),
+                onProgress = { _, _ ->
+                    bridge.offloadModel("cancel_inflight_load")
+                },
+                backendDiagnosticsJson = """
+                    {"last_error_code":"LOAD_CANCELLED_NEWER_REQUEST","last_error_detail":"superseded"}
+                """.trimIndent(),
+            ),
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST, bridge.currentModelLifecycleState().error?.code)
+    }
+
+    @Test
+    fun `oom native load failure maps to out of memory lifecycle code`() {
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(
+                initializeOk = true,
+                loadOk = false,
+                generatedText = "ok",
+                backendDiagnosticsJson = """
+                    {"last_error_code":"OUT_OF_MEMORY","last_error_detail":"stage=model_load|estimated_mb=4096"}
+                """.trimIndent(),
+            ),
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertFalse(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        val error = bridge.currentModelLifecycleState().error
+        assertNotNull(error)
+        assertEquals(ModelLifecycleErrorCode.OUT_OF_MEMORY, error.code)
+    }
+}
+
+private fun waitForLifecycleStates(
+    states: List<ModelLifecycleState>,
+    expected: Set<ModelLifecycleState>,
+    timeoutMs: Long = 1_000L,
+) {
+    val startedAt = System.currentTimeMillis()
+    while ((System.currentTimeMillis() - startedAt) < timeoutMs) {
+        if (expected.all(states::contains)) {
+            return
+        }
+        Thread.onSpinWait()
     }
 }
 
@@ -573,6 +754,8 @@ private class FakeNativeApi(
     private val modelSizeBytes: Long? = null,
     private val estimateMaxGpuLayersValue: Int? = null,
     private val prefixCacheDiagnosticsLine: String? = null,
+    private val loadProgressSteps: List<Float> = emptyList(),
+    private val onProgress: ((Float, NativeJniLlamaCppBridge.NativeApi.ProgressCallback?) -> Unit)? = null,
 ) : NativeJniLlamaCppBridge.NativeApi {
     var loadCalled = false
     var generateCalled = false
@@ -584,8 +767,25 @@ private class FakeNativeApi(
     var lastSamplingTemperature: Float? = null
     var lastSamplingTopK: Int? = null
     var lastSamplingTopP: Float? = null
+    var lastSamplingMinP: Float? = null
+    var lastSamplingTypicalP: Float? = null
+    var lastSamplingRepeatLastN: Int? = null
+    var lastSamplingRepeatPenalty: Float? = null
+    var lastSamplingFrequencyPenalty: Float? = null
+    var lastSamplingPresencePenalty: Float? = null
+    var lastSamplingMirostat: Int? = null
+    var lastSamplingMirostatTau: Float? = null
+    var lastSamplingMirostatEta: Float? = null
+    var lastSamplingXtcThreshold: Float? = null
+    var lastSamplingXtcProbability: Float? = null
+    var lastSamplingSeed: Int? = null
     var lastSamplingNKeep: Int? = null
     val loadGpuLayers = mutableListOf<Int>()
+    val loadFlashAttnCodes = mutableListOf<Int>()
+    val loadKvCacheTypeCodes = mutableListOf<Int>()
+    val loadKvCacheTypeKCodes = mutableListOf<Int>()
+    val loadKvCacheTypeVCodes = mutableListOf<Int>()
+    val loadKvUnified = mutableListOf<Boolean>()
     val loadDraftGpuLayers = mutableListOf<Int>()
     val loadUseMmap = mutableListOf<Boolean>()
     val loadUseMlock = mutableListOf<Boolean>()
@@ -593,11 +793,40 @@ private class FakeNativeApi(
 
     override fun initialize(): Boolean = initializeOk
 
-    override fun setSamplingConfig(temperature: Float, topK: Int, topP: Float, nKeep: Int) {
+    override fun setSamplingConfig(
+        temperature: Float,
+        topK: Int,
+        topP: Float,
+        minP: Float,
+        typicalP: Float,
+        repeatLastN: Int,
+        repeatPenalty: Float,
+        frequencyPenalty: Float,
+        presencePenalty: Float,
+        mirostat: Int,
+        mirostatTau: Float,
+        mirostatEta: Float,
+        xtcThreshold: Float,
+        xtcProbability: Float,
+        seed: Int,
+        nKeep: Int,
+    ) {
         samplingConfigCalls += 1
         lastSamplingTemperature = temperature
         lastSamplingTopK = topK
         lastSamplingTopP = topP
+        lastSamplingMinP = minP
+        lastSamplingTypicalP = typicalP
+        lastSamplingRepeatLastN = repeatLastN
+        lastSamplingRepeatPenalty = repeatPenalty
+        lastSamplingFrequencyPenalty = frequencyPenalty
+        lastSamplingPresencePenalty = presencePenalty
+        lastSamplingMirostat = mirostat
+        lastSamplingMirostatTau = mirostatTau
+        lastSamplingMirostatEta = mirostatEta
+        lastSamplingXtcThreshold = xtcThreshold
+        lastSamplingXtcProbability = xtcProbability
+        lastSamplingSeed = seed
         lastSamplingNKeep = nKeep
     }
 
@@ -610,10 +839,26 @@ private class FakeNativeApi(
         nUbatch: Int,
         nCtx: Int,
         nGpuLayers: Int,
+        flashAttnCode: Int,
         kvCacheTypeCode: Int,
+        kvCacheTypeKCode: Int,
+        kvCacheTypeVCode: Int,
+        kvUnified: Boolean,
         temperature: Float,
         topK: Int,
         topP: Float,
+        minP: Float,
+        typicalP: Float,
+        repeatLastN: Int,
+        repeatPenalty: Float,
+        frequencyPenalty: Float,
+        presencePenalty: Float,
+        mirostat: Int,
+        mirostatTau: Float,
+        mirostatEta: Float,
+        xtcThreshold: Float,
+        xtcProbability: Float,
+        seed: Int,
         speculativeEnabled: Boolean,
         speculativeDraftModelPath: String?,
         speculativeMaxDraftTokens: Int,
@@ -622,16 +867,28 @@ private class FakeNativeApi(
         useMmap: Boolean,
         useMlock: Boolean,
         nKeep: Int,
+        progressCallback: NativeJniLlamaCppBridge.NativeApi.ProgressCallback?,
     ): Boolean {
         if (throwOnLoad) {
             error("simulated native load exception")
         }
         loadCalled = true
         loadGpuLayers += nGpuLayers
+        loadFlashAttnCodes += flashAttnCode
+        loadKvCacheTypeCodes += kvCacheTypeCode
+        loadKvCacheTypeKCodes += kvCacheTypeKCode
+        loadKvCacheTypeVCodes += kvCacheTypeVCode
+        loadKvUnified += kvUnified
         loadDraftGpuLayers += speculativeDraftGpuLayers
         loadUseMmap += useMmap
         loadUseMlock += useMlock
         loadNKeep += nKeep
+        loadProgressSteps.forEach { progress ->
+            onProgress?.invoke(progress, progressCallback)
+            if (progressCallback?.onProgress(progress) == false) {
+                return false
+            }
+        }
         return if (loadResults != null && loadResults.isNotEmpty()) {
             loadResults.removeAt(0)
         } else {
@@ -686,6 +943,10 @@ private class FakeNativeApi(
     override fun estimateMaxGpuLayers(nCtx: Int): Int? = estimateMaxGpuLayersValue
 
     override fun prefixCacheDiagnosticsLine(): String? = prefixCacheDiagnosticsLine
+
+    override fun currentRssMb(): Double? = peakRssMb
+
+    override fun isRuntimeReleased(): Boolean = unloadCalled
 }
 
 private class FakeFallbackBridge(

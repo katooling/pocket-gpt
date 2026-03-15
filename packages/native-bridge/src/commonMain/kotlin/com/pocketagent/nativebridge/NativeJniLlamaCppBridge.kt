@@ -1,6 +1,7 @@
 package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
+import kotlin.concurrent.thread
 
 data class BridgeError(
     val code: String,
@@ -18,11 +19,16 @@ class NativeJniLlamaCppBridge(
 ) : LlamaCppRuntimeBridge {
     private val lifecycleLock = Any()
     private val lifecycleObserverLock = Any()
+    private val lifecycleDispatchLock = Object()
+    private val lifecycleDispatchQueue: ArrayDeque<ModelLifecycleEvent> = ArrayDeque()
     private var initialized = false
     private var runtimeReady = false
     private var usingFallback = false
+    @Volatile
     private var activeLoadToken: Long = 0L
     private var nextObserverId: Int = 1
+    @Volatile
+    private var lifecycleDispatcherStarted = false
     private val lifecycleObservers: MutableMap<Int, (ModelLifecycleEvent) -> Unit> = mutableMapOf()
     @Volatile
     private var lastBridgeError: BridgeError? = null
@@ -36,6 +42,16 @@ class NativeJniLlamaCppBridge(
     private var currentLifecycleEvent: ModelLifecycleEvent = ModelLifecycleEvent(
         state = ModelLifecycleState.UNLOADED,
     )
+    @Volatile
+    private var lastAppliedGpuLayers: Int? = null
+    @Volatile
+    private var lastAppliedDraftGpuLayers: Int? = null
+    @Volatile
+    private var lastGpuLoadRetryCount: Int? = null
+
+    init {
+        ensureLifecycleDispatcherStarted()
+    }
 
     override fun isReady(): Boolean {
         ensureRuntimeInitialized()
@@ -58,6 +74,18 @@ class NativeJniLlamaCppBridge(
                 temperature = config.sampling.temperature,
                 topK = config.sampling.topK,
                 topP = config.sampling.topP,
+                minP = config.sampling.minP,
+                typicalP = config.sampling.typicalP,
+                repeatLastN = config.sampling.repeatLastN,
+                repeatPenalty = config.sampling.repeatPenalty,
+                frequencyPenalty = config.sampling.frequencyPenalty,
+                presencePenalty = config.sampling.presencePenalty,
+                mirostat = config.sampling.mirostat,
+                mirostatTau = config.sampling.mirostatTau,
+                mirostatEta = config.sampling.mirostatEta,
+                xtcThreshold = config.sampling.xtcThreshold,
+                xtcProbability = config.sampling.xtcProbability,
+                seed = config.sampling.seed,
                 nKeep = config.nKeep,
             )
         }.onSuccess {
@@ -112,6 +140,51 @@ class NativeJniLlamaCppBridge(
             .onFailure { error -> recordBridgeError("JNI_ESTIMATE_GPU_LAYERS_EXCEPTION", error) }
             .getOrNull()
             ?.takeIf { it >= 0 }
+    }
+
+    override fun actualGpuLayers(): Int? {
+        return if (usingFallback) {
+            fallbackBridge.actualGpuLayers()
+        } else {
+            lastAppliedGpuLayers
+        }
+    }
+
+    override fun actualDraftGpuLayers(): Int? {
+        return if (usingFallback) {
+            fallbackBridge.actualDraftGpuLayers()
+        } else {
+            lastAppliedDraftGpuLayers
+        }
+    }
+
+    override fun lastGpuLoadRetryCount(): Int? {
+        return if (usingFallback) {
+            fallbackBridge.lastGpuLoadRetryCount()
+        } else {
+            lastGpuLoadRetryCount
+        }
+    }
+
+    override fun currentRssMb(): Double? {
+        ensureRuntimeInitialized()
+        if (usingFallback || !runtimeReady) {
+            return null
+        }
+        return runCatching { nativeApi.currentRssMb() }
+            .onFailure { error -> recordBridgeError("JNI_CURRENT_RSS_EXCEPTION", error) }
+            .getOrNull()
+            ?.takeIf { !it.isNaN() && it >= 0.0 }
+    }
+
+    override fun isRuntimeReleased(): Boolean {
+        ensureRuntimeInitialized()
+        if (usingFallback || !runtimeReady) {
+            return true
+        }
+        return runCatching { nativeApi.isRuntimeReleased() }
+            .onFailure { error -> recordBridgeError("JNI_RUNTIME_RELEASE_STATUS_EXCEPTION", error) }
+            .getOrElse { false }
     }
 
     override fun supportsGpuOffload(): Boolean {
@@ -217,6 +290,9 @@ class NativeJniLlamaCppBridge(
                 state = ModelLifecycleState.LOADING,
                 modelId = modelId,
                 modelVersion = options.modelVersion,
+                loadingDetail = defaultLoadingDetail(ModelLoadingStage.INITIALIZING_RUNTIME),
+                loadingStage = ModelLoadingStage.INITIALIZING_RUNTIME,
+                loadingProgress = 0.0f,
             ),
         )
         val loaded = synchronized(lifecycleLock) {
@@ -224,7 +300,7 @@ class NativeJniLlamaCppBridge(
                 recordBridgeError("LOAD_CANCELLED_NEWER_REQUEST", "modelId=$modelId")
                 false
             } else {
-                loadModelUnchecked(modelId = modelId, modelPath = modelPath, options = options)
+                loadModelUnchecked(modelId = modelId, modelPath = modelPath, options = options, loadToken = token)
             }
         }
         synchronized(lifecycleLock) {
@@ -251,6 +327,9 @@ class NativeJniLlamaCppBridge(
                         state = ModelLifecycleState.LOADED,
                         modelId = modelId,
                         modelVersion = options.modelVersion,
+                        loadingDetail = defaultLoadingDetail(ModelLoadingStage.COMPLETED),
+                        loadingStage = ModelLoadingStage.COMPLETED,
+                        loadingProgress = 1.0f,
                     ),
                 )
             } else {
@@ -266,12 +345,18 @@ class NativeJniLlamaCppBridge(
         return loaded
     }
 
-    private fun loadModelUnchecked(modelId: String, modelPath: String?, options: ModelLoadOptions): Boolean {
+    private fun loadModelUnchecked(
+        modelId: String,
+        modelPath: String?,
+        options: ModelLoadOptions,
+        loadToken: Long,
+    ): Boolean {
         ensureRuntimeInitialized()
         if (!runtimeReady) {
             recordBridgeError("RUNTIME_NOT_READY", "Runtime is not initialized.")
             return false
         }
+        resetAppliedGpuStats()
         val validation = ModelCatalog.validateBridgeLoad(
             modelId = modelId,
             modelPath = modelPath,
@@ -283,11 +368,19 @@ class NativeJniLlamaCppBridge(
         }
         if (usingFallback) {
             fallbackBridge.setRuntimeGenerationConfig(runtimeGenerationConfig)
-            return fallbackBridge.loadModel(
+            val loaded = fallbackBridge.loadModel(
                 modelId = modelId,
                 modelPath = validation.normalizedModelPath,
                 options = options,
             )
+            if (loaded) {
+                updateAppliedGpuStats(
+                    gpuLayers = fallbackBridge.actualGpuLayers(),
+                    draftGpuLayers = fallbackBridge.actualDraftGpuLayers(),
+                    retryCount = fallbackBridge.lastGpuLoadRetryCount(),
+                )
+            }
+            return loaded
         }
         val normalizedModelPath = validation.normalizedModelPath.orEmpty()
         val config = runtimeGenerationConfig
@@ -337,44 +430,124 @@ class NativeJniLlamaCppBridge(
             recordBridgeError("GPU_BACKEND_UNAVAILABLE", detail)
             return false
         }
-        val primaryAttempt = runCatching {
-            nativeApi.loadModel(
-                modelId = modelId,
-                modelPath = normalizedModelPath,
-                nThreads = config.nThreads,
-                nThreadsBatch = config.nThreadsBatch,
-                nBatch = config.nBatch,
-                nUbatch = config.nUbatch,
-                nCtx = config.nCtx,
-                nGpuLayers = effectiveGpuLayers,
-                kvCacheTypeCode = config.kvCacheType.code,
-                temperature = config.sampling.temperature,
-                topK = config.sampling.topK,
-                topP = config.sampling.topP,
-                speculativeEnabled = config.speculativeEnabled,
-                speculativeDraftModelPath = config.speculativeDraftModelPath,
-                speculativeMaxDraftTokens = config.speculativeMaxDraftTokens,
-                speculativeMinDraftTokens = config.speculativeMinDraftTokens,
-                speculativeDraftGpuLayers = effectiveDraftGpuLayers,
-                useMmap = config.useMmap,
-                useMlock = config.useMlock,
-                nKeep = config.nKeep,
-            )
+        val allowGpuBackoff = gpuEnabledAndSupported &&
+            !strictGpuOffload &&
+            effectiveGpuLayers > 0
+        var lastProgress = -1.0f
+        var lastProgressAtMs = 0L
+        val progressCallback = NativeApi.ProgressCallback { rawProgress ->
+            val clamped = rawProgress.coerceIn(0.0f, 1.0f)
+            val now = System.currentTimeMillis()
+            val shouldEmit = lastProgress < 0.0f ||
+                clamped >= 1.0f ||
+                (clamped - lastProgress) >= LOAD_PROGRESS_EMIT_STEP ||
+                (now - lastProgressAtMs) >= LOAD_PROGRESS_EMIT_INTERVAL_MS
+            if (shouldEmit) {
+                lastProgress = clamped
+                lastProgressAtMs = now
+                emitLifecycleEvent(
+                    ModelLifecycleEvent(
+                        state = ModelLifecycleState.LOADING,
+                        modelId = modelId,
+                        modelVersion = options.modelVersion,
+                        loadingDetail = defaultLoadingDetail(ModelLoadingStage.LOADING_MODEL),
+                        loadingStage = ModelLoadingStage.LOADING_MODEL,
+                        loadingProgress = clamped,
+                    ),
+                )
+            }
+            activeLoadToken == loadToken
         }
-        if (primaryAttempt.getOrNull() == true) {
-            clearBridgeError()
-            return true
-        }
+        val loadAttempts = buildGpuLoadAttempts(
+            targetGpuLayers = effectiveGpuLayers,
+            draftGpuLayers = effectiveDraftGpuLayers,
+        )
+        var finalBridgeError: BridgeError? = null
+        var finalThrowable: Throwable? = null
 
-        val finalError = primaryAttempt.exceptionOrNull()
-        if (finalError != null) {
-            recordBridgeError("JNI_LOAD_EXCEPTION", finalError)
-        } else if (gpuRequested && strictGpuOffload) {
-            val nativeError = parseNativeBackendError(backendDiagnosticsJson().orEmpty())
-            recordBridgeError(
-                nativeError?.first ?: "GPU_BACKEND_LOAD_FAILED",
-                nativeError?.second ?: "modelId=$modelId|backend=${config.gpuBackend.name.lowercase()}|gpu_layers=$requestedGpuLayers|draft_gpu_layers=$requestedDraftGpuLayers",
+        loadAttempts.forEachIndexed { attemptIndex, attempt ->
+            val loadAttempt = runCatching {
+                nativeApi.loadModel(
+                    modelId = modelId,
+                    modelPath = normalizedModelPath,
+                    nThreads = config.nThreads,
+                    nThreadsBatch = config.nThreadsBatch,
+                    nBatch = config.nBatch,
+                    nUbatch = config.nUbatch,
+                    nCtx = config.nCtx,
+                    nGpuLayers = attempt.targetGpuLayers,
+                    flashAttnCode = config.flashAttnMode.code,
+                    kvCacheTypeCode = config.kvCacheType.code,
+                    kvCacheTypeKCode = config.kvCacheTypeK.code,
+                    kvCacheTypeVCode = config.kvCacheTypeV.code,
+                    kvUnified = config.kvUnified,
+                    temperature = config.sampling.temperature,
+                    topK = config.sampling.topK,
+                    topP = config.sampling.topP,
+                    minP = config.sampling.minP,
+                    typicalP = config.sampling.typicalP,
+                    repeatLastN = config.sampling.repeatLastN,
+                    repeatPenalty = config.sampling.repeatPenalty,
+                    frequencyPenalty = config.sampling.frequencyPenalty,
+                    presencePenalty = config.sampling.presencePenalty,
+                    mirostat = config.sampling.mirostat,
+                    mirostatTau = config.sampling.mirostatTau,
+                    mirostatEta = config.sampling.mirostatEta,
+                    xtcThreshold = config.sampling.xtcThreshold,
+                    xtcProbability = config.sampling.xtcProbability,
+                    seed = config.sampling.seed,
+                    speculativeEnabled = config.speculativeEnabled,
+                    speculativeDraftModelPath = config.speculativeDraftModelPath,
+                    speculativeMaxDraftTokens = config.speculativeMaxDraftTokens,
+                    speculativeMinDraftTokens = config.speculativeMinDraftTokens,
+                    speculativeDraftGpuLayers = attempt.draftGpuLayers,
+                    useMmap = config.useMmap,
+                    useMlock = config.useMlock,
+                    nKeep = config.nKeep,
+                    progressCallback = progressCallback,
+                )
+            }
+            if (loadAttempt.getOrNull() == true) {
+                clearBridgeError()
+                updateAppliedGpuStats(
+                    gpuLayers = attempt.targetGpuLayers,
+                    draftGpuLayers = attempt.draftGpuLayers,
+                    retryCount = attemptIndex,
+                )
+                return true
+            }
+
+            finalThrowable = loadAttempt.exceptionOrNull()
+            finalBridgeError = resolveLoadAttemptError(
+                throwable = finalThrowable,
+                modelId = modelId,
+                backend = config.gpuBackend,
+                gpuLayers = attempt.targetGpuLayers,
+                draftGpuLayers = attempt.draftGpuLayers,
             )
+            val canRetry = allowGpuBackoff &&
+                attemptIndex < loadAttempts.lastIndex &&
+                isRetryableGpuLoadFailure(finalBridgeError)
+            if (canRetry) {
+                logBridge(
+                    "GPU_LOAD_BACKOFF",
+                    "model=$modelId|attempt=${attemptIndex + 1}|gpu_layers=${attempt.targetGpuLayers}|draft_gpu_layers=${attempt.draftGpuLayers}|error=${finalBridgeError?.code.orEmpty()}",
+                )
+                return@forEachIndexed
+            }
+            if (finalThrowable != null) {
+                recordBridgeError("JNI_LOAD_EXCEPTION", finalThrowable!!)
+            } else if (finalBridgeError != null) {
+                recordBridgeError(finalBridgeError!!.code, finalBridgeError!!.detail)
+            } else {
+                recordBridgeError("JNI_LOAD_FAILED", "modelId=$modelId")
+            }
+            return false
+        }
+        if (finalThrowable != null) {
+            recordBridgeError("JNI_LOAD_EXCEPTION", finalThrowable!!)
+        } else if (finalBridgeError != null) {
+            recordBridgeError(finalBridgeError!!.code, finalBridgeError!!.detail)
         } else {
             recordBridgeError("JNI_LOAD_FAILED", "modelId=$modelId")
         }
@@ -525,6 +698,7 @@ class NativeJniLlamaCppBridge(
     }
 
     private fun unloadModelUnchecked() {
+        resetAppliedGpuStats()
         if (!runtimeReady) {
             return
         }
@@ -581,6 +755,7 @@ class NativeJniLlamaCppBridge(
     override fun currentModelLifecycleState(): ModelLifecycleEvent = currentLifecycleEvent
 
     override fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        ensureLifecycleDispatcherStarted()
         val id = synchronized(lifecycleObserverLock) {
             val observerId = nextObserverId++
             lifecycleObservers[observerId] = listener
@@ -633,6 +808,18 @@ class NativeJniLlamaCppBridge(
         lastBridgeError = null
     }
 
+    private fun resetAppliedGpuStats() {
+        lastAppliedGpuLayers = null
+        lastAppliedDraftGpuLayers = null
+        lastGpuLoadRetryCount = null
+    }
+
+    private fun updateAppliedGpuStats(gpuLayers: Int?, draftGpuLayers: Int?, retryCount: Int?) {
+        lastAppliedGpuLayers = gpuLayers
+        lastAppliedDraftGpuLayers = draftGpuLayers
+        lastGpuLoadRetryCount = retryCount
+    }
+
     private fun recordBridgeError(code: String, error: Throwable) {
         lastBridgeError = BridgeError(
             code = code,
@@ -662,11 +849,37 @@ class NativeJniLlamaCppBridge(
 
     private fun emitLifecycleEvent(event: ModelLifecycleEvent) {
         currentLifecycleEvent = event
-        val listeners = synchronized(lifecycleObserverLock) {
-            lifecycleObservers.values.toList()
+        ensureLifecycleDispatcherStarted()
+        synchronized(lifecycleDispatchLock) {
+            lifecycleDispatchQueue.addLast(event)
+            lifecycleDispatchLock.notifyAll()
         }
-        listeners.forEach { listener ->
-            runCatching { listener(event) }
+    }
+
+    private fun ensureLifecycleDispatcherStarted() {
+        if (lifecycleDispatcherStarted) {
+            return
+        }
+        lifecycleDispatcherStarted = true
+        thread(
+            start = true,
+            isDaemon = true,
+            name = "pocketgpt-lifecycle-dispatcher",
+        ) {
+            while (true) {
+                val nextEvent = synchronized(lifecycleDispatchLock) {
+                    while (lifecycleDispatchQueue.isEmpty()) {
+                        lifecycleDispatchLock.wait()
+                    }
+                    lifecycleDispatchQueue.removeFirst()
+                }
+                val listeners = synchronized(lifecycleObserverLock) {
+                    lifecycleObservers.values.toList()
+                }
+                listeners.forEach { listener ->
+                    runCatching { listener(nextEvent) }
+                }
+            }
         }
     }
 
@@ -685,6 +898,11 @@ class NativeJniLlamaCppBridge(
                 normalized.contains("PROVENANCE") ||
                 normalized.contains("CHECKSUM")
             -> ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE
+
+            normalized.contains("OUT_OF_MEMORY") ||
+                normalized.contains("OOM") ||
+                normalized.contains("ENOMEM")
+            -> ModelLifecycleErrorCode.OUT_OF_MEMORY
 
             normalized.contains("RUNTIME_NOT_READY") ||
                 normalized.contains("JNI_INIT") ||
@@ -796,6 +1014,91 @@ class NativeJniLlamaCppBridge(
         return code to detail
     }
 
+    private fun resolveLoadAttemptError(
+        throwable: Throwable?,
+        modelId: String,
+        backend: GpuExecutionBackend,
+        gpuLayers: Int,
+        draftGpuLayers: Int,
+    ): BridgeError? {
+        if (throwable != null) {
+            return BridgeError(
+                code = "JNI_LOAD_EXCEPTION",
+                detail = throwable.message ?: throwable::class.simpleName,
+            )
+        }
+        val nativeError = parseNativeBackendError(backendDiagnosticsJson().orEmpty())
+        if (nativeError != null) {
+            return BridgeError(nativeError.first, nativeError.second)
+        }
+        if (gpuLayers <= 0 && draftGpuLayers <= 0) {
+            return BridgeError(
+                code = "JNI_LOAD_FAILED",
+                detail = "modelId=$modelId|backend=${backend.name.lowercase()}",
+            )
+        }
+        return BridgeError(
+            code = "GPU_BACKEND_LOAD_FAILED",
+            detail = "modelId=$modelId|backend=${backend.name.lowercase()}|gpu_layers=$gpuLayers|draft_gpu_layers=$draftGpuLayers",
+        )
+    }
+
+    private fun isRetryableGpuLoadFailure(error: BridgeError?): Boolean {
+        val normalizedCode = error?.code.orEmpty().trim().lowercase()
+        val normalizedDetail = error?.detail.orEmpty().trim().lowercase()
+        val combined = "$normalizedCode|$normalizedDetail"
+        if (combined.isBlank()) {
+            return false
+        }
+        return RETRYABLE_GPU_LOAD_ERROR_TERMS.any { term -> combined.contains(term) }
+    }
+
+    private data class GpuLoadAttempt(
+        val targetGpuLayers: Int,
+        val draftGpuLayers: Int,
+    )
+
+    private fun buildGpuLoadAttempts(targetGpuLayers: Int, draftGpuLayers: Int): List<GpuLoadAttempt> {
+        if (targetGpuLayers <= 0) {
+            return listOf(
+                GpuLoadAttempt(
+                    targetGpuLayers = targetGpuLayers,
+                    draftGpuLayers = draftGpuLayers.coerceAtLeast(0),
+                ),
+            )
+        }
+        val attempts = linkedSetOf<Int>()
+        attempts += targetGpuLayers
+        attempts += (targetGpuLayers * 3) / 4
+        attempts += targetGpuLayers / 2
+        attempts += targetGpuLayers / 4
+        attempts += 0
+        return attempts
+            .map { candidate ->
+                GpuLoadAttempt(
+                    targetGpuLayers = candidate.coerceAtLeast(0),
+                    draftGpuLayers = scaledDraftGpuLayers(
+                        requestedTargetGpuLayers = targetGpuLayers,
+                        requestedDraftGpuLayers = draftGpuLayers,
+                        candidateTargetGpuLayers = candidate.coerceAtLeast(0),
+                    ),
+                )
+            }
+    }
+
+    private fun scaledDraftGpuLayers(
+        requestedTargetGpuLayers: Int,
+        requestedDraftGpuLayers: Int,
+        candidateTargetGpuLayers: Int,
+    ): Int {
+        if (requestedTargetGpuLayers <= 0 || requestedDraftGpuLayers <= 0 || candidateTargetGpuLayers <= 0) {
+            return 0
+        }
+        val scaled = (requestedDraftGpuLayers.toDouble() * candidateTargetGpuLayers.toDouble() / requestedTargetGpuLayers.toDouble())
+            .toInt()
+        return scaled.coerceAtLeast(0).coerceAtMost(candidateTargetGpuLayers)
+    }
+
     private fun isOpenClBackendActive(): Boolean {
         val diagnostics = backendDiagnosticsJson().orEmpty()
         if (diagnostics.isBlank()) return false
@@ -854,6 +1157,10 @@ class NativeJniLlamaCppBridge(
             fun onToken(token: String)
         }
 
+        fun interface ProgressCallback {
+            fun onProgress(progress: Float): Boolean
+        }
+
         data class StreamStatus(
             val finishReason: GenerationFinishReason,
             val errorCode: String? = null,
@@ -869,10 +1176,26 @@ class NativeJniLlamaCppBridge(
             nUbatch: Int,
             nCtx: Int,
             nGpuLayers: Int,
+            flashAttnCode: Int,
             kvCacheTypeCode: Int,
+            kvCacheTypeKCode: Int,
+            kvCacheTypeVCode: Int,
+            kvUnified: Boolean,
             temperature: Float,
             topK: Int,
             topP: Float,
+            minP: Float,
+            typicalP: Float,
+            repeatLastN: Int,
+            repeatPenalty: Float,
+            frequencyPenalty: Float,
+            presencePenalty: Float,
+            mirostat: Int,
+            mirostatTau: Float,
+            mirostatEta: Float,
+            xtcThreshold: Float,
+            xtcProbability: Float,
+            seed: Int,
             speculativeEnabled: Boolean,
             speculativeDraftModelPath: String?,
             speculativeMaxDraftTokens: Int,
@@ -881,11 +1204,24 @@ class NativeJniLlamaCppBridge(
             useMmap: Boolean,
             useMlock: Boolean,
             nKeep: Int,
+            progressCallback: ProgressCallback? = null,
         ): Boolean
         fun setSamplingConfig(
             temperature: Float,
             topK: Int,
             topP: Float,
+            minP: Float,
+            typicalP: Float,
+            repeatLastN: Int,
+            repeatPenalty: Float,
+            frequencyPenalty: Float,
+            presencePenalty: Float,
+            mirostat: Int,
+            mirostatTau: Float,
+            mirostatEta: Float,
+            xtcThreshold: Float,
+            xtcProbability: Float,
+            seed: Int,
             nKeep: Int,
         )
         fun generateStream(
@@ -905,6 +1241,8 @@ class NativeJniLlamaCppBridge(
         fun estimateMaxGpuLayers(nCtx: Int): Int? = null
         fun backendDiagnosticsJson(): String
         fun peakRssMb(): Double? = null
+        fun currentRssMb(): Double? = null
+        fun isRuntimeReleased(): Boolean = true
         fun prefixCacheDiagnosticsLine(): String? = null
         fun setBackendProfile(profile: String) {}
         fun saveSessionCache(filePath: String): Boolean = false
@@ -922,10 +1260,26 @@ class NativeJniLlamaCppBridge(
             nUbatch: Int,
             nCtx: Int,
             nGpuLayers: Int,
+            flashAttnCode: Int,
             kvCacheTypeCode: Int,
+            kvCacheTypeKCode: Int,
+            kvCacheTypeVCode: Int,
+            kvUnified: Boolean,
             temperature: Float,
             topK: Int,
             topP: Float,
+            minP: Float,
+            typicalP: Float,
+            repeatLastN: Int,
+            repeatPenalty: Float,
+            frequencyPenalty: Float,
+            presencePenalty: Float,
+            mirostat: Int,
+            mirostatTau: Float,
+            mirostatEta: Float,
+            xtcThreshold: Float,
+            xtcProbability: Float,
+            seed: Int,
             speculativeEnabled: Boolean,
             speculativeDraftModelPath: String?,
             speculativeMaxDraftTokens: Int,
@@ -934,11 +1288,24 @@ class NativeJniLlamaCppBridge(
             useMmap: Boolean,
             useMlock: Boolean,
             nKeep: Int,
+            progressCallback: NativeApi.ProgressCallback?,
         ): Boolean
         external fun nativeSetSamplingConfig(
             temperature: Float,
             topK: Int,
             topP: Float,
+            minP: Float,
+            typicalP: Float,
+            repeatLastN: Int,
+            repeatPenalty: Float,
+            frequencyPenalty: Float,
+            presencePenalty: Float,
+            mirostat: Int,
+            mirostatTau: Float,
+            mirostatEta: Float,
+            xtcThreshold: Float,
+            xtcProbability: Float,
+            seed: Int,
             nKeep: Int,
         )
         external fun nativeGenerateStream(
@@ -958,6 +1325,8 @@ class NativeJniLlamaCppBridge(
         external fun nativeEstimateMaxGpuLayers(nCtx: Int): Int
         external fun nativeBackendDiagnosticsJson(): String
         external fun nativePeakRssMb(): Double
+        external fun nativeCurrentRssMb(): Double
+        external fun nativeIsRuntimeReleased(): Boolean
         external fun nativePrefixCacheDiagnosticsLine(): String
         external fun nativeSetBackendProfile(profile: String)
         external fun nativeSaveSessionCache(filePath: String): Boolean
@@ -974,10 +1343,26 @@ class NativeJniLlamaCppBridge(
             nUbatch: Int,
             nCtx: Int,
             nGpuLayers: Int,
+            flashAttnCode: Int,
             kvCacheTypeCode: Int,
+            kvCacheTypeKCode: Int,
+            kvCacheTypeVCode: Int,
+            kvUnified: Boolean,
             temperature: Float,
             topK: Int,
             topP: Float,
+            minP: Float,
+            typicalP: Float,
+            repeatLastN: Int,
+            repeatPenalty: Float,
+            frequencyPenalty: Float,
+            presencePenalty: Float,
+            mirostat: Int,
+            mirostatTau: Float,
+            mirostatEta: Float,
+            xtcThreshold: Float,
+            xtcProbability: Float,
+            seed: Int,
             speculativeEnabled: Boolean,
             speculativeDraftModelPath: String?,
             speculativeMaxDraftTokens: Int,
@@ -986,6 +1371,7 @@ class NativeJniLlamaCppBridge(
             useMmap: Boolean,
             useMlock: Boolean,
             nKeep: Int,
+            progressCallback: NativeApi.ProgressCallback?,
         ): Boolean {
             return nativeLoadModel(
                 modelId,
@@ -996,10 +1382,26 @@ class NativeJniLlamaCppBridge(
                 nUbatch,
                 nCtx,
                 nGpuLayers,
+                flashAttnCode,
                 kvCacheTypeCode,
+                kvCacheTypeKCode,
+                kvCacheTypeVCode,
+                kvUnified,
                 temperature,
                 topK,
                 topP,
+                minP,
+                typicalP,
+                repeatLastN,
+                repeatPenalty,
+                frequencyPenalty,
+                presencePenalty,
+                mirostat,
+                mirostatTau,
+                mirostatEta,
+                xtcThreshold,
+                xtcProbability,
+                seed,
                 speculativeEnabled,
                 speculativeDraftModelPath,
                 speculativeMaxDraftTokens,
@@ -1008,6 +1410,7 @@ class NativeJniLlamaCppBridge(
                 useMmap,
                 useMlock,
                 nKeep,
+                progressCallback,
             )
         }
 
@@ -1035,12 +1438,36 @@ class NativeJniLlamaCppBridge(
             temperature: Float,
             topK: Int,
             topP: Float,
+            minP: Float,
+            typicalP: Float,
+            repeatLastN: Int,
+            repeatPenalty: Float,
+            frequencyPenalty: Float,
+            presencePenalty: Float,
+            mirostat: Int,
+            mirostatTau: Float,
+            mirostatEta: Float,
+            xtcThreshold: Float,
+            xtcProbability: Float,
+            seed: Int,
             nKeep: Int,
         ) {
             nativeSetSamplingConfig(
                 temperature = temperature,
                 topK = topK,
                 topP = topP,
+                minP = minP,
+                typicalP = typicalP,
+                repeatLastN = repeatLastN,
+                repeatPenalty = repeatPenalty,
+                frequencyPenalty = frequencyPenalty,
+                presencePenalty = presencePenalty,
+                mirostat = mirostat,
+                mirostatTau = mirostatTau,
+                mirostatEta = mirostatEta,
+                xtcThreshold = xtcThreshold,
+                xtcProbability = xtcProbability,
+                seed = seed,
                 nKeep = nKeep,
             )
         }
@@ -1066,6 +1493,13 @@ class NativeJniLlamaCppBridge(
             val value = nativePeakRssMb()
             return value.takeIf { !it.isNaN() && it >= 0.0 }
         }
+
+        override fun currentRssMb(): Double? {
+            val value = nativeCurrentRssMb()
+            return value.takeIf { !it.isNaN() && it >= 0.0 }
+        }
+
+        override fun isRuntimeReleased(): Boolean = nativeIsRuntimeReleased()
 
         override fun prefixCacheDiagnosticsLine(): String = nativePrefixCacheDiagnosticsLine()
 
@@ -1094,6 +1528,18 @@ class NativeJniLlamaCppBridge(
         private val LAST_ERROR_DETAIL_REGEX = "\"last_error_detail\"\\s*:\\s*\"([^\"]*)\"".toRegex(
             option = RegexOption.IGNORE_CASE,
         )
+        private val RETRYABLE_GPU_LOAD_ERROR_TERMS = setOf(
+            "gpu",
+            "opencl",
+            "hexagon",
+            "backend",
+            "memory",
+            "alloc",
+            "oom",
+            "out_of_memory",
+            "context_init",
+            "load_failed",
+        )
         // OpenCL-safe quantizations (supported in current upstream docs/backend):
         // Q4_0, Q6_K, Q8_0, F16/F32, and MXFP4.
         private val OPENCL_SAFE_QUANT_REGEX = Regex(
@@ -1120,6 +1566,21 @@ class NativeJniLlamaCppBridge(
                 ?.lowercase()
                 ?: return true
             return raw !in setOf("0", "false", "no", "off")
+        }
+
+        private const val LOAD_PROGRESS_EMIT_INTERVAL_MS = 250L
+        private const val LOAD_PROGRESS_EMIT_STEP = 0.05f
+
+        private fun defaultLoadingDetail(stage: ModelLoadingStage): String {
+            return when (stage) {
+                ModelLoadingStage.PRECHECK -> "Checking model availability..."
+                ModelLoadingStage.UNLOADING_PREVIOUS -> "Releasing previous model..."
+                ModelLoadingStage.INITIALIZING_RUNTIME -> "Initializing runtime..."
+                ModelLoadingStage.LOADING_MODEL -> "Loading model..."
+                ModelLoadingStage.RESTORING_SESSION_CACHE -> "Restoring session cache..."
+                ModelLoadingStage.WARMING_UP -> "Warming up..."
+                ModelLoadingStage.COMPLETED -> "Loaded"
+            }
         }
     }
 }

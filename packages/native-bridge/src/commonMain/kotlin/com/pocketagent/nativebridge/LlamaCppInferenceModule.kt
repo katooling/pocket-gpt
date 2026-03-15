@@ -3,17 +3,12 @@ package com.pocketagent.nativebridge
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 
-data class CachedModelRuntimeMetadata(
-    val layerCount: Int? = null,
-    val sizeBytes: Long? = null,
-)
-
 class LlamaCppInferenceModule(
     private val runtimeBridge: LlamaCppRuntimeBridge = NativeJniLlamaCppBridge(),
 ) : InferenceModule {
     private var activeModelId: String? = null
     private val modelPathById: MutableMap<String, String> = mutableMapOf()
-    private val modelMetadataById: MutableMap<String, CachedModelRuntimeMetadata> = mutableMapOf()
+    private val modelMetadataById: MutableMap<String, ModelRuntimeMetadata> = mutableMapOf()
     private val estimatedGpuLayersByModelAndContext: MutableMap<Pair<String, Int>, Int> = mutableMapOf()
     private var runtimeGenerationConfig: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
     private var requiresReloadForConfigChange: Boolean = false
@@ -74,9 +69,10 @@ class LlamaCppInferenceModule(
         )
         val completedAtMs = System.currentTimeMillis()
         if (loaded) {
-            modelMetadataById[modelId] = CachedModelRuntimeMetadata(
-                layerCount = runtimeBridge.modelLayerCount()?.takeIf { it > 0 },
-                sizeBytes = runtimeBridge.modelSizeBytes()?.takeIf { it > 0L },
+            val existingMetadata = modelMetadataById[modelId] ?: ModelRuntimeMetadata()
+            modelMetadataById[modelId] = existingMetadata.copy(
+                layerCount = runtimeBridge.modelLayerCount()?.takeIf { it > 0 } ?: existingMetadata.layerCount,
+                sizeBytes = runtimeBridge.modelSizeBytes()?.takeIf { it > 0L } ?: existingMetadata.sizeBytes,
             )
             runtimeBridge.estimateMaxGpuLayers(resolvedConfig.nCtx)
                 ?.takeIf { it >= 0 }
@@ -218,6 +214,12 @@ class LlamaCppInferenceModule(
             ?.takeIf { it.isNotEmpty() }
     }
 
+    fun registerModelMetadata(modelId: String, metadata: ModelRuntimeMetadata) {
+        modelMetadataById[modelId] = metadata
+    }
+
+    fun cachedModelMetadata(modelId: String): ModelRuntimeMetadata? = modelMetadataById[modelId]
+
     fun cachedModelLayerCount(modelId: String): Int? = modelMetadataById[modelId]?.layerCount
 
     fun cachedModelSizeBytes(modelId: String): Long? = modelMetadataById[modelId]?.sizeBytes
@@ -225,6 +227,16 @@ class LlamaCppInferenceModule(
     fun activeModelLayerCount(): Int? = activeModelId?.let(::cachedModelLayerCount)
 
     fun activeModelSizeBytes(): Long? = activeModelId?.let(::cachedModelSizeBytes)
+
+    fun actualGpuLayers(): Int? = runtimeBridge.actualGpuLayers()
+
+    fun actualDraftGpuLayers(): Int? = runtimeBridge.actualDraftGpuLayers()
+
+    fun lastGpuLoadRetryCount(): Int? = runtimeBridge.lastGpuLoadRetryCount()
+
+    fun currentRssMb(): Double? = runtimeBridge.currentRssMb()
+
+    fun isRuntimeReleased(): Boolean = runtimeBridge.isRuntimeReleased()
 
     fun cachedEstimatedMaxGpuLayers(modelId: String, nCtx: Int): Int? {
         val resolvedCtx = nCtx.coerceAtLeast(1)

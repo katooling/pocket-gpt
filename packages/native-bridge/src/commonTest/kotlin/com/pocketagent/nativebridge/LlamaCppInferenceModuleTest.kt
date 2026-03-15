@@ -164,6 +164,33 @@ class LlamaCppInferenceModuleTest {
     }
 
     @Test
+    fun `registered metadata is preserved and load fills runtime layer count and size`() {
+        val bridge = FakeBridge(modelLayerCount = 22, modelSizeBytes = 1_200_000_000L)
+        val module = LlamaCppInferenceModule(bridge)
+        module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+        module.registerModelMetadata(
+            ModelCatalog.QWEN_3_5_0_8B_Q4,
+            ModelRuntimeMetadata(
+                contextLength = 4096,
+                embeddingSize = 1024,
+                headCountKv = 8,
+                keyLength = 128,
+                valueLength = 128,
+                vocabSize = 151_936,
+                architecture = "qwen3",
+            ),
+        )
+
+        assertTrue(module.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        val metadata = module.cachedModelMetadata(ModelCatalog.QWEN_3_5_0_8B_Q4)
+
+        assertEquals(22, metadata?.layerCount)
+        assertEquals(1_200_000_000L, metadata?.sizeBytes)
+        assertEquals(4096, metadata?.contextLength)
+        assertEquals("qwen3", metadata?.architecture)
+    }
+
+    @Test
     fun `generate stream with cache delegates cache key and policy`() {
         val bridge = FakeBridge()
         val module = LlamaCppInferenceModule(bridge)
@@ -189,6 +216,8 @@ private class FakeBridge(
     private val lastError: BridgeError? = null,
     private val prefixCacheDiagnosticsLine: String? = null,
     private val estimateMaxGpuLayers: Int? = null,
+    private val modelLayerCount: Int? = null,
+    private val modelSizeBytes: Long? = null,
 ) : LlamaCppRuntimeBridge {
     var loadCalls: Int = 0
     var generateCalls: Int = 0
@@ -253,6 +282,10 @@ private class FakeBridge(
     override fun lastError(): BridgeError? = lastError
 
     override fun estimateMaxGpuLayers(nCtx: Int): Int? = estimateMaxGpuLayers
+
+    override fun modelLayerCount(): Int? = modelLayerCount
+
+    override fun modelSizeBytes(): Long? = modelSizeBytes
 
     override fun prefixCacheDiagnosticsLine(): String? = prefixCacheDiagnosticsLine
 }

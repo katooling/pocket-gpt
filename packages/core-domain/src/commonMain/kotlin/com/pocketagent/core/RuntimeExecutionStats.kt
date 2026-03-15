@@ -7,6 +7,8 @@ data class RuntimeExecutionStats(
     val peakRssMb: Double? = null,
     val appliedGpuLayers: Int? = null,
     val appliedDraftGpuLayers: Int? = null,
+    val gpuLoadRetryCount: Int? = null,
     val modelLayerCount: Int? = null,
     val estimatedMaxGpuLayers: Int? = null,
+    val estimatedMemoryMb: Double? = null,
 )
