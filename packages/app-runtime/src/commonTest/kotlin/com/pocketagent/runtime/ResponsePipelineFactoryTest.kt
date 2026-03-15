@@ -1,0 +1,58 @@
+package com.pocketagent.runtime
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class ResponsePipelineFactoryTest {
+    @Test
+    fun `factory returns no-op pipeline when profile has no thinking or tools`() {
+        val profile = ModelInteractionProfile(
+            templateProfile = ModelTemplateProfile.GEMMA,
+            thinkingSupport = ThinkingSupport.NONE,
+            toolCallSupport = ToolCallSupport.NONE,
+        )
+
+        val filters = ResponsePipelineFactory.createStreamFilters(profile = profile, showThinking = true)
+        assertNull(filters.visibleThinkingFilter)
+        assertNull(filters.reasoningCaptureFilter)
+
+        val stripped = ResponsePipelineFactory.stripThinking("<think>hidden</think>visible", profile)
+        assertEquals("<think>hidden</think>visible", stripped)
+
+        val parsed = ResponsePipelineFactory.parseToolCalls(
+            text = "<tool_call>{\"name\":\"calculator\",\"arguments\":{\"expression\":\"1+1\"}}</tool_call>",
+            profile = profile,
+        )
+        assertTrue(parsed.toolCalls.isEmpty())
+        assertEquals("<tool_call>{\"name\":\"calculator\",\"arguments\":{\"expression\":\"1+1\"}}</tool_call>", parsed.textWithoutToolCalls)
+    }
+
+    @Test
+    fun `factory parses and strips when profile enables think tags and xml tool calls`() {
+        val profile = ModelInteractionProfile(
+            templateProfile = ModelTemplateProfile.CHATML,
+            thinkingSupport = ThinkingSupport.THINK_TAGS,
+            toolCallSupport = ToolCallSupport.XmlTagFormat(
+                openTag = "<call>",
+                closeTag = "</call>",
+            ),
+        )
+
+        val filters = ResponsePipelineFactory.createStreamFilters(profile = profile, showThinking = false)
+        assertTrue(filters.visibleThinkingFilter != null)
+        assertTrue(filters.reasoningCaptureFilter != null)
+
+        val stripped = ResponsePipelineFactory.stripThinking("<think>hidden</think>visible", profile)
+        assertEquals("visible", stripped)
+
+        val parsed = ResponsePipelineFactory.parseToolCalls(
+            text = "before<call>{\"name\":\"calculator\",\"arguments\":{\"expression\":\"1+1\"}}</call>after",
+            profile = profile,
+        )
+        assertEquals(1, parsed.toolCalls.size)
+        assertEquals("calculator", parsed.toolCalls.first().name)
+        assertEquals("beforeafter", parsed.textWithoutToolCalls)
+    }
+}
