@@ -271,6 +271,36 @@ class StartupChecksUseCaseTest {
 
         assertTrue(checks.any { it.contains("Missing runtime model(s): ${ModelCatalog.QWEN_3_5_2B_Q4}") })
     }
+
+    @Test
+    fun `startup checks do not mutate active artifact model selection`() {
+        val runtimeConfig = startupRuntimeConfig(validSha = true)
+        val artifactVerifier = ArtifactVerifier(runtimeConfig)
+        assertTrue(artifactVerifier.manager().setActiveModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
+        assertTrue(artifactVerifier.manager().setActiveModelVersion(ModelCatalog.QWEN_3_5_0_8B_Q4, "1"))
+        val initialModelId = artifactVerifier.manager().getActiveModel()
+        val initialVersion = artifactVerifier.manager().getActiveModelVersion()
+        val useCase = buildUseCase(
+            runtimeConfig = runtimeConfig,
+            inferenceModule = StartupInferenceModule(
+                availableModels = listOf(
+                    ModelCatalog.QWEN_3_5_0_8B_Q4,
+                    ModelCatalog.QWEN_3_5_2B_Q4,
+                ),
+            ),
+            policyModule = StartupPolicyModule(
+                allowedEvents = setOf("inference.startup_check"),
+                allowedNetworkActions = emptySet(),
+            ),
+            runtimeBackendProvider = { null },
+            artifactVerifier = artifactVerifier,
+        )
+
+        useCase.run()
+
+        assertEquals(initialModelId, artifactVerifier.manager().getActiveModel())
+        assertEquals(initialVersion, artifactVerifier.manager().getActiveModelVersion())
+    }
 }
 
 private fun buildUseCase(
@@ -279,6 +309,7 @@ private fun buildUseCase(
     policyModule: StartupPolicyModule,
     runtimeBackendProvider: () -> String?,
     modelRegistry: ModelRegistry = ModelRegistry.default(),
+    artifactVerifier: ArtifactVerifier = ArtifactVerifier(runtimeConfig, modelRegistry = modelRegistry),
 ): StartupChecksUseCase {
     val routingModule = StartupRoutingModule()
     val modelLifecycle = ModelLifecycleCoordinator(
@@ -286,12 +317,9 @@ private fun buildUseCase(
         routingModule = routingModule,
         runtimeConfig = runtimeConfig,
     )
-    val templateRegistry = ModelTemplateRegistry(
-        profileByModelId = ModelTemplateRegistry.defaultProfiles(modelRegistry = modelRegistry),
-    )
     return StartupChecksUseCase(
-        artifactVerifier = ArtifactVerifier(runtimeConfig, modelRegistry = modelRegistry),
-        interactionPlanner = InteractionPlanner(templateRegistry),
+        artifactVerifier = artifactVerifier,
+        interactionPlanner = InteractionPlanner(interactionRegistry = ModelInteractionRegistry()),
         inferenceModule = inferenceModule,
         policyModule = policyModule,
         runtimeConfig = runtimeConfig,

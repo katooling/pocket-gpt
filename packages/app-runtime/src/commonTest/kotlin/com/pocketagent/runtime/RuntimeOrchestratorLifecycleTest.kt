@@ -31,6 +31,32 @@ import kotlin.test.assertTrue
 
 class RuntimeOrchestratorLifecycleTest {
     @Test
+    fun `loadedModel preserves explicitly loaded model version`() {
+        val modelId = ModelCatalog.QWEN_3_5_0_8B_Q4
+        val modelVersion = "ud_iq2_xxs"
+        val modelFile = File.createTempFile("runtime-orchestrator-version", ".gguf").apply {
+            writeText("fake-gguf-payload")
+            deleteOnExit()
+        }
+        val bridge = RecordingLifecycleBridge(modelId = modelId)
+        val module = RecordingLifecycleInferenceModule(bridge)
+        module.registerModelPath(modelId, modelFile.absolutePath)
+        val orchestrator = RuntimeOrchestrator(
+            inferenceModule = module,
+            runtimeConfig = lifecycleRuntimeConfig(modelId = modelId, file = modelFile),
+        )
+
+        try {
+            assertTrue(orchestrator.loadModel(modelId = modelId, modelVersion = modelVersion).success)
+            val loaded = orchestrator.loadedModel()
+            assertEquals(modelId, loaded?.modelId)
+            assertEquals(modelVersion, loaded?.modelVersion)
+        } finally {
+            modelFile.delete()
+        }
+    }
+
+    @Test
     fun `reload emits restoring session cache stage before returning to loaded`() {
         val modelId = ModelCatalog.QWEN_3_5_0_8B_Q4
         val modelFile = File.createTempFile("runtime-orchestrator-lifecycle", ".gguf").apply {

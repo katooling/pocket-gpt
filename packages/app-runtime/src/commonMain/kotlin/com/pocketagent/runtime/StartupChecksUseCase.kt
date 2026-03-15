@@ -1,6 +1,7 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.core.PolicyModule
+import com.pocketagent.inference.ArtifactVerificationStatus
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.nativebridge.RuntimeBackend
 
@@ -75,15 +76,15 @@ internal class StartupChecksUseCase(
 
         val verifiedModels = linkedSetOf<String>()
         configuredModels.forEach { modelId ->
-            if (!artifactVerifier.manager().setActiveModel(modelId)) {
-                checks.add("Artifact manifest missing required model registration: $modelId.")
-                return@forEach
-            }
             interactionPlanner.ensureTemplateAvailable(modelId)?.let { templateError ->
                 checks.add("Optional runtime model unavailable: $modelId. $templateError")
                 return@forEach
             }
             val verification = artifactVerifier.verifyArtifactForModel(modelId)
+            if (verification.status == ArtifactVerificationStatus.UNKNOWN_MODEL) {
+                checks.add("Artifact manifest missing required model registration: $modelId.")
+                return@forEach
+            }
             if (!verification.passed) {
                 checks.add(
                     "Optional runtime model unavailable: $modelId. " +
