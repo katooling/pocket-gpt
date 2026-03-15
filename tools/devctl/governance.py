@@ -992,6 +992,9 @@ _DESCRIPTOR_BLOCK_RE = re.compile(
 )
 _FIELD_RE = re.compile(r'(\w+)\s*=\s*(?:"([^"]+)"|(\w+))')
 _ROUTING_ENUM_RE = re.compile(r"^\s+(\w+),?\s*$", re.MULTILINE)
+_INTERACTION_FEATURE_SET_RE = re.compile(r'interactionFeatures\s*=\s*setOf\((.*?)\)', re.DOTALL)
+_INTERACTION_FEATURE_VALUE_RE = re.compile(r'"([^"]+)"')
+_ALLOWED_INTERACTION_FEATURES = {"TOOL_CALL_XML", "THINKING_TAGS"}
 
 
 def _parse_model_const_ids(catalog_text: str) -> dict[str, str]:
@@ -1081,6 +1084,20 @@ def model_audit(repo_root: Path = REPO_ROOT) -> None:
         # We just check that the file isn't empty; model-specific entries are optional
         if not maestro_text.strip():
             errors.append(f"Maestro GPU matrix script is empty ({MAESTRO_GPU_MATRIX_PATH})")
+
+    # Check 7: interactionFeatures values are from the allowlist
+    for block_match in _DESCRIPTOR_BLOCK_RE.finditer(catalog_text):
+        block = block_match.group(1)
+        fields = {m.group(1): (m.group(2) or m.group(3)) for m in _FIELD_RE.finditer(block)}
+        model_id = _resolve_model_id(fields.get("modelId", ""), const_map)
+        for feature_set_match in _INTERACTION_FEATURE_SET_RE.finditer(block):
+            values = _INTERACTION_FEATURE_VALUE_RE.findall(feature_set_match.group(1))
+            for value in values:
+                if value not in _ALLOWED_INTERACTION_FEATURES:
+                    errors.append(
+                        f"Model '{model_id}' has unsupported interactionFeatures value '{value}' "
+                        f"(allowed: {sorted(_ALLOWED_INTERACTION_FEATURES)})"
+                    )
 
     if errors:
         summary = [f"Model audit failed with {len(errors)} issue(s):"]

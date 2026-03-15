@@ -499,6 +499,23 @@ class GovernanceTest(unittest.TestCase):
             with self.assertRaises(DevctlError):
                 governance.model_audit(root)
 
+    def test_model_audit_fails_for_invalid_interaction_feature(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_model_audit_repo(root)
+            catalog_path = root / "packages/inference-adapters/src/commonMain/kotlin/com/pocketagent/inference/ModelCatalog.kt"
+            text = catalog_path.read_text(encoding="utf-8")
+            catalog_path.write_text(
+                text.replace(
+                    'chatTemplateId = "CHATML",',
+                    'chatTemplateId = "CHATML",\n            interactionFeatures = setOf("TOOL_CALL_XML", "UNSUPPORTED_FEATURE"),',
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(DevctlError):
+                governance.model_audit(root)
+
 
 if __name__ == "__main__":
     unittest.main()
