@@ -315,7 +315,8 @@
             "QWEN_0_8B",
             "QWEN_2B",
             "SMOLLM3_3B",
-            "PHI_4_MINI"
+            "PHI_4_MINI",
+            "GEMMA_2_2B"
           ]
         }
       ],
@@ -327,7 +328,8 @@
             "QWEN_0_8B",
             "QWEN_2B",
             "SMOLLM3_3B",
-            "PHI_4_MINI"
+            "PHI_4_MINI",
+            "GEMMA_2_2B"
           ]
         }
       ]
