@@ -980,6 +980,116 @@ def stage_close_gate(pr_body_file: str, repo_root: Path = REPO_ROOT) -> None:
     print("Stage-close evidence gate passed.")
 
 
+MODEL_CATALOG_PATH = Path("packages/inference-adapters/src/commonMain/kotlin/com/pocketagent/inference/ModelCatalog.kt")
+DISTRIBUTION_CATALOG_PATH = Path("apps/mobile-android/src/main/assets/model-distribution-catalog.json")
+ROUTING_MODE_PATH = Path("packages/core-domain/src/commonMain/kotlin/com/pocketagent/core/RoutingMode.kt")
+MAESTRO_GPU_MATRIX_PATH = Path("scripts/dev/maestro-gpu-matrix-common.sh")
+
+_MODEL_CONST_RE = re.compile(r'const val (\w+)\s*=\s*"([^"]+)"')
+_DESCRIPTOR_BLOCK_RE = re.compile(
+    r"ModelDescriptor\(\s*(.*?)\),\s*(?=ModelDescriptor\(|\))",
+    re.DOTALL,
+)
+_FIELD_RE = re.compile(r'(\w+)\s*=\s*(?:"([^"]+)"|(\w+))')
+_ROUTING_ENUM_RE = re.compile(r"^\s+(\w+),?\s*$", re.MULTILINE)
+
+
+def _parse_model_const_ids(catalog_text: str) -> dict[str, str]:
+    """Return {CONST_NAME: model_id_value} for const val declarations."""
+    return {m.group(1): m.group(2) for m in _MODEL_CONST_RE.finditer(catalog_text)}
+
+
+def _resolve_model_id(raw_value: str, const_map: dict[str, str]) -> str:
+    """Resolve a modelId field value: either a quoted string or a const reference."""
+    return const_map.get(raw_value, raw_value)
+
+
+def _parse_startup_candidate_ids(catalog_text: str, const_map: dict[str, str]) -> set[str]:
+    """Return model IDs where startupCandidate = true in descriptors."""
+    ids: set[str] = set()
+    for block_match in _DESCRIPTOR_BLOCK_RE.finditer(catalog_text):
+        block = block_match.group(1)
+        fields = {m.group(1): (m.group(2) or m.group(3)) for m in _FIELD_RE.finditer(block)}
+        if fields.get("startupCandidate") == "true":
+            ids.add(_resolve_model_id(fields.get("modelId", ""), const_map))
+    return ids
+
+
+def _parse_bridge_supported_ids(catalog_text: str, const_map: dict[str, str]) -> set[str]:
+    """Return model IDs where bridgeSupported = true in descriptors."""
+    ids: set[str] = set()
+    for block_match in _DESCRIPTOR_BLOCK_RE.finditer(catalog_text):
+        block = block_match.group(1)
+        fields = {m.group(1): (m.group(2) or m.group(3)) for m in _FIELD_RE.finditer(block)}
+        if fields.get("bridgeSupported") == "true":
+            ids.add(_resolve_model_id(fields.get("modelId", ""), const_map))
+    return ids
+
+
+def model_audit(repo_root: Path = REPO_ROOT) -> None:
+    """Cross-reference model catalog, distribution catalog, routing modes, and scripts."""
+    errors: list[str] = []
+
+    catalog_path = repo_root / MODEL_CATALOG_PATH
+    catalog_text = _read_file(catalog_path)
+
+    dist_path = repo_root / DISTRIBUTION_CATALOG_PATH
+    dist_data = _load_json_file(dist_path)
+    dist_model_ids = {m["modelId"] for m in dist_data.get("models", []) if isinstance(m, dict)}
+
+    routing_path = repo_root / ROUTING_MODE_PATH
+    routing_text = _read_file(routing_path)
+    routing_enum_values = set(_ROUTING_ENUM_RE.findall(routing_text)) - {"AUTO"}
+
+    const_map = _parse_model_const_ids(catalog_text)
+    startup_ids = _parse_startup_candidate_ids(catalog_text, const_map)
+    bridge_ids = _parse_bridge_supported_ids(catalog_text, const_map)
+
+    # Check 1: Every startup-candidate model has a distribution entry
+    for model_id in sorted(startup_ids):
+        if model_id not in dist_model_ids:
+            errors.append(f"Startup-candidate model '{model_id}' missing from distribution catalog ({DISTRIBUTION_CATALOG_PATH})")
+
+    # Check 2: Every bridge-supported model has a distribution entry
+    for model_id in sorted(bridge_ids):
+        if model_id not in dist_model_ids:
+            errors.append(f"Bridge-supported model '{model_id}' missing from distribution catalog ({DISTRIBUTION_CATALOG_PATH})")
+
+    # Check 3: Distribution entries reference known catalog models
+    const_ids = _parse_model_const_ids(catalog_text)
+    all_catalog_model_ids = set(const_ids.values())
+    for model_id in sorted(dist_model_ids):
+        if model_id not in all_catalog_model_ids:
+            errors.append(f"Distribution model '{model_id}' not found in ModelCatalog constants")
+
+    # Check 4: Every non-AUTO RoutingMode enum value appears as an explicitRoutingModes binding
+    for enum_val in sorted(routing_enum_values):
+        if f"RoutingMode.{enum_val}" not in catalog_text:
+            errors.append(f"RoutingMode.{enum_val} not bound in any ModelDescriptor explicitRoutingModes")
+
+    # Check 5: chatTemplateId values reference valid ModelTemplateProfile enum values
+    valid_template_ids = {"CHATML", "LLAMA3", "PHI"}
+    for match in re.finditer(r'chatTemplateId\s*=\s*"(\w+)"', catalog_text):
+        template_id = match.group(1)
+        if template_id not in valid_template_ids:
+            errors.append(f"chatTemplateId '{template_id}' is not a valid ModelTemplateProfile value (valid: {valid_template_ids})")
+
+    # Check 6: Maestro GPU matrix has entries for startup-candidate models
+    maestro_path = repo_root / MAESTRO_GPU_MATRIX_PATH
+    if maestro_path.exists():
+        maestro_text = _read_file(maestro_path)
+        # We just check that the file isn't empty; model-specific entries are optional
+        if not maestro_text.strip():
+            errors.append(f"Maestro GPU matrix script is empty ({MAESTRO_GPU_MATRIX_PATH})")
+
+    if errors:
+        summary = [f"Model audit failed with {len(errors)} issue(s):"]
+        summary.extend(f"  - {e}" for e in errors)
+        raise DevctlError("CONFIG_ERROR", "\n".join(summary))
+
+    print(f"Model audit passed. {len(startup_ids)} startup candidates, {len(bridge_ids)} bridge-supported, {len(dist_model_ids)} distribution entries.")
+
+
 def governance_self_test(repo_root: Path = REPO_ROOT) -> None:
     with tempfile.TemporaryDirectory(prefix="devctl-gov-") as tmp:
         sandbox = Path(tmp)

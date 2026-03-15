@@ -421,5 +421,84 @@ class GovernanceTest(unittest.TestCase):
             governance.screenshot_inventory_check(root)
 
 
+    def _seed_model_audit_repo(self, root: Path) -> None:
+        catalog_dir = root / "packages/inference-adapters/src/commonMain/kotlin/com/pocketagent/inference"
+        catalog_dir.mkdir(parents=True, exist_ok=True)
+        (catalog_dir / "ModelCatalog.kt").write_text(
+            'package com.pocketagent.inference\n'
+            'object ModelCatalog {\n'
+            '    const val MODEL_A = "model-a"\n'
+            '    const val MODEL_B = "model-b"\n'
+            '    private val descriptors = listOf(\n'
+            '        ModelDescriptor(\n'
+            '            modelId = MODEL_A,\n'
+            '            bridgeSupported = true,\n'
+            '            startupCandidate = true,\n'
+            '            chatTemplateId = "CHATML",\n'
+            '            explicitRoutingModes = setOf(RoutingMode.MODEL_A_MODE),\n'
+            '        ),\n'
+            '        ModelDescriptor(\n'
+            '            modelId = MODEL_B,\n'
+            '            bridgeSupported = true,\n'
+            '            startupCandidate = false,\n'
+            '            chatTemplateId = "PHI",\n'
+            '        ),\n'
+            '    )\n'
+            '}\n',
+            encoding="utf-8",
+        )
+
+        dist_dir = root / "apps/mobile-android/src/main/assets"
+        dist_dir.mkdir(parents=True, exist_ok=True)
+        (dist_dir / "model-distribution-catalog.json").write_text(
+            json.dumps({
+                "models": [
+                    {"modelId": "model-a"},
+                    {"modelId": "model-b"},
+                ]
+            }),
+            encoding="utf-8",
+        )
+
+        routing_dir = root / "packages/core-domain/src/commonMain/kotlin/com/pocketagent/core"
+        routing_dir.mkdir(parents=True, exist_ok=True)
+        (routing_dir / "RoutingMode.kt").write_text(
+            'enum class RoutingMode {\n    AUTO,\n    MODEL_A_MODE,\n}\n',
+            encoding="utf-8",
+        )
+
+        scripts_dir = root / "scripts/dev"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "maestro-gpu-matrix-common.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    def test_model_audit_passes_for_consistent_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_model_audit_repo(root)
+            governance.model_audit(root)
+
+    def test_model_audit_fails_for_missing_distribution_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_model_audit_repo(root)
+            dist_path = root / "apps/mobile-android/src/main/assets/model-distribution-catalog.json"
+            dist_path.write_text(
+                json.dumps({"models": [{"modelId": "model-a"}]}),
+                encoding="utf-8",
+            )
+            with self.assertRaises(DevctlError):
+                governance.model_audit(root)
+
+    def test_model_audit_fails_for_invalid_chat_template_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_model_audit_repo(root)
+            catalog_path = root / "packages/inference-adapters/src/commonMain/kotlin/com/pocketagent/inference/ModelCatalog.kt"
+            text = catalog_path.read_text(encoding="utf-8")
+            catalog_path.write_text(text.replace('"PHI"', '"INVALID_TEMPLATE"'), encoding="utf-8")
+            with self.assertRaises(DevctlError):
+                governance.model_audit(root)
+
+
 if __name__ == "__main__":
     unittest.main()

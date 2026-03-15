@@ -13,6 +13,7 @@ from tools.devctl.governance import (
     docs_drift_check,
     evidence_check,
     evidence_check_changed,
+    model_audit,
     screenshot_inventory_check,
     governance_self_test,
     stage_close_gate,
@@ -54,6 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
     stage = gov_sub.add_parser("stage-close-gate", help="validate stage-close evidence requirements")
     stage.add_argument("file", help="PR body markdown path")
 
+    gov_sub.add_parser("model-audit", help="cross-reference model catalog, distribution, routing, and scripts")
     gov_sub.add_parser("self-test", help="run governance self-tests")
 
     doctor = subparsers.add_parser("doctor", help="run environment diagnostics")
@@ -101,6 +103,9 @@ def _handle_governance(parsed: argparse.Namespace) -> None:
         return
     if command == "stage-close-gate":
         stage_close_gate(parsed.file)
+        return
+    if command == "model-audit":
+        model_audit()
         return
     if command == "self-test":
         governance_self_test()
