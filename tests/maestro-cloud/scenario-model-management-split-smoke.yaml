@@ -1,0 +1,83 @@
+appId: com.pocketagent.android
+tags:
+  - cloud-smoke
+  - model-management
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: "Welcome to Pocket GPT"
+    commands:
+      - tapOn: "Next"
+      - extendedWaitUntil:
+          visible: "Step 2 of 3"
+          timeout: 20000
+      - tapOn: "Next"
+      - extendedWaitUntil:
+          visible: "Step 3 of 3"
+          timeout: 20000
+      - tapOn: "Get started"
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- runFlow:
+    when:
+      visible: "Get ready"
+    commands:
+      - tapOn: "Get ready"
+- runFlow:
+    when:
+      visible: "Open model library"
+    commands:
+      - tapOn: "Open model library"
+- runFlow:
+    when:
+      visible: "Fix model library"
+    commands:
+      - tapOn: "Fix model library"
+- runFlow:
+    when:
+      notVisible: "Model library"
+    commands:
+      - extendedWaitUntil:
+          visible: "Advanced"
+          timeout: 30000
+      - tapOn: "Advanced"
+      - extendedWaitUntil:
+          visible: "Advanced controls"
+          timeout: 20000
+      - scrollUntilVisible:
+          element:
+            text: "Open model library"
+          direction: DOWN
+          timeout: 20000
+      - assertVisible: "Open runtime controls"
+      - tapOn: "Open model library"
+- extendedWaitUntil:
+    visible: "Model library"
+    timeout: 30000
+- assertVisible: "Required models"
+- assertNotVisible: "Load now"
+- assertNotVisible: "Offload"
+- scrollUntilVisible:
+    element:
+      text: "Open runtime controls"
+    direction: DOWN
+    timeout: 20000
+- tapOn: "Open runtime controls"
+- extendedWaitUntil:
+    visible: "Runtime model"
+    timeout: 30000
+- assertVisible: "Runtime load state"
+- assertVisible: "No installed models yet"
+- assertNotVisible: "Downloads"
+- assertNotVisible: "Start download"
+- takeScreenshot: "cloud-model-management-split-runtime"
+- tapOn: "Open model library"
+- extendedWaitUntil:
+    visible: "Model library"
+    timeout: 30000
+- takeScreenshot: "cloud-model-management-split-library"

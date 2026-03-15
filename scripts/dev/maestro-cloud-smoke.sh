@@ -13,7 +13,7 @@ fi
 : "${MAESTRO_CLOUD_API_KEY:?Set MAESTRO_CLOUD_API_KEY in .env}"
 
 BUILD_APK=1
-API_LEVELS=(34 33)
+API_LEVELS=(34)
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -42,18 +42,19 @@ if [[ -z "${APK_PATH}" || ! -f "${APK_PATH}" ]]; then
   exit 1
 fi
 
-mkdir -p tmp/maestro-cloud-gpu-benchmark
+mkdir -p tmp/maestro-cloud-smoke
 
 EXIT_CODE=0
 for api_level in "${API_LEVELS[@]}"; do
-  run_dir="tmp/maestro-cloud-gpu-benchmark/api-${api_level}"
+  run_dir="tmp/maestro-cloud-smoke/api-${api_level}"
   mkdir -p "${run_dir}"
-  echo "Running Maestro Cloud GPU benchmark on Android API ${api_level}"
+  echo "Running Maestro Cloud smoke suite on Android API ${api_level}"
   if ! maestro cloud \
     --android-api-level "${api_level}" \
     --device-locale en_US \
     --app-file "${APK_PATH}" \
-    --flows tests/maestro-cloud/scenario-gpu-cpu-benchmark.yaml \
+    --flows tests/maestro-cloud/ \
+    --include-tags cloud-smoke \
     --format junit \
     --output "${run_dir}/junit.xml" | tee "${run_dir}/run.log"; then
     EXIT_CODE=1

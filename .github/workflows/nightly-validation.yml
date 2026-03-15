@@ -227,10 +227,29 @@ jobs:
             exit 1
           fi
           maestro cloud --android-api-level 34 \
+            --device-locale en_US \
             --app-file "${APK_PATH}" \
             --flows tests/maestro/scenario-first-run-download-chat.yaml \
             --format junit \
             --output tmp/nightly-maestro-cloud-first-run/junit.xml
+
+      - name: Run model-management split smoke on Maestro Cloud
+        if: env.MAESTRO_CLOUD_API_KEY != ''
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/nightly-maestro-cloud-model-management
+          APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
+          if [[ -z "${APK_PATH}" ]]; then
+            echo "No debug APK found under apps/mobile-android/build/outputs/apk/debug" >&2
+            exit 1
+          fi
+          maestro cloud --android-api-level 34 \
+            --device-locale en_US \
+            --app-file "${APK_PATH}" \
+            --flows tests/maestro-cloud/ \
+            --include-tags cloud-smoke \
+            --format junit \
+            --output tmp/nightly-maestro-cloud-model-management/junit.xml
 
       - name: Upload nightly Maestro cloud artifacts
         if: always()
@@ -239,4 +258,5 @@ jobs:
           name: nightly-maestro-cloud-first-run
           path: |
             tmp/nightly-maestro-cloud-first-run/**
+            tmp/nightly-maestro-cloud-model-management/**
           if-no-files-found: warn
