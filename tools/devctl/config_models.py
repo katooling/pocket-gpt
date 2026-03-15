@@ -59,7 +59,6 @@ class MaestroLaneConfig(_StrictModel):
     requires_android_sdk: bool
     requires_device: bool
     artifacts: ArtifactsConfig
-    version: str
     preflight_commands: list[list[str]] = Field(default_factory=list)
     flows: list[str]
 

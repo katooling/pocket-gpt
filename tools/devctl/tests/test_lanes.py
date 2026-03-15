@@ -95,7 +95,21 @@ class LanesTest(unittest.TestCase):
             "20260303-101010",
         )
         self.assertEqual(
-            REPO_ROOT / "scripts/benchmarks/runs/2026-03-03/SER123/scenario-a-20260303-101010",
+            REPO_ROOT / "tmp/devctl-artifacts/2026-03-03/SER123/scenario-a-20260303-101010",
+            path,
+        )
+
+    def test_build_artifact_dir_respects_override_root(self) -> None:
+        with mock.patch.dict(os.environ, {"POCKET_GPT_DEVCTL_ARTIFACT_ROOT": "/tmp/pocket-gpt-artifacts"}, clear=False):
+            path = build_artifact_dir(
+                "scripts/benchmarks/runs/{date}/{device}/{label}-{stamp}",
+                "2026-03-03",
+                "SER123",
+                "scenario-a",
+                "20260303-101010",
+            )
+        self.assertEqual(
+            Path("/tmp/pocket-gpt-artifacts/2026-03-03/SER123/scenario-a-20260303-101010"),
             path,
         )
 
@@ -192,7 +206,7 @@ class LanesTest(unittest.TestCase):
         self.assertEqual([0, 5, 15, 30, 60, 90], parsed.capture_intervals)
         self.assertEqual("ola, how you doin", parsed.prompt)
         self.assertEqual("strict", parsed.mode)
-        self.assertEqual(["instrumentation", "send-capture", "maestro"], parsed.steps)
+        self.assertEqual(["instrumentation", "send-capture"], parsed.steps)
 
         with self.assertRaises(DevctlError):
             _parse_journey_args(
@@ -962,6 +976,23 @@ class LanesTest(unittest.TestCase):
             parsed.maestro_flows,
         )
 
+    def test_journey_parser_rejects_maestro_flows_without_maestro_step(self) -> None:
+        with self.assertRaises(DevctlError) as raised:
+            _parse_journey_args(
+                [
+                    "--steps",
+                    "send-capture",
+                    "--maestro-flows",
+                    "tests/maestro/scenario-a.yaml",
+                ],
+                repeats_default=1,
+                repeats_max=5,
+                reply_timeout_default=90,
+                capture_intervals_default=[5, 15, 30, 60, 90],
+                prompt_default="ola, how you doin",
+            )
+        self.assertEqual("CONFIG_ERROR", raised.exception.code)
+
     def test_extract_instrumentation_failure_detects_short_msg(self) -> None:
         output = "\n".join(
             [
@@ -1252,6 +1283,61 @@ class LanesTest(unittest.TestCase):
         for call in maestro_calls:
             self.assertEqual("--device", call[1])
             self.assertEqual("SER123", call[2])
+
+    def test_lane_maestro_can_filter_flows_by_tag(self) -> None:
+        from tools.devctl import lanes
+
+        original_which = lanes.shutil.which
+        original_prepare = lanes.prepare_real_runtime_env
+        original_health_preflight = lanes._run_device_health_preflight
+        original_serialized_install = lanes._run_serialized_gradle_install_step
+        issued_commands: list[list[str]] = []
+        configs = load_devctl_configs(REPO_ROOT)
+        ensure_command = configs.device.preflight.ensure_device_command
+
+        class Result:
+            def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        def fake_run(command, **_kwargs):
+            issued_commands.append(list(command))
+            if list(command) == list(ensure_command):
+                return Result(returncode=0, stdout="SER123\n")
+            return Result(returncode=0, stdout="", stderr="")
+
+        def fake_prepare(_context, device_serial: str, artifact_root=None):
+            return lanes.RealRuntimePreparedEnv(
+                serial=device_serial,
+                model_device_paths_by_id={
+                    "qwen3.5-0.8b-q4": "/sdcard/Android/media/com.pocketagent.android/models/qwen3.5-0.8b-q4.gguf",
+                    "qwen3.5-2b-q4": "/sdcard/Android/media/com.pocketagent.android/models/qwen3.5-2b-q4.gguf",
+                },
+                model_host_paths_by_id={
+                    "qwen3.5-0.8b-q4": "/tmp/qwen3.5-0.8b-q4.gguf",
+                    "qwen3.5-2b-q4": "/tmp/qwen3.5-2b-q4.gguf",
+                },
+            )
+
+        try:
+            lanes.shutil.which = lambda name: "/usr/bin/maestro" if name == "maestro" else None
+            lanes.prepare_real_runtime_env = fake_prepare
+            lanes._run_device_health_preflight = lambda *_args, **_kwargs: None
+            lanes._run_serialized_gradle_install_step = lambda **_kwargs: False
+            context = RuntimeContext(repo_root=REPO_ROOT, configs=configs, env={}, run=fake_run)
+            lane_maestro(["--include-tags", "onboarding"], context)
+        finally:
+            lanes.shutil.which = original_which
+            lanes.prepare_real_runtime_env = original_prepare
+            lanes._run_device_health_preflight = original_health_preflight
+            lanes._run_serialized_gradle_install_step = original_serialized_install
+
+        maestro_calls = [cmd for cmd in issued_commands if cmd and cmd[0] == "/usr/bin/maestro"]
+        self.assertEqual(1, len(maestro_calls))
+        self.assertTrue(
+            any(token.endswith("tests/maestro/scenario-onboarding.yaml") for token in maestro_calls[0]),
+        )
 
     def test_parse_package_uid(self) -> None:
         self.assertEqual(10635, _parse_package_uid("pkgFlags=[ HAS_CODE ]\nuserId=10635\ngids=[3003]"))

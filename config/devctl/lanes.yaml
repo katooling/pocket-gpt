@@ -101,7 +101,6 @@ lanes:
     requires_device: true
     artifacts:
       output_dir_template: scripts/benchmarks/runs/{date}/{device}/maestro/{stamp}
-    version: 1.39.13
     preflight_commands:
       -
         - ./gradlew

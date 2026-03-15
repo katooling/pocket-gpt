@@ -56,6 +56,13 @@ class DeviceLaneArgs:
 
 
 @dataclass
+class MaestroLaneArgs:
+    flows: list[str]
+    include_tags: list[str]
+    exclude_tags: list[str]
+
+
+@dataclass
 class RealRuntimePreparedEnv:
     serial: str
     model_device_paths_by_id: dict[str, str]
@@ -376,7 +383,14 @@ def _device_lock(serial: str, *, owner: str, timeout_seconds: int = 120) -> Any:
 
 
 def build_artifact_dir(template: str, date: str, device: str, label: str, stamp: str) -> Path:
-    return REPO_ROOT / template.format(date=date, device=device, label=label, stamp=stamp)
+    rendered = template.format(date=date, device=device, label=label, stamp=stamp)
+    artifact_root = Path(os.environ.get("POCKET_GPT_DEVCTL_ARTIFACT_ROOT", "tmp/devctl-artifacts")).expanduser()
+    if not artifact_root.is_absolute():
+        artifact_root = REPO_ROOT / artifact_root
+    legacy_prefix = "scripts/benchmarks/runs/"
+    if rendered.startswith(legacy_prefix):
+        return artifact_root / rendered.removeprefix(legacy_prefix)
+    return REPO_ROOT / rendered
 
 
 def build_gradle_test_command(
@@ -1532,7 +1546,7 @@ def _capture_logcat(context: RuntimeContext, serial: str, output_path: Path) -> 
 def _resolve_lane_artifact_dir(template: str, serial: str, label: str) -> Path:
     date_value = datetime.now().strftime("%Y-%m-%d")
     stamp = _now_stamp()
-    return REPO_ROOT / template.format(date=date_value, device=serial, label=label, stamp=stamp)
+    return build_artifact_dir(template, date_value, serial, label, stamp)
 
 
 def _collect_maestro_screenshots(debug_dir: Path) -> list[str]:
@@ -2911,7 +2925,7 @@ def _parse_journey_args(
     )
     parser.add_argument("--prompt", type=str, default=prompt_default)
     parser.add_argument("--mode", choices={"strict", "valid-output", "fast-smoke"}, default="strict")
-    parser.add_argument("--steps", type=str, default="instrumentation,send-capture,maestro")
+    parser.add_argument("--steps", type=str, default="instrumentation,send-capture")
     parser.add_argument("--maestro-flows", type=str, default="")
     parsed = parser.parse_args(raw_arg_list)
     if parsed.repeats <= 0:
@@ -2945,6 +2959,8 @@ def _parse_journey_args(
 
     parsed.steps = _parse_journey_steps(parsed.steps)
     parsed.maestro_flows = _parse_maestro_flows(parsed.maestro_flows)
+    if parsed.maestro_flows and "maestro" not in parsed.steps:
+        raise DevctlError("CONFIG_ERROR", "--maestro-flows requires --steps to include maestro")
     return parsed
 
 
@@ -2984,6 +3000,64 @@ def _parse_maestro_flows(raw: str) -> list[str]:
     if not raw.strip():
         return []
     return [token.strip() for token in raw.split(",") if token.strip()]
+
+
+def _parse_maestro_tags(raw: str) -> list[str]:
+    if not raw.strip():
+        return []
+    return [token.strip() for token in raw.split(",") if token.strip()]
+
+
+def _parse_maestro_lane_args(raw_args: Sequence[str]) -> MaestroLaneArgs:
+    parser = argparse.ArgumentParser(prog="devctl lane maestro")
+    parser.add_argument("--flows", type=str, default="")
+    parser.add_argument("--include-tags", type=str, default="")
+    parser.add_argument("--exclude-tags", type=str, default="")
+    parsed = parser.parse_args(list(raw_args))
+    flows = _parse_maestro_flows(parsed.flows)
+    include_tags = _parse_maestro_tags(parsed.include_tags)
+    exclude_tags = _parse_maestro_tags(parsed.exclude_tags)
+    overlap = sorted(set(include_tags) & set(exclude_tags))
+    if overlap:
+        raise DevctlError("CONFIG_ERROR", f"Maestro include/exclude tags overlap: {', '.join(overlap)}")
+    return MaestroLaneArgs(flows=flows, include_tags=include_tags, exclude_tags=exclude_tags)
+
+
+def _load_maestro_flow_tags(flow_path: Path) -> set[str]:
+    if yaml is None:
+        return set()
+    try:
+        docs = list(yaml.safe_load_all(flow_path.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+    payload = next((doc for doc in docs if isinstance(doc, dict)), None)
+    if not isinstance(payload, dict):
+        return set()
+    tags = payload.get("tags")
+    if not isinstance(tags, list):
+        return set()
+    return {str(tag).strip() for tag in tags if str(tag).strip()}
+
+
+def _filter_maestro_flows_by_tags(
+    flow_paths: Sequence[Path],
+    *,
+    include_tags: Sequence[str],
+    exclude_tags: Sequence[str],
+) -> list[Path]:
+    if not include_tags and not exclude_tags:
+        return list(flow_paths)
+    include = set(include_tags)
+    exclude = set(exclude_tags)
+    selected: list[Path] = []
+    for flow_path in flow_paths:
+        flow_tags = _load_maestro_flow_tags(flow_path)
+        if include and not include.issubset(flow_tags):
+            continue
+        if exclude and flow_tags.intersection(exclude):
+            continue
+        selected.append(flow_path)
+    return selected
 
 
 def _resolve_maestro_flow_selection(available_flows: Sequence[str], selected_tokens: Sequence[str]) -> list[str]:
@@ -3493,8 +3567,7 @@ def _run_maestro_flow(
 
 
 def _lane_maestro_impl(raw_args: Sequence[str], context: RuntimeContext, strict: bool = True) -> None:
-    if raw_args:
-        raise DevctlError("CONFIG_ERROR", "Usage: devctl lane maestro")
+    args = _parse_maestro_lane_args(raw_args)
 
     maestro_bin = shutil.which("maestro")
     if maestro_bin is None:
@@ -3542,8 +3615,17 @@ def _lane_maestro_impl(raw_args: Sequence[str], context: RuntimeContext, strict:
 
         prepare_real_runtime_env(context, serial, artifact_root=artifact_root)
 
-        for flow in lane_cfg.flows:
-            flow_path = REPO_ROOT / flow
+        selected_flows = _resolve_maestro_flow_selection(lane_cfg.flows, args.flows)
+        selected_flow_paths = [REPO_ROOT / flow for flow in selected_flows]
+        selected_flow_paths = _filter_maestro_flows_by_tags(
+            selected_flow_paths,
+            include_tags=args.include_tags,
+            exclude_tags=args.exclude_tags,
+        )
+        if not selected_flow_paths:
+            raise DevctlError("CONFIG_ERROR", "No Maestro flows selected.")
+
+        for flow_path in selected_flow_paths:
             if not flow_path.exists():
                 raise DevctlError("CONFIG_ERROR", f"Missing Maestro flow: {flow_path}")
             step = _run_maestro_flow(

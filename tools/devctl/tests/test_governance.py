@@ -89,20 +89,20 @@ class GovernanceTest(unittest.TestCase):
     def test_evidence_check_pass_and_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            run_path = root / "scripts/benchmarks/runs/2026-03-03/DEVICE/run"
+            run_path = root / "tmp/devctl-artifacts/2026-03-03/DEVICE/run"
             run_path.mkdir(parents=True, exist_ok=True)
             (run_path / "artifact.txt").write_text("ok", encoding="utf-8")
 
             ok_note = root / "ok.md"
             ok_note.write_text(
-                "Evidence\n- raw: scripts/benchmarks/runs/2026-03-03/DEVICE/run/artifact.txt\n",
+                "Evidence\n- raw: tmp/devctl-artifacts/2026-03-03/DEVICE/run/artifact.txt\n",
                 encoding="utf-8",
             )
             governance.evidence_check("ok.md", repo_root=root)
 
             bad_note = root / "bad.md"
             bad_note.write_text(
-                "Evidence\n- raw: scripts/benchmarks/runs/2026-03-03/DEVICE/run/missing.txt\n",
+                "Evidence\n- raw: tmp/devctl-artifacts/2026-03-03/DEVICE/run/missing.txt\n",
                 encoding="utf-8",
             )
             with self.assertRaises(DevctlError) as raised:
@@ -207,7 +207,7 @@ class GovernanceTest(unittest.TestCase):
             "User-Visible Controls (Implemented)\nUser-Visible Controls (Not Yet Implemented)\nDo not publish these as available controls\n",
             encoding="utf-8",
         )
-        (root / "docs/prd/phase-0-prd.md").write_text("QWEN_0_8B QWEN_2B SMOLLM2_360M SMOLLM2_135M\n", encoding="utf-8")
+        (root / "docs/prd/phase-0-prd.md").write_text("QWEN_0_8B QWEN_2B SMOLLM3_3B PHI_4_MINI\n", encoding="utf-8")
 
         (root / "packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/MvpRuntimeFacade.kt").write_text(
             "data class StreamChatRequestV2\nenum class ChatStreamPhase\npreviousResponseId: String? = null\n",
@@ -238,7 +238,7 @@ class GovernanceTest(unittest.TestCase):
             encoding="utf-8",
         )
         (root / "packages/core-domain/src/commonMain/kotlin/com/pocketagent/core/RoutingMode.kt").write_text(
-            "QWEN_0_8B\nQWEN_2B\nSMOLLM2_360M\nSMOLLM2_135M\n",
+            "QWEN_0_8B\nQWEN_2B\nSMOLLM3_3B\nPHI_4_MINI\n",
             encoding="utf-8",
         )
 
@@ -326,7 +326,7 @@ class GovernanceTest(unittest.TestCase):
         (reference_dir / "ui-02-onboarding-page-2.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (reference_dir / "index.md").write_text("# Gallery\n", encoding="utf-8")
 
-        report_dir = root / "scripts/benchmarks/runs/2026-03-06/SER123/screenshot-pack/20260306-010101"
+        report_dir = root / "tmp/devctl-artifacts/2026-03-06/SER123/screenshot-pack/20260306-010101"
         report_dir.mkdir(parents=True, exist_ok=True)
         generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         (report_dir / "inventory-report.json").write_text(
@@ -361,7 +361,7 @@ class GovernanceTest(unittest.TestCase):
             root = Path(tmp)
             self._seed_screenshot_inventory_repo(root)
             (root / "tests/ui-screenshots/reference/sm-a515f-android13/ui-02-onboarding-page-2.png").unlink()
-            broken_report = root / "scripts/benchmarks/runs/2026-03-06/SER123/screenshot-pack/20260306-010101/inventory-report.json"
+            broken_report = root / "tmp/devctl-artifacts/2026-03-06/SER123/screenshot-pack/20260306-010101/inventory-report.json"
             generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             broken_report.write_text(
                 json.dumps(
@@ -386,6 +386,39 @@ class GovernanceTest(unittest.TestCase):
             with self.assertRaises(DevctlError) as raised:
                 governance.screenshot_inventory_check(root)
             self.assertEqual("CONFIG_ERROR", raised.exception.code)
+
+    def test_screenshot_inventory_check_accepts_legacy_report_location(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_screenshot_inventory_repo(root)
+            current_report_dir = root / "tmp/devctl-artifacts/2026-03-06/SER123/screenshot-pack/20260306-010101"
+            for child in current_report_dir.iterdir():
+                child.unlink()
+            current_report_dir.rmdir()
+            legacy_report_dir = root / "scripts/benchmarks/runs/2026-03-06/SER123/screenshot-pack/20260306-010101"
+            legacy_report_dir.mkdir(parents=True, exist_ok=True)
+            generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            (legacy_report_dir / "inventory-report.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "ui-screenshot-inventory-report-v2",
+                        "generated_at_utc": generated_at,
+                        "inventory_schema": "ui-screenshot-inventory-v1",
+                        "inventory_digest": "sha256:abc",
+                        "git_commit": "abcdef1",
+                        "run_id": "20260306-010101-legacy",
+                        "device_serial": "SER123",
+                        "missing_ids": [],
+                        "entries": [
+                            {"id": "ui-01-onboarding-page-1", "status": "PASS"},
+                            {"id": "ui-02-onboarding-page-2", "status": "PASS"},
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            governance.screenshot_inventory_check(root)
 
 
 if __name__ == "__main__":
