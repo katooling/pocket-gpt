@@ -1,14 +1,20 @@
-package com.pocketagent.android.ui.state
+package com.pocketagent.android.data.chat
 
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
 import android.database.sqlite.SQLiteOpenHelper
-import com.pocketagent.android.data.chat.ChatSessionRepository
-import com.pocketagent.android.data.chat.StoredChatMessage
-import com.pocketagent.android.data.chat.StoredChatSession
-import com.pocketagent.android.data.chat.StoredChatState
+import com.pocketagent.android.ui.state.CompletionSettings
+import com.pocketagent.android.ui.state.FirstSessionStage
+import com.pocketagent.android.ui.state.FirstSessionTelemetryEvent
+import com.pocketagent.android.ui.state.MessageKind
+import com.pocketagent.android.ui.state.MessageRole
+import com.pocketagent.android.ui.state.PersistedInteractionMessage
+import com.pocketagent.android.ui.state.PersistedInteractionPart
+import com.pocketagent.android.ui.state.PersistedToolCall
+import com.pocketagent.android.ui.state.PersistedToolCallStatus
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import kotlinx.serialization.json.Json
@@ -22,50 +28,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-data class PersistedChatState(
-    val sessions: List<ChatSessionUiModel> = emptyList(),
-    val activeSessionId: String? = null,
-    val routingMode: String = "AUTO",
-    val performanceProfile: String = "BALANCED",
-    val keepAlivePreference: String = RuntimeKeepAlivePreference.AUTO.name,
-    val gpuAccelerationEnabled: Boolean = false,
-    val onboardingCompleted: Boolean = false,
-    val firstSessionStage: String = FirstSessionStage.ONBOARDING.name,
-    val advancedUnlocked: Boolean = true,
-    val firstAnswerCompleted: Boolean = false,
-    val followUpCompleted: Boolean = false,
-    val firstSessionTelemetryEvents: List<FirstSessionTelemetryEvent> = emptyList(),
-)
-
-sealed interface SessionStateLoadResult {
-    data class Success(val state: PersistedChatState) : SessionStateLoadResult
-
-    data class RecoverableCorruption(
-        val resetState: PersistedChatState,
-        val code: String,
-        val userMessage: String,
-        val technicalDetail: String,
-    ) : SessionStateLoadResult
-
-    data class FatalCorruption(
-        val code: String,
-        val userMessage: String,
-        val technicalDetail: String,
-    ) : SessionStateLoadResult
-}
-
-interface SessionPersistence {
-    fun loadState(): PersistedChatState
-    fun loadBootstrapState(): PersistedChatState = loadState()
-    fun loadStateResult(): SessionStateLoadResult = SessionStateLoadResult.Success(loadState())
-    fun loadBootstrapStateResult(): SessionStateLoadResult = SessionStateLoadResult.Success(loadBootstrapState())
-    fun loadSessionMessages(sessionId: String): List<MessageUiModel>? {
-        return loadState().sessions.firstOrNull { it.id == sessionId }?.messages
-    }
-    fun saveState(state: PersistedChatState)
-    fun clearState() {}
-}
-
 class AndroidSessionPersistence(
     context: Context,
 ) : SessionPersistence {
@@ -73,19 +35,19 @@ class AndroidSessionPersistence(
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val repository: ChatSessionRepository = SQLiteChatSessionRepository(appContext)
 
-    override fun loadState(): PersistedChatState {
+    override fun loadState(): StoredChatState {
         return when (val result = loadStateResult()) {
             is SessionStateLoadResult.Success -> result.state
             is SessionStateLoadResult.RecoverableCorruption -> result.resetState
-            is SessionStateLoadResult.FatalCorruption -> PersistedChatState()
+            is SessionStateLoadResult.FatalCorruption -> StoredChatState()
         }
     }
 
-    override fun loadBootstrapState(): PersistedChatState {
+    override fun loadBootstrapState(): StoredChatState {
         return when (val result = loadBootstrapStateResult()) {
             is SessionStateLoadResult.Success -> result.state
             is SessionStateLoadResult.RecoverableCorruption -> result.resetState
-            is SessionStateLoadResult.FatalCorruption -> PersistedChatState()
+            is SessionStateLoadResult.FatalCorruption -> StoredChatState()
         }
     }
 
@@ -97,17 +59,17 @@ class AndroidSessionPersistence(
         return loadStateResult(bootstrapOnly = true)
     }
 
-    override fun loadSessionMessages(sessionId: String): List<MessageUiModel>? {
+    override fun loadSessionMessages(sessionId: String): List<StoredChatMessage>? {
         return runCatching {
             migrateLegacyPrefsIfNeeded()
-            repository.loadSessionMessages(sessionId)?.map(StoredChatMessage::toUiMessage)
+            repository.loadSessionMessages(sessionId)
         }.getOrNull()
     }
 
-    override fun saveState(state: PersistedChatState) {
+    override fun saveState(state: StoredChatState) {
         runCatching {
             migrateLegacyPrefsIfNeeded()
-            repository.saveState(state.toStoredState())
+            repository.saveState(state)
         }.getOrElse { error ->
             throw IllegalStateException("Failed to persist chat state", error)
         }
@@ -122,16 +84,16 @@ class AndroidSessionPersistence(
         return runCatching {
             migrateLegacyPrefsIfNeeded()
             val state = if (bootstrapOnly) {
-                repository.loadBootstrapState().toPersistedState()
+                repository.loadBootstrapState()
             } else {
-                repository.loadFullState().toPersistedState()
+                repository.loadFullState()
             }
             SessionStateLoadResult.Success(state)
         }.getOrElse { error ->
             val backupToken = backupCorruptState(raw = prefs.getString(KEY_STATE, null), error = error)
             clearState()
             SessionStateLoadResult.RecoverableCorruption(
-                resetState = PersistedChatState(),
+                resetState = StoredChatState(),
                 code = CHAT_STATE_CORRUPTION_CODE,
                 userMessage = "Saved chat state was corrupted and reset.",
                 technicalDetail = "code=$CHAT_STATE_CORRUPTION_CODE;backup=$backupToken;error=${error.message ?: "decode_failed"}",
@@ -150,7 +112,7 @@ class AndroidSessionPersistence(
                 prefs.edit().remove(KEY_STATE).apply()
                 throw error
             }
-        repository.saveState(migrated.toStoredState())
+        repository.saveState(migrated)
         prefs.edit().remove(KEY_STATE).apply()
     }
 
@@ -531,16 +493,16 @@ private class SQLiteChatSessionRepository(
         session: StoredChatSession,
     ) {
         db.delete(TABLE_MESSAGES, "session_id = ?", arrayOf(session.id))
-                session.messages.forEachIndexed { index, message ->
-                    db.insertOrThrow(
-                        TABLE_MESSAGES,
-                        null,
-                        ContentValues().apply {
-                            put("message_id", message.id)
-                            put("session_id", session.id)
-                            put("sort_order", index)
-                            put("timestamp_epoch_ms", message.timestampEpochMs)
-                            put("payload_json", SessionEntityCodec.encodeMessage(message))
+        session.messages.forEachIndexed { index, message ->
+            db.insertOrThrow(
+                TABLE_MESSAGES,
+                null,
+                ContentValues().apply {
+                    put("message_id", message.id)
+                    put("session_id", session.id)
+                    put("sort_order", index)
+                    put("timestamp_epoch_ms", message.timestampEpochMs)
+                    put("payload_json", SessionEntityCodec.encodeMessage(message))
                 },
             )
         }
@@ -569,132 +531,32 @@ private data class StoredAppState(
     val firstSessionTelemetryEvents: List<FirstSessionTelemetryEvent> = emptyList(),
 )
 
-private fun PersistedChatState.toStoredState(): StoredChatState {
-    return StoredChatState(
-        sessions = sessions.map(ChatSessionUiModel::toStoredSession),
-        activeSessionId = activeSessionId,
-        routingMode = routingMode,
-        performanceProfile = performanceProfile,
-        keepAlivePreference = keepAlivePreference,
-        gpuAccelerationEnabled = gpuAccelerationEnabled,
-        onboardingCompleted = onboardingCompleted,
-        firstSessionStage = firstSessionStage,
-        advancedUnlocked = advancedUnlocked,
-        firstAnswerCompleted = firstAnswerCompleted,
-        followUpCompleted = followUpCompleted,
-        firstSessionTelemetryEvents = firstSessionTelemetryEvents,
-    )
-}
-
-private fun StoredChatState.toPersistedState(): PersistedChatState {
-    return PersistedChatState(
-        sessions = sessions.map(StoredChatSession::toUiSession),
-        activeSessionId = activeSessionId,
-        routingMode = routingMode,
-        performanceProfile = performanceProfile,
-        keepAlivePreference = keepAlivePreference,
-        gpuAccelerationEnabled = gpuAccelerationEnabled,
-        onboardingCompleted = onboardingCompleted,
-        firstSessionStage = firstSessionStage,
-        advancedUnlocked = advancedUnlocked,
-        firstAnswerCompleted = firstAnswerCompleted,
-        followUpCompleted = followUpCompleted,
-        firstSessionTelemetryEvents = firstSessionTelemetryEvents,
-    )
-}
-
-private fun ChatSessionUiModel.toStoredSession(): StoredChatSession {
-    return StoredChatSession(
-        id = id,
-        title = title,
-        createdAtEpochMs = createdAtEpochMs,
-        updatedAtEpochMs = updatedAtEpochMs,
-        messages = messages.map(MessageUiModel::toStoredMessage),
-        completionSettings = completionSettings,
-        messagesLoaded = messagesLoaded,
-        messageCount = messageCount,
-    )
-}
-
-private fun StoredChatSession.toUiSession(): ChatSessionUiModel {
-    return ChatSessionUiModel(
-        id = id,
-        title = title,
-        createdAtEpochMs = createdAtEpochMs,
-        updatedAtEpochMs = updatedAtEpochMs,
-        messages = messages.map(StoredChatMessage::toUiMessage),
-        completionSettings = completionSettings,
-        messagesLoaded = messagesLoaded,
-        messageCount = messageCount,
-    )
-}
-
-private fun MessageUiModel.toStoredMessage(): StoredChatMessage {
-    return StoredChatMessage(
-        id = id,
-        role = role,
-        content = content,
-        timestampEpochMs = timestampEpochMs,
-        kind = kind,
-        imagePath = imagePath,
-        imagePaths = imagePaths,
-        toolName = toolName,
-        isStreaming = isStreaming,
-        requestId = requestId,
-        finishReason = finishReason,
-        terminalEventSeen = terminalEventSeen,
-        interaction = interaction,
-        reasoningContent = reasoningContent,
-        firstTokenMs = firstTokenMs,
-        tokensPerSec = tokensPerSec,
-        totalLatencyMs = totalLatencyMs,
-    )
-}
-
-private fun StoredChatMessage.toUiMessage(): MessageUiModel {
-    return MessageUiModel(
-        id = id,
-        role = role,
-        content = content,
-        timestampEpochMs = timestampEpochMs,
-        kind = kind,
-        imagePath = imagePath,
-        imagePaths = imagePaths,
-        toolName = toolName,
-        isStreaming = isStreaming,
-        requestId = requestId,
-        finishReason = finishReason,
-        terminalEventSeen = terminalEventSeen,
-        interaction = interaction,
-        reasoningContent = reasoningContent,
-        firstTokenMs = firstTokenMs,
-        tokensPerSec = tokensPerSec,
-        totalLatencyMs = totalLatencyMs,
-    )
-}
-
 internal object PersistedChatStateCodec {
     private val json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
     }
 
-    fun decode(raw: String): PersistedChatState {
+    fun decode(raw: String): StoredChatState {
         val root = json.parseToJsonElement(raw).jsonObject
         val sessions = root["sessions"]
             ?.let { element -> parseSessions(element) }
             ?: emptyList()
-        return PersistedChatState(
+        return StoredChatState(
             sessions = sessions,
             activeSessionId = root.stringOrNull("activeSessionId"),
             routingMode = parseRoutingModeName(root.stringOrDefault("routingMode", RoutingMode.AUTO.name)),
-            performanceProfile = parsePerformanceProfileName(root.stringOrDefault("performanceProfile", RuntimePerformanceProfile.BALANCED.name)),
+            performanceProfile = parsePerformanceProfileName(
+                root.stringOrDefault("performanceProfile", RuntimePerformanceProfile.BALANCED.name),
+            ),
             keepAlivePreference = parseKeepAlivePreferenceName(
                 root.stringOrDefault("keepAlivePreference", RuntimeKeepAlivePreference.AUTO.name),
             ),
             gpuAccelerationEnabled = root.booleanOrDefault("gpuAccelerationEnabled", false),
             onboardingCompleted = root.booleanOrDefault("onboardingCompleted", false),
-            firstSessionStage = parseFirstSessionStageName(root.stringOrDefault("firstSessionStage", FirstSessionStage.ONBOARDING.name)),
+            firstSessionStage = parseFirstSessionStageName(
+                root.stringOrDefault("firstSessionStage", FirstSessionStage.ONBOARDING.name),
+            ),
             advancedUnlocked = root.booleanOrDefault("advancedUnlocked", true),
             firstAnswerCompleted = root.booleanOrDefault("firstAnswerCompleted", false),
             followUpCompleted = root.booleanOrDefault("followUpCompleted", false),
@@ -702,7 +564,7 @@ internal object PersistedChatStateCodec {
         )
     }
 
-    fun encode(state: PersistedChatState): String {
+    fun encode(state: StoredChatState): String {
         val root = buildJsonObject {
             state.activeSessionId?.let { put("activeSessionId", JsonPrimitive(it)) }
             put("routingMode", JsonPrimitive(state.routingMode))
@@ -719,7 +581,7 @@ internal object PersistedChatStateCodec {
                 "sessions",
                 buildJsonArray {
                     state.sessions.forEach { session ->
-                        add(SessionEntityCodec.sessionJson(session.toStoredSession()))
+                        add(SessionEntityCodec.sessionJson(session))
                     }
                 },
             )
@@ -731,7 +593,7 @@ internal object PersistedChatStateCodec {
         return SessionEntityCodec.decodeTelemetryEventsJson(element)
     }
 
-    private fun parseSessions(element: JsonElement): List<ChatSessionUiModel> {
+    private fun parseSessions(element: JsonElement): List<StoredChatSession> {
         return element.jsonArray.mapNotNull { sessionElement ->
             val obj = sessionElement.asObjectOrNull() ?: return@mapNotNull null
             val messages = parseMessages(obj["messages"])
@@ -744,7 +606,7 @@ internal object PersistedChatStateCodec {
                 completionSettings = parseCompletionSettings(obj["completionSettings"]),
                 messagesLoaded = obj.booleanOrDefault("messagesLoaded", true),
                 messageCount = obj.intOrDefault("messageCount", messages.size),
-            ).toUiSession()
+            )
         }
     }
 }
@@ -892,7 +754,7 @@ private fun parseCompletionSettings(element: JsonElement?): CompletionSettings {
 }
 
 private fun parseMessages(element: JsonElement?): List<StoredChatMessage> {
-    val array = (element as? JsonArray) ?: return emptyList()
+    val array = element as? JsonArray ?: return emptyList()
     return array.mapNotNull { messageElement ->
         parseMessage(messageElement.asObjectOrNull())
     }
@@ -1012,7 +874,11 @@ private fun decodeInteraction(obj: JsonObject): PersistedInteractionMessage {
     } ?: emptyMap()
     return PersistedInteractionMessage(
         role = role,
-        parts = if (parts.isEmpty()) listOf(PersistedInteractionPart(type = "text", text = obj.stringOrDefault("content", ""))) else parts,
+        parts = if (parts.isEmpty()) {
+            listOf(PersistedInteractionPart(type = "text", text = obj.stringOrDefault("content", "")))
+        } else {
+            parts
+        },
         toolCalls = toolCalls,
         toolCallId = encoded.stringOrNull("toolCallId"),
         metadata = metadata,

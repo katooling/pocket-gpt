@@ -1,5 +1,7 @@
 package com.pocketagent.android.data.chat
 
+import com.pocketagent.android.ui.state.FirstSessionStage
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.CompletionSettings
 import com.pocketagent.android.ui.state.FirstSessionTelemetryEvent
 import com.pocketagent.android.ui.state.MessageKind
@@ -11,10 +13,10 @@ data class StoredChatState(
     val activeSessionId: String? = null,
     val routingMode: String = "AUTO",
     val performanceProfile: String = "BALANCED",
-    val keepAlivePreference: String,
+    val keepAlivePreference: String = RuntimeKeepAlivePreference.AUTO.name,
     val gpuAccelerationEnabled: Boolean = false,
     val onboardingCompleted: Boolean = false,
-    val firstSessionStage: String,
+    val firstSessionStage: String = FirstSessionStage.ONBOARDING.name,
     val advancedUnlocked: Boolean = true,
     val firstAnswerCompleted: Boolean = false,
     val followUpCompleted: Boolean = false,

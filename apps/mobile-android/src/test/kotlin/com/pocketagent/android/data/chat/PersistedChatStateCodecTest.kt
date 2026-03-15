@@ -1,5 +1,12 @@
-package com.pocketagent.android.ui.state
+package com.pocketagent.android.data.chat
 
+import com.pocketagent.android.ui.state.FirstSessionStage
+import com.pocketagent.android.ui.state.FirstSessionTelemetryEvent
+import com.pocketagent.android.ui.state.MessageKind
+import com.pocketagent.android.ui.state.MessageRole
+import com.pocketagent.android.ui.state.PersistedInteractionMessage
+import com.pocketagent.android.ui.state.PersistedInteractionPart
+import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -7,25 +14,25 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class SessionPersistenceCodecTest {
+class PersistedChatStateCodecTest {
     @Test
     fun `encode and decode roundtrip preserves sessions and onboarding flag`() {
-        val state = PersistedChatState(
+        val state = StoredChatState(
             sessions = listOf(
-                ChatSessionUiModel(
+                StoredChatSession(
                     id = "session-1",
                     title = "Launch checklist",
                     createdAtEpochMs = 100L,
                     updatedAtEpochMs = 120L,
                     messages = listOf(
-                        MessageUiModel(
+                        StoredChatMessage(
                             id = "msg-1",
                             role = MessageRole.USER,
                             content = "hello",
                             timestampEpochMs = 110L,
                             kind = MessageKind.TEXT,
                         ),
-                        MessageUiModel(
+                        StoredChatMessage(
                             id = "msg-2",
                             role = MessageRole.ASSISTANT,
                             content = "world",
@@ -188,15 +195,15 @@ class SessionPersistenceCodecTest {
 
     @Test
     fun `encode and decode preserve tool-role interaction linkage`() {
-        val state = PersistedChatState(
+        val state = StoredChatState(
             sessions = listOf(
-                ChatSessionUiModel(
+                StoredChatSession(
                     id = "s1",
                     title = "Tool role",
                     createdAtEpochMs = 1L,
                     updatedAtEpochMs = 2L,
                     messages = listOf(
-                        MessageUiModel(
+                        StoredChatMessage(
                             id = "tool-1",
                             role = MessageRole.TOOL,
                             content = "{\"result\":3}",
@@ -268,7 +275,7 @@ class SessionPersistenceCodecTest {
             PersistedChatStateCodec.decode(
                 """
                 {
-                  "routingMode": "BAD_MODE",
+                  "routingMode": "NOT_A_MODE",
                   "sessions": []
                 }
                 """.trimIndent(),
@@ -282,7 +289,21 @@ class SessionPersistenceCodecTest {
             PersistedChatStateCodec.decode(
                 """
                 {
-                  "performanceProfile": "TURBO_MAX",
+                  "performanceProfile": "HYPERDRIVE",
+                  "sessions": []
+                }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `decode fails fast for invalid first session stage`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PersistedChatStateCodec.decode(
+                """
+                {
+                  "firstSessionStage": "INVALID_STAGE",
                   "sessions": []
                 }
                 """.trimIndent(),
@@ -296,21 +317,7 @@ class SessionPersistenceCodecTest {
             PersistedChatStateCodec.decode(
                 """
                 {
-                  "keepAlivePreference": "FOREVER_FOREVER",
-                  "sessions": []
-                }
-                """.trimIndent(),
-            )
-        }
-    }
-
-    @Test
-    fun `decode fails fast for invalid first-session stage`() {
-        assertThrows(IllegalArgumentException::class.java) {
-            PersistedChatStateCodec.decode(
-                """
-                {
-                  "firstSessionStage": "DONE_FOREVER",
+                  "keepAlivePreference": "FOREVER_PLUS",
                   "sessions": []
                 }
                 """.trimIndent(),
