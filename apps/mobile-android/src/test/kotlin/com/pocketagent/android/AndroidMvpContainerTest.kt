@@ -169,16 +169,8 @@ class AndroidMvpContainerTest {
             inferenceModule = inference,
             artifactPayloadByModelId = payloads,
             artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
-            artifactProvenanceIssuerByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
-                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
-                ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release",
-            ),
-            artifactProvenanceSignatureByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
-                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
-                ModelCatalog.SMOLLM3_3B_Q4_K_M to provenanceSignature("internal-release", ModelCatalog.SMOLLM3_3B_Q4_K_M, payloads.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M)),
-            ),
+            artifactProvenanceIssuerByModelId = testProvenanceIssuers(payloads),
+            artifactProvenanceSignatureByModelId = testProvenanceSignatures(payloads),
         )
 
         val checks = container.runStartupChecks()
@@ -198,16 +190,8 @@ class AndroidMvpContainerTest {
             inferenceModule = inference,
             artifactPayloadByModelId = payloads,
             artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
-            artifactProvenanceIssuerByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
-                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
-                ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release",
-            ),
-            artifactProvenanceSignatureByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
-                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
-                ModelCatalog.SMOLLM3_3B_Q4_K_M to provenanceSignature("internal-release", ModelCatalog.SMOLLM3_3B_Q4_K_M, payloads.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M)),
-            ),
+            artifactProvenanceIssuerByModelId = testProvenanceIssuers(payloads),
+            artifactProvenanceSignatureByModelId = testProvenanceSignatures(payloads),
         )
 
         val checks = container.runStartupChecks()
@@ -245,16 +229,8 @@ class AndroidMvpContainerTest {
             inferenceModule = LlamaCppInferenceModule(bridge),
             artifactPayloadByModelId = payloads,
             artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
-            artifactProvenanceIssuerByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
-                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
-                ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release",
-            ),
-            artifactProvenanceSignatureByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
-                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
-                ModelCatalog.SMOLLM3_3B_Q4_K_M to provenanceSignature("internal-release", ModelCatalog.SMOLLM3_3B_Q4_K_M, payloads.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M)),
-            ),
+            artifactProvenanceIssuerByModelId = testProvenanceIssuers(payloads),
+            artifactProvenanceSignatureByModelId = testProvenanceSignatures(payloads),
             requireNativeRuntimeForStartupChecks = true,
         )
 
@@ -273,16 +249,8 @@ class AndroidMvpContainerTest {
             inferenceModule = LlamaCppInferenceModule(bridge),
             artifactPayloadByModelId = payloads,
             artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
-            artifactProvenanceIssuerByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
-                ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
-                ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release",
-            ),
-            artifactProvenanceSignatureByModelId = mapOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
-                ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
-                ModelCatalog.SMOLLM3_3B_Q4_K_M to provenanceSignature("internal-release", ModelCatalog.SMOLLM3_3B_Q4_K_M, payloads.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M)),
-            ),
+            artifactProvenanceIssuerByModelId = testProvenanceIssuers(payloads),
+            artifactProvenanceSignatureByModelId = testProvenanceSignatures(payloads),
             requireNativeRuntimeForStartupChecks = false,
         )
 
@@ -473,11 +441,7 @@ class AndroidMvpContainerTest {
 private class RecordingInferenceModule(
     private val allowLoad: Boolean = true,
     private val tokensToEmit: List<String> = listOf("real ", "runtime ", "response "),
-    private val availableModels: List<String> = listOf(
-        ModelCatalog.QWEN_3_5_0_8B_Q4,
-        ModelCatalog.QWEN_3_5_2B_Q4,
-        ModelCatalog.SMOLLM3_3B_Q4_K_M,
-    ),
+    private val availableModels: List<String> = testRuntimeModelIds(),
 ) : InferenceModule {
     val loadCalls = mutableListOf<String>()
     val capturedPrompts = mutableListOf<String>()
@@ -507,11 +471,7 @@ private class BackendAwareTestBridge(
 ) : com.pocketagent.nativebridge.LlamaCppRuntimeBridge {
     override fun isReady(): Boolean = backend != com.pocketagent.nativebridge.RuntimeBackend.UNAVAILABLE
 
-    override fun listAvailableModels(): List<String> = listOf(
-        ModelCatalog.QWEN_3_5_0_8B_Q4,
-        ModelCatalog.QWEN_3_5_2B_Q4,
-        ModelCatalog.SMOLLM3_3B_Q4_K_M,
-    )
+    override fun listAvailableModels(): List<String> = testRuntimeModelIds()
 
     override fun loadModel(modelId: String, modelPath: String?): Boolean = isReady()
 
@@ -589,22 +549,8 @@ private fun defaultContainer(
     observabilityModule: ObservabilityModule = InMemoryObservabilityModule(),
 ): AndroidMvpContainer {
     val payloads = testPayloads()
-    val issuerByModel = mapOf(
-        ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
-        ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
-    )
-    val signatureByModel = mapOf(
-        ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature(
-            "internal-release",
-            ModelCatalog.QWEN_3_5_0_8B_Q4,
-            payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4),
-        ),
-        ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature(
-            "internal-release",
-            ModelCatalog.QWEN_3_5_2B_Q4,
-            payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4),
-        ),
-    )
+    val issuerByModel = testProvenanceIssuers(payloads)
+    val signatureByModel = testProvenanceSignatures(payloads)
     return AndroidMvpContainer(
         inferenceModule = inferenceModule,
         policyModule = policyModule,
@@ -616,12 +562,26 @@ private fun defaultContainer(
     )
 }
 
+private fun testRuntimeModelIds(): List<String> = ModelCatalog.startupCandidateModels()
+
 private fun testPayloads(): Map<String, ByteArray> {
-    return mapOf(
-        ModelCatalog.QWEN_3_5_0_8B_Q4 to "artifact-qwen-0.8b".encodeToByteArray(),
-        ModelCatalog.QWEN_3_5_2B_Q4 to "artifact-qwen-2b".encodeToByteArray(),
-        ModelCatalog.SMOLLM3_3B_Q4_K_M to "artifact-smollm3-3b".encodeToByteArray(),
-    )
+    return testRuntimeModelIds().associateWith { modelId ->
+        "artifact-$modelId".encodeToByteArray()
+    }
+}
+
+private fun testProvenanceIssuers(payloads: Map<String, ByteArray>): Map<String, String> {
+    return payloads.keys.associateWith { "internal-release" }
+}
+
+private fun testProvenanceSignatures(payloads: Map<String, ByteArray>): Map<String, String> {
+    return payloads.mapValues { (modelId, payload) ->
+        provenanceSignature(
+            issuer = "internal-release",
+            modelId = modelId,
+            payload = payload,
+        )
+    }
 }
 
 private fun sha256Hex(bytes: ByteArray): String {

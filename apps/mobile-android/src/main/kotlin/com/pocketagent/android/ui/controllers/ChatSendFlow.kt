@@ -8,6 +8,7 @@ import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.core.SessionId
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatKeepAlivePreference
+import com.pocketagent.android.ui.state.CompletionSettings
 import com.pocketagent.runtime.ChatStreamCommand
 import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.PreparedChatStream
@@ -15,6 +16,7 @@ import com.pocketagent.runtime.ChatStreamRequestPlanner
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.ResolvedPerformancePlan
 import com.pocketagent.runtime.RuntimePerformanceProfile
+import com.pocketagent.runtime.SamplingOverrides
 
 fun interface DeviceStateProvider {
     fun current(): DeviceState
@@ -95,6 +97,7 @@ class ChatSendFlow(
         promptHint: String,
         previousResponseId: String?,
         runtime: RuntimeUiState,
+        completionSettings: CompletionSettings? = null,
         prepare: (ChatStreamCommand) -> PreparedChatStream,
     ): PreparedSendStream {
         val deviceState = deviceStateProvider.current()
@@ -111,10 +114,24 @@ class ChatSendFlow(
             previousResponseId = previousResponseId,
             keepAlivePreference = runtime.keepAlivePreference.toRuntimePreference(),
             requestTimeoutOverrideMs = runtimeGenerationTimeoutMs.takeIf { it > 0L },
+            samplingOverrides = completionSettings?.toSamplingOverrides(),
         )
         return PreparedSendStream(
             deviceState = deviceState,
             preparedStream = prepare(command),
+        )
+    }
+
+    private fun CompletionSettings.toSamplingOverrides(): SamplingOverrides {
+        return SamplingOverrides(
+            temperature = temperature,
+            topP = topP,
+            topK = topK,
+            maxTokens = maxTokens,
+            repeatPenalty = repeatPenalty,
+            frequencyPenalty = frequencyPenalty,
+            presencePenalty = presencePenalty,
+            systemPrompt = systemPrompt.ifBlank { null },
         )
     }
 

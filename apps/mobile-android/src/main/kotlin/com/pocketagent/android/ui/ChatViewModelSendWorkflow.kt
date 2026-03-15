@@ -75,6 +75,7 @@ internal fun ChatViewModel.sendMessageInternal() {
         promptHint = prompt,
         previousResponseId = previousResponseId,
         runtime = snapshot.runtime,
+        completionSettings = activeSession.completionSettings,
         prepare = runtimeFacade::prepareChatStream,
     )
     val currentDeviceState = sendPreparation.deviceState
