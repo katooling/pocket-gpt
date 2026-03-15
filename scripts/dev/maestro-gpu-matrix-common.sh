@@ -9,6 +9,9 @@ pocketgpt_gpu_matrix_model_spec() {
     phi_4_mini)
       printf '%s\n' 'phi-4-mini-instruct-q4_k_m|q4_k_m'
       ;;
+    qwen3_0_6b)
+      printf '%s\n' 'qwen3-0.6b-q4_k_m|q4_k_m'
+      ;;
     qwen_0_8b)
       printf '%s\n' 'qwen3.5-0.8b-q4|q4_0'
       ;;
