@@ -113,4 +113,15 @@ class ThinkingBlockFilterTest {
         // The partial "<thi" was not a real tag, so it should be flushed as visible text
         assertEquals("partial<thi", output.toString())
     }
+
+    @Test
+    fun `stripThinkingBlocks supports custom tags`() {
+        val input = "<thinking>reasoning</thinking>visible"
+        val output = ThinkingBlockFilter.stripThinkingBlocks(
+            text = input,
+            openTag = "<thinking>",
+            closeTag = "</thinking>",
+        )
+        assertEquals("visible", output)
+    }
 }

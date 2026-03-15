@@ -19,9 +19,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * This parser extracts all such blocks and maps them to [InteractionToolCall] instances.
  */
 internal object ToolCallParser {
-
-    private const val OPEN_TAG = "<tool_call>"
-    private const val CLOSE_TAG = "</tool_call>"
+    private const val DEFAULT_OPEN_TAG = "<tool_call>"
+    private const val DEFAULT_CLOSE_TAG = "</tool_call>"
 
     private val json = Json {
         isLenient = true
@@ -38,8 +37,12 @@ internal object ToolCallParser {
      * Extracts all `<tool_call>...</tool_call>` blocks from [text] and returns
      * the parsed tool calls plus the remaining visible text.
      */
-    fun parse(text: String): ParsedToolCalls {
-        if (!text.contains(OPEN_TAG)) {
+    fun parse(
+        text: String,
+        openTag: String = DEFAULT_OPEN_TAG,
+        closeTag: String = DEFAULT_CLOSE_TAG,
+    ): ParsedToolCalls {
+        if (!text.contains(openTag)) {
             return ParsedToolCalls(toolCalls = emptyList(), textWithoutToolCalls = text)
         }
 
@@ -48,14 +51,14 @@ internal object ToolCallParser {
         var pos = 0
 
         while (pos < text.length) {
-            val openIdx = text.indexOf(OPEN_TAG, pos)
+            val openIdx = text.indexOf(openTag, pos)
             if (openIdx < 0) {
                 remaining.append(text, pos, text.length)
                 break
             }
             remaining.append(text, pos, openIdx)
-            val contentStart = openIdx + OPEN_TAG.length
-            val closeIdx = text.indexOf(CLOSE_TAG, contentStart)
+            val contentStart = openIdx + openTag.length
+            val closeIdx = text.indexOf(closeTag, contentStart)
             if (closeIdx < 0) {
                 // Unclosed tag — treat remaining as text
                 remaining.append(text, openIdx, text.length)
@@ -66,7 +69,7 @@ internal object ToolCallParser {
             if (parsed != null) {
                 toolCalls += parsed
             }
-            pos = closeIdx + CLOSE_TAG.length
+            pos = closeIdx + closeTag.length
         }
 
         return ParsedToolCalls(
@@ -96,7 +99,11 @@ internal object ToolCallParser {
      * Renders tool definitions as XML for injection into the system prompt.
      * This format is compatible with SmolLM3's tool calling convention.
      */
-    fun renderToolDefinitionsXml(toolNames: List<String>): String {
+    fun renderToolDefinitionsXml(
+        toolNames: List<String>,
+        openTag: String = DEFAULT_OPEN_TAG,
+        closeTag: String = DEFAULT_CLOSE_TAG,
+    ): String {
         if (toolNames.isEmpty()) return ""
         return buildString {
             appendLine()
@@ -110,7 +117,7 @@ internal object ToolCallParser {
             }
             appendLine("</tools>")
             appendLine()
-            append("When you need to use a tool, output a <tool_call> block with JSON containing \"name\" and \"arguments\" keys.")
+            append("When you need to use a tool, output a $openTag ... $closeTag block with JSON containing \"name\" and \"arguments\" keys.")
         }
     }
 

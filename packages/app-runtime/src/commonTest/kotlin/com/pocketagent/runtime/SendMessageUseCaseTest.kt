@@ -184,6 +184,41 @@ class SendMessageUseCaseTest {
         assertTrue(error.message?.contains("tracked safe memory ceiling") == true)
         assertEquals(0, inferenceModule.loadCalls)
     }
+
+    @Test
+    fun `gemma profile skips thinking and tool-call processing`() {
+        val streamedTokens = mutableListOf<String>()
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(
+                generatedTokens = listOf(
+                    "<think>private reasoning</think>",
+                    "Visible response ",
+                    "<tool_call>{\"name\":\"calculator\",\"arguments\":{\"expression\":\"1+1\"}}</tool_call>",
+                ),
+            ),
+            routingModule = SendStaticRoutingModule(modelId = ModelCatalog.GEMMA_2_2B_Q4_K_M),
+        )
+
+        val response = fixture.useCase.execute(
+            fixture.request().copy(
+                onToken = { token -> streamedTokens += token },
+            ),
+        )
+
+        assertEquals("<think>private reasoning</think>Visible response <tool_call>{\"name\":\"calculator\",\"arguments\":{\"expression\":\"1+1\"}}</tool_call>", response.text)
+        assertTrue(response.toolCalls.isEmpty())
+        assertEquals(null, response.reasoningContent)
+        assertEquals(
+            listOf(
+                "<think>private reasoning</think>",
+                "Visible response ",
+                "<tool_call>{\"name\":\"calculator\",\"arguments\":{\"expression\":\"1+1\"}}</tool_call>",
+            ),
+            streamedTokens,
+        )
+    }
 }
 
 private class SendMessageFixture(
@@ -225,10 +260,10 @@ private fun createFixture(
     runtimeConfig: RuntimeConfig,
     policyModule: SendPolicyModule,
     inferenceModule: SendRecordingInferenceModule,
+    routingModule: RoutingModule = SendStaticRoutingModule(),
     runtimeInferencePorts: RuntimeInferencePorts = RuntimeInferencePorts(),
     runtimePlanResolver: RuntimePlanResolver = RuntimePlanResolver(),
 ): SendMessageFixture {
-    val routingModule = SendStaticRoutingModule()
     val modelLifecycle = ModelLifecycleCoordinator(
         inferenceModule = inferenceModule,
         routingModule = routingModule,
@@ -252,7 +287,7 @@ private fun createFixture(
         inferenceModule = inferenceModule,
         runtimeConfig = runtimeConfig,
         artifactVerifier = ArtifactVerifier(runtimeConfig),
-        interactionPlanner = InteractionPlanner(ModelTemplateRegistry()),
+        interactionPlanner = InteractionPlanner(interactionRegistry = ModelInteractionRegistry()),
         inferenceExecutor = InferenceExecutor(
             inferenceModule = inferenceModule,
             runtimeConfig = runtimeConfig,
@@ -284,7 +319,11 @@ private class SendRecordingInferenceModule(
     var unloadCalls: Int = 0
 
     override fun listAvailableModels(): List<String> {
-        return listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4)
+        return listOf(
+            ModelCatalog.QWEN_3_5_0_8B_Q4,
+            ModelCatalog.QWEN_3_5_2B_Q4,
+            ModelCatalog.GEMMA_2_2B_Q4_K_M,
+        )
     }
 
     override fun loadModel(modelId: String): Boolean {
@@ -353,8 +392,10 @@ private class SendModelRegistryPort : RuntimeModelRegistryPort {
     override fun cachedEstimatedMaxGpuLayers(modelId: String, nCtx: Int): Int? = 4
 }
 
-private class SendStaticRoutingModule : RoutingModule {
-    override fun selectModel(taskType: String, deviceState: DeviceState): String = ModelCatalog.QWEN_3_5_0_8B_Q4
+private class SendStaticRoutingModule(
+    private val modelId: String = ModelCatalog.QWEN_3_5_0_8B_Q4,
+) : RoutingModule {
+    override fun selectModel(taskType: String, deviceState: DeviceState): String = modelId
 
     override fun selectContextBudget(taskType: String, deviceState: DeviceState): Int = 512
 }
@@ -393,26 +434,32 @@ private fun sendRuntimeConfig(
 ): RuntimeConfig {
     val payload0 = "payload-0".encodeToByteArray()
     val payload2 = "payload-2".encodeToByteArray()
+    val payloadGemma = "payload-gemma".encodeToByteArray()
     return RuntimeConfig(
         artifactPayloadByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to payload0,
             ModelCatalog.QWEN_3_5_2B_Q4 to payload2,
+            ModelCatalog.GEMMA_2_2B_Q4_K_M to payloadGemma,
         ),
         artifactFilePathByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to "",
             ModelCatalog.QWEN_3_5_2B_Q4 to "",
+            ModelCatalog.GEMMA_2_2B_Q4_K_M to "",
         ),
         artifactSha256ByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to sendSha256(payload0),
             ModelCatalog.QWEN_3_5_2B_Q4 to sendSha256(payload2),
+            ModelCatalog.GEMMA_2_2B_Q4_K_M to sendSha256(payloadGemma),
         ),
         artifactProvenanceIssuerByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
             ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+            ModelCatalog.GEMMA_2_2B_Q4_K_M to "internal-release",
         ),
         artifactProvenanceSignatureByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to "sig-0",
             ModelCatalog.QWEN_3_5_2B_Q4 to "sig-2",
+            ModelCatalog.GEMMA_2_2B_Q4_K_M to "sig-gemma",
         ),
         runtimeCompatibilityTag = "android-arm64-v8a",
         requireNativeRuntimeForStartupChecks = false,

@@ -128,8 +128,11 @@ internal class SendMessageUseCase(
             failureMessage = "Policy module rejected inference event type.",
         )
         val startedMs = System.currentTimeMillis()
-        val visibleThinkingFilter = ThinkingBlockFilter(enabled = true)
-        val reasoningCaptureFilter = ThinkingBlockFilter(enabled = showThinking)
+        val interactionProfile = interactionPlanner.interactionProfileForModel(modelId)
+        val streamFilters = ResponsePipelineFactory.createStreamFilters(
+            profile = interactionProfile,
+            showThinking = showThinking,
+        )
 
         val effectivePerformanceConfig = runtimePlan.effectiveConfig
         val thermalThrottled = effectivePerformanceConfig != executionContext.performanceConfig
@@ -185,8 +188,8 @@ internal class SendMessageUseCase(
                     if (timeoutGuard.timedOut()) {
                         return@execute
                     }
-                    val visibleText = visibleThinkingFilter.filterToken(token)
-                    reasoningCaptureFilter.filterToken(token)
+                    val visibleText = streamFilters.visibleThinkingFilter?.filterToken(token) ?: token
+                    streamFilters.reasoningCaptureFilter?.filterToken(token)
                     if (visibleText.isNotEmpty()) {
                         if (firstTokenLatencyMs < 0) {
                             firstTokenLatencyMs = System.currentTimeMillis() - startedMs
@@ -197,14 +200,20 @@ internal class SendMessageUseCase(
                 },
             )
             finishReason = executionResult.finishReason
-            val flushed = visibleThinkingFilter.flush()
-            reasoningCaptureFilter.flush()
+            val flushed = streamFilters.visibleThinkingFilter?.flush().orEmpty()
+            streamFilters.reasoningCaptureFilter?.flush()
             if (flushed.isNotEmpty()) {
                 request.onToken(flushed)
             }
-            val cleanedText = ThinkingBlockFilter.stripThinkingBlocks(executionResult.text)
-            reasoningContent = reasoningCaptureFilter.capturedThinking().ifBlank { null }
-            val toolCallResult = ToolCallParser.parse(cleanedText)
+            val cleanedText = ResponsePipelineFactory.stripThinking(
+                text = executionResult.text,
+                profile = interactionProfile,
+            )
+            reasoningContent = streamFilters.reasoningCaptureFilter?.capturedThinking()?.ifBlank { null }
+            val toolCallResult = ResponsePipelineFactory.parseToolCalls(
+                text = cleanedText,
+                profile = interactionProfile,
+            )
             parsedToolCalls = toolCallResult.toolCalls
             responseText = toolCallResult.textWithoutToolCalls.trim()
             if (parsedToolCalls.isNotEmpty()) {

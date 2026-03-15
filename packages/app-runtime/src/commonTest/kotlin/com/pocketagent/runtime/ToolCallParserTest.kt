@@ -112,4 +112,21 @@ not valid json
         assertEquals(2, result.toolCalls.size)
         assertTrue(result.toolCalls[0].id != result.toolCalls[1].id)
     }
+
+    @Test
+    fun `parse supports custom xml tags`() {
+        val text = """before<call>
+{"name": "calculator", "arguments": {"expression": "3+4"}}
+</call>after"""
+
+        val result = ToolCallParser.parse(
+            text = text,
+            openTag = "<call>",
+            closeTag = "</call>",
+        )
+
+        assertEquals(1, result.toolCalls.size)
+        assertEquals("calculator", result.toolCalls[0].name)
+        assertEquals("beforeafter", result.textWithoutToolCalls)
+    }
 }

@@ -12,6 +12,8 @@ package com.pocketagent.runtime
  */
 internal class ThinkingBlockFilter(
     private val enabled: Boolean = true,
+    private val openTag: String = DEFAULT_OPEN_TAG,
+    private val closeTag: String = DEFAULT_CLOSE_TAG,
 ) {
     private var insideThinkBlock = false
     private val pendingBuffer = StringBuilder()
@@ -62,17 +64,17 @@ internal class ThinkingBlockFilter(
         while (pendingBuffer.isNotEmpty()) {
             val buf = pendingBuffer.toString()
             if (insideThinkBlock) {
-                val closeIdx = buf.indexOf(CLOSE_TAG)
+                val closeIdx = buf.indexOf(closeTag)
                 if (closeIdx >= 0) {
                     if (closeIdx > 0) {
                         thinkingBuffer.append(buf, 0, closeIdx)
                     }
-                    pendingBuffer.delete(0, closeIdx + CLOSE_TAG.length)
+                    pendingBuffer.delete(0, closeIdx + closeTag.length)
                     insideThinkBlock = false
                     continue
                 }
-                if (couldBePartialTag(buf, CLOSE_TAG)) {
-                    val safeLength = buf.length - (CLOSE_TAG.length - 1)
+                if (couldBePartialTag(buf, closeTag)) {
+                    val safeLength = buf.length - (closeTag.length - 1)
                     if (safeLength > 0) {
                         thinkingBuffer.append(buf, 0, safeLength)
                         pendingBuffer.delete(0, safeLength)
@@ -84,17 +86,17 @@ internal class ThinkingBlockFilter(
                 return
             }
 
-            val openIdx = buf.indexOf(OPEN_TAG)
+            val openIdx = buf.indexOf(openTag)
             if (openIdx >= 0) {
                 if (openIdx > 0) {
                     output.append(buf, 0, openIdx)
                 }
-                pendingBuffer.delete(0, openIdx + OPEN_TAG.length)
+                pendingBuffer.delete(0, openIdx + openTag.length)
                 insideThinkBlock = true
                 continue
             }
-            if (couldBePartialTag(buf, OPEN_TAG)) {
-                val safeLength = buf.length - (OPEN_TAG.length - 1)
+            if (couldBePartialTag(buf, openTag)) {
+                val safeLength = buf.length - (openTag.length - 1)
                 if (safeLength > 0) {
                     output.append(buf, 0, safeLength)
                     pendingBuffer.delete(0, safeLength)
@@ -108,8 +110,8 @@ internal class ThinkingBlockFilter(
     }
 
     companion object {
-        internal const val OPEN_TAG = "<think>"
-        internal const val CLOSE_TAG = "</think>"
+        internal const val DEFAULT_OPEN_TAG = "<think>"
+        internal const val DEFAULT_CLOSE_TAG = "</think>"
 
         private fun couldBePartialTag(buffer: String, tag: String): Boolean {
             val maxOverlap = minOf(buffer.length, tag.length - 1)
@@ -126,20 +128,24 @@ internal class ThinkingBlockFilter(
          * Strips all `<think>...</think>` blocks from the given text.
          * Used for post-processing the final response before storage and display.
          */
-        fun stripThinkingBlocks(text: String): String {
-            if (!text.contains(OPEN_TAG)) return text
+        fun stripThinkingBlocks(
+            text: String,
+            openTag: String = DEFAULT_OPEN_TAG,
+            closeTag: String = DEFAULT_CLOSE_TAG,
+        ): String {
+            if (!text.contains(openTag)) return text
             val result = StringBuilder(text.length)
             var pos = 0
             while (pos < text.length) {
-                val openIdx = text.indexOf(OPEN_TAG, pos)
+                val openIdx = text.indexOf(openTag, pos)
                 if (openIdx < 0) {
                     result.append(text, pos, text.length)
                     break
                 }
                 result.append(text, pos, openIdx)
-                val closeIdx = text.indexOf(CLOSE_TAG, openIdx + OPEN_TAG.length)
+                val closeIdx = text.indexOf(closeTag, openIdx + openTag.length)
                 pos = if (closeIdx >= 0) {
-                    closeIdx + CLOSE_TAG.length
+                    closeIdx + closeTag.length
                 } else {
                     break
                 }
