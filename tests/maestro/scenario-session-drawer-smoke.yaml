@@ -1,9 +1,7 @@
 appId: com.pocketagent.android
 tags:
   - smoke
-  - onboarding
-  - bootstrap
-  - maestro-default
+  - sessions
 ---
 - launchApp:
     clearState: true
@@ -30,14 +28,12 @@ tags:
       visible: "Get ready"
     commands:
       - tapOn: "Get ready"
-- runFlow:
-    when:
-      visible: "Refresh runtime checks"
-    commands:
-      - tapOn: "Refresh runtime checks"
-- extendedWaitUntil:
-    visible: "Runtime: Ready"
-    timeout: 180000
-- assertNotVisible: "Welcome to Pocket GPT"
-- assertNotVisible: "UI-STARTUP-001"
-- takeScreenshot: "scenario-onboarding-ready"
+- tapOn: "Sessions"
+- assertVisible: "Create session"
+- assertVisible: "New chat"
+- tapOn: "Delete session New chat"
+- assertVisible: "Delete conversation?"
+- tapOn: "Delete"
+- assertVisible: "Create session"
+- assertVisible: "New chat"
+- takeScreenshot: "scenario-session-drawer-after-delete"

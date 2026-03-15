@@ -1,22 +1,9 @@
 appId: com.pocketagent.android
+tags:
+  - gpu
+  - diagnostics
 ---
-- launchApp:
-    clearState: false
-- runFlow:
-    when:
-      visible: "Skip"
-    commands:
-      - tapOn: "Skip"
-- runFlow:
-    when:
-      visible: "Get started"
-    commands:
-      - tapOn: "Get started"
-- runFlow:
-    when:
-      visible: "Runtime: Error"
-    commands:
-      - tapOn: "Refresh runtime checks"
+- runFlow: shared/bootstrap-runtime-ready.yaml
 - runFlow:
     when:
       visible: "Open advanced controls"

@@ -3,8 +3,11 @@ set -euo pipefail
 
 pocketgpt_gpu_matrix_model_spec() {
   case "$1" in
-    tiny)
-      printf '%s\n' 'smollm2-135m-instruct-q4_k_m|q4_k_m'
+    smollm3_3b)
+      printf '%s\n' 'smollm3-3b-q4_k_m|q4_k_m'
+      ;;
+    phi_4_mini)
+      printf '%s\n' 'phi-4-mini-instruct-q4_k_m|q4_k_m'
       ;;
     qwen_0_8b)
       printf '%s\n' 'qwen3.5-0.8b-q4|q4_0'

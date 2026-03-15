@@ -1,20 +1,19 @@
 appId: com.pocketagent.android
+tags:
+  - recovery
+  - model-management
+  - maestro-default
 ---
-- launchApp:
-    clearState: false
-- tapOn:
-    text: "Skip"
-    optional: true
-    waitUntilVisible: true
-- runFlow:
-    when:
-      visible: "Refresh runtime checks"
-    commands:
-      - tapOn: "Refresh runtime checks"
+- runFlow: shared/bootstrap-runtime-ready.yaml
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
-- tapOn: "Open model setup"
-- assertVisible: "Model provisioning"
+- scrollUntilVisible:
+    element:
+      text: "Open model library"
+    direction: DOWN
+    timeout: 20000
+- tapOn: "Open model library"
+- assertVisible: "Model library"
 - assertVisible: "Required models"
 - scrollUntilVisible:
     element:

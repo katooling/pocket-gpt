@@ -1,9 +1,4 @@
 appId: com.pocketagent.android
-tags:
-  - smoke
-  - onboarding
-  - bootstrap
-  - maestro-default
 ---
 - launchApp:
     clearState: true
@@ -27,9 +22,14 @@ tags:
       - tapOn: "Skip"
 - runFlow:
     when:
-      visible: "Get ready"
+      visible: "Open advanced controls"
     commands:
-      - tapOn: "Get ready"
+      - tapOn: "Open advanced controls"
+- runFlow:
+    when:
+      visible: "Advanced controls"
+    commands:
+      - back
 - runFlow:
     when:
       visible: "Refresh runtime checks"
@@ -38,6 +38,4 @@ tags:
 - extendedWaitUntil:
     visible: "Runtime: Ready"
     timeout: 180000
-- assertNotVisible: "Welcome to Pocket GPT"
 - assertNotVisible: "UI-STARTUP-001"
-- takeScreenshot: "scenario-onboarding-ready"

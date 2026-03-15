@@ -24,8 +24,8 @@ appId: com.pocketagent.android
     commands:
       - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
-- tapOn: "Open model setup"
-- assertVisible: "Model provisioning"
+- tapOn: "Open model library"
+- assertVisible: "Model library"
 - scrollUntilVisible:
     element:
       text: "Downloads"

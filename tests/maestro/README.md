@@ -15,18 +15,31 @@ Source of truth for execution commands and cloud guidance:
 3. `scenario-b.yaml`: post-onboarding advanced controls/tools/diagnostics journey
 4. `scenario-c.yaml`: post-onboarding continuity + image-aware journey
 5. `scenario-activation-send-smoke.yaml`: activation + send recovery smoke
-6. `scenario-download-settings-smoke.yaml`: clean install -> onboarding -> advanced settings -> download controls smoke
+6. `scenario-download-settings-smoke.yaml`: clean install -> onboarding -> advanced settings -> download controls + model library/runtime split smoke
 7. `scenario-first-run-download-chat.yaml`: clean install -> first-run download -> runtime ready -> send smoke
 8. `scenario-first-run-gpu-chat.yaml`: clean install -> first-run setup -> enable GPU acceleration -> send smoke
 9. `scenario-gpu-probe-status.yaml`: open Advanced controls and drive GPU probe status updates for log-based reason validation
+10. `scenario-session-drawer-smoke.yaml`: onboarding skip -> session drawer delete/replacement smoke
 
 ## Contract Notes
 
 1. `scenario-onboarding.yaml` is the only onboarding flow in the default maestro lane sequence; scenario A/B/C intentionally assume post-onboarding state and assert onboarding is not visible.
-2. Most flows run with `clearState: true` to avoid cross-scenario leakage; post-onboarding flows keep state so provisioned runtime metadata is preserved in journey/maestro lane sequencing.
+2. The default lane flows are now bootstrapped with shared helper flows instead of depending on cross-flow state leakage. Keep stable contract flows hermetic unless the product claim is explicitly about persistence across app restarts.
 3. Screenshot checkpoints feed `tests/ui-screenshots/inventory.yaml` through `lane screenshot-pack`.
 4. Release-gate usage remains through `devctl` lanes; direct `maestro`/cloud execution is supplemental.
 5. CI lifecycle gate flow is `scenario-first-run-download-chat.yaml` (`lifecycle-e2e-first-run` job in CI).
+6. Prefer the most stable selector that Maestro can actually see. In the current Pocket GPT Android build, Compose `testTag` values are good for instrumentation but are not yet a reliable Maestro Cloud selector surface, so most Maestro flows still use visible text.
+7. Keep split-surface validation concentrated in dedicated model-management flows and focused Compose/instrumentation tests; do not re-assert the same library/runtime separation in unrelated long journeys.
+8. Tag every stable flow. `devctl lane maestro` now supports `--include-tags`, `--exclude-tags`, and `--flows` so you can run one risk slice without cloning/renaming files.
+
+## Selection Examples
+
+```bash
+python3 tools/devctl/main.py lane maestro
+python3 tools/devctl/main.py lane maestro --include-tags smoke
+python3 tools/devctl/main.py lane maestro --include-tags model-management
+python3 tools/devctl/main.py lane maestro --include-tags smoke --exclude-tags long-running
+```
 
 ## Scoped Debug Flows
 

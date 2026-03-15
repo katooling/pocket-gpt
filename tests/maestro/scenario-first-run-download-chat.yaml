@@ -1,4 +1,8 @@
 appId: com.pocketagent.android
+tags:
+  - lifecycle
+  - provisioning
+  - long-running
 ---
 - launchApp:
     clearState: true
@@ -24,17 +28,17 @@ appId: com.pocketagent.android
             - tapOn: "Get ready"
       - runFlow:
           when:
-            visible: "Open model setup"
+            visible: "Open model library"
           commands:
-            - tapOn: "Open model setup"
+            - tapOn: "Open model library"
       - runFlow:
           when:
-            visible: "Fix model setup"
+            visible: "Fix model library"
           commands:
-            - tapOn: "Fix model setup"
+            - tapOn: "Fix model library"
       - runFlow:
           when:
-            notVisible: "Model provisioning"
+            notVisible: "Model library"
           commands:
             - runFlow:
                 when:
@@ -48,16 +52,16 @@ appId: com.pocketagent.android
                   - tapOn: "Advanced"
             - runFlow:
                 when:
-                  visible: "Open model setup"
+                  visible: "Open model library"
                 commands:
-                  - tapOn: "Open model setup"
+                  - tapOn: "Open model library"
             - runFlow:
                 when:
-                  visible: "Fix model setup"
+                  visible: "Fix model library"
                 commands:
-                  - tapOn: "Fix model setup"
+                  - tapOn: "Fix model library"
       - extendedWaitUntil:
-          visible: "Model provisioning"
+          visible: "Model library"
           timeout: 30000
       - runFlow:
           when:
@@ -74,7 +78,7 @@ appId: com.pocketagent.android
                 timeout: 120000
       - runFlow:
           when:
-            visible: "Model provisioning"
+            visible: "Model library"
           commands:
             - back
       - runFlow:

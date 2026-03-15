@@ -1,17 +1,11 @@
 appId: com.pocketagent.android
+tags:
+  - smoke
+  - continuity
+  - image
+  - maestro-default
 ---
-- launchApp:
-    clearState: false
-- assertNotVisible: "Welcome to Pocket GPT"
-- runFlow:
-    when:
-      visible: "Refresh runtime checks"
-    commands:
-      - tapOn: "Refresh runtime checks"
-- extendedWaitUntil:
-    visible: "Runtime: Ready"
-    timeout: 180000
-- assertNotVisible: "UI-STARTUP-001"
+- runFlow: shared/bootstrap-runtime-ready.yaml
 - takeScreenshot: "ui-15-image-entry-visible-maestro"
 - assertVisible: "Attach image"
 - tapOn: "Message"

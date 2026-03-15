@@ -1,25 +1,15 @@
 appId: com.pocketagent.android
+tags:
+  - smoke
+  - advanced
+  - diagnostics
+  - maestro-default
 ---
-- launchApp:
-    clearState: false
-- assertNotVisible: "Welcome to Pocket GPT"
-- runFlow:
-    when:
-      visible: "Refresh runtime checks"
-    commands:
-      - tapOn: "Refresh runtime checks"
-- extendedWaitUntil:
-    visible: "Runtime: Ready"
-    timeout: 180000
-- assertNotVisible: "UI-STARTUP-001"
+- runFlow: shared/bootstrap-runtime-ready.yaml
 - takeScreenshot: "scenario-b-01-ready"
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
 - assertVisible: "Downloads"
-- assertVisible: "Wi-Fi only for large downloads"
-- tapOn: "Wi-Fi only for large downloads"
-- tapOn: "Wi-Fi only for large downloads"
-- tapOn: "QWEN_2B"
 - back
 - extendedWaitUntil:
     visible: "Runtime: Ready"

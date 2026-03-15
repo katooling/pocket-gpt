@@ -1,4 +1,8 @@
 appId: com.pocketagent.android
+tags:
+  - smoke
+  - model-management
+  - downloads
 ---
 - launchApp:
     clearState: true
@@ -30,10 +34,34 @@ appId: com.pocketagent.android
 - tapOn: "Wi-Fi only for large downloads"
 - tapOn: "Wi-Fi only for large downloads"
 - takeScreenshot: "download-settings-smoke"
-- tapOn: "Open model setup"
+- scrollUntilVisible:
+    element:
+      text: "Open model library"
+    direction: DOWN
+    timeout: 20000
+- assertVisible: "Open runtime controls"
+- tapOn: "Open model library"
 - extendedWaitUntil:
-    visible: "Model provisioning"
+    visible: "Model library"
     timeout: 30000
 - assertVisible: "Refresh all"
-- back
-- assertVisible: "Offline-first"
+- assertVisible: "Downloads"
+- assertNotVisible: "Load now"
+- assertNotVisible: "Offload"
+- scrollUntilVisible:
+    element:
+      text: "Open runtime controls"
+    direction: DOWN
+    timeout: 20000
+- tapOn: "Open runtime controls"
+- extendedWaitUntil:
+    visible: "Runtime model"
+    timeout: 30000
+- assertVisible: "Runtime load state"
+- assertVisible: "No installed models yet"
+- assertNotVisible: "Downloads"
+- assertNotVisible: "Start download"
+- tapOn: "Open model library"
+- extendedWaitUntil:
+    visible: "Model library"
+    timeout: 30000
