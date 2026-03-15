@@ -12,12 +12,16 @@ object RuntimeCompositionRoot {
         conversationModule: ConversationModule = InMemoryConversationModule(),
         memoryModule: MemoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
         inferenceModule: InferenceModule? = null,
+        memoryBudgetTracker: MemoryBudgetTracker? = null,
+        recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
     ): RuntimeContainer {
         return DefaultRuntimeContainer(
             runtimeConfig = runtimeConfig,
             conversationModule = conversationModule,
             memoryModule = memoryModule,
             inferenceModule = inferenceModule,
+            memoryBudgetTracker = memoryBudgetTracker,
+            recommendedGpuLayers = recommendedGpuLayers,
         )
     }
 
@@ -26,6 +30,8 @@ object RuntimeCompositionRoot {
         conversationModule: ConversationModule = InMemoryConversationModule(),
         memoryModule: MemoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
         inferenceModule: InferenceModule? = null,
+        memoryBudgetTracker: MemoryBudgetTracker? = null,
+        recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
     ): MvpRuntimeFacade {
         return DefaultMvpRuntimeFacade(
             container = createContainer(
@@ -33,6 +39,8 @@ object RuntimeCompositionRoot {
                 conversationModule = conversationModule,
                 memoryModule = memoryModule,
                 inferenceModule = inferenceModule,
+                memoryBudgetTracker = memoryBudgetTracker,
+                recommendedGpuLayers = recommendedGpuLayers,
             ),
         )
     }

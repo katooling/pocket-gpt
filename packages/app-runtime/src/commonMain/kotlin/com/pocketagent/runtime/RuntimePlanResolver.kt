@@ -2,6 +2,7 @@ package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.nativebridge.ModelRuntimeMetadata
 import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import java.io.File
 import java.security.MessageDigest
@@ -13,12 +14,17 @@ data class ResolvedRuntimePlan(
     val effectiveConfig: PerformanceRuntimeConfig,
     val generationConfig: RuntimeGenerationConfig,
     val prefixCacheSlotId: String,
+    val sessionCacheKey: String,
     val keepAliveMs: Long,
     val diagnostics: List<String>,
+    val estimatedMemoryMb: Double? = null,
+    val loadBlockedReason: String? = null,
 )
 
 internal class RuntimePlanResolver(
     private val availableCpuThreads: () -> Int = { Runtime.getRuntime().availableProcessors().coerceAtLeast(1) },
+    private val memoryBudgetTracker: MemoryBudgetTracker? = null,
+    private val recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
     private val modelFileSizeBytes: (String?) -> Long = { path ->
         path?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -51,6 +57,7 @@ internal class RuntimePlanResolver(
         }
 
         val modelSizeBytes = resolveModelSizeBytes(modelId = modelId, nativeInference = nativeInference)
+        val modelMetadata = nativeInference?.cachedModelMetadata(modelId)
         val modelLayerCount = nativeInference?.cachedModelLayerCount(modelId)
 
         var effectiveConfig = requestConfig.applyContextBucket(taskType = taskType, deviceState = deviceState)
@@ -76,6 +83,21 @@ internal class RuntimePlanResolver(
             diagnostics += "layer=gpu_layer_ceiling"
         }
         effectiveConfig = gpuClampedConfig
+
+        val memoryAdjustment = effectiveConfig.applyMemoryEstimate(
+            modelId = modelId,
+            modelSizeBytes = modelSizeBytes,
+            modelMetadata = modelMetadata,
+            memoryBudgetTracker = memoryBudgetTracker,
+            recommendedGpuLayers = { candidateConfig ->
+                listOfNotNull(
+                    recommendedGpuLayers(modelId, candidateConfig)?.takeIf { it >= 0 },
+                    nativeInference?.cachedEstimatedMaxGpuLayers(modelId, candidateConfig.nCtx)?.takeIf { it >= 0 },
+                ).minOrNull()
+            },
+        )
+        diagnostics += memoryAdjustment.diagnostics
+        effectiveConfig = memoryAdjustment.config
 
         val speculativeGated = effectiveConfig.gateSpeculative(
             modelId = modelId,
@@ -106,11 +128,15 @@ internal class RuntimePlanResolver(
                 generationConfig.toLoadConfig().toString(),
             ).joinToString("|"),
         )
+        val resolvedModelPathHash = sha256Hex(nativeInference?.registeredModelPath(modelId).orEmpty())
         val templateFingerprint = sha256Hex(
             listOf(modelId, taskType, stopSequences.joinToString(separator = "\\u001f")).joinToString("|"),
         )
         val prefixCacheSlotId = sha256Hex(
             listOf("slot", sessionId, templateFingerprint, loadFingerprint).joinToString("|"),
+        )
+        val sessionCacheKey = sha256Hex(
+            listOf("session", modelId, resolvedModelPathHash, loadFingerprint).joinToString("|"),
         )
         val keepAliveMs = residencyPolicy.resolveKeepAliveMs(
             deviceState = deviceState,
@@ -123,8 +149,11 @@ internal class RuntimePlanResolver(
             effectiveConfig = effectiveConfig,
             generationConfig = generationConfig,
             prefixCacheSlotId = prefixCacheSlotId,
+            sessionCacheKey = sessionCacheKey,
             keepAliveMs = keepAliveMs,
             diagnostics = diagnostics,
+            estimatedMemoryMb = memoryAdjustment.estimate?.estimatedMb,
+            loadBlockedReason = memoryAdjustment.loadBlockedReason,
         )
     }
 
@@ -132,10 +161,135 @@ internal class RuntimePlanResolver(
         modelId: String,
         nativeInference: LlamaCppInferenceModule?,
     ): Long {
-        return nativeInference?.cachedModelSizeBytes(modelId)
+        return nativeInference?.cachedModelMetadata(modelId)?.sizeBytes
+            ?: nativeInference?.cachedModelSizeBytes(modelId)
             ?: nativeInference?.registeredModelPath(modelId)?.let(modelFileSizeBytes)
             ?: 0L
     }
+}
+
+private data class MemoryAdjustmentResult(
+    val config: PerformanceRuntimeConfig,
+    val estimate: RuntimeMemoryEstimate?,
+    val diagnostics: List<String>,
+    val loadBlockedReason: String? = null,
+)
+
+private fun PerformanceRuntimeConfig.applyMemoryEstimate(
+    modelId: String,
+    modelSizeBytes: Long,
+    modelMetadata: ModelRuntimeMetadata?,
+    memoryBudgetTracker: MemoryBudgetTracker?,
+    recommendedGpuLayers: (PerformanceRuntimeConfig) -> Int?,
+): MemoryAdjustmentResult {
+    if (modelSizeBytes <= 0L) {
+        return MemoryAdjustmentResult(
+            config = this,
+            estimate = null,
+            diagnostics = emptyList(),
+        )
+    }
+    val availableMemoryMb = memoryBudgetTracker
+        ?.availableMemoryCeilingMb
+        ?.takeIf { it > 0.0 }
+    val contextCandidates = buildList {
+        add(nCtx)
+        listOf(4096, 2048, 1536, 1024)
+            .filter { it < nCtx }
+            .forEach(::add)
+    }.distinct()
+    val diagnostics = mutableListOf<String>()
+    var currentConfig = this
+    var currentEstimate = RuntimeModelMemoryEstimator.estimate(
+        modelFileSizeBytes = modelSizeBytes,
+        metadata = modelMetadata,
+        nCtx = currentConfig.nCtx,
+        kvCacheTypeK = currentConfig.kvCacheTypeK,
+        kvCacheTypeV = currentConfig.kvCacheTypeV,
+        nUbatch = currentConfig.nUbatch,
+        availableMemoryMb = availableMemoryMb,
+    )
+    if (currentEstimate.fitsInMemory != false) {
+        return MemoryAdjustmentResult(
+            config = currentConfig,
+            estimate = currentEstimate,
+            diagnostics = diagnostics,
+        )
+    }
+    contextCandidates.drop(1).forEach { candidateCtx ->
+        val candidateConfig = currentConfig.copy(nCtx = candidateCtx)
+        val candidateEstimate = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelSizeBytes,
+            metadata = modelMetadata,
+            nCtx = candidateCtx,
+            kvCacheTypeK = candidateConfig.kvCacheTypeK,
+            kvCacheTypeV = candidateConfig.kvCacheTypeV,
+            nUbatch = candidateConfig.nUbatch,
+            availableMemoryMb = availableMemoryMb,
+        )
+        if (!diagnostics.contains("layer=memory_estimate")) {
+            diagnostics += "layer=memory_estimate"
+        }
+        currentConfig = candidateConfig
+        currentEstimate = candidateEstimate
+        if (candidateEstimate.fitsInMemory != false) {
+            return MemoryAdjustmentResult(
+                config = currentConfig,
+                estimate = currentEstimate,
+                diagnostics = diagnostics,
+            )
+        }
+    }
+
+    val recommendedLayers = recommendedGpuLayers(currentConfig)
+    if (recommendedLayers != null && currentConfig.gpuEnabled) {
+        val clampedGpuLayers = when {
+            currentConfig.gpuLayers < 0 -> recommendedLayers
+            else -> minOf(currentConfig.gpuLayers, recommendedLayers)
+        }.coerceAtLeast(0)
+        if (clampedGpuLayers != currentConfig.gpuLayers) {
+            currentConfig = currentConfig.copy(
+                gpuLayers = clampedGpuLayers,
+                speculativeDraftGpuLayers = minOf(currentConfig.speculativeDraftGpuLayers, clampedGpuLayers),
+            )
+            if (!diagnostics.contains("layer=memory_gpu_recommendation")) {
+                diagnostics += "layer=memory_gpu_recommendation"
+            }
+            currentEstimate = RuntimeModelMemoryEstimator.estimate(
+                modelFileSizeBytes = modelSizeBytes,
+                metadata = modelMetadata,
+                nCtx = currentConfig.nCtx,
+                kvCacheTypeK = currentConfig.kvCacheTypeK,
+                kvCacheTypeV = currentConfig.kvCacheTypeV,
+                nUbatch = currentConfig.nUbatch,
+                availableMemoryMb = availableMemoryMb,
+            )
+            if (currentEstimate.fitsInMemory != false) {
+                return MemoryAdjustmentResult(
+                    config = currentConfig,
+                    estimate = currentEstimate,
+                    diagnostics = diagnostics,
+                )
+            }
+        }
+    }
+
+    val blockedReason = availableMemoryMb?.let { ceilingMb ->
+        val estimateMb = currentEstimate.estimatedMb
+        val source = if (currentEstimate.usedModelMetadata) "metadata" else "fallback"
+        "Model $modelId needs about ${"%.0f".format(estimateMb)} MB but the tracked safe memory ceiling is " +
+            "${"%.0f".format(ceilingMb)} MB after reducing context to ${currentConfig.nCtx}. " +
+            "Load blocked to avoid an unsafe OOM (${source} estimate)."
+    }
+    if (blockedReason != null && !diagnostics.contains("layer=memory_plan_blocked")) {
+        diagnostics += "layer=memory_plan_blocked"
+    }
+    return MemoryAdjustmentResult(
+        config = currentConfig,
+        estimate = currentEstimate,
+        diagnostics = diagnostics,
+        loadBlockedReason = blockedReason,
+    )
 }
 
 private fun PerformanceRuntimeConfig.applyGpuLayerEstimate(maxGpuLayers: Int?): PerformanceRuntimeConfig {

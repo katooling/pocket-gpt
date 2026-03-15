@@ -20,15 +20,20 @@ import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
+import com.pocketagent.nativebridge.ModelLifecycleEvent
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolModule
-import java.util.Timer
-import java.util.TimerTask
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 class RuntimeOrchestrator(
     private val conversationModule: ConversationModule = InMemoryConversationModule(),
@@ -43,6 +48,8 @@ class RuntimeOrchestrator(
     private val modelRegistry: ModelRegistry = ModelRegistry.default(),
     private val artifactVerifier: ArtifactVerifier = ArtifactVerifier(runtimeConfig, modelRegistry = modelRegistry),
     private val diagnosticsRedactor: DiagnosticsRedactor = DiagnosticsRedactor(),
+    private val memoryBudgetTracker: MemoryBudgetTracker? = null,
+    private val recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
 ) : RuntimeContainer {
     private val imageInputModule = RuntimeImageInputModule(inferenceModule)
     private val sessionManager = RuntimeSessionManager(conversationModule, memoryModule)
@@ -55,8 +62,22 @@ class RuntimeOrchestrator(
         runtimeConfig = runtimeConfig,
     )
     private val toolLoopCoordinator = ToolLoopCoordinator(toolModule)
-    private val runtimePlanResolver = RuntimePlanResolver()
-    private val runtimeResidencyManager = RuntimeResidencyManager(inferenceModule)
+    private val runtimePlanResolver = RuntimePlanResolver(
+        memoryBudgetTracker = memoryBudgetTracker,
+        recommendedGpuLayers = recommendedGpuLayers,
+    )
+    private val sessionCacheManager = SessionCacheManager(
+        cacheDir = File(
+            System.getProperty("java.io.tmpdir").orEmpty().ifBlank { "." },
+            "pocketgpt-session-cache",
+        ),
+    )
+    private val lastResolvedRuntimePlan = AtomicReference<ResolvedRuntimePlan?>(null)
+    private val runtimeResidencyManager = RuntimeResidencyManager(
+        inferenceModule = inferenceModule,
+        onAfterLoad = ::restoreSessionCache,
+        onBeforeUnload = ::saveSessionCache,
+    )
     private var routingMode: RoutingMode = RoutingMode.AUTO
     private val modelLifecycleLock = ReentrantLock()
     private val pendingLoadModelId = AtomicReference<String?>(null)
@@ -285,11 +306,84 @@ class RuntimeOrchestrator(
             append(diagnosticsUseCase.export())
             append('\n')
             append(runtimeResidencyManager.diagnosticsLine(nativeResidencyState))
+            memoryBudgetTracker?.let {
+                append('\n')
+                append(it.diagnosticsLine())
+            }
             prefixCacheDiagnostics?.let {
                 append('\n')
                 append(it)
             }
         }
+    }
+
+    override fun exportDiagnosticsJson(): String? {
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule
+        val nativeResidencyState = nativeInference?.residencyState()
+        val lifecycleEvent = nativeInference?.currentModelLifecycleState()
+        val sessionCacheDiagnostics = sessionCacheManager.diagnostics()
+        val lastPlan = lastResolvedRuntimePlan.get()
+        return buildString {
+            append('{')
+            append("\"residency\":")
+            append(
+                jsonObject(
+                    "residentModelId" to runtimeResidencyManager.loadedModelId(),
+                    "queueDepth" to runtimeResidencyManager.queueDepth(),
+                    "state" to nativeResidencyState?.toString(),
+                    "diagnostics" to runtimeResidencyManager.diagnosticsLine(nativeResidencyState),
+                ),
+            )
+            append(",\"memoryBudget\":")
+            append(
+                jsonObject(
+                    "availableMemoryCeilingMb" to memoryBudgetTracker?.availableMemoryCeilingMb,
+                    "largestSuccessfulLoadMb" to memoryBudgetTracker?.largestSuccessfulLoadMb,
+                    "lastUpdatedAtEpochMs" to memoryBudgetTracker?.lastUpdatedAtEpochMs,
+                ),
+            )
+            append(",\"lifecycle\":")
+            append(
+                jsonObject(
+                    "state" to lifecycleEvent?.state?.name,
+                    "modelId" to lifecycleEvent?.modelId,
+                    "modelVersion" to lifecycleEvent?.modelVersion,
+                    "loadingStage" to lifecycleEvent?.loadingStage?.name,
+                    "loadingProgress" to lifecycleEvent?.loadingProgress,
+                    "detail" to lifecycleEvent?.loadingDetail,
+                    "errorCode" to lifecycleEvent?.error?.code?.name,
+                    "errorDetail" to lifecycleEvent?.error?.detail,
+                ),
+            )
+            append(",\"sessionCache\":")
+            append(
+                jsonObject(
+                    "entryCount" to sessionCacheDiagnostics.entryCount,
+                    "totalBytes" to sessionCacheDiagnostics.totalBytes,
+                    "maxTotalBytes" to sessionCacheDiagnostics.maxTotalBytes,
+                ),
+            )
+            append(",\"lastLoadPlan\":")
+            append(
+                jsonObject(
+                    "modelId" to lastPlan?.modelId,
+                    "estimatedMemoryMb" to lastPlan?.estimatedMemoryMb,
+                    "loadBlockedReason" to lastPlan?.loadBlockedReason,
+                    "diagnostics" to lastPlan?.diagnostics?.joinToString(separator = "|"),
+                    "sessionCacheKey" to lastPlan?.sessionCacheKey,
+                ),
+            )
+            append('}')
+        }
+    }
+
+    override fun currentModelLifecycleEvent(): ModelLifecycleEvent? {
+        return (inferenceModule as? LlamaCppInferenceModule)?.currentModelLifecycleState()
+    }
+
+    override fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return AutoCloseable { }
+        return nativeInference.observeModelLifecycleState(listener)
     }
 
     override fun setRoutingMode(mode: RoutingMode) {
@@ -377,8 +471,7 @@ class RuntimeOrchestrator(
             // Unload previous model if one is resident.
             if (runtimeResidencyManager.loadedModelId() != null) {
                 runtimeResidencyManager.unload(reason = "model_switch")
-                // Brief delay for native deallocation to complete.
-                Thread.sleep(NATIVE_CLEANUP_DELAY_MS)
+                awaitNativeCleanup(nativeInference)
             }
 
             // Re-check last-one-wins after awaiting + unload.
@@ -404,6 +497,14 @@ class RuntimeOrchestrator(
                 deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
                 nativeInference = nativeInference,
             )
+            lastResolvedRuntimePlan.set(runtimePlan)
+            runtimePlan.loadBlockedReason?.let { blockedReason ->
+                return RuntimeModelLifecycleCommandResult.rejected(
+                    code = ModelLifecycleErrorCode.OUT_OF_MEMORY,
+                    detail = blockedReason,
+                    loadedModel = loadedModel(),
+                )
+            }
             nativeInference.setRuntimeGenerationConfig(runtimePlan.generationConfig)
             val loaded = nativeInference.loadModel(
                 modelId = modelId,
@@ -422,6 +523,7 @@ class RuntimeOrchestrator(
                 modelId = modelId,
                 slotId = runtimePlan.prefixCacheSlotId,
                 keepAliveMs = runtimePlan.keepAliveMs,
+                sessionCacheKey = runtimePlan.sessionCacheKey,
             )
             return RuntimeModelLifecycleCommandResult.applied(
                 loadedModel = RuntimeLoadedModel(
@@ -519,17 +621,78 @@ class RuntimeOrchestrator(
         return (inferenceModule as? LlamaCppInferenceModule)?.runtimeBackend()
     }
 
+    private fun saveSessionCache(slot: ResidentRuntimeSlot, reason: String) {
+        val cacheKey = slot.sessionCacheKey?.takeIf { it.isNotBlank() } ?: return
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return
+        if (reason == "reconcile_missing_file" || reason == "reconcile_missing_version") {
+            sessionCacheManager.evict(cacheKey)
+            return
+        }
+        sessionCacheManager.save(
+            serializer = object : SessionCacheSerializer {
+                override fun saveSessionCache(filePath: String): Boolean = nativeInference.saveSessionCache(filePath)
+            },
+            cacheKey = cacheKey,
+        )
+    }
+
+    private fun restoreSessionCache(slot: ResidentRuntimeSlot) {
+        val cacheKey = slot.sessionCacheKey?.takeIf { it.isNotBlank() } ?: return
+        val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return
+        sessionCacheManager.restore(
+            serializer = object : SessionCacheSerializer {
+                override fun saveSessionCache(filePath: String): Boolean = nativeInference.saveSessionCache(filePath)
+                override fun loadSessionCache(filePath: String): Boolean = nativeInference.loadSessionCache(filePath)
+            },
+            cacheKey = cacheKey,
+        )
+    }
+
+    private fun awaitNativeCleanup(nativeInference: LlamaCppInferenceModule) {
+        val deadlineMs = System.currentTimeMillis() + NATIVE_CLEANUP_TIMEOUT_MS
+        var lastRssMb = nativeInference.currentRssMb()
+        var stableReads = 0
+        while (System.currentTimeMillis() <= deadlineMs) {
+            val released = nativeInference.isRuntimeReleased()
+            val currentRssMb = nativeInference.currentRssMb()
+            if (released) {
+                if (currentRssMb == null || lastRssMb == null) {
+                    return
+                }
+                stableReads = if (abs(currentRssMb - lastRssMb) <= NATIVE_CLEANUP_STABLE_DELTA_MB) {
+                    stableReads + 1
+                } else {
+                    0
+                }
+                if (stableReads >= NATIVE_CLEANUP_REQUIRED_STABLE_READS) {
+                    return
+                }
+            }
+            lastRssMb = currentRssMb ?: lastRssMb
+            Thread.sleep(NATIVE_CLEANUP_POLL_INTERVAL_MS)
+        }
+        observabilityModule.recordLatencyMetric("inference.native_cleanup_timeout", 1.0)
+    }
+
     companion object {
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
     }
 }
 
 private const val STOP_AWAIT_TIMEOUT_MS = 5_000L
-private const val NATIVE_CLEANUP_DELAY_MS = 100L
+private const val NATIVE_CLEANUP_POLL_INTERVAL_MS = 50L
+private const val NATIVE_CLEANUP_TIMEOUT_MS = 2_000L
+private const val NATIVE_CLEANUP_STABLE_DELTA_MB = 4.0
+private const val NATIVE_CLEANUP_REQUIRED_STABLE_READS = 2
 
 private fun mapBridgeLifecycleCode(errorCode: String?): ModelLifecycleErrorCode {
     val normalized = errorCode?.trim()?.uppercase().orEmpty()
     return when {
+        normalized.contains("OUT_OF_MEMORY") ||
+            normalized.contains("OOM") ||
+            normalized.contains("ENOMEM") ->
+            ModelLifecycleErrorCode.OUT_OF_MEMORY
+
         normalized.contains("MODEL") || normalized.contains("FILE") || normalized.contains("PATH") ->
             ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE
 
@@ -557,6 +720,35 @@ private fun sanitizeMetricSegment(raw: String): String {
         .ifBlank { "unknown" }
 }
 
+private fun jsonObject(vararg fields: Pair<String, Any?>): String {
+    return fields.joinToString(prefix = "{", postfix = "}") { (key, value) ->
+        "\"${jsonEscape(key)}\":${jsonValue(value)}"
+    }
+}
+
+private fun jsonValue(value: Any?): String {
+    return when (value) {
+        null -> "null"
+        is Number, is Boolean -> value.toString()
+        else -> "\"${jsonEscape(value.toString())}\""
+    }
+}
+
+private fun jsonEscape(value: String): String {
+    return buildString(value.length + 8) {
+        value.forEach { character ->
+            when (character) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(character)
+            }
+        }
+    }
+}
+
 class RuntimeGenerationTimeoutException(
     val timeoutMs: Long,
 ) : RuntimeException("Generation timed out after ${(timeoutMs / 1000L).coerceAtLeast(1L)}s.")
@@ -576,28 +768,21 @@ internal class GenerationTimeoutGuard(
 ) {
     private val timedOutFlag = AtomicBoolean(false)
     private val finishedFlag = AtomicBoolean(false)
-    private val timer = Timer("runtime-generation-timeout", true)
-
-    init {
-        val safeTimeout = timeoutMs.coerceAtLeast(1L)
-        timer.schedule(
-            object : TimerTask() {
-                override fun run() {
-                    if (finishedFlag.get()) {
-                        return
-                    }
-                    timedOutFlag.set(true)
-                    onTimeout()
-                }
-            },
-            safeTimeout,
-        )
+    private val timeoutJob = CoroutineScope(Dispatchers.Default).let { scope ->
+        scope.launch {
+            delay(timeoutMs.coerceAtLeast(1L))
+            if (finishedFlag.get()) {
+                return@launch
+            }
+            timedOutFlag.set(true)
+            onTimeout()
+        }
     }
 
     fun timedOut(): Boolean = timedOutFlag.get()
 
     fun finish() {
         finishedFlag.set(true)
-        timer.cancel()
+        timeoutJob.cancel()
     }
 }

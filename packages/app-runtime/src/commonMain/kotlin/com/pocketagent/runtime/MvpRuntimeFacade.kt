@@ -8,6 +8,7 @@ import com.pocketagent.core.Turn
 import com.pocketagent.core.InMemoryConversationModule
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.nativebridge.ModelLifecycleEvent
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
 import java.util.UUID
@@ -136,6 +137,7 @@ interface MvpRuntimeFacade {
         return ImageAnalysisResult.fromLegacy(analyzeImage(imagePath, prompt))
     }
     fun exportDiagnostics(): String
+    fun exportDiagnosticsJson(): String? = null
     fun setRoutingMode(mode: RoutingMode)
     fun getRoutingMode(): RoutingMode
     fun runStartupChecks(): List<String>
@@ -143,6 +145,9 @@ interface MvpRuntimeFacade {
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String? = null
     fun supportsGpuOffload(): Boolean = false
+    fun currentModelLifecycleEvent(): ModelLifecycleEvent? = null
+    fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable =
+        AutoCloseable { }
 }
 
 interface RuntimeContainer {
@@ -232,6 +237,10 @@ interface RuntimeContainer {
     fun deleteSession(sessionId: SessionId): Boolean
     fun runtimeBackend(): String? = null
     fun supportsGpuOffload(): Boolean = false
+    fun exportDiagnosticsJson(): String? = null
+    fun currentModelLifecycleEvent(): ModelLifecycleEvent? = null
+    fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable =
+        AutoCloseable { }
 }
 
 class DefaultMvpRuntimeFacade(
@@ -365,6 +374,7 @@ class DefaultMvpRuntimeFacade(
                         else -> ChatStreamEvent.Failed(
                             requestId = request.requestId,
                             errorCode = when (error) {
+                                is RuntimeModelLoadPlanningException -> error.errorCode
                                 is RuntimeTemplateUnavailableException -> "template_unavailable"
                                 is RuntimeGenerationFailureException -> error.errorCode
                                     ?.trim()
@@ -419,6 +429,8 @@ class DefaultMvpRuntimeFacade(
 
     override fun exportDiagnostics(): String = container.exportDiagnostics()
 
+    override fun exportDiagnosticsJson(): String? = container.exportDiagnosticsJson()
+
     override fun setRoutingMode(mode: RoutingMode) {
         container.setRoutingMode(mode)
     }
@@ -466,6 +478,12 @@ class DefaultMvpRuntimeFacade(
     override fun runtimeBackend(): String? = container.runtimeBackend()
 
     override fun supportsGpuOffload(): Boolean = container.supportsGpuOffload()
+
+    override fun currentModelLifecycleEvent(): ModelLifecycleEvent? = container.currentModelLifecycleEvent()
+
+    override fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        return container.observeModelLifecycleEvents(listener)
+    }
 }
 
 class DefaultRuntimeContainer(
@@ -473,11 +491,15 @@ class DefaultRuntimeContainer(
     conversationModule: ConversationModule = InMemoryConversationModule(),
     memoryModule: MemoryModule = FileBackedMemoryModule.defaultRuntimeModule(),
     inferenceModule: InferenceModule? = null,
+    memoryBudgetTracker: MemoryBudgetTracker? = null,
+    recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
     private val orchestrator: RuntimeOrchestrator = RuntimeOrchestrator(
         conversationModule = conversationModule,
         memoryModule = memoryModule,
         runtimeConfig = runtimeConfig,
         inferenceModule = inferenceModule ?: com.pocketagent.nativebridge.LlamaCppInferenceModule(),
+        memoryBudgetTracker = memoryBudgetTracker,
+        recommendedGpuLayers = recommendedGpuLayers,
     ),
 ) : RuntimeContainer {
     override fun createSession(): SessionId = orchestrator.createSession()
@@ -607,6 +629,14 @@ class DefaultRuntimeContainer(
     override fun runtimeBackend(): String? = orchestrator.runtimeBackend()
 
     override fun supportsGpuOffload(): Boolean = orchestrator.supportsGpuOffload()
+
+    override fun exportDiagnosticsJson(): String? = orchestrator.exportDiagnosticsJson()
+
+    override fun currentModelLifecycleEvent(): ModelLifecycleEvent? = orchestrator.currentModelLifecycleEvent()
+
+    override fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        return orchestrator.observeModelLifecycleEvents(listener)
+    }
 }
 
 private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 600_000L

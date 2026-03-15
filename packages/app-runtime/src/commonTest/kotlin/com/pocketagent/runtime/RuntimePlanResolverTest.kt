@@ -4,11 +4,14 @@ import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.LlamaCppRuntimeBridge
+import com.pocketagent.nativebridge.ModelRuntimeMetadata
 import com.pocketagent.nativebridge.RuntimeBackend
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RuntimePlanResolverTest {
@@ -194,10 +197,112 @@ class RuntimePlanResolverTest {
         assertEquals(5 * 60_000L, plan.keepAliveMs)
     }
 
+    @Test
+    fun `resolve reduces context when memory estimate exceeds tracked ceiling`() {
+        val nativeInference = buildNativeInference()
+        val tracker = MemoryBudgetTracker().also {
+            it.recordAvailableMemoryAfterRelease(1500.0)
+        }
+        val resolver = RuntimePlanResolver(
+            availableCpuThreads = { 8 },
+            memoryBudgetTracker = tracker,
+        )
+
+        val plan = resolver.resolve(
+            sessionId = "session-1",
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            taskType = "long_text",
+            stopSequences = emptyList(),
+            requestConfig = PerformanceRuntimeConfig.forProfile(
+                profile = RuntimePerformanceProfile.FAST,
+                availableCpuThreads = 8,
+                gpuEnabled = true,
+            ),
+            residencyPolicy = ModelResidencyPolicy(idleUnloadTtlMs = 600_000L),
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            nativeInference = nativeInference,
+        )
+
+        assertEquals(1024, plan.effectiveConfig.nCtx)
+        assertTrue(plan.diagnostics.contains("layer=memory_estimate"))
+        assertTrue((plan.estimatedMemoryMb ?: 0.0) > 0.0)
+    }
+
+    @Test
+    fun `resolve clamps gpu layers to recommendation before reporting blocked plan`() {
+        val nativeInference = buildNativeInference()
+        val tracker = MemoryBudgetTracker().also {
+            it.recordAvailableMemoryAfterRelease(700.0)
+        }
+        val resolver = RuntimePlanResolver(
+            availableCpuThreads = { 8 },
+            memoryBudgetTracker = tracker,
+            recommendedGpuLayers = { _, _ -> 4 },
+        )
+
+        val plan = resolver.resolve(
+            sessionId = "session-1",
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            taskType = "long_text",
+            stopSequences = emptyList(),
+            requestConfig = PerformanceRuntimeConfig.forProfile(
+                profile = RuntimePerformanceProfile.FAST,
+                availableCpuThreads = 8,
+                gpuEnabled = true,
+            ),
+            residencyPolicy = ModelResidencyPolicy(idleUnloadTtlMs = 600_000L),
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            nativeInference = nativeInference,
+        )
+
+        assertEquals(1024, plan.effectiveConfig.nCtx)
+        assertEquals(4, plan.effectiveConfig.gpuLayers)
+        assertEquals(2, plan.effectiveConfig.speculativeDraftGpuLayers)
+        assertTrue(plan.diagnostics.contains("layer=memory_gpu_recommendation"))
+        assertNotNull(plan.loadBlockedReason)
+    }
+
+    @Test
+    fun `resolve leaves plan unblocked when memory ceiling is unknown`() {
+        val nativeInference = buildNativeInference()
+        val resolver = RuntimePlanResolver(availableCpuThreads = { 8 })
+
+        val plan = resolver.resolve(
+            sessionId = "session-1",
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            taskType = "long_text",
+            stopSequences = emptyList(),
+            requestConfig = PerformanceRuntimeConfig.forProfile(
+                profile = RuntimePerformanceProfile.FAST,
+                availableCpuThreads = 8,
+                gpuEnabled = true,
+            ),
+            residencyPolicy = ModelResidencyPolicy(idleUnloadTtlMs = 600_000L),
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            nativeInference = nativeInference,
+        )
+
+        assertNull(plan.loadBlockedReason)
+    }
+
     private fun buildNativeInference(): LlamaCppInferenceModule {
         return LlamaCppInferenceModule(ResolverBridge()).also { module ->
             module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
             module.registerModelPath(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M, "/tmp/smollm2-135m.gguf")
+            module.registerModelMetadata(
+                ModelCatalog.QWEN_3_5_0_8B_Q4,
+                ModelRuntimeMetadata(
+                    layerCount = 22,
+                    sizeBytes = 1_200_000_000L,
+                    contextLength = 4096,
+                    embeddingSize = 2048,
+                    headCountKv = 8,
+                    keyLength = 128,
+                    valueLength = 128,
+                    vocabSize = 151_936,
+                    architecture = "qwen3",
+                ),
+            )
         }
     }
 }

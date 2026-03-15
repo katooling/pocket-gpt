@@ -11,6 +11,13 @@ import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.InMemoryMemoryModule
+import com.pocketagent.nativebridge.CachePolicy
+import com.pocketagent.nativebridge.GenerationFinishReason
+import com.pocketagent.nativebridge.GenerationResult
+import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.nativebridge.LlamaCppRuntimeBridge
+import com.pocketagent.nativebridge.ModelRuntimeMetadata
+import com.pocketagent.nativebridge.RuntimeBackend
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -154,6 +161,47 @@ class SendMessageUseCaseTest {
         assertEquals(0, scheduleFixture.inferenceModule.unloadCalls)
         assertEquals(1, scheduleFixture.runtimeResidencyManager.listResident().size)
     }
+
+    @Test
+    fun `memory planning blocks request before native model load`() {
+        val tracker = MemoryBudgetTracker().also {
+            it.recordAvailableMemoryAfterRelease(700.0)
+        }
+        val bridge = SendNativeBridge()
+        val inferenceModule = LlamaCppInferenceModule(bridge).also { module ->
+            module.registerModelPath(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf")
+            module.registerModelMetadata(
+                ModelCatalog.QWEN_3_5_0_8B_Q4,
+                ModelRuntimeMetadata(
+                    layerCount = 22,
+                    sizeBytes = 1_200_000_000L,
+                    contextLength = 4096,
+                    embeddingSize = 2048,
+                    headCountKv = 8,
+                    keyLength = 128,
+                    valueLength = 128,
+                    vocabSize = 151_936,
+                    architecture = "qwen3",
+                ),
+            )
+        }
+        val fixture = createNativeFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = inferenceModule,
+            runtimePlanResolver = RuntimePlanResolver(
+                memoryBudgetTracker = tracker,
+                recommendedGpuLayers = { _, _ -> 4 },
+            ),
+        )
+
+        val error = assertFailsWith<RuntimeModelLoadPlanningException> {
+            fixture.useCase.execute(fixture.request())
+        }
+
+        assertTrue(error.message?.contains("tracked safe memory ceiling") == true)
+        assertEquals(0, bridge.loadCalls)
+    }
 }
 
 private class SendMessageFixture(
@@ -163,6 +211,37 @@ private class SendMessageFixture(
     lateinit var useCase: SendMessageUseCase
     var cancelByRequestCalls: Int = 0
     var cancelBySessionCalls: Int = 0
+
+    fun request(
+        requestTimeoutMs: Long = 60_000L,
+        keepModelLoaded: Boolean = true,
+        residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(
+            keepLoadedWhileAppForeground = true,
+            idleUnloadTtlMs = 3_000L,
+        ),
+    ): SendMessageUseCase.Request {
+        return SendMessageUseCase.Request(
+            sessionId = SessionId("session-1"),
+            userText = "hello world",
+            taskType = "short_text",
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            maxTokens = 64,
+            keepModelLoaded = keepModelLoaded,
+            onToken = {},
+            requestTimeoutMs = requestTimeoutMs,
+            requestId = "req-1",
+            performanceConfig = PerformanceRuntimeConfig.default(),
+            residencyPolicy = residencyPolicy,
+            routingMode = RoutingMode.AUTO,
+        )
+    }
+}
+
+private class NativeSendMessageFixture(
+    val inferenceModule: LlamaCppInferenceModule,
+    val runtimeResidencyManager: RuntimeResidencyManager,
+) {
+    lateinit var useCase: SendMessageUseCase
 
     fun request(
         requestTimeoutMs: Long = 60_000L,
@@ -235,6 +314,49 @@ private fun createFixture(
     return fixture
 }
 
+private fun createNativeFixture(
+    runtimeConfig: RuntimeConfig,
+    policyModule: SendPolicyModule,
+    inferenceModule: LlamaCppInferenceModule,
+    runtimePlanResolver: RuntimePlanResolver,
+): NativeSendMessageFixture {
+    val routingModule = SendStaticRoutingModule()
+    val modelLifecycle = ModelLifecycleCoordinator(
+        inferenceModule = inferenceModule,
+        routingModule = routingModule,
+        runtimeConfig = runtimeConfig,
+    )
+    val observability = NoopObservabilityModule()
+    val runtimeResidencyManager = RuntimeResidencyManager(inferenceModule = inferenceModule)
+    val fixture = NativeSendMessageFixture(
+        inferenceModule = inferenceModule,
+        runtimeResidencyManager = runtimeResidencyManager,
+    )
+    fixture.useCase = SendMessageUseCase(
+        conversationModule = InMemoryConversationModule(),
+        routingModule = routingModule,
+        policyModule = policyModule,
+        observabilityModule = observability,
+        memoryModule = InMemoryMemoryModule(),
+        inferenceModule = inferenceModule,
+        runtimeConfig = runtimeConfig,
+        artifactVerifier = ArtifactVerifier(runtimeConfig).also {
+            it.registerRuntimeModelPaths(inferenceModule)
+        },
+        interactionPlanner = InteractionPlanner(ModelTemplateRegistry()),
+        inferenceExecutor = InferenceExecutor(
+            inferenceModule = inferenceModule,
+            runtimeConfig = runtimeConfig,
+        ),
+        modelLifecycleCoordinator = modelLifecycle,
+        runtimePlanResolver = runtimePlanResolver,
+        runtimeResidencyManager = runtimeResidencyManager,
+        cancelByRequest = { _ -> true },
+        cancelBySession = { _ -> true },
+    )
+    return fixture
+}
+
 private class SendRecordingInferenceModule(
     private val loadModelResult: Boolean = true,
     private val generatedTokens: List<String> = listOf("hello ", "world "),
@@ -276,6 +398,41 @@ private class SendRecordingInferenceModule(
             Thread.onSpinWait()
         }
     }
+}
+
+private class SendNativeBridge : LlamaCppRuntimeBridge {
+    var loadCalls: Int = 0
+
+    override fun isReady(): Boolean = true
+
+    override fun listAvailableModels(): List<String> = listOf(ModelCatalog.QWEN_3_5_0_8B_Q4)
+
+    override fun loadModel(modelId: String, modelPath: String?): Boolean {
+        loadCalls += 1
+        return true
+    }
+
+    override fun generate(
+        requestId: String,
+        prompt: String,
+        maxTokens: Int,
+        cacheKey: String?,
+        cachePolicy: CachePolicy,
+        onToken: (String) -> Unit,
+    ): GenerationResult {
+        onToken("ok ")
+        return GenerationResult(
+            finishReason = GenerationFinishReason.COMPLETED,
+            tokenCount = 1,
+            firstTokenMs = 1L,
+            totalMs = 1L,
+            cancelled = false,
+        )
+    }
+
+    override fun unloadModel() = Unit
+
+    override fun runtimeBackend(): RuntimeBackend = RuntimeBackend.NATIVE_JNI
 }
 
 private class SendStaticRoutingModule : RoutingModule {

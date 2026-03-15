@@ -1,5 +1,7 @@
 package com.pocketagent.runtime
 
+import com.pocketagent.nativebridge.ModelLifecycleEvent
+
 interface RuntimeResourceControl {
     fun evictResidentModel(reason: String = "manual"): Boolean
     fun loadModel(modelId: String, modelVersion: String? = null): RuntimeModelLifecycleCommandResult {
@@ -20,4 +22,8 @@ interface RuntimeResourceControl {
     fun onAppForeground(): Boolean = false
     fun addAutoReleaseDisableReason(reason: String) = Unit
     fun removeAutoReleaseDisableReason(reason: String) = Unit
+    fun exportDiagnosticsJson(): String? = null
+    fun currentModelLifecycleEvent(): ModelLifecycleEvent? = null
+    fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable =
+        AutoCloseable { }
 }

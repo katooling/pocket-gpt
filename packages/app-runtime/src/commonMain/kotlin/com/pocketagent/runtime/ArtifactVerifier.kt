@@ -51,6 +51,9 @@ class ArtifactVerifier(
             val path = rawPath.trim()
             if (path.isNotEmpty()) {
                 inferenceModule.registerModelPath(modelId = modelId, absolutePath = path)
+                ModelRuntimeMetadataSidecar.read(path)?.let { metadata ->
+                    inferenceModule.registerModelMetadata(modelId = modelId, metadata = metadata)
+                }
             }
         }
     }

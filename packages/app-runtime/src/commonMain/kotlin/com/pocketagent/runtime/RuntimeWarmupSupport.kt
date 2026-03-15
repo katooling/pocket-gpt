@@ -6,6 +6,7 @@ import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.RuntimeReloadReason
 
 interface RuntimeWarmupSupport {
@@ -42,6 +43,7 @@ internal class RuntimeWarmupCoordinator(
     private val runtimePlanResolver: RuntimePlanResolver,
     private val availableCpuThreads: () -> Int = { Runtime.getRuntime().availableProcessors().coerceAtLeast(1) },
     private val nowMs: () -> Long = System::currentTimeMillis,
+    private val onWarmupStage: (String, ModelLoadingStage, Float) -> Unit = { _, _, _ -> },
 ) {
     fun warmup(residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy()): WarmupResult {
         if (!residencyPolicy.warmupOnStartup) {
@@ -79,6 +81,9 @@ internal class RuntimeWarmupCoordinator(
             deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
             nativeInference = nativeInference,
         )
+        runtimePlan.loadBlockedReason?.let { blockedReason ->
+            return WarmupResult.skipped("warmup_planning_blocked:${runtimePlan.estimatedMemoryMb?.toInt() ?: "unknown"}:${blockedReason}")
+        }
         nativeInference.setRuntimeGenerationConfig(runtimePlan.generationConfig)
         val speculativePath = runtimePlan.generationConfig.speculativeEnabled &&
             !runtimePlan.generationConfig.speculativeDraftModelPath.isNullOrBlank()
@@ -88,6 +93,7 @@ internal class RuntimeWarmupCoordinator(
             modelId = modelId,
             slotId = runtimePlan.prefixCacheSlotId,
             keepAliveMs = runtimePlan.keepAliveMs,
+            sessionCacheKey = runtimePlan.sessionCacheKey,
         )
         val loadDurationMs = (nowMs() - loadStartedAtMs).coerceAtLeast(0L)
         if (!loaded) {
@@ -103,6 +109,7 @@ internal class RuntimeWarmupCoordinator(
         }
 
         val warmupStartedAtMs = nowMs()
+        onWarmupStage(modelId, ModelLoadingStage.WARMING_UP, 0.98f)
         runtimeResidencyManager.onGenerationStarted()
         val warmupResult = runCatching {
             nativeInference.generateStreamWithCache(

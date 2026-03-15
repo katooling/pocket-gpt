@@ -112,6 +112,12 @@ internal class SendMessageUseCase(
             deviceState = request.deviceState,
             nativeInference = nativeInference,
         )
+        runtimePlan.loadBlockedReason?.let { blockedReason ->
+            throw RuntimeModelLoadPlanningException(
+                message = blockedReason,
+                estimatedMemoryMb = runtimePlan.estimatedMemoryMb,
+            )
+        }
         val prefixCacheKey = buildPrefixCacheKey(
             slotId = runtimePlan.prefixCacheSlotId,
             modelId = modelId,
@@ -127,7 +133,14 @@ internal class SendMessageUseCase(
 
         nativeInference?.setRuntimeGenerationConfig(runtimePlan.generationConfig)
 
-        check(runtimeResidencyManager.ensureLoaded(modelId, runtimePlan.prefixCacheSlotId, runtimePlan.keepAliveMs)) {
+        check(
+            runtimeResidencyManager.ensureLoaded(
+                modelId = modelId,
+                slotId = runtimePlan.prefixCacheSlotId,
+                keepAliveMs = runtimePlan.keepAliveMs,
+                sessionCacheKey = runtimePlan.sessionCacheKey,
+            ),
+        ) {
             "Failed to load runtime model: $modelId"
         }
         nativeInference?.residencyState()?.let { state ->
@@ -233,9 +246,20 @@ internal class SendMessageUseCase(
             "inference.thermal_throttled",
             if (thermalThrottled) 1.0 else 0.0,
         )
+        nativeInference?.actualGpuLayers()?.let {
+            observabilityModule.recordLatencyMetric("inference.actual_applied_gpu_layers", it.toDouble())
+        }
+        nativeInference?.actualDraftGpuLayers()?.let {
+            observabilityModule.recordLatencyMetric("inference.actual_applied_draft_gpu_layers", it.toDouble())
+        }
+        nativeInference?.lastGpuLoadRetryCount()?.let {
+            observabilityModule.recordLatencyMetric("inference.gpu_load_retry_count", it.toDouble())
+        }
         observabilityModule.recordThermalSnapshot(request.deviceState.thermalLevel)
         conversationModule.appendAssistantTurn(request.sessionId, responseText)
 
+        val actualGpuLayers = nativeInference?.actualGpuLayers() ?: runtimePlan.effectiveConfig.gpuLayers
+        val actualDraftGpuLayers = nativeInference?.actualDraftGpuLayers() ?: runtimePlan.effectiveConfig.speculativeDraftGpuLayers
         return ChatResponse(
             sessionId = request.sessionId,
             modelId = modelId,
@@ -249,13 +273,15 @@ internal class SendMessageUseCase(
                 decodeMs = decodeMs,
                 tokensPerSec = tokensPerSec,
                 peakRssMb = peakRssMb,
-                appliedGpuLayers = runtimePlan.effectiveConfig.gpuLayers,
-                appliedDraftGpuLayers = runtimePlan.effectiveConfig.speculativeDraftGpuLayers,
+                appliedGpuLayers = actualGpuLayers,
+                appliedDraftGpuLayers = actualDraftGpuLayers,
+                gpuLoadRetryCount = nativeInference?.lastGpuLoadRetryCount(),
                 modelLayerCount = nativeInference?.cachedModelLayerCount(modelId),
                 estimatedMaxGpuLayers = nativeInference?.cachedEstimatedMaxGpuLayers(
                     modelId = modelId,
                     nCtx = runtimePlan.generationConfig.nCtx,
                 ),
+                estimatedMemoryMb = runtimePlan.estimatedMemoryMb,
             ),
         )
     }

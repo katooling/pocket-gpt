@@ -3,12 +3,17 @@ package com.pocketagent.runtime
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.RuntimeResidencyState
-import java.util.Timer
-import java.util.TimerTask
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 internal data class ResidentRuntimeSlot(
     val modelId: String,
     val slotId: String,
+    val sessionCacheKey: String? = null,
     val keepAliveMs: Long,
     val expiresAtEpochMs: Long,
     val lastTouchedAtEpochMs: Long,
@@ -17,9 +22,12 @@ internal data class ResidentRuntimeSlot(
 internal class RuntimeResidencyManager(
     private val inferenceModule: InferenceModule,
     private val nowMs: () -> Long = System::currentTimeMillis,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val onAfterLoad: (ResidentRuntimeSlot) -> Unit = {},
+    private val onBeforeUnload: (ResidentRuntimeSlot, String) -> Unit = { _, _ -> },
 ) {
     private val lock = Any()
-    private var timer: Timer? = null
+    private var expiryJob: Job? = null
     private var residentSlot: ResidentRuntimeSlot? = null
     private var activeRequestCount: Int = 0
     private var pendingUnloadReason: String? = null
@@ -32,22 +40,46 @@ internal class RuntimeResidencyManager(
     var lastAutoReleasedModelId: String? = null
         private set
 
-    fun ensureLoaded(modelId: String, slotId: String, keepAliveMs: Long): Boolean {
+    fun ensureLoaded(
+        modelId: String,
+        slotId: String,
+        keepAliveMs: Long,
+        sessionCacheKey: String? = null,
+    ): Boolean {
         val safeKeepAliveMs = keepAliveMs.coerceAtLeast(1L)
         val loaded = inferenceModule.loadModel(modelId)
+        var slot: ResidentRuntimeSlot? = null
         synchronized(lock) {
             if (loaded) {
-                attachResidentSlotLocked(modelId = modelId, slotId = slotId, keepAliveMs = safeKeepAliveMs)
+                slot = attachResidentSlotLocked(
+                    modelId = modelId,
+                    slotId = slotId,
+                    sessionCacheKey = sessionCacheKey,
+                    keepAliveMs = safeKeepAliveMs,
+                )
             }
         }
+        slot?.let(onAfterLoad)
         return loaded
     }
 
-    fun attachResidentSlot(modelId: String, slotId: String, keepAliveMs: Long): Boolean {
+    fun attachResidentSlot(
+        modelId: String,
+        slotId: String,
+        keepAliveMs: Long,
+        sessionCacheKey: String? = null,
+    ): Boolean {
         val safeKeepAliveMs = keepAliveMs.coerceAtLeast(1L)
+        var slot: ResidentRuntimeSlot? = null
         synchronized(lock) {
-            attachResidentSlotLocked(modelId = modelId, slotId = slotId, keepAliveMs = safeKeepAliveMs)
+            slot = attachResidentSlotLocked(
+                modelId = modelId,
+                slotId = slotId,
+                sessionCacheKey = sessionCacheKey,
+                keepAliveMs = safeKeepAliveMs,
+            )
         }
+        slot?.let(onAfterLoad)
         return true
     }
 
@@ -96,24 +128,27 @@ internal class RuntimeResidencyManager(
     }
 
     fun requestUnload(reason: String): RuntimeUnloadDisposition {
-        val unloadNow: Boolean
+        var slotToUnload: ResidentRuntimeSlot? = null
+        val sanitizedReason: String
         synchronized(lock) {
             val hasResident = residentSlot != null
             if (!hasResident) {
                 return RuntimeUnloadDisposition.NO_RESIDENT_MODEL
             }
+            sanitizedReason = sanitizeReason(reason)
             if (activeRequestCount > 0) {
-                pendingUnloadReason = sanitizeReason(reason)
+                pendingUnloadReason = sanitizedReason
                 return RuntimeUnloadDisposition.QUEUED
             }
             pendingUnloadReason = null
-            lastUnloadReason = sanitizeReason(reason)
-            cancelTimerLocked()
+            lastUnloadReason = sanitizedReason
+            slotToUnload = residentSlot
+            cancelExpiryLocked()
             residentSlot = null
             updateNativeResidencyLocked()
-            unloadNow = true
         }
-        if (unloadNow) {
+        slotToUnload?.let { onBeforeUnload(it, sanitizedReason) }
+        if (slotToUnload != null) {
             inferenceModule.unloadModel()
         }
         return RuntimeUnloadDisposition.UNLOADED
@@ -172,7 +207,7 @@ internal class RuntimeResidencyManager(
             if (activeRequestCount == 1) {
                 autoReleaseDisableReasons.add(AUTO_RELEASE_REASON_ACTIVE_GENERATION)
             }
-            cancelTimerLocked()
+            cancelExpiryLocked()
         }
     }
 
@@ -258,26 +293,34 @@ internal class RuntimeResidencyManager(
         }
     }
 
-    private fun attachResidentSlotLocked(modelId: String, slotId: String, keepAliveMs: Long) {
-        residentSlot = ResidentRuntimeSlot(
+    private fun attachResidentSlotLocked(
+        modelId: String,
+        slotId: String,
+        sessionCacheKey: String?,
+        keepAliveMs: Long,
+    ): ResidentRuntimeSlot {
+        val slot = ResidentRuntimeSlot(
             modelId = modelId,
             slotId = slotId,
+            sessionCacheKey = sessionCacheKey,
             keepAliveMs = keepAliveMs,
             expiresAtEpochMs = nowMs() + keepAliveMs,
             lastTouchedAtEpochMs = nowMs(),
         )
+        residentSlot = slot
         updateNativeResidencyLocked()
         if (activeRequestCount == 0) {
             scheduleExpiryLocked(keepAliveMs)
         } else {
-            cancelTimerLocked()
+            cancelExpiryLocked()
         }
+        return slot
     }
 
     private fun cancelAndClear(reason: String) {
         synchronized(lock) {
             lastUnloadReason = sanitizeReason(reason)
-            cancelTimerLocked()
+            cancelExpiryLocked()
             residentSlot = null
             pendingUnloadReason = null
             updateNativeResidencyLocked()
@@ -285,30 +328,29 @@ internal class RuntimeResidencyManager(
     }
 
     private fun scheduleExpiryLocked(delayMs: Long) {
-        cancelTimerLocked()
+        cancelExpiryLocked()
         val current = residentSlot ?: return
         val safeDelay = delayMs.coerceAtLeast(1L)
-        timer = Timer("runtime-residency-expiry", true).also { ttlTimer ->
-            ttlTimer.schedule(
-                object : TimerTask() {
-                    override fun run() {
-                        synchronized(lock) {
-                            if (activeRequestCount > 0) {
-                                scheduleExpiryLocked(safeDelay)
-                                return
-                            }
-                            if (residentSlot?.slotId != current.slotId) {
-                                return
-                            }
-                            residentSlot = null
-                            lastUnloadReason = "idle_ttl"
-                            updateNativeResidencyLocked()
-                        }
-                        inferenceModule.unloadModel()
-                    }
-                },
-                safeDelay,
-            )
+        expiryJob = scope.launch {
+            delay(safeDelay)
+            var slotToUnload: ResidentRuntimeSlot? = null
+            synchronized(lock) {
+                if (activeRequestCount > 0) {
+                    scheduleExpiryLocked(safeDelay)
+                    return@launch
+                }
+                if (residentSlot?.slotId != current.slotId) {
+                    return@launch
+                }
+                slotToUnload = residentSlot
+                residentSlot = null
+                lastUnloadReason = "idle_ttl"
+                updateNativeResidencyLocked()
+            }
+            slotToUnload?.let {
+                onBeforeUnload(it, "idle_ttl")
+                inferenceModule.unloadModel()
+            }
         }
     }
 
@@ -319,9 +361,9 @@ internal class RuntimeResidencyManager(
         )
     }
 
-    private fun cancelTimerLocked() {
-        timer?.cancel()
-        timer = null
+    private fun cancelExpiryLocked() {
+        expiryJob?.cancel()
+        expiryJob = null
     }
 
     private companion object {
