@@ -62,6 +62,9 @@
     <string name="ui_keep_alive_five_minutes">5 minutes</string>
     <string name="ui_keep_alive_fifteen_minutes">15 minutes</string>
     <string name="ui_keep_alive_unload_immediately">Unload immediately</string>
+    <string name="ui_download_controls_title">Downloads</string>
+    <string name="ui_download_controls_subtitle">Control whether large model downloads can use metered connections.</string>
+    <string name="ui_download_wifi_only_toggle">Wi-Fi only for large downloads</string>
     <string name="ui_advanced_experimental_title">Advanced (Experimental)</string>
     <string name="ui_gpu_acceleration_toggle">Enable GPU acceleration</string>
     <string name="ui_gpu_acceleration_unavailable">GPU acceleration unavailable on this build/device</string>
@@ -192,6 +195,7 @@
     <string name="ui_model_runtime_error_model_file_unavailable">Cannot load %1$s (%2$s): model file is unavailable.</string>
     <string name="ui_model_runtime_error_incompatible">Cannot load %1$s (%2$s): runtime compatibility check failed.</string>
     <string name="ui_model_runtime_error_backend_init">Runtime backend failed to initialize: %1$s</string>
+    <string name="ui_model_runtime_error_out_of_memory">Runtime blocked model load for memory safety: %1$s</string>
     <string name="ui_model_runtime_error_busy_generation">Runtime is busy generating. Wait for completion, then offload.</string>
     <string name="ui_model_runtime_error_cancelled_newer_request">Load/offload request cancelled by a newer action.</string>
     <string name="ui_model_runtime_error_unknown">Runtime model action failed: %1$s</string>
@@ -209,6 +213,10 @@
     <string name="ui_model_storage_summary_human">Storage • total=%1$s free=%2$s models=%3$s temp=%4$s</string>
     <string name="ui_model_download_notification_title">Downloading model</string>
     <string name="ui_model_download_notification_body">%1$s • %2$d%%</string>
+    <string name="ui_model_download_notifications_disabled">Notifications are disabled. The download will continue, but cancel/progress controls stay in-app.</string>
+    <string name="ui_large_download_metered_title">Large download on metered network</string>
+    <string name="ui_large_download_metered_body">%1$s is %2$s. Continue on the current metered connection?</string>
+    <string name="ui_large_download_metered_continue">Continue download</string>
     <string name="ui_refresh_runtime_checks">Refresh runtime checks</string>
     <string name="ui_active_runtime_model_chip">Runtime model: %1$s</string>
     <string name="ui_active_runtime_source_chip">Source: %1$s</string>

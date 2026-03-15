@@ -83,6 +83,8 @@ data class ChatSessionUiModel(
     val updatedAtEpochMs: Long,
     val messages: List<MessageUiModel>,
     val completionSettings: CompletionSettings = CompletionSettings(),
+    val messagesLoaded: Boolean = true,
+    val messageCount: Int = messages.size,
 )
 
 data class ComposerUiState(

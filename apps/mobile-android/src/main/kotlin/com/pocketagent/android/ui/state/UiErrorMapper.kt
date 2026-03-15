@@ -174,6 +174,8 @@ object UiErrorMapper {
                 "Model file is unavailable. Re-download or re-import the model." to RecoveryAction.REDOWNLOAD_MODEL
             ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE ->
                 "Model is not compatible with this runtime. Choose a different model." to RecoveryAction.CHANGE_MODEL
+            ModelLifecycleErrorCode.OUT_OF_MEMORY ->
+                "Model could not fit in available memory. Try a smaller model, lower context, or offload the current model first." to RecoveryAction.CHANGE_MODEL
             ModelLifecycleErrorCode.BACKEND_INIT_FAILED ->
                 "Runtime backend failed to initialize. Restart the app and try again." to RecoveryAction.RESTART_APP
             ModelLifecycleErrorCode.BUSY_GENERATION ->
