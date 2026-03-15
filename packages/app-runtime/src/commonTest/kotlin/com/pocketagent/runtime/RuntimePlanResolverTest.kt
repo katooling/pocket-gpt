@@ -306,6 +306,7 @@ private class ResolverModelRegistryPort : RuntimeModelRegistryPort {
     private val pathByModelId = mapOf(
         ModelCatalog.QWEN_3_5_0_8B_Q4 to "/tmp/qwen-0.8b.gguf",
         ModelCatalog.SMOLLM3_3B_Q4_K_M to "/tmp/smollm3-3b.gguf",
+        ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS to "/tmp/smollm3-3b-iq2xxs.gguf",
     )
 
     override fun registerModelPath(modelId: String, absolutePath: String) = Unit

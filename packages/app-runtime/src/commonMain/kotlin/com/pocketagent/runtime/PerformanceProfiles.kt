@@ -212,6 +212,19 @@ data class PerformanceRuntimeConfig(
             else -> this
         }
     }
+
+    fun withSamplingOverrides(overrides: SamplingOverrides?): PerformanceRuntimeConfig {
+        if (overrides == null) return this
+        return copy(
+            temperature = overrides.temperature ?: temperature,
+            topP = overrides.topP ?: topP,
+            topK = overrides.topK ?: topK,
+            maxTokensDefault = overrides.maxTokens ?: maxTokensDefault,
+            repeatPenalty = overrides.repeatPenalty ?: repeatPenalty,
+            frequencyPenalty = overrides.frequencyPenalty ?: frequencyPenalty,
+            presencePenalty = overrides.presencePenalty ?: presencePenalty,
+        )
+    }
 }
 
 const val DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS: Long = 15 * 60 * 1000L

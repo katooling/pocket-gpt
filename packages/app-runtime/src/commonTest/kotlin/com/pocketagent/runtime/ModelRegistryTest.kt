@@ -1,6 +1,5 @@
 package com.pocketagent.runtime
 
-import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.ModelRuntimeProfile
 import kotlin.test.Test
@@ -13,10 +12,15 @@ class ModelRegistryTest {
         val registry = ModelRegistry.default()
 
         val metadata = registry.allMetadata().associateBy { it.modelId }
-        assertTrue(metadata.containsKey(ModelCatalog.QWEN_3_5_0_8B_Q4))
-        assertTrue(metadata.containsKey(ModelCatalog.QWEN_3_5_2B_Q4))
-        assertTrue(metadata.containsKey(ModelCatalog.SMOLLM3_3B_Q4_K_M))
-        assertTrue(metadata.containsKey(ModelCatalog.PHI_4_MINI_Q4_K_M))
+        val expectedModelIds = ModelCatalog.modelDescriptors()
+            .filter { it.bridgeSupported || it.startupCandidate }
+            .map { it.modelId }
+            .toSet()
+        assertEquals(
+            expectedModelIds,
+            metadata.keys,
+            "registry must include all bridge-supported and startup-candidate models",
+        )
         assertEquals(
             ModelCatalog.QWEN_3_5_0_8B_Q4,
             registry.defaultGetReadyModelId(profile = ModelRuntimeProfile.PROD),
@@ -28,12 +32,12 @@ class ModelRegistryTest {
     }
 
     @Test
-    fun `default startup policy keeps qwen startup candidates with minimum one ready`() {
+    fun `default startup policy keeps startup candidates with minimum one ready`() {
         val policy = ModelRegistry.default().startupPolicy(profile = ModelRuntimeProfile.PROD)
 
         assertEquals(
-            listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4, ModelCatalog.SMOLLM3_3B_Q4_K_M, ModelCatalog.PHI_4_MINI_Q4_K_M),
-            policy.candidateModelIds,
+            ModelCatalog.startupCandidateModels().toSet(),
+            policy.candidateModelIds.toSet(),
         )
         assertEquals(emptyList(), policy.requiredModelIds)
         assertEquals(1, policy.minimumReadyCount)
@@ -70,12 +74,7 @@ class ModelRegistryTest {
         val policy = ModelRegistry.default().startupPolicy(profile = ModelRuntimeProfile.DEV_FAST)
 
         assertEquals(
-            setOf(
-                ModelCatalog.QWEN_3_5_0_8B_Q4,
-                ModelCatalog.QWEN_3_5_2B_Q4,
-                ModelCatalog.SMOLLM3_3B_Q4_K_M,
-                ModelCatalog.PHI_4_MINI_Q4_K_M,
-            ),
+            ModelCatalog.startupCandidateModels().toSet(),
             policy.candidateModelIds.toSet(),
         )
         assertEquals(emptyList(), policy.requiredModelIds)
@@ -86,17 +85,28 @@ class ModelRegistryTest {
     fun `default registry routing modes are sourced from catalog metadata`() {
         val metadataByModelId = ModelRegistry.default().allMetadata().associateBy { metadata -> metadata.modelId }
 
-        assertEquals(
-            setOf(RoutingMode.AUTO, RoutingMode.QWEN_0_8B),
-            metadataByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4).routingModes,
-        )
-        assertEquals(
-            setOf(RoutingMode.AUTO, RoutingMode.SMOLLM3_3B),
-            metadataByModelId.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M).routingModes,
-        )
-        assertEquals(
-            setOf(RoutingMode.AUTO, RoutingMode.PHI_4_MINI),
-            metadataByModelId.getValue(ModelCatalog.PHI_4_MINI_Q4_K_M).routingModes,
-        )
+        ModelCatalog.modelDescriptors()
+            .filter { it.explicitRoutingModes.isNotEmpty() || it.includeAutoRoutingMode }
+            .forEach { descriptor ->
+                val expected = ModelCatalog.routingModesForModel(descriptor.modelId)
+                val actual = metadataByModelId[descriptor.modelId]?.routingModes ?: emptySet()
+                assertEquals(expected, actual, "routing modes mismatch for ${descriptor.modelId}")
+            }
+    }
+
+    @Test
+    fun `template profiles are driven by catalog chatTemplateId`() {
+        val metadata = ModelRegistry.default().allMetadata()
+
+        metadata.forEach { entry ->
+            val descriptor = ModelCatalog.descriptorFor(entry.modelId)
+            if (descriptor != null) {
+                assertEquals(
+                    ModelTemplateProfile.valueOf(descriptor.chatTemplateId),
+                    entry.templateProfile,
+                    "template profile mismatch for ${entry.modelId}",
+                )
+            }
+        }
     }
 }

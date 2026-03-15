@@ -3,17 +3,24 @@ package com.pocketagent.runtime
 import com.pocketagent.inference.ModelCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ModelTemplateRegistryTest {
     @Test
-    fun `registry returns chatml for required runtime models`() {
+    fun `registry provides a template profile for every registered model`() {
         val registry = ModelTemplateRegistry()
 
-        assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
-        assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.QWEN_3_5_2B_Q4))
-        assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.SMOLLM3_3B_Q4_K_M))
-        assertEquals(ModelTemplateProfile.PHI, registry.templateProfileForModel(ModelCatalog.PHI_4_MINI_Q4_K_M))
+        ModelCatalog.modelDescriptors()
+            .filter { it.bridgeSupported || it.startupCandidate }
+            .forEach { descriptor ->
+                val expected = ModelTemplateProfile.valueOf(descriptor.chatTemplateId)
+                assertEquals(
+                    expected,
+                    registry.templateProfileForModel(descriptor.modelId),
+                    "template profile mismatch for ${descriptor.modelId}",
+                )
+            }
     }
 
     @Test

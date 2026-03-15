@@ -26,7 +26,7 @@ class ChatTemplateRendererTest {
         assertTrue(rendered.prompt.contains("<|im_start|>system"))
         assertTrue(rendered.prompt.contains("<|im_start|>user"))
         assertTrue(rendered.prompt.endsWith("<|im_start|>assistant\n"))
-        assertEquals(listOf("<|im_end|>", "<|im_start|>user"), rendered.stopSequences)
+        assertEquals(listOf("<|im_end|>", "<|im_start|>user", "</tool_call>"), rendered.stopSequences)
     }
 
     @Test
@@ -45,5 +45,65 @@ class ChatTemplateRendererTest {
         assertTrue(rendered.prompt.contains("<|start_header_id|>user<|end_header_id|>"))
         assertTrue(rendered.prompt.contains("<|start_header_id|>assistant<|end_header_id|>"))
         assertEquals(listOf("<|eot_id|>", "<|start_header_id|>user<|end_header_id|>"), rendered.stopSequences)
+    }
+
+    @Test
+    fun `chatml renders assistant tool calls in tool_call blocks`() {
+        val rendered = renderer.render(
+            messages = listOf(
+                InteractionMessage(
+                    role = InteractionRole.USER,
+                    parts = listOf(InteractionContentPart.Text("What is 4+5?")),
+                ),
+                InteractionMessage(
+                    role = InteractionRole.ASSISTANT,
+                    parts = listOf(InteractionContentPart.Text("Let me calculate.")),
+                    toolCalls = listOf(
+                        InteractionToolCall(
+                            id = "tc-1",
+                            name = "calculator",
+                            argumentsJson = """{"expression": "4+5"}""",
+                        ),
+                    ),
+                ),
+            ),
+            modelProfile = ModelTemplateProfile.CHATML,
+        )
+
+        assertTrue(rendered.prompt.contains("<tool_call>"))
+        assertTrue(rendered.prompt.contains("\"calculator\""))
+        assertTrue(rendered.prompt.contains("</tool_call>"))
+    }
+
+    @Test
+    fun `chatml renders tool response in tool_response blocks`() {
+        val rendered = renderer.render(
+            messages = listOf(
+                InteractionMessage(
+                    role = InteractionRole.TOOL,
+                    parts = listOf(InteractionContentPart.Text("9.0")),
+                    toolCallId = "tc-1",
+                ),
+            ),
+            modelProfile = ModelTemplateProfile.CHATML,
+        )
+
+        assertTrue(rendered.prompt.contains("<|im_start|>tool"))
+        assertTrue(rendered.prompt.contains("<tool_response>9.0</tool_response>"))
+    }
+
+    @Test
+    fun `chatml stop sequences include tool_call closer`() {
+        val rendered = renderer.render(
+            messages = listOf(
+                InteractionMessage(
+                    role = InteractionRole.USER,
+                    parts = listOf(InteractionContentPart.Text("test")),
+                ),
+            ),
+            modelProfile = ModelTemplateProfile.CHATML,
+        )
+
+        assertTrue(rendered.stopSequences.contains("</tool_call>"))
     }
 }

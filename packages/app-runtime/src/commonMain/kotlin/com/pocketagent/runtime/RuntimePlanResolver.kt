@@ -244,16 +244,16 @@ private fun PerformanceRuntimeConfig.applyMemoryEstimate(
     }
 
     val recommendedLayers = recommendedGpuLayers(currentConfig)
-    if (recommendedLayers != null && currentConfig.gpuEnabled) {
-        val clampedGpuLayers = when {
-            currentConfig.gpuLayers < 0 -> recommendedLayers
-            else -> minOf(currentConfig.gpuLayers, recommendedLayers)
-        }.coerceAtLeast(0)
-        if (clampedGpuLayers != currentConfig.gpuLayers) {
-            currentConfig = currentConfig.copy(
-                gpuLayers = clampedGpuLayers,
-                speculativeDraftGpuLayers = minOf(currentConfig.speculativeDraftGpuLayers, clampedGpuLayers),
-            )
+        if (recommendedLayers != null && currentConfig.gpuEnabled) {
+            val clampedGpuLayers = when {
+                currentConfig.gpuLayers < 0 -> recommendedLayers
+                else -> minOf(currentConfig.gpuLayers, recommendedLayers)
+            }.coerceAtLeast(0)
+            if (clampedGpuLayers != currentConfig.gpuLayers) {
+                currentConfig = currentConfig.copy(
+                    gpuLayers = clampedGpuLayers,
+                    speculativeDraftGpuLayers = minOf(currentConfig.speculativeDraftGpuLayers, clampedGpuLayers),
+                )
             if (!diagnostics.contains("layer=memory_gpu_recommendation")) {
                 diagnostics += "layer=memory_gpu_recommendation"
             }
@@ -266,15 +266,18 @@ private fun PerformanceRuntimeConfig.applyMemoryEstimate(
                 nUbatch = currentConfig.nUbatch,
                 availableMemoryMb = availableMemoryMb,
             )
-            if (currentEstimate.fitsInMemory != false) {
-                return MemoryAdjustmentResult(
-                    config = currentConfig,
-                    estimate = currentEstimate,
-                    diagnostics = diagnostics,
-                )
+                if (currentEstimate.fitsInMemory != false) {
+                    return MemoryAdjustmentResult(
+                        config = currentConfig,
+                        estimate = currentEstimate,
+                        diagnostics = diagnostics,
+                    )
+                }
+                if (currentConfig.speculativeDraftGpuLayers > 0) {
+                    currentConfig = currentConfig.copy(speculativeDraftGpuLayers = 0)
+                }
             }
         }
-    }
 
     val blockedReason = availableMemoryMb?.let { ceilingMb ->
         val estimateMb = currentEstimate.estimatedMb

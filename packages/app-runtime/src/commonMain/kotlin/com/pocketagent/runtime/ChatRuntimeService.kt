@@ -25,6 +25,7 @@ data class ChatStreamCommand(
     val previousResponseId: String? = null,
     val keepAlivePreference: ChatKeepAlivePreference = ChatKeepAlivePreference.AUTO,
     val requestTimeoutOverrideMs: Long? = null,
+    val samplingOverrides: SamplingOverrides? = null,
 )
 
 data class ChatStreamPlan(
@@ -88,20 +89,35 @@ class ChatStreamRequestPlanner(
         performancePlan: ResolvedPerformancePlan,
         requestTimeoutOverrideMs: Long,
     ): PreparedChatStream {
+        val effectiveConfig = performancePlan.effectiveConfig
+            .withSamplingOverrides(command.samplingOverrides)
         val requestTimeoutMs = resolveRequestTimeoutMs(
-            performanceConfig = performancePlan.effectiveConfig,
+            performanceConfig = effectiveConfig,
             overrideTimeoutMs = requestTimeoutOverrideMs,
         )
+        val messages = buildList {
+            val userSystemPrompt = command.samplingOverrides?.systemPrompt
+            if (!userSystemPrompt.isNullOrBlank()) {
+                add(
+                    InteractionMessage(
+                        id = "system-user-prompt",
+                        role = InteractionRole.SYSTEM,
+                        parts = listOf(InteractionContentPart.Text(userSystemPrompt)),
+                    ),
+                )
+            }
+            addAll(command.messages)
+        }
         val runtimeRequest = StreamChatRequestV2(
             sessionId = command.sessionId,
             requestId = command.requestId,
-            messages = command.messages,
+            messages = messages,
             taskType = resolveTaskType(command.promptHint),
-            maxTokens = resolveMaxTokens(command.promptHint, performancePlan.effectiveConfig),
+            maxTokens = resolveMaxTokens(command.promptHint, effectiveConfig),
             deviceState = command.deviceState,
             requestTimeoutMs = requestTimeoutMs,
             previousResponseId = command.previousResponseId,
-            performanceConfig = performancePlan.effectiveConfig,
+            performanceConfig = effectiveConfig,
             residencyPolicy = resolveResidencyPolicy(command.keepAlivePreference),
         )
         return PreparedChatStream(
@@ -109,7 +125,7 @@ class ChatStreamRequestPlanner(
                 requestId = command.requestId,
                 requestTimeoutMs = requestTimeoutMs,
                 baseConfig = performancePlan.baseConfig,
-                effectiveConfig = performancePlan.effectiveConfig,
+                effectiveConfig = effectiveConfig,
             ),
             runtimeRequest = runtimeRequest,
         )

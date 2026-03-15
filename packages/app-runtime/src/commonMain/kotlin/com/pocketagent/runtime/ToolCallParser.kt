@@ -1,5 +1,6 @@
 package com.pocketagent.runtime
 
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -26,6 +27,7 @@ internal object ToolCallParser {
         isLenient = true
         ignoreUnknownKeys = true
     }
+    private val toolCallSequence = AtomicLong(0L)
 
     data class ParsedToolCalls(
         val toolCalls: List<InteractionToolCall>,
@@ -83,7 +85,7 @@ internal object ToolCallParser {
                 else -> arguments?.jsonPrimitive?.content ?: "{}"
             }
             InteractionToolCall(
-                id = "tc-${System.currentTimeMillis()}-${name.hashCode().toUInt()}",
+                id = "tc-${toolCallSequence.incrementAndGet()}-${name.hashCode().toUInt()}",
                 name = name,
                 argumentsJson = argumentsJson,
             )

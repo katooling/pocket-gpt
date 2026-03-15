@@ -76,21 +76,109 @@ class ChatStreamRequestPlannerTest {
         assertTrue(prepared.plan.requestTimeoutMs > 0L)
     }
 
+    @Test
+    fun `sampling overrides replace profile defaults in effective config`() {
+        val planner = ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L)
+        val overrides = SamplingOverrides(
+            temperature = 1.5f,
+            topP = 0.8f,
+            topK = 100,
+            repeatPenalty = 1.3f,
+            frequencyPenalty = 0.5f,
+            presencePenalty = 0.2f,
+        )
+        val prepared = planner.prepare(command(samplingOverrides = overrides))
+
+        val config = prepared.plan.effectiveConfig
+        assertEquals(1.5f, config.temperature)
+        assertEquals(0.8f, config.topP)
+        assertEquals(100, config.topK)
+        assertEquals(1.3f, config.repeatPenalty)
+        assertEquals(0.5f, config.frequencyPenalty)
+        assertEquals(0.2f, config.presencePenalty)
+    }
+
+    @Test
+    fun `null sampling overrides preserve profile defaults`() {
+        val planner = ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L)
+        val overrides = SamplingOverrides(temperature = 1.2f)
+        val prepared = planner.prepare(command(samplingOverrides = overrides))
+
+        val config = prepared.plan.effectiveConfig
+        assertEquals(1.2f, config.temperature)
+        // Other fields remain at profile defaults
+        assertEquals(0.95f, config.topP)
+        assertEquals(40, config.topK)
+    }
+
+    @Test
+    fun `sampling overrides maxTokens replaces profile default`() {
+        val planner = ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L)
+        val overrides = SamplingOverrides(maxTokens = 4096)
+        val prepared = planner.prepare(command(samplingOverrides = overrides))
+
+        assertEquals(4096, prepared.runtimeRequest.maxTokens)
+    }
+
+    @Test
+    fun `system prompt override prepends system message`() {
+        val planner = ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L)
+        val overrides = SamplingOverrides(systemPrompt = "Always respond in French")
+        val userMessage = InteractionMessage(
+            id = "user-1",
+            role = InteractionRole.USER,
+            parts = listOf(InteractionContentPart.Text("Hello")),
+        )
+        val prepared = planner.prepare(command(
+            samplingOverrides = overrides,
+            messages = listOf(userMessage),
+        ))
+
+        val messages = prepared.runtimeRequest.messages
+        assertEquals(2, messages.size)
+        assertEquals(InteractionRole.SYSTEM, messages[0].role)
+        assertEquals("Always respond in French", (messages[0].parts[0] as InteractionContentPart.Text).text)
+        assertEquals(InteractionRole.USER, messages[1].role)
+    }
+
+    @Test
+    fun `blank system prompt does not prepend system message`() {
+        val planner = ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L)
+        val overrides = SamplingOverrides(systemPrompt = "  ")
+        val prepared = planner.prepare(command(samplingOverrides = overrides))
+
+        assertTrue(prepared.runtimeRequest.messages.none { it.role == InteractionRole.SYSTEM })
+    }
+
+    @Test
+    fun `no sampling overrides leaves config and messages unchanged`() {
+        val planner = ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L)
+        val prepared = planner.prepare(command(samplingOverrides = null))
+
+        val config = prepared.plan.effectiveConfig
+        assertEquals(0.7f, config.temperature)
+        assertEquals(0.95f, config.topP)
+        assertTrue(prepared.runtimeRequest.messages.isEmpty())
+    }
+
     private fun command(
         requestId: String = "req-1",
         deviceState: DeviceState = DeviceState(batteryPercent = 85, thermalLevel = 3, ramClassGb = 8),
         keepAlivePreference: ChatKeepAlivePreference = ChatKeepAlivePreference.AUTO,
+        samplingOverrides: SamplingOverrides? = null,
+        messages: List<InteractionMessage> = emptyList(),
     ): ChatStreamCommand {
         return ChatStreamCommand(
             sessionId = SessionId("session-1"),
             requestId = requestId,
-            messages = emptyList(),
+            messages = messages,
             promptHint = "short prompt",
             deviceState = deviceState,
             performanceProfile = RuntimePerformanceProfile.BALANCED,
             gpuEnabled = false,
             gpuQualifiedLayers = 0,
             keepAlivePreference = keepAlivePreference,
+            samplingOverrides = samplingOverrides,
         )
     }
 }

@@ -1,7 +1,9 @@
 package com.pocketagent.runtime
 
+import com.pocketagent.inference.ModelCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class PerformanceProfilesTest {
     @Test
@@ -53,7 +55,41 @@ class PerformanceProfilesTest {
         assertEquals(true, fast.useMmap)
         assertEquals(false, fast.useMlock)
         assertEquals(256, fast.nKeep)
-        assertEquals(4096, fast.nCtx)
+        assertEquals(8192, fast.nCtx)
+    }
+
+    @Test
+    fun `fast profile uses smollm3 iq2_xxs as speculative draft model`() {
+        val fast = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.FAST,
+            availableCpuThreads = 8,
+            gpuEnabled = true,
+        )
+
+        assertEquals(ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS, fast.speculativeDraftModelId)
+        assertEquals(true, fast.speculativeEnabled)
+    }
+
+    @Test
+    fun `battery profile disables speculative decoding`() {
+        val battery = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.BATTERY,
+            availableCpuThreads = 4,
+            gpuEnabled = false,
+        )
+
+        assertFalse(battery.speculativeEnabled)
+    }
+
+    @Test
+    fun `fast profile context window is 8192`() {
+        val fast = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.FAST,
+            availableCpuThreads = 8,
+            gpuEnabled = true,
+        )
+
+        assertEquals(8192, fast.nCtx)
     }
 
     @Test

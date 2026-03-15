@@ -298,6 +298,9 @@ internal class SendMessageUseCase(
                 ),
                 estimatedMemoryMb = runtimePlan.estimatedMemoryMb,
             ),
+            toolCalls = parsedToolCalls.map { call ->
+                ChatToolCall(id = call.id, name = call.name, argumentsJson = call.argumentsJson)
+            },
         )
     }
     private fun buildPrefixCacheKey(
