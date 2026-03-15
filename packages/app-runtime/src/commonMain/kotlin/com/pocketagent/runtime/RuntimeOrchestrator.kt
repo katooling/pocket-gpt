@@ -21,6 +21,8 @@ import com.pocketagent.memory.MemoryModule
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.nativebridge.ModelLifecycleEvent
+import com.pocketagent.nativebridge.ModelLifecycleState
+import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
 import com.pocketagent.tools.SafeLocalToolRuntime
@@ -51,6 +53,15 @@ class RuntimeOrchestrator(
     private val memoryBudgetTracker: MemoryBudgetTracker? = null,
     private val recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
 ) : RuntimeContainer {
+    private val runtimeLifecycleObserverLock = Any()
+    private val runtimeLifecycleDispatchLock = Object()
+    private val runtimeLifecycleObservers: MutableMap<Int, (ModelLifecycleEvent) -> Unit> = mutableMapOf()
+    private val runtimeLifecycleDispatchQueue: ArrayDeque<ModelLifecycleEvent> = ArrayDeque()
+    private var nextRuntimeLifecycleObserverId: Int = 1
+    @Volatile
+    private var runtimeLifecycleDispatcherStarted: Boolean = false
+    @Volatile
+    private var currentRuntimeLifecycleEvent: ModelLifecycleEvent = ModelLifecycleEvent(state = ModelLifecycleState.UNLOADED)
     private val imageInputModule = RuntimeImageInputModule(inferenceModule)
     private val sessionManager = RuntimeSessionManager(conversationModule, memoryModule)
     private val templateRegistry = ModelTemplateRegistry(
@@ -138,12 +149,15 @@ class RuntimeOrchestrator(
         observabilityModule = observabilityModule,
         runtimeResidencyManager = runtimeResidencyManager,
         runtimePlanResolver = runtimePlanResolver,
+        onWarmupStage = ::emitWarmupLifecycleStage,
     )
 
     init {
         val nativeInference = inferenceModule as? LlamaCppInferenceModule
         if (nativeInference != null) {
             artifactVerifier.registerRuntimeModelPaths(nativeInference)
+            currentRuntimeLifecycleEvent = nativeInference.currentModelLifecycleState()
+            nativeInference.observeModelLifecycleState(::emitRuntimeLifecycleEvent)
         }
     }
 
@@ -320,7 +334,7 @@ class RuntimeOrchestrator(
     override fun exportDiagnosticsJson(): String? {
         val nativeInference = inferenceModule as? LlamaCppInferenceModule
         val nativeResidencyState = nativeInference?.residencyState()
-        val lifecycleEvent = nativeInference?.currentModelLifecycleState()
+        val lifecycleEvent = currentRuntimeLifecycleEvent
         val sessionCacheDiagnostics = sessionCacheManager.diagnostics()
         val lastPlan = lastResolvedRuntimePlan.get()
         return buildString {
@@ -378,12 +392,23 @@ class RuntimeOrchestrator(
     }
 
     override fun currentModelLifecycleEvent(): ModelLifecycleEvent? {
-        return (inferenceModule as? LlamaCppInferenceModule)?.currentModelLifecycleState()
+        return currentRuntimeLifecycleEvent
     }
 
     override fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return AutoCloseable { }
-        return nativeInference.observeModelLifecycleState(listener)
+        ensureRuntimeLifecycleDispatcherStarted()
+        val observerId = synchronized(runtimeLifecycleObserverLock) {
+            val nextId = nextRuntimeLifecycleObserverId
+            nextRuntimeLifecycleObserverId += 1
+            runtimeLifecycleObservers[nextId] = listener
+            nextId
+        }
+        listener(currentRuntimeLifecycleEvent)
+        return AutoCloseable {
+            synchronized(runtimeLifecycleObserverLock) {
+                runtimeLifecycleObservers.remove(observerId)
+            }
+        }
     }
 
     override fun setRoutingMode(mode: RoutingMode) {
@@ -397,7 +422,14 @@ class RuntimeOrchestrator(
     }
 
     override fun warmupActiveModel(): WarmupResult {
-        return runtimeWarmupCoordinator.warmup()
+        val result = runtimeWarmupCoordinator.warmup()
+        if (result.attempted && result.warmed) {
+            emitCompletedLifecycleEvent(
+                modelId = loadedModel()?.modelId,
+                modelVersion = loadedModel()?.modelVersion,
+            )
+        }
+        return result
     }
 
     override fun evictResidentModel(reason: String): Boolean {
@@ -639,12 +671,34 @@ class RuntimeOrchestrator(
     private fun restoreSessionCache(slot: ResidentRuntimeSlot) {
         val cacheKey = slot.sessionCacheKey?.takeIf { it.isNotBlank() } ?: return
         val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return
+        if (!sessionCacheManager.hasCacheFor(cacheKey)) {
+            return
+        }
+        emitLoadingStage(
+            modelId = slot.modelId,
+            modelVersion = artifactVerifier.manager().getActiveModelVersion(),
+            stage = ModelLoadingStage.RESTORING_SESSION_CACHE,
+            progress = 0.94f,
+        )
         sessionCacheManager.restore(
             serializer = object : SessionCacheSerializer {
                 override fun saveSessionCache(filePath: String): Boolean = nativeInference.saveSessionCache(filePath)
                 override fun loadSessionCache(filePath: String): Boolean = nativeInference.loadSessionCache(filePath)
             },
             cacheKey = cacheKey,
+        )
+        emitCompletedLifecycleEvent(
+            modelId = slot.modelId,
+            modelVersion = artifactVerifier.manager().getActiveModelVersion(),
+        )
+    }
+
+    private fun emitWarmupLifecycleStage(modelId: String, stage: ModelLoadingStage, progress: Float) {
+        emitLoadingStage(
+            modelId = modelId,
+            modelVersion = artifactVerifier.manager().getActiveModelVersion(),
+            stage = stage,
+            progress = progress,
         )
     }
 
@@ -676,6 +730,79 @@ class RuntimeOrchestrator(
 
     companion object {
         const val ENABLE_ADB_FALLBACK_ENV: String = NativeJniLlamaCppBridge.ENABLE_ADB_FALLBACK_ENV
+    }
+
+    private fun ensureRuntimeLifecycleDispatcherStarted() {
+        if (runtimeLifecycleDispatcherStarted) {
+            return
+        }
+        synchronized(runtimeLifecycleDispatchLock) {
+            if (runtimeLifecycleDispatcherStarted) {
+                return
+            }
+            runtimeLifecycleDispatcherStarted = true
+            val dispatcherThread = Thread({
+                while (true) {
+                    val nextEvent = synchronized(runtimeLifecycleDispatchLock) {
+                        while (runtimeLifecycleDispatchQueue.isEmpty()) {
+                            runtimeLifecycleDispatchLock.wait()
+                        }
+                        runtimeLifecycleDispatchQueue.removeFirst()
+                    }
+                    val observers = synchronized(runtimeLifecycleObserverLock) {
+                        runtimeLifecycleObservers.values.toList()
+                    }
+                    observers.forEach { observer ->
+                        runCatching { observer(nextEvent) }
+                    }
+                }
+            }, "runtime-orchestrator-lifecycle")
+            dispatcherThread.isDaemon = true
+            dispatcherThread.start()
+        }
+    }
+
+    private fun emitRuntimeLifecycleEvent(event: ModelLifecycleEvent) {
+        currentRuntimeLifecycleEvent = event
+        ensureRuntimeLifecycleDispatcherStarted()
+        synchronized(runtimeLifecycleDispatchLock) {
+            runtimeLifecycleDispatchQueue.addLast(event)
+            runtimeLifecycleDispatchLock.notifyAll()
+        }
+    }
+
+    private fun emitLoadingStage(
+        modelId: String?,
+        modelVersion: String?,
+        stage: ModelLoadingStage,
+        progress: Float,
+    ) {
+        emitRuntimeLifecycleEvent(
+            ModelLifecycleEvent(
+                state = ModelLifecycleState.LOADING,
+                modelId = modelId,
+                modelVersion = modelVersion,
+                loadingDetail = defaultLoadingDetail(stage),
+                loadingStage = stage,
+                loadingProgress = progress.coerceIn(0f, 1f),
+            ),
+        )
+    }
+
+    private fun emitCompletedLifecycleEvent(
+        modelId: String?,
+        modelVersion: String?,
+    ) {
+        emitRuntimeLifecycleEvent(
+            ModelLifecycleEvent(
+                state = if (modelId.isNullOrBlank()) ModelLifecycleState.UNLOADED else ModelLifecycleState.LOADED,
+                modelId = modelId,
+                modelVersion = modelVersion,
+                loadingDetail = if (modelId.isNullOrBlank()) null else defaultLoadingDetail(ModelLoadingStage.COMPLETED),
+                loadingStage = if (modelId.isNullOrBlank()) null else ModelLoadingStage.COMPLETED,
+                loadingProgress = if (modelId.isNullOrBlank()) null else 1.0f,
+            ),
+        )
     }
 }
 
@@ -718,6 +845,18 @@ private fun sanitizeMetricSegment(raw: String): String {
         .replace(Regex("[^a-z0-9]+"), "_")
         .trim('_')
         .ifBlank { "unknown" }
+}
+
+private fun defaultLoadingDetail(stage: ModelLoadingStage): String {
+    return when (stage) {
+        ModelLoadingStage.PRECHECK -> "Checking model availability..."
+        ModelLoadingStage.UNLOADING_PREVIOUS -> "Releasing previous model..."
+        ModelLoadingStage.INITIALIZING_RUNTIME -> "Initializing runtime..."
+        ModelLoadingStage.LOADING_MODEL -> "Loading model..."
+        ModelLoadingStage.RESTORING_SESSION_CACHE -> "Restoring session cache..."
+        ModelLoadingStage.WARMING_UP -> "Warming up..."
+        ModelLoadingStage.COMPLETED -> "Loaded"
+    }
 }
 
 private fun jsonObject(vararg fields: Pair<String, Any?>): String {

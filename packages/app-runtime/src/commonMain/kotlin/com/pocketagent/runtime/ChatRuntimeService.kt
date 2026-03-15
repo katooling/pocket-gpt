@@ -34,9 +34,14 @@ data class ChatStreamPlan(
     val effectiveConfig: PerformanceRuntimeConfig,
 )
 
+data class ResolvedPerformancePlan(
+    val baseConfig: PerformanceRuntimeConfig,
+    val effectiveConfig: PerformanceRuntimeConfig,
+)
+
 data class PreparedChatStream(
     val plan: ChatStreamPlan,
-    internal val runtimeRequest: StreamChatRequestV2,
+    val runtimeRequest: StreamChatRequestV2,
 )
 
 class ChatStreamRequestPlanner(
