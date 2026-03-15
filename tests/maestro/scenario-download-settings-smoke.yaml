@@ -1,0 +1,39 @@
+appId: com.pocketagent.android
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    when:
+      visible: "Welcome to Pocket GPT"
+    commands:
+      - tapOn: "Next"
+      - extendedWaitUntil:
+          visible: "Step 2 of 3"
+          timeout: 20000
+      - tapOn: "Next"
+      - extendedWaitUntil:
+          visible: "Step 3 of 3"
+          timeout: 20000
+      - tapOn: "Get started"
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- assertVisible: "Offline-first"
+- tapOn: "Advanced"
+- extendedWaitUntil:
+    visible: "Advanced controls"
+    timeout: 20000
+- assertVisible: "Downloads"
+- assertVisible: "Wi-Fi only for large downloads"
+- tapOn: "Wi-Fi only for large downloads"
+- tapOn: "Wi-Fi only for large downloads"
+- takeScreenshot: "download-settings-smoke"
+- tapOn: "Open model setup"
+- extendedWaitUntil:
+    visible: "Model provisioning"
+    timeout: 30000
+- assertVisible: "Refresh all"
+- back
+- assertVisible: "Offline-first"

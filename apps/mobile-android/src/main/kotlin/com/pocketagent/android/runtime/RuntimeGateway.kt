@@ -105,6 +105,7 @@ class MvpRuntimeGateway(
         return planner.prepare(command)
     }
 
+    @Deprecated("Use prepareChatStream + streamPreparedChat.")
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
         return facade.streamChat(request)
             .onEach { event ->

@@ -15,6 +15,10 @@ appId: com.pocketagent.android
 - takeScreenshot: "scenario-b-01-ready"
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"
+- assertVisible: "Downloads"
+- assertVisible: "Wi-Fi only for large downloads"
+- tapOn: "Wi-Fi only for large downloads"
+- tapOn: "Wi-Fi only for large downloads"
 - tapOn: "QWEN_2B"
 - back
 - extendedWaitUntil:

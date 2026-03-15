@@ -15,9 +15,10 @@ Source of truth for execution commands and cloud guidance:
 3. `scenario-b.yaml`: post-onboarding advanced controls/tools/diagnostics journey
 4. `scenario-c.yaml`: post-onboarding continuity + image-aware journey
 5. `scenario-activation-send-smoke.yaml`: activation + send recovery smoke
-6. `scenario-first-run-download-chat.yaml`: clean install -> first-run download -> runtime ready -> send smoke
-7. `scenario-first-run-gpu-chat.yaml`: clean install -> first-run setup -> enable GPU acceleration -> send smoke
-8. `scenario-gpu-probe-status.yaml`: open Advanced controls and drive GPU probe status updates for log-based reason validation
+6. `scenario-download-settings-smoke.yaml`: clean install -> onboarding -> advanced settings -> download controls smoke
+7. `scenario-first-run-download-chat.yaml`: clean install -> first-run download -> runtime ready -> send smoke
+8. `scenario-first-run-gpu-chat.yaml`: clean install -> first-run setup -> enable GPU acceleration -> send smoke
+9. `scenario-gpu-probe-status.yaml`: open Advanced controls and drive GPU probe status updates for log-based reason validation
 
 ## Contract Notes
 
