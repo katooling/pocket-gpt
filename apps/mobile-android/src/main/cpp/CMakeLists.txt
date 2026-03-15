@@ -6,6 +6,9 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 
 if(NOT ANDROID)
     message(FATAL_ERROR "pocket_llama native build is Android-only.")
@@ -28,33 +31,10 @@ if(NOT EXISTS "${LLAMA_CPP_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "Missing vendored llama.cpp source at ${LLAMA_CPP_ROOT}.")
 endif()
 
-if(POCKETGPT_FORCE_ARM_I8MM AND ANDROID_ABI STREQUAL "arm64-v8a")
-    add_compile_options(
-        "$<$<COMPILE_LANGUAGE:C>:-march=armv8.2-a+dotprod+i8mm>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-march=armv8.2-a+dotprod+i8mm>"
-    )
-elseif(ANDROID_ABI STREQUAL "arm64-v8a")
-    # Keep runtime compatibility for older arm64 cores (e.g., Exynos 9611 class devices).
-    add_compile_options(
-        "$<$<COMPILE_LANGUAGE:C>:-march=armv8-a>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-march=armv8-a>"
-        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_FP16_VECTOR_ARITHMETIC>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_FP16_VECTOR_ARITHMETIC>"
-        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_DOTPROD>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_DOTPROD>"
-        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_MATMUL_INT8>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_MATMUL_INT8>"
-        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_SVE>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_SVE>"
-        "$<$<COMPILE_LANGUAGE:C>:-U__ARM_FEATURE_SME>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-U__ARM_FEATURE_SME>"
-    )
-endif()
-
 include(FetchContent)
 
 # Build a minimal llama.cpp footprint with OpenCL/Hexagon GPU offload support on Android.
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
@@ -62,8 +42,13 @@ set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
 set(GGML_CPU ON CACHE BOOL "" FORCE)
-set(GGML_CPU_REPACK OFF CACHE BOOL "" FORCE)
+set(GGML_CPU_REPACK ON CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+# Use statically linked ggml backends in Android app binaries.
+# Dynamic backend loading can report "no backends are loaded" when shared
+# backend artifacts are unavailable at runtime.
+set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+set(GGML_BACKEND_SHARED OFF CACHE BOOL "" FORCE)
 if(POCKETGPT_ENABLE_HEXAGON AND EXISTS "${LLAMA_CPP_ROOT}/ggml/src/ggml-hexagon/CMakeLists.txt")
     set(GGML_HEXAGON ON CACHE BOOL "" FORCE)
 else()
@@ -82,7 +67,19 @@ set(GGML_METAL OFF CACHE BOOL "" FORCE)
 set(GGML_RPC OFF CACHE BOOL "" FORCE)
 set(GGML_SYCL OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
-set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "" FORCE)
+if(POCKETGPT_FORCE_ARM_I8MM)
+    set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
+    set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+i8mm" CACHE STRING "" FORCE)
+elseif(GGML_BACKEND_DL)
+    # Build Android CPU backend variants and let ggml dispatch the best one at runtime.
+    set(GGML_CPU_ARM_ARCH "" CACHE STRING "" FORCE)
+    set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+else()
+    # GGML_CPU_ALL_VARIANTS requires dynamic backend loading. When backends are
+    # linked statically, keep a conservative baseline ARM target for compatibility.
+    set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
+    set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "" FORCE)
+endif()
 
 if(GGML_OPENCL)
     # Provide OpenCL headers + ICD loader for Android builds. This mirrors the
@@ -116,17 +113,54 @@ endif()
 
 add_subdirectory("${LLAMA_CPP_ROOT}" "${CMAKE_BINARY_DIR}/llama.cpp")
 
-add_library(pocket_llama SHARED
-    pocket_llama.cpp
+set(POCKET_LLAMA_COMPILE_FLAGS
+    -O3
+    -DNDEBUG
+    -fvectorize
+    -ffunction-sections
+    -fdata-sections
+    -flto
+)
+set(POCKET_LLAMA_LINK_FLAGS
+    -Wl,--gc-sections
+    -flto
 )
 
-target_include_directories(pocket_llama PRIVATE
-    "${LLAMA_CPP_ROOT}/include"
-    "${LLAMA_CPP_ROOT}/ggml/include"
-)
+function(configure_pocket_llama_target target_name)
+    target_include_directories(${target_name} PRIVATE
+        "${LLAMA_CPP_ROOT}/include"
+        "${LLAMA_CPP_ROOT}/ggml/include"
+    )
+    target_link_libraries(${target_name}
+        llama
+        android
+        log
+    )
+    target_compile_options(${target_name} PRIVATE ${POCKET_LLAMA_COMPILE_FLAGS})
+    target_link_options(${target_name} PRIVATE ${POCKET_LLAMA_LINK_FLAGS})
+endfunction()
 
-target_link_libraries(pocket_llama
-    llama
-    android
-    log
-)
+function(add_pocket_llama_variant target_name march_flag)
+    add_library(${target_name} SHARED
+        pocket_llama.cpp
+    )
+    configure_pocket_llama_target(${target_name})
+    if(NOT "${march_flag}" STREQUAL "")
+        target_compile_options(${target_name} PRIVATE
+            "$<$<COMPILE_LANGUAGE:C>:${march_flag}>"
+            "$<$<COMPILE_LANGUAGE:CXX>:${march_flag}>"
+        )
+    endif()
+endfunction()
+
+if(TARGET llama)
+    target_compile_options(llama PRIVATE ${POCKET_LLAMA_COMPILE_FLAGS})
+    target_link_options(llama PRIVATE ${POCKET_LLAMA_LINK_FLAGS})
+endif()
+
+add_pocket_llama_variant(pocket_llama "")
+add_pocket_llama_variant(pocket_llama_v8 "-march=armv8-a")
+add_pocket_llama_variant(pocket_llama_v8_2 "-march=armv8.2-a")
+add_pocket_llama_variant(pocket_llama_v8_2_dotprod "-march=armv8.2-a+dotprod")
+add_pocket_llama_variant(pocket_llama_v8_2_i8mm "-march=armv8.2-a+i8mm")
+add_pocket_llama_variant(pocket_llama_v8_2_dotprod_i8mm "-march=armv8.2-a+dotprod+i8mm")

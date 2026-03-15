@@ -496,19 +496,36 @@ bool shift_context_window_locked(
             label);
         return false;
     }
-    if (!llama_memory_seq_rm(memory, -1, n_keep, n_keep + discard)) {
+    const llama_pos context_tokens_before = std::max<llama_pos>(0, *context_tokens);
+    const llama_pos max_discard = std::max<llama_pos>(0, context_tokens_before - n_keep);
+    const llama_pos safe_discard = std::min(discard, max_discard);
+    if (safe_discard <= 0) {
+        __android_log_print(
+            ANDROID_LOG_WARN,
+            TAG,
+            "CONTEXT_SHIFT|label=%s|status=noop|n_keep=%d|discard=%d|context_tokens=%d",
+            label,
+            static_cast<int>(n_keep),
+            static_cast<int>(discard),
+            static_cast<int>(context_tokens_before));
+        return false;
+    }
+    if (!llama_memory_seq_rm(memory, -1, n_keep, n_keep + safe_discard)) {
         __android_log_print(
             ANDROID_LOG_WARN,
             TAG,
             "CONTEXT_SHIFT|label=%s|status=seq_rm_failed|n_keep=%d|discard=%d",
             label,
             static_cast<int>(n_keep),
-            static_cast<int>(discard));
+            static_cast<int>(safe_discard));
         return false;
     }
-    llama_memory_seq_add(memory, -1, n_keep + discard, -1, -discard);
-    erase_token_window(tracked_tokens, n_keep, discard);
-    *context_tokens = std::max(n_keep, *context_tokens - discard);
+    const llama_pos shift_from = n_keep + safe_discard;
+    if (shift_from < context_tokens_before) {
+        llama_memory_seq_add(memory, -1, shift_from, -1, -safe_discard);
+    }
+    erase_token_window(tracked_tokens, n_keep, safe_discard);
+    *context_tokens = std::max(n_keep, context_tokens_before - safe_discard);
     g_context_shift_count += 1;
     __android_log_print(
         ANDROID_LOG_INFO,
@@ -516,7 +533,7 @@ bool shift_context_window_locked(
         "CONTEXT_SHIFT|label=%s|n_keep=%d|discard=%d|remaining=%d",
         label,
         static_cast<int>(n_keep),
-        static_cast<int>(discard),
+        static_cast<int>(safe_discard),
         static_cast<int>(*context_tokens));
     return true;
 }
@@ -1162,18 +1179,33 @@ bool token_to_piece_dynamic(const llama_vocab * vocab, llama_token token, std::s
 enum class EmitUtf8Status {
     OK,
     CALLBACK_REJECTED,
-    UTF8_ERROR,
 };
 
 EmitUtf8Status emit_utf8_buffered(
     const std::string & piece,
     std::string * pending,
     const std::function<bool(const char *, size_t)> & emit_piece) {
+    constexpr char UTF8_REPLACEMENT_CHAR[] = "\xEF\xBF\xBD";
+    constexpr size_t UTF8_REPLACEMENT_CHAR_LEN = 3;
     pending->append(piece);
     while (!pending->empty()) {
         const Utf8PrefixResult prefix = utf8_valid_prefix(*pending);
         if (prefix.has_invalid) {
-            return EmitUtf8Status::UTF8_ERROR;
+            if (prefix.valid_prefix_len > 0) {
+                if (!emit_piece(pending->data(), prefix.valid_prefix_len)) {
+                    return EmitUtf8Status::CALLBACK_REJECTED;
+                }
+                pending->erase(0, prefix.valid_prefix_len);
+                continue;
+            }
+            // Some token pieces can contain raw bytes that are not standalone UTF-8.
+            // Keep streaming by replacing the invalid lead byte with U+FFFD.
+            pending->erase(0, 1);
+            if (!emit_piece(UTF8_REPLACEMENT_CHAR, UTF8_REPLACEMENT_CHAR_LEN)) {
+                return EmitUtf8Status::CALLBACK_REJECTED;
+            }
+            __android_log_print(ANDROID_LOG_WARN, TAG, "UTF8_STREAM|invalid_byte_replaced=true");
+            continue;
         }
         if (prefix.valid_prefix_len == 0) {
             return EmitUtf8Status::OK;
@@ -2237,15 +2269,23 @@ jint generate_locked(
         llama_sampler_reset(g_draft_sampler);
     }
 
-    const int safe_max_tokens = std::max(1, max_tokens);
+    const int runtime_context_size = static_cast<int>(
+        llama_n_ctx(g_context) > 0 ? llama_n_ctx(g_context) : static_cast<uint32_t>(g_runtime_context_size));
+    const int safe_max_tokens = std::clamp(max_tokens, 1, std::max(1, runtime_context_size - 1));
+    if (safe_max_tokens != max_tokens) {
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "GENERATION_CLAMP|max_tokens_requested=%d|max_tokens_applied=%d|n_ctx=%d",
+            max_tokens,
+            safe_max_tokens,
+            runtime_context_size);
+    }
     std::vector<llama_token> prompt_tokens = tokenize_prompt(vocab, prompt_text);
     if (prompt_tokens.empty()) {
         log_error("nativeGenerate failed: prompt tokenization returned zero tokens");
         return STREAM_STATUS_RUNTIME_ERROR;
     }
-
-    const int runtime_context_size = static_cast<int>(
-        llama_n_ctx(g_context) > 0 ? llama_n_ctx(g_context) : static_cast<uint32_t>(g_runtime_context_size));
     const int max_prompt_tokens = std::max(1, runtime_context_size - safe_max_tokens - 1);
 
     auto shift_prefill_window = [&](llama_context * context,
@@ -2539,11 +2579,6 @@ jint generate_locked(
                 g_cancel_requested.store(false, std::memory_order_release);
                 return STREAM_STATUS_CALLBACK_ERROR;
             }
-            if (emit_status == EmitUtf8Status::UTF8_ERROR) {
-                log_error("nativeGenerate failed: utf8 stream validation failed");
-                g_cancel_requested.store(false, std::memory_order_release);
-                return STREAM_STATUS_UTF8_STREAM_ERROR;
-            }
         }
         tracked_target_tokens.insert(tracked_target_tokens.end(), emitted_tokens.begin(), emitted_tokens.end());
         if (speculative_ready) {
@@ -2553,17 +2588,40 @@ jint generate_locked(
     }
 
     if (!utf8_pending.empty()) {
-        const Utf8PrefixResult final_prefix = utf8_valid_prefix(utf8_pending);
-        if (final_prefix.has_invalid || final_prefix.has_incomplete) {
-            log_error("nativeGenerate failed: trailing invalid/incomplete utf8 bytes");
-            g_cancel_requested.store(false, std::memory_order_release);
-            return STREAM_STATUS_UTF8_STREAM_ERROR;
-        }
-        if (final_prefix.valid_prefix_len > 0 &&
-            !emit_piece(utf8_pending.data(), final_prefix.valid_prefix_len)) {
-            log_error("nativeGenerate failed: callback rejected utf8 tail");
-            g_cancel_requested.store(false, std::memory_order_release);
-            return STREAM_STATUS_CALLBACK_ERROR;
+        constexpr char UTF8_REPLACEMENT_CHAR[] = "\xEF\xBF\xBD";
+        constexpr size_t UTF8_REPLACEMENT_CHAR_LEN = 3;
+        while (!utf8_pending.empty()) {
+            const Utf8PrefixResult final_prefix = utf8_valid_prefix(utf8_pending);
+            if (final_prefix.valid_prefix_len > 0) {
+                if (!emit_piece(utf8_pending.data(), final_prefix.valid_prefix_len)) {
+                    log_error("nativeGenerate failed: callback rejected utf8 tail");
+                    g_cancel_requested.store(false, std::memory_order_release);
+                    return STREAM_STATUS_CALLBACK_ERROR;
+                }
+                utf8_pending.erase(0, final_prefix.valid_prefix_len);
+                continue;
+            }
+            if (final_prefix.has_invalid) {
+                utf8_pending.erase(0, 1);
+                if (!emit_piece(UTF8_REPLACEMENT_CHAR, UTF8_REPLACEMENT_CHAR_LEN)) {
+                    log_error("nativeGenerate failed: callback rejected utf8 replacement tail");
+                    g_cancel_requested.store(false, std::memory_order_release);
+                    return STREAM_STATUS_CALLBACK_ERROR;
+                }
+                __android_log_print(ANDROID_LOG_WARN, TAG, "UTF8_STREAM|trailing_invalid_byte_replaced=true");
+                continue;
+            }
+            if (final_prefix.has_incomplete) {
+                utf8_pending.clear();
+                if (!emit_piece(UTF8_REPLACEMENT_CHAR, UTF8_REPLACEMENT_CHAR_LEN)) {
+                    log_error("nativeGenerate failed: callback rejected utf8 replacement tail");
+                    g_cancel_requested.store(false, std::memory_order_release);
+                    return STREAM_STATUS_CALLBACK_ERROR;
+                }
+                __android_log_print(ANDROID_LOG_WARN, TAG, "UTF8_STREAM|trailing_incomplete_replaced=true");
+                break;
+            }
+            break;
         }
     }
     if (cache_hit && !speculative_ready) {
