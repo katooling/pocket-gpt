@@ -25,7 +25,7 @@ class DefaultChatTemplateRenderer : ChatTemplateRenderer {
                 append("<|im_start|>")
                 append(message.role.toTemplateRole())
                 append('\n')
-                append(message.renderedText())
+                append(message.renderedContentWithToolCalls())
                 append('\n')
                 append("<|im_end|>")
                 append('\n')
@@ -34,7 +34,7 @@ class DefaultChatTemplateRenderer : ChatTemplateRenderer {
         }
         return RenderedPrompt(
             prompt = prompt,
-            stopSequences = listOf("<|im_end|>", "<|im_start|>user"),
+            stopSequences = listOf("<|im_end|>", "<|im_start|>user", "</tool_call>"),
             templateProfile = ModelTemplateProfile.CHATML,
         )
     }
@@ -90,5 +90,38 @@ private fun InteractionMessage.renderedText(): String {
         when (part) {
             is InteractionContentPart.Text -> part.text
         }
+    }
+}
+
+/**
+ * Renders message content including tool calls (for ChatML).
+ * - Assistant messages with tool calls append `<tool_call>` blocks after the text.
+ * - Tool role messages wrap their content in `<tool_response>` blocks.
+ * - All other messages render as plain text.
+ */
+private fun InteractionMessage.renderedContentWithToolCalls(): String {
+    val textContent = renderedText()
+    return when {
+        role == InteractionRole.ASSISTANT && toolCalls.isNotEmpty() -> {
+            buildString {
+                if (textContent.isNotBlank()) {
+                    append(textContent)
+                    append('\n')
+                }
+                toolCalls.forEach { call ->
+                    append("<tool_call>\n")
+                    append("{\"name\": \"${call.name}\", \"arguments\": ${call.argumentsJson}}")
+                    append("\n</tool_call>")
+                }
+            }
+        }
+        role == InteractionRole.TOOL -> {
+            buildString {
+                append("<tool_response>")
+                append(textContent)
+                append("</tool_response>")
+            }
+        }
+        else -> textContent
     }
 }

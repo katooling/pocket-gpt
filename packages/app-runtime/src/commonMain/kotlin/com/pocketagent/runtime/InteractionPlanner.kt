@@ -7,6 +7,7 @@ import kotlin.jvm.JvmName
 class InteractionPlanner(
     private val templateRegistry: ModelTemplateRegistry = ModelTemplateRegistry(),
     private val templateRenderer: ChatTemplateRenderer = DefaultChatTemplateRenderer(),
+    private val enabledToolNames: List<String> = emptyList(),
 ) {
     fun buildRenderedPrompt(
         modelId: String,
@@ -18,14 +19,16 @@ class InteractionPlanner(
     ): RenderedPrompt {
         val profile = templateRegistry.templateProfileForModel(modelId)
         val enrichedMessages = mutableListOf<InteractionMessage>()
+        val systemText = buildString {
+            append("task=$taskType battery=${deviceState.batteryPercent} thermal=${deviceState.thermalLevel} ram_gb=${deviceState.ramClassGb}")
+            if (enabledToolNames.isNotEmpty() && profile == ModelTemplateProfile.CHATML) {
+                append(ToolCallParser.renderToolDefinitionsXml(enabledToolNames))
+            }
+        }
         enrichedMessages += InteractionMessage(
             id = "system-task-${System.currentTimeMillis()}",
             role = InteractionRole.SYSTEM,
-            parts = listOf(
-                InteractionContentPart.Text(
-                    "task=$taskType battery=${deviceState.batteryPercent} thermal=${deviceState.thermalLevel} ram_gb=${deviceState.ramClassGb}",
-                ),
-            ),
+            parts = listOf(InteractionContentPart.Text(systemText)),
         )
         if (memorySnippets.isNotEmpty()) {
             enrichedMessages += InteractionMessage(
