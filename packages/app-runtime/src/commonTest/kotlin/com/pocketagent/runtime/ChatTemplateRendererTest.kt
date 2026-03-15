@@ -93,6 +93,34 @@ class ChatTemplateRendererTest {
     }
 
     @Test
+    fun `gemma profile uses model role for assistant and prepends system to first user`() {
+        val rendered = renderer.render(
+            messages = listOf(
+                InteractionMessage(
+                    role = InteractionRole.SYSTEM,
+                    parts = listOf(InteractionContentPart.Text("You are helpful.")),
+                ),
+                InteractionMessage(
+                    role = InteractionRole.USER,
+                    parts = listOf(InteractionContentPart.Text("hello")),
+                ),
+                InteractionMessage(
+                    role = InteractionRole.ASSISTANT,
+                    parts = listOf(InteractionContentPart.Text("Hi there!")),
+                ),
+            ),
+            modelProfile = ModelTemplateProfile.GEMMA,
+        )
+
+        assertTrue(rendered.prompt.startsWith("<bos>"), "should start with <bos>")
+        assertTrue(rendered.prompt.contains("<start_of_turn>user\nYou are helpful."), "system text prepended to first user turn")
+        assertTrue(rendered.prompt.contains("<start_of_turn>model\nHi there!"), "assistant rendered as model role")
+        assertTrue(rendered.prompt.endsWith("<start_of_turn>model\n"), "generation prompt uses model role")
+        assertEquals(listOf("<end_of_turn>", "<start_of_turn>user"), rendered.stopSequences)
+        assertEquals(ModelTemplateProfile.GEMMA, rendered.templateProfile)
+    }
+
+    @Test
     fun `chatml stop sequences include tool_call closer`() {
         val rendered = renderer.render(
             messages = listOf(

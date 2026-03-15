@@ -16,6 +16,7 @@ class DefaultChatTemplateRenderer : ChatTemplateRenderer {
             ModelTemplateProfile.CHATML -> renderChatMl(messages)
             ModelTemplateProfile.LLAMA3 -> renderLlama3(messages)
             ModelTemplateProfile.PHI -> renderPhi(messages)
+            ModelTemplateProfile.GEMMA -> renderGemma(messages)
         }
     }
 
@@ -72,6 +73,42 @@ class DefaultChatTemplateRenderer : ChatTemplateRenderer {
             prompt = prompt,
             stopSequences = listOf("<|end|>", "<|endoftext|>"),
             templateProfile = ModelTemplateProfile.PHI,
+        )
+    }
+
+    private fun renderGemma(messages: List<InteractionMessage>): RenderedPrompt {
+        // Gemma uses "model" instead of "assistant" and has no native system role.
+        // System messages are prepended to the first user message.
+        val systemText = messages
+            .filter { it.role == InteractionRole.SYSTEM }
+            .joinToString("\n") { it.renderedText() }
+        val nonSystemMessages = messages.filter { it.role != InteractionRole.SYSTEM }
+        var systemPrepended = systemText.isBlank()
+
+        val prompt = buildString {
+            append("<bos>")
+            nonSystemMessages.forEach { message ->
+                val role = when (message.role) {
+                    InteractionRole.ASSISTANT -> "model"
+                    else -> message.role.toTemplateRole()
+                }
+                append("<start_of_turn>")
+                append(role)
+                append("\n")
+                if (!systemPrepended && message.role == InteractionRole.USER) {
+                    append(systemText)
+                    append("\n\n")
+                    systemPrepended = true
+                }
+                append(message.renderedText())
+                append("<end_of_turn>\n")
+            }
+            append("<start_of_turn>model\n")
+        }
+        return RenderedPrompt(
+            prompt = prompt,
+            stopSequences = listOf("<end_of_turn>", "<start_of_turn>user"),
+            templateProfile = ModelTemplateProfile.GEMMA,
         )
     }
 }
