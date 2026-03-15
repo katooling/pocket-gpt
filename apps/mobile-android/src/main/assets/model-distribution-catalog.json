@@ -53,6 +53,22 @@
       ]
     },
     {
+      "modelId": "qwen3-0.6b-q4_k_m",
+      "displayName": "Qwen3 0.6B (Q4_K_M)",
+      "versions": [
+        {
+          "version": "q4_k_m",
+          "downloadUrl": "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
+          "expectedSha256": "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "",
+          "verificationPolicy": "INTEGRITY_ONLY",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 396705472
+        }
+      ]
+    },
+    {
       "modelId": "smollm3-3b-q4_k_m",
       "displayName": "SmolLM3 3B (Q4_K_M)",
       "versions": [
