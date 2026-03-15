@@ -9,6 +9,41 @@ import kotlin.test.assertTrue
 
 class NativeJniLlamaCppBridgeTest {
     @Test
+    fun `auto native library selection falls back to baseline artifact`() {
+        val attemptedLibraries = mutableListOf<String>()
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello"),
+            libraryLoader = { library ->
+                attemptedLibraries += library
+                if (library != "pocket_llama") {
+                    error("missing $library")
+                }
+            },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertTrue(bridge.isReady())
+        assertEquals("pocket_llama", attemptedLibraries.last())
+        assertTrue(attemptedLibraries.contains("pocket_llama_v8"))
+    }
+
+    @Test
+    fun `explicit library name bypasses cpu feature candidate selection`() {
+        val attemptedLibraries = mutableListOf<String>()
+        val bridge = NativeJniLlamaCppBridge(
+            libraryName = "pocket_llama_custom",
+            nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello"),
+            libraryLoader = { library -> attemptedLibraries += library },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+
+        assertTrue(bridge.isReady())
+        assertEquals(listOf("pocket_llama_custom"), attemptedLibraries)
+    }
+
+    @Test
     fun `uses native runtime when library is available`() {
         val nativeApi = FakeNativeApi(initializeOk = true, loadOk = true, generatedText = "native hello", peakRssMb = 1536.0)
         val fallback = FakeFallbackBridge()

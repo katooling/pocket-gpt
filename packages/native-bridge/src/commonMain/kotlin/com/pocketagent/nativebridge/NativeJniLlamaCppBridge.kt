@@ -1,6 +1,7 @@
 package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
+import java.io.File
 import kotlin.concurrent.thread
 
 data class BridgeError(
@@ -48,6 +49,8 @@ class NativeJniLlamaCppBridge(
     private var lastAppliedDraftGpuLayers: Int? = null
     @Volatile
     private var lastGpuLoadRetryCount: Int? = null
+    @Volatile
+    private var loadedNativeLibraryName: String? = null
 
     init {
         ensureLifecycleDispatcherStarted()
@@ -774,12 +777,7 @@ class NativeJniLlamaCppBridge(
             return
         }
         initialized = true
-        val nativeReady = runCatching {
-            libraryLoader(libraryName)
-            nativeApi.initialize()
-        }.onFailure { error ->
-            recordBridgeError("JNI_LIBRARY_OR_INIT_EXCEPTION", error)
-        }.getOrElse { false }
+        val nativeReady = initializeNativeRuntime()
         if (nativeReady) {
             runtimeReady = true
             usingFallback = false
@@ -802,6 +800,62 @@ class NativeJniLlamaCppBridge(
         if (lastBridgeError == null) {
             recordBridgeError("RUNTIME_UNAVAILABLE", "Native and fallback runtimes unavailable.")
         }
+    }
+
+    private fun initializeNativeRuntime(): Boolean {
+        val candidates = resolveNativeLibraryCandidates()
+        val candidateSummary = candidates.joinToString(separator = ",")
+        for (candidate in candidates) {
+            val loaded = runCatching {
+                libraryLoader(candidate)
+                true
+            }.onFailure { error ->
+                logBridge("JNI_LIBRARY_LOAD_FAILED", "library=$candidate|reason=${error.message ?: error::class.simpleName}")
+            }.getOrElse { false }
+            if (!loaded) {
+                continue
+            }
+
+            val initializedRuntime = runCatching { nativeApi.initialize() }
+                .onFailure { error ->
+                    recordBridgeError("JNI_LIBRARY_OR_INIT_EXCEPTION", error)
+                }
+                .getOrElse { false }
+            if (initializedRuntime) {
+                loadedNativeLibraryName = candidate
+                logBridge("JNI_LIBRARY_SELECTED", "library=$candidate|candidates=$candidateSummary")
+                return true
+            }
+            recordBridgeError("JNI_INIT_FAILED", "native initialize returned false|library=$candidate")
+            return false
+        }
+        if (lastBridgeError == null) {
+            recordBridgeError("JNI_LIBRARY_OR_INIT_EXCEPTION", "Unable to load native library from: $candidateSummary")
+        }
+        return false
+    }
+
+    private fun resolveNativeLibraryCandidates(): List<String> {
+        if (libraryName != DEFAULT_NATIVE_LIBRARY_NAME) {
+            return listOf(libraryName)
+        }
+        val features = detectCpuFeatures()
+        val candidates = linkedSetOf<String>()
+        if (features.hasDotProd && features.hasI8mm) {
+            candidates += LIBRARY_V8_2_DOTPROD_I8MM
+        }
+        if (features.hasDotProd) {
+            candidates += LIBRARY_V8_2_DOTPROD
+        }
+        if (features.hasI8mm) {
+            candidates += LIBRARY_V8_2_I8MM
+        }
+        if (features.hasFp16) {
+            candidates += LIBRARY_V8_2
+        }
+        candidates += LIBRARY_V8
+        candidates += DEFAULT_NATIVE_LIBRARY_NAME
+        return candidates.toList()
     }
 
     private fun clearBridgeError() {
@@ -1511,6 +1565,13 @@ class NativeJniLlamaCppBridge(
     }
 
     companion object {
+        private const val DEFAULT_NATIVE_LIBRARY_NAME = "pocket_llama"
+        private const val LIBRARY_V8 = "pocket_llama_v8"
+        private const val LIBRARY_V8_2 = "pocket_llama_v8_2"
+        private const val LIBRARY_V8_2_DOTPROD = "pocket_llama_v8_2_dotprod"
+        private const val LIBRARY_V8_2_I8MM = "pocket_llama_v8_2_i8mm"
+        private const val LIBRARY_V8_2_DOTPROD_I8MM = "pocket_llama_v8_2_dotprod_i8mm"
+        private const val CPU_INFO_PATH = "/proc/cpuinfo"
         const val ENABLE_ADB_FALLBACK_ENV: String = "POCKETGPT_ENABLE_ADB_FALLBACK"
         const val ENABLE_GPU_OFFLOAD_ENV: String = "POCKETGPT_ENABLE_GPU_OFFLOAD"
         private val COMPILED_BACKEND_REGEX = "\"compiled_backend\"\\s*:\\s*\"([^\"]*)\"".toRegex(
@@ -1570,6 +1631,37 @@ class NativeJniLlamaCppBridge(
 
         private const val LOAD_PROGRESS_EMIT_INTERVAL_MS = 250L
         private const val LOAD_PROGRESS_EMIT_STEP = 0.05f
+        private val CPU_FEATURE_TOKEN_REGEX = Regex("[a-z0-9_]+")
+
+        private data class CpuFeatureSnapshot(
+            val hasFp16: Boolean,
+            val hasDotProd: Boolean,
+            val hasI8mm: Boolean,
+        )
+
+        private fun detectCpuFeatures(): CpuFeatureSnapshot {
+            val rawText = runCatching { File(CPU_INFO_PATH).readText() }
+                .getOrElse { "" }
+                .lowercase()
+            if (rawText.isBlank()) {
+                return CpuFeatureSnapshot(
+                    hasFp16 = false,
+                    hasDotProd = false,
+                    hasI8mm = false,
+                )
+            }
+            val tokens = CPU_FEATURE_TOKEN_REGEX.findAll(rawText)
+                .map { match -> match.value }
+                .toSet()
+            val hasFp16 = tokens.contains("fphp") || tokens.contains("fp16")
+            val hasDotProd = tokens.contains("dotprod") || tokens.contains("asimddp")
+            val hasI8mm = tokens.contains("i8mm")
+            return CpuFeatureSnapshot(
+                hasFp16 = hasFp16,
+                hasDotProd = hasDotProd,
+                hasI8mm = hasI8mm,
+            )
+        }
 
         private fun defaultLoadingDetail(stage: ModelLoadingStage): String {
             return when (stage) {
