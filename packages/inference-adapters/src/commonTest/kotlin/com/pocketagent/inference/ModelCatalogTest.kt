@@ -14,7 +14,7 @@ class ModelCatalogTest {
             ModelCatalog.defaultGetReadyModelId(ModelRuntimeProfile.PROD),
         )
         assertEquals(
-            ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
+            ModelCatalog.QWEN_3_5_0_8B_Q4,
             ModelCatalog.defaultGetReadyModelId(ModelRuntimeProfile.DEV_FAST),
         )
     }
@@ -24,8 +24,7 @@ class ModelCatalogTest {
         val supported = ModelCatalog.bridgeSupportedModels().toSet()
         assertTrue(supported.contains(ModelCatalog.QWEN_3_5_0_8B_Q4))
         assertTrue(supported.contains(ModelCatalog.QWEN_3_5_2B_Q4))
-        assertTrue(supported.contains(ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M))
-        assertTrue(supported.contains(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M))
+        assertTrue(supported.contains(ModelCatalog.SMOLLM3_3B_Q4_K_M))
         assertTrue(!supported.contains(ModelCatalog.SMOKE_ECHO_120M))
     }
 
@@ -75,12 +74,8 @@ class ModelCatalogTest {
             ModelCatalog.modelIdForRoutingMode(RoutingMode.QWEN_2B),
         )
         assertEquals(
-            ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
-            ModelCatalog.modelIdForRoutingMode(RoutingMode.SMOLLM2_360M),
-        )
-        assertEquals(
-            ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
-            ModelCatalog.modelIdForRoutingMode(RoutingMode.SMOLLM2_135M),
+            ModelCatalog.SMOLLM3_3B_Q4_K_M,
+            ModelCatalog.modelIdForRoutingMode(RoutingMode.SMOLLM3_3B),
         )
         assertNull(ModelCatalog.modelIdForRoutingMode(RoutingMode.AUTO))
     }
@@ -92,8 +87,8 @@ class ModelCatalogTest {
             ModelCatalog.routingModesForModel(ModelCatalog.QWEN_3_5_0_8B_Q4),
         )
         assertEquals(
-            setOf(RoutingMode.SMOLLM2_360M),
-            ModelCatalog.routingModesForModel(ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M),
+            setOf(RoutingMode.AUTO, RoutingMode.SMOLLM3_3B),
+            ModelCatalog.routingModesForModel(ModelCatalog.SMOLLM3_3B_Q4_K_M),
         )
     }
 

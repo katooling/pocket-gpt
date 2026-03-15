@@ -12,7 +12,7 @@ class AdaptiveRoutingPolicyTest {
             RoutingCase(
                 taskType = "long_text",
                 deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 12),
-                expectedModel = ModelCatalog.QWEN_3_5_2B_Q4,
+                expectedModel = ModelCatalog.SMOLLM3_3B_Q4_K_M,
                 expectedContextBudget = 8192,
             ),
             RoutingCase(
@@ -30,13 +30,13 @@ class AdaptiveRoutingPolicyTest {
             RoutingCase(
                 taskType = "short_text",
                 deviceState = DeviceState(batteryPercent = 19, thermalLevel = 3, ramClassGb = 12),
-                expectedModel = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                expectedModel = ModelCatalog.QWEN_3_5_0_8B_Q4,
                 expectedContextBudget = 2048,
             ),
             RoutingCase(
                 taskType = "short_text",
                 deviceState = DeviceState(batteryPercent = 20, thermalLevel = 3, ramClassGb = 12),
-                expectedModel = ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
+                expectedModel = ModelCatalog.QWEN_3_5_0_8B_Q4,
                 expectedContextBudget = 4096,
             ),
             RoutingCase(
@@ -48,13 +48,13 @@ class AdaptiveRoutingPolicyTest {
             RoutingCase(
                 taskType = "short_text",
                 deviceState = DeviceState(batteryPercent = 85, thermalLevel = 3, ramClassGb = 12),
-                expectedModel = ModelCatalog.QWEN_3_5_2B_Q4,
+                expectedModel = ModelCatalog.SMOLLM3_3B_Q4_K_M,
                 expectedContextBudget = 4096,
             ),
             RoutingCase(
                 taskType = "short_text",
                 deviceState = DeviceState(batteryPercent = 90, thermalLevel = 6, ramClassGb = 12),
-                expectedModel = ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
+                expectedModel = ModelCatalog.QWEN_3_5_0_8B_Q4,
                 expectedContextBudget = 4096,
             ),
             RoutingCase(

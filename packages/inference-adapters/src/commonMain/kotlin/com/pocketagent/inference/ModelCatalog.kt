@@ -49,8 +49,7 @@ object ModelCatalog {
     const val SMOKE_ECHO_120M = "smoke-echo-120m-q4"
     const val QWEN_3_5_0_8B_Q4 = "qwen3.5-0.8b-q4"
     const val QWEN_3_5_2B_Q4 = "qwen3.5-2b-q4"
-    const val SMOLLM2_360M_INSTRUCT_Q4_K_M = "smollm2-360m-instruct-q4_k_m"
-    const val SMOLLM2_135M_INSTRUCT_Q4_K_M = "smollm2-135m-instruct-q4_k_m"
+    const val SMOLLM3_3B_Q4_K_M = "smollm3-3b-q4_k_m"
 
     private val descriptors: List<ModelDescriptor> = listOf(
         ModelDescriptor(
@@ -113,36 +112,25 @@ object ModelCatalog {
             explicitRoutingModes = setOf(RoutingMode.QWEN_2B),
         ),
         ModelDescriptor(
-            modelId = SMOLLM2_360M_INSTRUCT_Q4_K_M,
-            tier = ModelTier.FAST,
+            modelId = SMOLLM3_3B_Q4_K_M,
+            tier = ModelTier.BASELINE,
             bridgeSupported = true,
             autoRoutingEnabled = true,
-            capabilities = setOf(ModelCapability.SHORT_TEXT),
-            minRamGb = 4,
-            qualityRank = 1,
-            speedRank = 3,
-            fallbackPriority = 30,
-            startupCandidate = false,
-            startupRequired = false,
-            defaultGetReadyProfiles = setOf(ModelRuntimeProfile.DEV_FAST),
-            envKeyToken = "SMOLLM2_360M_INSTRUCT_Q4_K_M",
-            explicitRoutingModes = setOf(RoutingMode.SMOLLM2_360M),
-        ),
-        ModelDescriptor(
-            modelId = SMOLLM2_135M_INSTRUCT_Q4_K_M,
-            tier = ModelTier.DEBUG,
-            bridgeSupported = true,
-            autoRoutingEnabled = true,
-            capabilities = setOf(ModelCapability.SHORT_TEXT),
-            minRamGb = 2,
-            qualityRank = 0,
-            speedRank = 4,
-            fallbackPriority = 40,
-            startupCandidate = false,
+            capabilities = setOf(
+                ModelCapability.SHORT_TEXT,
+                ModelCapability.LONG_TEXT,
+                ModelCapability.REASONING,
+            ),
+            minRamGb = 6,
+            qualityRank = 4,
+            speedRank = 0,
+            fallbackPriority = 15,
+            startupCandidate = true,
             startupRequired = false,
             defaultGetReadyProfiles = emptySet(),
-            envKeyToken = "SMOLLM2_135M_INSTRUCT_Q4_K_M",
-            explicitRoutingModes = setOf(RoutingMode.SMOLLM2_135M),
+            envKeyToken = "SMOLLM3_3B_Q4_K_M",
+            includeAutoRoutingMode = true,
+            explicitRoutingModes = setOf(RoutingMode.SMOLLM3_3B),
         ),
     )
 
@@ -166,10 +154,7 @@ object ModelCatalog {
         QWEN_3_5_2B_Q4,
     )
 
-    fun fastTierModels(): List<String> = listOf(
-        SMOLLM2_360M_INSTRUCT_Q4_K_M,
-        SMOLLM2_135M_INSTRUCT_Q4_K_M,
-    )
+    fun fastTierModels(): List<String> = emptyList()
 
     fun modelDescriptors(): List<ModelDescriptor> = descriptors
 
