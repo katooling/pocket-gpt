@@ -568,6 +568,7 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
                         RoutingMode.QWEN_0_8B -> "qwen-0.8b"
                         RoutingMode.QWEN_2B -> "qwen-2b"
                         RoutingMode.SMOLLM3_3B -> "smollm3-3b"
+                        RoutingMode.PHI_4_MINI -> "phi-4-mini"
                     },
                     text = "runtime response for $latestUserText",
                     firstTokenLatencyMs = 42,

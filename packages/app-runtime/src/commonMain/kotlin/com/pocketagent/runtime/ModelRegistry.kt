@@ -111,7 +111,10 @@ class ModelRegistry(
                 .map { descriptor ->
                     RuntimeModelMetadata(
                         modelId = descriptor.modelId,
-                        templateProfile = ModelTemplateProfile.CHATML,
+                        templateProfile = when (descriptor.modelId) {
+                            ModelCatalog.PHI_4_MINI_Q4_K_M -> ModelTemplateProfile.PHI
+                            else -> ModelTemplateProfile.CHATML
+                        },
                         tier = descriptor.tier.toRuntimeTier(),
                         startupRequirement = when {
                             descriptor.startupRequired -> StartupRequirement.REQUIRED

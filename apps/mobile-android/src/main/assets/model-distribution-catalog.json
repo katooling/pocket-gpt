@@ -67,6 +67,38 @@
           "fileSizeBytes": 1915306528
         }
       ]
+    },
+    {
+      "modelId": "smollm3-3b-ud-iq2_xxs",
+      "displayName": "SmolLM3 3B (IQ2_XXS) — Draft",
+      "versions": [
+        {
+          "version": "ud_iq2_xxs",
+          "downloadUrl": "https://huggingface.co/unsloth/SmolLM3-3B-GGUF/resolve/main/SmolLM3-3B-UD-IQ2_XXS.gguf",
+          "expectedSha256": "",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "",
+          "verificationPolicy": "INTEGRITY_ONLY",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 955000000
+        }
+      ]
+    },
+    {
+      "modelId": "phi-4-mini-instruct-q4_k_m",
+      "displayName": "Phi-4 Mini Instruct (Q4_K_M)",
+      "versions": [
+        {
+          "version": "q4_k_m",
+          "downloadUrl": "https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf",
+          "expectedSha256": "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a",
+          "provenanceIssuer": "huggingface/unsloth",
+          "provenanceSignature": "",
+          "verificationPolicy": "INTEGRITY_ONLY",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 2491874272
+        }
+      ]
     }
   ]
 }

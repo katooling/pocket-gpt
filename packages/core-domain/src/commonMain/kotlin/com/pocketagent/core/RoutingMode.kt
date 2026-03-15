@@ -5,4 +5,5 @@ enum class RoutingMode {
     QWEN_0_8B,
     QWEN_2B,
     SMOLLM3_3B,
+    PHI_4_MINI,
 }

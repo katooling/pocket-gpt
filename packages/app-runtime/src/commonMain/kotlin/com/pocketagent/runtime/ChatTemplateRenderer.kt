@@ -15,6 +15,7 @@ class DefaultChatTemplateRenderer : ChatTemplateRenderer {
         return when (modelProfile) {
             ModelTemplateProfile.CHATML -> renderChatMl(messages)
             ModelTemplateProfile.LLAMA3 -> renderLlama3(messages)
+            ModelTemplateProfile.PHI -> renderPhi(messages)
         }
     }
 
@@ -54,6 +55,23 @@ class DefaultChatTemplateRenderer : ChatTemplateRenderer {
             prompt = prompt,
             stopSequences = listOf("<|eot_id|>", "<|start_header_id|>user<|end_header_id|>"),
             templateProfile = ModelTemplateProfile.LLAMA3,
+        )
+    }
+    private fun renderPhi(messages: List<InteractionMessage>): RenderedPrompt {
+        val prompt = buildString {
+            messages.forEach { message ->
+                append("<|")
+                append(message.role.toTemplateRole())
+                append("|>")
+                append(message.renderedText())
+                append("<|end|>")
+            }
+            append("<|assistant|>")
+        }
+        return RenderedPrompt(
+            prompt = prompt,
+            stopSequences = listOf("<|end|>", "<|endoftext|>"),
+            templateProfile = ModelTemplateProfile.PHI,
         )
     }
 }

@@ -1,6 +1,7 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.nativebridge.FlashAttnMode
 import com.pocketagent.nativebridge.KvCacheType
 
@@ -99,7 +100,7 @@ data class PerformanceRuntimeConfig(
                     threads = cpu.coerceAtMost(8),
                     batch = 768,
                     ubatch = 768,
-                    nCtx = 4096,
+                    nCtx = 8192,
                 )
             }
 
@@ -139,7 +140,7 @@ data class PerformanceRuntimeConfig(
                 xtcProbability = 0.0f,
                 seed = -1,
                 speculativeEnabled = profile != RuntimePerformanceProfile.BATTERY,
-                speculativeDraftModelId = null,
+                speculativeDraftModelId = ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS,
                 speculativeMaxDraftTokens = if (profile == RuntimePerformanceProfile.FAST) 8 else 6,
                 speculativeMinDraftTokens = 2,
                 speculativeDraftGpuLayers = defaultDraftGpuLayers(

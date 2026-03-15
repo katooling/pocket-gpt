@@ -25,6 +25,7 @@ class ModelCatalogTest {
         assertTrue(supported.contains(ModelCatalog.QWEN_3_5_0_8B_Q4))
         assertTrue(supported.contains(ModelCatalog.QWEN_3_5_2B_Q4))
         assertTrue(supported.contains(ModelCatalog.SMOLLM3_3B_Q4_K_M))
+        assertTrue(supported.contains(ModelCatalog.PHI_4_MINI_Q4_K_M))
         assertTrue(!supported.contains(ModelCatalog.SMOKE_ECHO_120M))
     }
 
@@ -76,6 +77,10 @@ class ModelCatalogTest {
         assertEquals(
             ModelCatalog.SMOLLM3_3B_Q4_K_M,
             ModelCatalog.modelIdForRoutingMode(RoutingMode.SMOLLM3_3B),
+        )
+        assertEquals(
+            ModelCatalog.PHI_4_MINI_Q4_K_M,
+            ModelCatalog.modelIdForRoutingMode(RoutingMode.PHI_4_MINI),
         )
         assertNull(ModelCatalog.modelIdForRoutingMode(RoutingMode.AUTO))
     }

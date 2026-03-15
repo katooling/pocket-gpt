@@ -51,4 +51,5 @@ data class RenderedPrompt(
 enum class ModelTemplateProfile {
     CHATML,
     LLAMA3,
+    PHI,
 }

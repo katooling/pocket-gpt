@@ -12,7 +12,7 @@ class AdaptiveRoutingPolicyTest {
             RoutingCase(
                 taskType = "long_text",
                 deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 12),
-                expectedModel = ModelCatalog.SMOLLM3_3B_Q4_K_M,
+                expectedModel = ModelCatalog.PHI_4_MINI_Q4_K_M,
                 expectedContextBudget = 8192,
             ),
             RoutingCase(
@@ -48,7 +48,7 @@ class AdaptiveRoutingPolicyTest {
             RoutingCase(
                 taskType = "short_text",
                 deviceState = DeviceState(batteryPercent = 85, thermalLevel = 3, ramClassGb = 12),
-                expectedModel = ModelCatalog.SMOLLM3_3B_Q4_K_M,
+                expectedModel = ModelCatalog.PHI_4_MINI_Q4_K_M,
                 expectedContextBudget = 4096,
             ),
             RoutingCase(

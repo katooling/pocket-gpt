@@ -50,6 +50,8 @@ object ModelCatalog {
     const val QWEN_3_5_0_8B_Q4 = "qwen3.5-0.8b-q4"
     const val QWEN_3_5_2B_Q4 = "qwen3.5-2b-q4"
     const val SMOLLM3_3B_Q4_K_M = "smollm3-3b-q4_k_m"
+    const val SMOLLM3_3B_UD_IQ2_XXS = "smollm3-3b-ud-iq2_xxs"
+    const val PHI_4_MINI_Q4_K_M = "phi-4-mini-instruct-q4_k_m"
 
     private val descriptors: List<ModelDescriptor> = listOf(
         ModelDescriptor(
@@ -131,6 +133,42 @@ object ModelCatalog {
             envKeyToken = "SMOLLM3_3B_Q4_K_M",
             includeAutoRoutingMode = true,
             explicitRoutingModes = setOf(RoutingMode.SMOLLM3_3B),
+        ),
+        ModelDescriptor(
+            modelId = SMOLLM3_3B_UD_IQ2_XXS,
+            tier = ModelTier.DEBUG,
+            bridgeSupported = true,
+            autoRoutingEnabled = false,
+            capabilities = setOf(ModelCapability.SHORT_TEXT),
+            minRamGb = 4,
+            qualityRank = 0,
+            speedRank = 3,
+            fallbackPriority = 99,
+            startupCandidate = false,
+            startupRequired = false,
+            defaultGetReadyProfiles = emptySet(),
+            envKeyToken = "SMOLLM3_3B_UD_IQ2_XXS",
+        ),
+        ModelDescriptor(
+            modelId = PHI_4_MINI_Q4_K_M,
+            tier = ModelTier.BASELINE,
+            bridgeSupported = true,
+            autoRoutingEnabled = true,
+            capabilities = setOf(
+                ModelCapability.SHORT_TEXT,
+                ModelCapability.LONG_TEXT,
+                ModelCapability.REASONING,
+            ),
+            minRamGb = 8,
+            qualityRank = 5,
+            speedRank = -1,
+            fallbackPriority = 18,
+            startupCandidate = true,
+            startupRequired = false,
+            defaultGetReadyProfiles = emptySet(),
+            envKeyToken = "PHI_4_MINI_INSTRUCT_Q4_K_M",
+            includeAutoRoutingMode = true,
+            explicitRoutingModes = setOf(RoutingMode.PHI_4_MINI),
         ),
     )
 
