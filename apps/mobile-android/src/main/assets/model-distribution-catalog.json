@@ -91,12 +91,12 @@
         {
           "version": "ud_iq2_xxs",
           "downloadUrl": "https://huggingface.co/unsloth/SmolLM3-3B-GGUF/resolve/main/SmolLM3-3B-UD-IQ2_XXS.gguf",
-          "expectedSha256": "",
+          "expectedSha256": "7de8576f0723f22b2e4510646c45caa046e9cd352563cababe63e13c4f6553c5",
           "provenanceIssuer": "huggingface/unsloth",
           "provenanceSignature": "",
           "verificationPolicy": "INTEGRITY_ONLY",
           "runtimeCompatibility": "android-arm64-v8a",
-          "fileSizeBytes": 955000000
+          "fileSizeBytes": 955159072
         }
       ]
     },
@@ -113,6 +113,22 @@
           "verificationPolicy": "INTEGRITY_ONLY",
           "runtimeCompatibility": "android-arm64-v8a",
           "fileSizeBytes": 2491874272
+        }
+      ]
+    },
+    {
+      "modelId": "gemma-2-2b-it-q4_k_m",
+      "displayName": "Gemma 2 2B IT (Q4_K_M)",
+      "versions": [
+        {
+          "version": "q4_k_m",
+          "downloadUrl": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+          "expectedSha256": "e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787",
+          "provenanceIssuer": "huggingface/bartowski",
+          "provenanceSignature": "",
+          "verificationPolicy": "INTEGRITY_ONLY",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 1708582752
         }
       ]
     }

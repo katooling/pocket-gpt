@@ -54,6 +54,7 @@ object ModelCatalog {
     const val SMOLLM3_3B_UD_IQ2_XXS = "smollm3-3b-ud-iq2_xxs"
     const val QWEN3_0_6B_Q4_K_M = "qwen3-0.6b-q4_k_m"
     const val PHI_4_MINI_Q4_K_M = "phi-4-mini-instruct-q4_k_m"
+    const val GEMMA_2_2B_Q4_K_M = "gemma-2-2b-it-q4_k_m"
 
     private val descriptors: List<ModelDescriptor> = listOf(
         ModelDescriptor(
@@ -193,6 +194,28 @@ object ModelCatalog {
             chatTemplateId = "PHI",
             includeAutoRoutingMode = true,
             explicitRoutingModes = setOf(RoutingMode.PHI_4_MINI),
+        ),
+        ModelDescriptor(
+            modelId = GEMMA_2_2B_Q4_K_M,
+            tier = ModelTier.BASELINE,
+            bridgeSupported = true,
+            autoRoutingEnabled = false,
+            capabilities = setOf(
+                ModelCapability.SHORT_TEXT,
+                ModelCapability.LONG_TEXT,
+                ModelCapability.REASONING,
+            ),
+            minRamGb = 8,
+            qualityRank = 6,
+            speedRank = 0,
+            fallbackPriority = 22,
+            startupCandidate = true,
+            startupRequired = false,
+            defaultGetReadyProfiles = emptySet(),
+            envKeyToken = "GEMMA_2_2B_IT_Q4_K_M",
+            chatTemplateId = "GEMMA",
+            includeAutoRoutingMode = false,
+            explicitRoutingModes = setOf(RoutingMode.GEMMA_2_2B),
         ),
     )
 
