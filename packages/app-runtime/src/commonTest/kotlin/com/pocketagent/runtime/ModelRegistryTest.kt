@@ -16,6 +16,7 @@ class ModelRegistryTest {
         assertTrue(metadata.containsKey(ModelCatalog.QWEN_3_5_0_8B_Q4))
         assertTrue(metadata.containsKey(ModelCatalog.QWEN_3_5_2B_Q4))
         assertTrue(metadata.containsKey(ModelCatalog.SMOLLM3_3B_Q4_K_M))
+        assertTrue(metadata.containsKey(ModelCatalog.PHI_4_MINI_Q4_K_M))
         assertEquals(
             ModelCatalog.QWEN_3_5_0_8B_Q4,
             registry.defaultGetReadyModelId(profile = ModelRuntimeProfile.PROD),
@@ -31,7 +32,7 @@ class ModelRegistryTest {
         val policy = ModelRegistry.default().startupPolicy(profile = ModelRuntimeProfile.PROD)
 
         assertEquals(
-            listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4, ModelCatalog.SMOLLM3_3B_Q4_K_M),
+            listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4, ModelCatalog.SMOLLM3_3B_Q4_K_M, ModelCatalog.PHI_4_MINI_Q4_K_M),
             policy.candidateModelIds,
         )
         assertEquals(emptyList(), policy.requiredModelIds)
@@ -73,6 +74,7 @@ class ModelRegistryTest {
                 ModelCatalog.QWEN_3_5_0_8B_Q4,
                 ModelCatalog.QWEN_3_5_2B_Q4,
                 ModelCatalog.SMOLLM3_3B_Q4_K_M,
+                ModelCatalog.PHI_4_MINI_Q4_K_M,
             ),
             policy.candidateModelIds.toSet(),
         )
@@ -91,6 +93,10 @@ class ModelRegistryTest {
         assertEquals(
             setOf(RoutingMode.AUTO, RoutingMode.SMOLLM3_3B),
             metadataByModelId.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M).routingModes,
+        )
+        assertEquals(
+            setOf(RoutingMode.AUTO, RoutingMode.PHI_4_MINI),
+            metadataByModelId.getValue(ModelCatalog.PHI_4_MINI_Q4_K_M).routingModes,
         )
     }
 }

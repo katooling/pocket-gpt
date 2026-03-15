@@ -125,6 +125,7 @@ internal class SendMessageUseCase(
             failureMessage = "Policy module rejected inference event type.",
         )
         val startedMs = System.currentTimeMillis()
+        val thinkingFilter = ThinkingBlockFilter()
 
         val effectivePerformanceConfig = runtimePlan.effectiveConfig
         val thermalThrottled = effectivePerformanceConfig != executionContext.performanceConfig
@@ -178,15 +179,22 @@ internal class SendMessageUseCase(
                     if (timeoutGuard.timedOut()) {
                         return@execute
                     }
-                    if (firstTokenLatencyMs < 0) {
-                        firstTokenLatencyMs = System.currentTimeMillis() - startedMs
-                        timeoutGuard.finish()
+                    val visibleText = thinkingFilter.filterToken(token)
+                    if (visibleText.isNotEmpty()) {
+                        if (firstTokenLatencyMs < 0) {
+                            firstTokenLatencyMs = System.currentTimeMillis() - startedMs
+                            timeoutGuard.finish()
+                        }
+                        request.onToken(visibleText)
                     }
-                    request.onToken(token)
                 },
             )
             finishReason = executionResult.finishReason
-            responseText = executionResult.text.trim()
+            val flushed = thinkingFilter.flush()
+            if (flushed.isNotEmpty()) {
+                request.onToken(flushed)
+            }
+            responseText = ThinkingBlockFilter.stripThinkingBlocks(executionResult.text).trim()
             if (timeoutGuard.timedOut()) {
                 throw RuntimeGenerationTimeoutException(executionContext.requestTimeoutMs)
             }

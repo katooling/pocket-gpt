@@ -13,6 +13,7 @@ class ModelTemplateRegistryTest {
         assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.QWEN_3_5_0_8B_Q4))
         assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.QWEN_3_5_2B_Q4))
         assertEquals(ModelTemplateProfile.CHATML, registry.templateProfileForModel(ModelCatalog.SMOLLM3_3B_Q4_K_M))
+        assertEquals(ModelTemplateProfile.PHI, registry.templateProfileForModel(ModelCatalog.PHI_4_MINI_Q4_K_M))
     }
 
     @Test
