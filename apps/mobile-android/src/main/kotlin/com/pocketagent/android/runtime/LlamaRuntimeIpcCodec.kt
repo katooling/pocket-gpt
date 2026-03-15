@@ -40,7 +40,7 @@ internal fun RuntimeGenerationConfig.toBundle(): Bundle {
         putInt(LlamaRuntimeIpc.EXTRA_GPU_LAYERS, gpuLayers)
         putString(LlamaRuntimeIpc.EXTRA_GPU_BACKEND, gpuBackend.name)
         putBoolean(LlamaRuntimeIpc.EXTRA_STRICT_GPU_OFFLOAD, strictGpuOffload)
-        putInt(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, kvCacheType.code)
+        putInt(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, compatibilityKvCacheType().code)
         putFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TEMPERATURE, sampling.temperature)
         putInt(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_K, sampling.topK)
         putFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_P, sampling.topP)
@@ -69,7 +69,8 @@ internal fun Bundle.toRuntimeGenerationConfig(): RuntimeGenerationConfig {
             ?.let { raw -> runCatching { GpuExecutionBackend.valueOf(raw) }.getOrNull() }
             ?: GpuExecutionBackend.AUTO,
         strictGpuOffload = getBoolean(LlamaRuntimeIpc.EXTRA_STRICT_GPU_OFFLOAD, true),
-        kvCacheType = KvCacheType.fromCode(getInt(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, KvCacheType.Q8_0.code)),
+        kvCacheTypeK = KvCacheType.fromCode(getInt(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, KvCacheType.Q8_0.code)),
+        kvCacheTypeV = KvCacheType.fromCode(getInt(LlamaRuntimeIpc.EXTRA_KV_QUANTIZED, KvCacheType.Q8_0.code)),
         sampling = com.pocketagent.nativebridge.RuntimeSamplingConfig(
             temperature = getFloat(LlamaRuntimeIpc.EXTRA_SAMPLING_TEMPERATURE, 0.7f),
             topK = getInt(LlamaRuntimeIpc.EXTRA_SAMPLING_TOP_K, 40),
@@ -85,6 +86,13 @@ internal fun Bundle.toRuntimeGenerationConfig(): RuntimeGenerationConfig {
         useMlock = getBoolean(LlamaRuntimeIpc.EXTRA_USE_MLOCK, false),
         nKeep = getInt(LlamaRuntimeIpc.EXTRA_N_KEEP, 128),
     )
+}
+
+private fun RuntimeGenerationConfig.compatibilityKvCacheType(): KvCacheType {
+    return when {
+        kvCacheTypeK == kvCacheTypeV -> kvCacheTypeK
+        else -> kvCacheTypeV
+    }
 }
 
 internal fun GenerationResult.toBundle(): Bundle {

@@ -117,7 +117,8 @@ internal class GpuProbeRunner(
                 // Force safe defaults for probing: use F16 KV cache since
                 // OpenCL lacks SET_ROWS support needed for quantized types, and the
                 // probe should test the most compatible configuration.
-                kvCacheType = com.pocketagent.nativebridge.KvCacheType.F16,
+                kvCacheTypeK = com.pocketagent.nativebridge.KvCacheType.F16,
+                kvCacheTypeV = com.pocketagent.nativebridge.KvCacheType.F16,
             )
             bridge.setRuntimeGenerationConfig(config)
             val loaded = runCatching {

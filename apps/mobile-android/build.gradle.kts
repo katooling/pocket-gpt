@@ -1,7 +1,41 @@
+import org.gradle.api.GradleException
+
 plugins {
     id("com.android.application")
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+data class SourceBoundaryRule(
+    val description: String,
+    val roots: List<String>,
+    val forbiddenPatterns: List<String>,
+    val allowSuffixes: Set<String> = emptySet(),
+    val excludeFileNames: Set<String> = emptySet(),
+)
+
+fun Project.sourceBoundaryOffenders(rule: SourceBoundaryRule): List<String> {
+    return rule.roots
+        .asSequence()
+        .map(::file)
+        .filter { it.exists() }
+        .flatMap { root ->
+            fileTree(root) {
+                include("**/*.kt")
+            }.files.asSequence()
+        }
+        .filter { file -> file.name !in rule.excludeFileNames }
+        .filter { file ->
+            val source = file.readText()
+            val hasForbiddenPattern = rule.forbiddenPatterns.any(source::contains)
+            val allowedPath = rule.allowSuffixes.any { suffix ->
+                file.invariantSeparatorsPath.endsWith(suffix)
+            }
+            hasForbiddenPattern && !allowedPath
+        }
+        .map { it.invariantSeparatorsPath }
+        .sorted()
+        .toList()
 }
 
 fun String.isTruthyFlag(): Boolean = trim().lowercase() in setOf("1", "true", "yes")
@@ -158,4 +192,103 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+val verifyAndroidArchitecture by tasks.registering {
+    group = "verification"
+    description = "Fails the build when Android architecture boundary rules regress."
+
+    doLast {
+        val rules = listOf(
+            SourceBoundaryRule(
+                description = "UI package must not reference AppRuntimeDependencies",
+                roots = listOf("src/main/kotlin/com/pocketagent/android/ui"),
+                forbiddenPatterns = listOf("AppRuntimeDependencies"),
+            ),
+            SourceBoundaryRule(
+                description = "Only sanctioned gateways may reference AppRuntimeDependencies",
+                roots = listOf("src/main/kotlin/com/pocketagent/android"),
+                forbiddenPatterns = listOf("AppRuntimeDependencies"),
+                allowSuffixes = setOf(
+                    "com/pocketagent/android/AppDependencies.kt",
+                    "com/pocketagent/android/runtime/ProvisioningGateway.kt",
+                    "com/pocketagent/android/runtime/RuntimeBootstrapper.kt",
+                    "com/pocketagent/android/runtime/modelmanager/ModelDownloadCancelReceiver.kt",
+                ),
+            ),
+            SourceBoundaryRule(
+                description = "Runtime package must not depend on UI packages",
+                roots = listOf("src/main/kotlin/com/pocketagent/android/runtime"),
+                forbiddenPatterns = listOf("com.pocketagent.android.ui"),
+            ),
+            SourceBoundaryRule(
+                description = "ui/state must not host persistence implementation details",
+                roots = listOf("src/main/kotlin/com/pocketagent/android/ui/state"),
+                forbiddenPatterns = listOf(
+                    "SQLiteOpenHelper",
+                    "PersistedChatStateCodec",
+                    "AndroidSessionPersistence",
+                    "SQLiteChatSessionRepository",
+                    "interface SessionPersistence",
+                    "sealed interface SessionStateLoadResult",
+                    "StoredChatState",
+                ),
+            ),
+            SourceBoundaryRule(
+                description = "UI packages must not import nativebridge types directly",
+                roots = listOf("src/main/kotlin/com/pocketagent/android/ui"),
+                forbiddenPatterns = listOf("import com.pocketagent.nativebridge."),
+            ),
+            SourceBoundaryRule(
+                description = "Android layer must use ChatRuntimeService directly",
+                roots = listOf(
+                    "src/main/kotlin/com/pocketagent/android",
+                    "src/test/kotlin/com/pocketagent/android",
+                    "src/androidTest/kotlin/com/pocketagent/android",
+                ),
+                forbiddenPatterns = listOf(
+                    "import com.pocketagent.android.runtime.RuntimeGateway",
+                    ": RuntimeGateway",
+                    "typealias RuntimeGateway",
+                ),
+                excludeFileNames = setOf("ArchitectureBoundaryTest.kt"),
+            ),
+            SourceBoundaryRule(
+                description = "Android layer must prepare streams via ChatRuntimeService.prepareChatStream",
+                roots = listOf(
+                    "src/main/kotlin/com/pocketagent/android",
+                    "src/test/kotlin/com/pocketagent/android",
+                ),
+                forbiddenPatterns = listOf("buildStreamChatRequest("),
+                excludeFileNames = setOf("ArchitectureBoundaryTest.kt"),
+            ),
+            SourceBoundaryRule(
+                description = "Deprecated StreamUserMessageRequest must stay isolated to the legacy runtime adapter only",
+                roots = listOf(
+                    "src/main/kotlin/com/pocketagent/android",
+                    "src/test/kotlin/com/pocketagent/android",
+                    "src/androidTest/kotlin/com/pocketagent/android",
+                ),
+                forbiddenPatterns = listOf("StreamUserMessageRequest"),
+                allowSuffixes = setOf("com/pocketagent/android/HotSwappableRuntimeFacade.kt"),
+                excludeFileNames = setOf("ArchitectureBoundaryTest.kt"),
+            ),
+        )
+
+        val failures = rules.mapNotNull { rule ->
+            val offenders = sourceBoundaryOffenders(rule)
+            if (offenders.isEmpty()) {
+                null
+            } else {
+                "${rule.description}. Found: ${offenders.joinToString()}"
+            }
+        }
+        if (failures.isNotEmpty()) {
+            throw GradleException(failures.joinToString(separator = "\n\n"))
+        }
+    }
+}
+
+tasks.named("check").configure {
+    dependsOn(verifyAndroidArchitecture)
 }

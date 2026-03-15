@@ -21,7 +21,7 @@ import com.pocketagent.android.ui.ModelProvisioningViewModelFactory
 import com.pocketagent.android.ui.PocketAgentApp
 import com.pocketagent.android.ui.PocketAgentTheme
 import com.pocketagent.android.ui.controllers.AndroidTelemetryDeviceStateProvider
-import com.pocketagent.android.ui.state.AndroidSessionPersistence
+import com.pocketagent.android.data.chat.AndroidSessionPersistence
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,13 +84,13 @@ class MainActivity : ComponentActivity() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         val evicted = when {
-            level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> runtimeGateway.evictResidentModel("trim_complete")
-            level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> runtimeGateway.evictResidentModel("trim_background")
-            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> runtimeGateway.evictResidentModel("trim_critical")
+            level >= TRIM_MEMORY_COMPLETE_LEVEL -> runtimeGateway.evictResidentModel("trim_complete")
+            level >= TRIM_MEMORY_BACKGROUND_LEVEL -> runtimeGateway.evictResidentModel("trim_background")
+            level >= TRIM_MEMORY_RUNNING_CRITICAL_LEVEL -> runtimeGateway.evictResidentModel("trim_critical")
             else -> {
                 when {
-                    level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> runtimeGateway.shortenKeepAlive(15_000L)
-                    level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> runtimeGateway.shortenKeepAlive(60_000L)
+                    level >= TRIM_MEMORY_RUNNING_LOW_LEVEL -> runtimeGateway.shortenKeepAlive(15_000L)
+                    level >= TRIM_MEMORY_RUNNING_MODERATE_LEVEL -> runtimeGateway.shortenKeepAlive(60_000L)
                     level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> runtimeGateway.shortenKeepAlive(120_000L)
                 }
                 false
@@ -121,5 +121,13 @@ class MainActivity : ComponentActivity() {
             val availMb = memInfo.availMem.toDouble() / (1024.0 * 1024.0)
             runtimeTuning.memoryBudgetTracker.recordAvailableMemoryAfterRelease(availMb)
         }
+    }
+
+    private companion object {
+        private const val TRIM_MEMORY_RUNNING_MODERATE_LEVEL = 5
+        private const val TRIM_MEMORY_RUNNING_LOW_LEVEL = 10
+        private const val TRIM_MEMORY_RUNNING_CRITICAL_LEVEL = 15
+        private const val TRIM_MEMORY_BACKGROUND_LEVEL = 40
+        private const val TRIM_MEMORY_COMPLETE_LEVEL = 80
     }
 }

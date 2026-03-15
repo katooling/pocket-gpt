@@ -33,10 +33,7 @@ interface ChatRuntimeService {
     fun prepareChatStream(command: ChatStreamCommand): PreparedChatStream =
         ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L).prepare(command)
 
-    fun streamPreparedChat(prepared: PreparedChatStream): Flow<ChatStreamEvent> = streamChat(prepared.runtimeRequest)
-
-    @Deprecated("Use prepareChatStream + streamPreparedChat.")
-    fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent>
+    fun streamPreparedChat(prepared: PreparedChatStream): Flow<ChatStreamEvent>
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean
     fun runTool(toolName: String, jsonArgs: String): ToolExecutionResult
@@ -79,8 +76,6 @@ interface ChatRuntimeService {
     }
 }
 
-typealias RuntimeGateway = ChatRuntimeService
-
 class MvpRuntimeGateway(
     private val facade: MvpRuntimeFacade,
     private val deviceGpuOffloadSupport: DeviceGpuOffloadSupport = DeviceGpuOffloadSupport.ASSUME_SUPPORTED,
@@ -105,8 +100,8 @@ class MvpRuntimeGateway(
         return planner.prepare(command)
     }
 
-    @Deprecated("Use prepareChatStream + streamPreparedChat.")
-    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+    override fun streamPreparedChat(prepared: PreparedChatStream): Flow<ChatStreamEvent> {
+        val request = prepared.runtimeRequest
         return facade.streamChat(request)
             .onEach { event ->
                 if (event is ChatStreamEvent.Failed) {

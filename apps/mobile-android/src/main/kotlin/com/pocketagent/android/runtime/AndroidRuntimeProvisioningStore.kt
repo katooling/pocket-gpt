@@ -874,7 +874,7 @@ class AndroidRuntimeProvisioningStore(
     }
 
     private fun describeStorageRoot(root: File): String {
-        val isExternalMedia = context.externalMediaDirs
+        val isExternalMedia = externalStorageRoots()
             .asSequence()
             .filterNotNull()
             .any { candidate -> isPathWithin(root, candidate) || isPathWithin(candidate, root) }
@@ -945,7 +945,7 @@ class AndroidRuntimeProvisioningStore(
     }
 
     private fun managedStorageRoot(): File {
-        val externalRoot = context.externalMediaDirs
+        val externalRoot = externalStorageRoots()
             .asSequence()
             .filterNotNull()
             .firstOrNull { candidate ->
@@ -958,6 +958,10 @@ class AndroidRuntimeProvisioningStore(
             }
         val root = externalRoot ?: context.filesDir
         return root
+    }
+
+    private fun externalStorageRoots(): Array<File?> {
+        return arrayOf(context.getExternalFilesDir(null))
     }
 
     private fun mirrorInstalledModelToDownloads(

@@ -62,7 +62,8 @@ object ModelMemoryEstimator {
                 modelFileSizeBytes = modelFileSizeBytes,
                 gguf = gguf,
                 nCtx = nCtx,
-                kvCacheType = kvCacheType,
+                kvCacheTypeK = kvCacheType,
+                kvCacheTypeV = kvCacheType,
                 nUbatch = nUbatch,
                 availableMemoryBytes = availableMemoryBytes,
             )
@@ -78,7 +79,8 @@ object ModelMemoryEstimator {
         modelFileSizeBytes: Long,
         gguf: GgufFields,
         nCtx: Int,
-        kvCacheType: KvCacheType,
+        kvCacheTypeK: KvCacheType,
+        kvCacheTypeV: KvCacheType,
         nUbatch: Int,
         availableMemoryBytes: Long?,
     ): EstimationResult {
@@ -94,8 +96,8 @@ object ModelMemoryEstimator {
                 vocabSize = gguf.nVocab,
             ),
             nCtx = nCtx,
-            kvCacheTypeK = kvCacheType,
-            kvCacheTypeV = kvCacheType,
+            kvCacheTypeK = kvCacheTypeK,
+            kvCacheTypeV = kvCacheTypeV,
             nUbatch = nUbatch,
             availableMemoryMb = availableMemoryBytes?.toDouble()?.div(MB),
         )

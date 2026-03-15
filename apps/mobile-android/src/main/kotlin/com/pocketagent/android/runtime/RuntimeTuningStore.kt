@@ -103,7 +103,7 @@ class RuntimeTuningDecider(
     ): RuntimeTuningRecommendation {
         val previous = current ?: RuntimeTuningRecommendation(
             gpuLayers = appliedConfig.gpuLayers,
-            kvCacheType = appliedConfig.kvCacheType,
+            kvCacheType = appliedConfig.kvCacheTypeV,
             speculativeEnabled = appliedConfig.speculativeEnabled,
             speculativeDraftGpuLayers = appliedConfig.speculativeDraftGpuLayers,
             useMmap = appliedConfig.useMmap,
@@ -111,7 +111,7 @@ class RuntimeTuningDecider(
             nUbatch = appliedConfig.nUbatch,
         )
         var gpuLayers = previous.gpuLayers ?: appliedConfig.gpuLayers
-        var kvCacheType = previous.kvCacheType ?: appliedConfig.kvCacheType
+        var kvCacheType = previous.kvCacheType ?: appliedConfig.kvCacheTypeV
         var speculativeEnabled = previous.speculativeEnabled ?: appliedConfig.speculativeEnabled
         var speculativeDraftGpuLayers = previous.speculativeDraftGpuLayers ?: appliedConfig.speculativeDraftGpuLayers
         var useMmap = previous.useMmap ?: appliedConfig.useMmap
@@ -343,7 +343,8 @@ class AndroidRuntimeTuningStore(
             } else {
                 0
             },
-            kvCacheType = recommendation.kvCacheType ?: baseConfig.kvCacheType,
+            kvCacheTypeK = recommendation.kvCacheType ?: baseConfig.kvCacheTypeK,
+            kvCacheTypeV = recommendation.kvCacheType ?: baseConfig.kvCacheTypeV,
             speculativeEnabled = speculativeEnabled,
             speculativeDraftGpuLayers = if (baseConfig.gpuEnabled && speculativeEnabled) {
                 (recommendation.speculativeDraftGpuLayers ?: baseConfig.speculativeDraftGpuLayers)
