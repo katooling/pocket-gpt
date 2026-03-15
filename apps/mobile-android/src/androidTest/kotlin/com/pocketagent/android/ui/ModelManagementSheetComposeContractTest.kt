@@ -24,7 +24,9 @@ import com.pocketagent.android.runtime.modelmanager.ModelDistributionModel
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
+import com.pocketagent.core.RoutingMode
 import com.pocketagent.nativebridge.ModelLifecycleState
+import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.runtime.RuntimeLoadedModel
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -82,6 +84,8 @@ class ModelManagementSheetComposeContractTest {
             MaterialTheme {
                 RuntimeModelSheet(
                     state = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
                     onLoadVersion = { _, _ -> },
                     onLoadLastUsedModel = {},
                     onOffloadModel = {},
@@ -112,6 +116,8 @@ class ModelManagementSheetComposeContractTest {
                         snapshot = sampleSnapshot(installed = false),
                         lifecycle = RuntimeModelLifecycleSnapshot.initial(),
                     ),
+                    modelLoadingState = ModelLoadingState.Idle(),
+                    routingMode = RoutingMode.AUTO,
                     onLoadVersion = { _, _ -> },
                     onLoadLastUsedModel = {},
                     onOffloadModel = {},
@@ -158,6 +164,18 @@ private fun sampleRuntimeState(
         lifecycle = lifecycle,
         isImporting = false,
         statusMessage = "Runtime ready",
+    )
+}
+
+private fun sampleRuntimeLoadingState(): ModelLoadingState {
+    val loadedModel = RuntimeLoadedModel(
+        modelId = "qwen3.5-0.8b-q4",
+        modelVersion = "q4_0",
+    )
+    return ModelLoadingState.Loaded(
+        model = loadedModel,
+        lastUsedModel = loadedModel,
+        readyAtEpochMs = 1L,
     )
 }
 
