@@ -57,9 +57,7 @@ Android runtime mode selection:
 
 1. `POCKETGPT_ANDROID_RUNTIME_MODE=remote` -> remote Android runtime service bridge.
 2. `POCKETGPT_ANDROID_RUNTIME_MODE=in_process` -> in-process JNI bridge.
-3. Default mode:
-   - debug builds: `in_process`
-   - non-debug builds: `remote`
+3. Default mode is `in_process` when `POCKETGPT_ANDROID_RUNTIME_MODE` is unset.
 
 Send unlock rule:
 

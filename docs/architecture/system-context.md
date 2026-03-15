@@ -50,7 +50,7 @@ AndroidUI -. explicit_opt_in_only .-> RemoteModelCatalog
 ## Android Runtime Mode Contract
 
 1. Runtime mode is resolved by `POCKETGPT_ANDROID_RUNTIME_MODE` (`remote` or `in_process`).
-2. Default mode is `in_process` for debug builds and `remote` for non-debug builds.
+2. Default mode is `in_process` when `POCKETGPT_ANDROID_RUNTIME_MODE` is unset.
 3. Backend labels surfaced in app/runtime include:
    - `NATIVE_JNI`
    - `REMOTE_ANDROID_SERVICE`

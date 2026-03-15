@@ -44,7 +44,7 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
 3. Android runtime mode contract:
    - `POCKETGPT_ANDROID_RUNTIME_MODE=remote` uses the remote Android runtime service bridge.
    - `POCKETGPT_ANDROID_RUNTIME_MODE=in_process` uses in-process JNI bridge.
-   - Default is `remote` on non-debug builds and `in_process` on debug builds.
+   - Default is `in_process` when `POCKETGPT_ANDROID_RUNTIME_MODE` is unset.
 4. Stream event phase labels map to UI detail copy:
    - `CHAT_START` -> `Preparing request...`
    - `MODEL_LOAD` -> `Loading model...`

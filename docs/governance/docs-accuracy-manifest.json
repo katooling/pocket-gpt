@@ -42,7 +42,7 @@
           "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModelSendWorkflow.kt",
           "must_contain": [
             "timelineProjector.latestAssistantRequestId",
-            "sendFlow.buildStreamChatRequest(",
+            "sendFlow.prepareChatStream(",
             "previousResponseId = previousResponseId"
           ]
         },
@@ -71,7 +71,7 @@
           "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ToolDialog.kt",
           "must_contain": [
             "onUsePrompt",
-            "calculate 4*9"
+            "ui_tool_calculator_prompt"
           ]
         },
         {
@@ -84,7 +84,13 @@
         {
           "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt",
           "must_contain": [
-            "fun prefillComposer(text: String)",
+            "fun prefillComposer(text: String)"
+          ]
+        },
+        {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModelRuntimeWorkflow.kt",
+          "must_contain": [
+            "fun ChatViewModel.prefillComposerInternal(text: String)",
             "isToolDialogOpen = false"
           ]
         }
@@ -155,7 +161,7 @@
           "must_contain": [
             "ANDROID_RUNTIME_MODE_REMOTE",
             "ANDROID_RUNTIME_MODE_IN_PROCESS",
-            "defaultMode = if (debugBuild) ANDROID_RUNTIME_MODE_IN_PROCESS else ANDROID_RUNTIME_MODE_REMOTE"
+            "val defaultMode = ANDROID_RUNTIME_MODE_IN_PROCESS"
           ]
         },
         {
@@ -216,8 +222,7 @@
             "RuntimeKeepAlivePreference.ONE_MINUTE",
             "RuntimeKeepAlivePreference.FIVE_MINUTES",
             "RuntimeKeepAlivePreference.FIFTEEN_MINUTES",
-            "RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY",
-            "DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS"
+            "RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY"
           ]
         },
         {
