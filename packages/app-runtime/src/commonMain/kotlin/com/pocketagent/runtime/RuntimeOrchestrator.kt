@@ -18,13 +18,16 @@ import com.pocketagent.inference.RuntimeImageInputModule
 import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
-import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.nativebridge.ModelLifecycleEvent
 import com.pocketagent.nativebridge.ModelLifecycleState
 import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
+import com.pocketagent.nativebridge.ManagedRuntimePort
+import com.pocketagent.nativebridge.RuntimeInferencePorts
+import com.pocketagent.nativebridge.createDefaultRuntimeInferenceModule
+import com.pocketagent.nativebridge.runtimeInferencePorts
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolModule
 import java.io.File
@@ -39,7 +42,7 @@ import kotlin.math.abs
 
 class RuntimeOrchestrator(
     private val conversationModule: ConversationModule = InMemoryConversationModule(),
-    private val inferenceModule: InferenceModule = LlamaCppInferenceModule(),
+    private val inferenceModule: InferenceModule = createDefaultRuntimeInferenceModule(),
     private val routingModule: RoutingModule = AdaptiveRoutingPolicy(),
     private val policyModule: PolicyModule = DefaultPolicyModule(offlineOnly = true),
     private val observabilityModule: ObservabilityModule = InMemoryObservabilityModule(),
@@ -53,6 +56,7 @@ class RuntimeOrchestrator(
     private val memoryBudgetTracker: MemoryBudgetTracker? = null,
     private val recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
 ) : RuntimeContainer {
+    private val runtimeInferencePorts: RuntimeInferencePorts = inferenceModule.runtimeInferencePorts()
     private val runtimeLifecycleObserverLock = Any()
     private val runtimeLifecycleDispatchLock = Object()
     private val runtimeLifecycleObservers: MutableMap<Int, (ModelLifecycleEvent) -> Unit> = mutableMapOf()
@@ -71,6 +75,7 @@ class RuntimeOrchestrator(
     private val inferenceExecutor = InferenceExecutor(
         inferenceModule = inferenceModule,
         runtimeConfig = runtimeConfig,
+        runtimeInferencePorts = runtimeInferencePorts,
     )
     private val toolLoopCoordinator = ToolLoopCoordinator(toolModule)
     private val runtimePlanResolver = RuntimePlanResolver(
@@ -86,6 +91,7 @@ class RuntimeOrchestrator(
     private val lastResolvedRuntimePlan = AtomicReference<ResolvedRuntimePlan?>(null)
     private val runtimeResidencyManager = RuntimeResidencyManager(
         inferenceModule = inferenceModule,
+        runtimeInferencePorts = runtimeInferencePorts,
         onAfterLoad = ::restoreSessionCache,
         onBeforeUnload = ::saveSessionCache,
     )
@@ -113,6 +119,7 @@ class RuntimeOrchestrator(
         runtimeResidencyManager = runtimeResidencyManager,
         cancelByRequest = ::cancelGenerationByRequest,
         cancelBySession = ::cancelGeneration,
+        runtimeInferencePorts = runtimeInferencePorts,
     )
     private val toolExecutionUseCase = ToolExecutionUseCase(
         policyModule = policyModule,
@@ -150,14 +157,16 @@ class RuntimeOrchestrator(
         runtimeResidencyManager = runtimeResidencyManager,
         runtimePlanResolver = runtimePlanResolver,
         onWarmupStage = ::emitWarmupLifecycleStage,
+        runtimeInferencePorts = runtimeInferencePorts,
     )
 
     init {
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
-        if (nativeInference != null) {
-            artifactVerifier.registerRuntimeModelPaths(nativeInference)
-            currentRuntimeLifecycleEvent = nativeInference.currentModelLifecycleState()
-            nativeInference.observeModelLifecycleState(::emitRuntimeLifecycleEvent)
+        val managedRuntime = runtimeInferencePorts.managedRuntime
+        val modelRegistry = runtimeInferencePorts.modelRegistry
+        if (managedRuntime != null && modelRegistry != null) {
+            artifactVerifier.registerRuntimeModelPaths(modelRegistry)
+            currentRuntimeLifecycleEvent = managedRuntime.currentModelLifecycleState()
+            managedRuntime.observeModelLifecycleState(::emitRuntimeLifecycleEvent)
         }
     }
 
@@ -167,15 +176,8 @@ class RuntimeOrchestrator(
         sessionId: SessionId,
         messages: List<InteractionMessage>,
         taskType: String,
-        deviceState: DeviceState,
-        maxTokens: Int,
-        keepModelLoaded: Boolean,
+        context: RuntimeRequestContext,
         onToken: (String) -> Unit,
-        requestTimeoutMs: Long,
-        requestId: String,
-        previousResponseId: String?,
-        performanceConfig: PerformanceRuntimeConfig,
-        residencyPolicy: ModelResidencyPolicy,
     ): ChatResponse {
         val latestUserText = messages
             .asReversed()
@@ -194,15 +196,60 @@ class RuntimeOrchestrator(
                 userText = latestUserText,
                 messages = messages,
                 taskType = taskType,
+                executionContext = context,
+                onToken = onToken,
+                routingMode = routingMode,
+            ),
+        )
+    }
+
+    override fun sendChatMessages(
+        sessionId: SessionId,
+        messages: List<InteractionMessage>,
+        taskType: String,
+        deviceState: DeviceState,
+        maxTokens: Int,
+        keepModelLoaded: Boolean,
+        onToken: (String) -> Unit,
+        requestTimeoutMs: Long,
+        requestId: String,
+        previousResponseId: String?,
+        performanceConfig: PerformanceRuntimeConfig,
+        residencyPolicy: ModelResidencyPolicy,
+    ): ChatResponse {
+        return sendChatMessages(
+            sessionId = sessionId,
+            messages = messages,
+            taskType = taskType,
+            context = RuntimeRequestContext(
                 deviceState = deviceState,
                 maxTokens = maxTokens,
                 keepModelLoaded = keepModelLoaded,
-                onToken = onToken,
                 requestTimeoutMs = requestTimeoutMs,
                 requestId = requestId,
                 previousResponseId = previousResponseId,
                 performanceConfig = performanceConfig,
                 residencyPolicy = residencyPolicy,
+            ),
+            onToken = onToken,
+        )
+    }
+
+    override fun sendUserMessage(
+        sessionId: SessionId,
+        userText: String,
+        taskType: String,
+        context: RuntimeRequestContext,
+        onToken: (String) -> Unit,
+    ): ChatResponse {
+        return sendMessageUseCase.execute(
+            SendMessageUseCase.Request(
+                sessionId = sessionId,
+                userText = userText,
+                messages = emptyList(),
+                taskType = taskType,
+                executionContext = context.copy(previousResponseId = null),
+                onToken = onToken,
                 routingMode = routingMode,
             ),
         )
@@ -221,23 +268,20 @@ class RuntimeOrchestrator(
         performanceConfig: PerformanceRuntimeConfig,
         residencyPolicy: ModelResidencyPolicy,
     ): ChatResponse {
-        return sendMessageUseCase.execute(
-            SendMessageUseCase.Request(
-                sessionId = sessionId,
-                userText = userText,
-                messages = emptyList(),
-                taskType = taskType,
+        return sendUserMessage(
+            sessionId = sessionId,
+            userText = userText,
+            taskType = taskType,
+            context = RuntimeRequestContext(
                 deviceState = deviceState,
                 maxTokens = maxTokens,
                 keepModelLoaded = keepModelLoaded,
-                onToken = onToken,
                 requestTimeoutMs = requestTimeoutMs,
                 requestId = requestId,
-                previousResponseId = null,
                 performanceConfig = performanceConfig,
                 residencyPolicy = residencyPolicy,
-                routingMode = routingMode,
             ),
+            onToken = onToken,
         )
     }
 
@@ -313,9 +357,8 @@ class RuntimeOrchestrator(
     }
 
     override fun exportDiagnostics(): String {
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
-        val nativeResidencyState = nativeInference?.residencyState()
-        val prefixCacheDiagnostics = nativeInference?.prefixCacheDiagnosticsLine()
+        val nativeResidencyState = runtimeInferencePorts.residency?.residencyState()
+        val prefixCacheDiagnostics = runtimeInferencePorts.residency?.prefixCacheDiagnosticsLine()
         return buildString {
             append(diagnosticsUseCase.export())
             append('\n')
@@ -332,8 +375,7 @@ class RuntimeOrchestrator(
     }
 
     override fun exportDiagnosticsJson(): String? {
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
-        val nativeResidencyState = nativeInference?.residencyState()
+        val nativeResidencyState = runtimeInferencePorts.residency?.residencyState()
         val lifecycleEvent = currentRuntimeLifecycleEvent
         val sessionCacheDiagnostics = sessionCacheManager.diagnostics()
         val lastPlan = lastResolvedRuntimePlan.get()
@@ -475,7 +517,7 @@ class RuntimeOrchestrator(
                 detail = templateError,
             )
         }
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
+        val managedRuntime = runtimeInferencePorts.managedRuntime
             ?: return RuntimeModelLifecycleCommandResult.rejected(
                 code = ModelLifecycleErrorCode.BACKEND_INIT_FAILED,
                 detail = "runtime_load_requires_native_bridge",
@@ -503,7 +545,7 @@ class RuntimeOrchestrator(
             // Unload previous model if one is resident.
             if (runtimeResidencyManager.loadedModelId() != null) {
                 runtimeResidencyManager.unload(reason = "model_switch")
-                awaitNativeCleanup(nativeInference)
+                awaitNativeCleanup(managedRuntime)
             }
 
             // Re-check last-one-wins after awaiting + unload.
@@ -517,7 +559,7 @@ class RuntimeOrchestrator(
             val performanceConfig = PerformanceRuntimeConfig.forProfile(
                 profile = RuntimePerformanceProfile.BALANCED,
                 availableCpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
-                gpuEnabled = nativeInference.supportsGpuOffload(),
+                gpuEnabled = managedRuntime.supportsGpuOffload(),
             )
             val runtimePlan = runtimePlanResolver.resolve(
                 sessionId = "manual-load",
@@ -527,7 +569,7 @@ class RuntimeOrchestrator(
                 requestConfig = performanceConfig,
                 residencyPolicy = ModelResidencyPolicy(),
                 deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
-                nativeInference = nativeInference,
+                runtimeInferencePorts = runtimeInferencePorts,
             )
             lastResolvedRuntimePlan.set(runtimePlan)
             runtimePlan.loadBlockedReason?.let { blockedReason ->
@@ -537,14 +579,14 @@ class RuntimeOrchestrator(
                     loadedModel = loadedModel(),
                 )
             }
-            nativeInference.setRuntimeGenerationConfig(runtimePlan.generationConfig)
-            val loaded = nativeInference.loadModel(
+            managedRuntime.setRuntimeGenerationConfig(runtimePlan.generationConfig)
+            val loaded = managedRuntime.loadModel(
                 modelId = modelId,
                 modelVersion = modelVersion,
                 strictGpuOffload = runtimePlan.generationConfig.strictGpuOffload,
             )
             if (!loaded) {
-                val bridgeError = nativeInference.lastBridgeError()
+                val bridgeError = managedRuntime.lastBridgeError()
                 return RuntimeModelLifecycleCommandResult.rejected(
                     code = mapBridgeLifecycleCode(bridgeError?.code),
                     detail = bridgeError?.detail,
@@ -646,23 +688,23 @@ class RuntimeOrchestrator(
     override fun runtimeBackend(): String? = runtimeBackendEnum()?.name
 
     override fun supportsGpuOffload(): Boolean {
-        return (inferenceModule as? LlamaCppInferenceModule)?.supportsGpuOffload() ?: false
+        return runtimeInferencePorts.managedRuntime?.supportsGpuOffload() ?: false
     }
 
     fun runtimeBackendEnum(): RuntimeBackend? {
-        return (inferenceModule as? LlamaCppInferenceModule)?.runtimeBackend()
+        return runtimeInferencePorts.managedRuntime?.runtimeBackend()
     }
 
     private fun saveSessionCache(slot: ResidentRuntimeSlot, reason: String) {
         val cacheKey = slot.sessionCacheKey?.takeIf { it.isNotBlank() } ?: return
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return
+        val sessionCache = runtimeInferencePorts.sessionCache ?: return
         if (reason == "reconcile_missing_file" || reason == "reconcile_missing_version") {
             sessionCacheManager.evict(cacheKey)
             return
         }
         sessionCacheManager.save(
             serializer = object : SessionCacheSerializer {
-                override fun saveSessionCache(filePath: String): Boolean = nativeInference.saveSessionCache(filePath)
+                override fun saveSessionCache(filePath: String): Boolean = sessionCache.saveSessionCache(filePath)
             },
             cacheKey = cacheKey,
         )
@@ -670,7 +712,7 @@ class RuntimeOrchestrator(
 
     private fun restoreSessionCache(slot: ResidentRuntimeSlot) {
         val cacheKey = slot.sessionCacheKey?.takeIf { it.isNotBlank() } ?: return
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule ?: return
+        val sessionCache = runtimeInferencePorts.sessionCache ?: return
         if (!sessionCacheManager.hasCacheFor(cacheKey)) {
             return
         }
@@ -682,8 +724,8 @@ class RuntimeOrchestrator(
         )
         sessionCacheManager.restore(
             serializer = object : SessionCacheSerializer {
-                override fun saveSessionCache(filePath: String): Boolean = nativeInference.saveSessionCache(filePath)
-                override fun loadSessionCache(filePath: String): Boolean = nativeInference.loadSessionCache(filePath)
+                override fun saveSessionCache(filePath: String): Boolean = sessionCache.saveSessionCache(filePath)
+                override fun loadSessionCache(filePath: String): Boolean = sessionCache.loadSessionCache(filePath)
             },
             cacheKey = cacheKey,
         )
@@ -702,13 +744,13 @@ class RuntimeOrchestrator(
         )
     }
 
-    private fun awaitNativeCleanup(nativeInference: LlamaCppInferenceModule) {
+    private fun awaitNativeCleanup(managedRuntime: ManagedRuntimePort) {
         val deadlineMs = System.currentTimeMillis() + NATIVE_CLEANUP_TIMEOUT_MS
-        var lastRssMb = nativeInference.currentRssMb()
+        var lastRssMb = managedRuntime.currentRssMb()
         var stableReads = 0
         while (System.currentTimeMillis() <= deadlineMs) {
-            val released = nativeInference.isRuntimeReleased()
-            val currentRssMb = nativeInference.currentRssMb()
+            val released = managedRuntime.isRuntimeReleased()
+            val currentRssMb = managedRuntime.currentRssMb()
             if (released) {
                 if (currentRssMb == null || lastRssMb == null) {
                     return

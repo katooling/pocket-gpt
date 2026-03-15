@@ -5,7 +5,8 @@ import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.nativebridge.CachePolicy
-import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.nativebridge.RuntimeInferencePorts
+import com.pocketagent.nativebridge.runtimeInferencePorts
 import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.RuntimeReloadReason
 
@@ -44,13 +45,18 @@ internal class RuntimeWarmupCoordinator(
     private val availableCpuThreads: () -> Int = { Runtime.getRuntime().availableProcessors().coerceAtLeast(1) },
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val onWarmupStage: (String, ModelLoadingStage, Float) -> Unit = { _, _, _ -> },
+    private val runtimeInferencePorts: RuntimeInferencePorts = inferenceModule.runtimeInferencePorts(),
 ) {
     fun warmup(residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy()): WarmupResult {
         if (!residencyPolicy.warmupOnStartup) {
             return WarmupResult.skipped("warmup_disabled")
         }
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
-            ?: return WarmupResult.skipped("warmup_requires_native_bridge")
+        val managedRuntime = runtimeInferencePorts.managedRuntime
+        val cacheAwareGeneration = runtimeInferencePorts.cacheAwareGeneration
+        val residencyPort = runtimeInferencePorts.residency
+        if (managedRuntime == null || cacheAwareGeneration == null || residencyPort == null) {
+            return WarmupResult.skipped("warmup_requires_native_bridge")
+        }
         val modelId = artifactVerifier.manager().getActiveModel().trim()
         if (modelId.isEmpty()) {
             return WarmupResult.skipped("warmup_model_missing")
@@ -69,7 +75,7 @@ internal class RuntimeWarmupCoordinator(
         val performanceConfig = PerformanceRuntimeConfig.forProfile(
             profile = RuntimePerformanceProfile.BALANCED,
             availableCpuThreads = availableCpuThreads(),
-            gpuEnabled = nativeInference.supportsGpuOffload(),
+            gpuEnabled = managedRuntime.supportsGpuOffload(),
         )
         val runtimePlan = runtimePlanResolver.resolve(
             sessionId = "warmup",
@@ -79,12 +85,12 @@ internal class RuntimeWarmupCoordinator(
             requestConfig = performanceConfig,
             residencyPolicy = residencyPolicy,
             deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
-            nativeInference = nativeInference,
+            runtimeInferencePorts = runtimeInferencePorts,
         )
         runtimePlan.loadBlockedReason?.let { blockedReason ->
             return WarmupResult.skipped("warmup_planning_blocked:${runtimePlan.estimatedMemoryMb?.toInt() ?: "unknown"}:${blockedReason}")
         }
-        nativeInference.setRuntimeGenerationConfig(runtimePlan.generationConfig)
+        managedRuntime.setRuntimeGenerationConfig(runtimePlan.generationConfig)
         val speculativePath = runtimePlan.generationConfig.speculativeEnabled &&
             !runtimePlan.generationConfig.speculativeDraftModelPath.isNullOrBlank()
 
@@ -104,7 +110,7 @@ internal class RuntimeWarmupCoordinator(
                 residentHit = false,
                 loadDurationMs = loadDurationMs,
                 speculativePath = speculativePath,
-                errorCode = nativeInference.lastBridgeError()?.code ?: "warmup_load_failed",
+                errorCode = managedRuntime.lastBridgeError()?.code ?: "warmup_load_failed",
             )
         }
 
@@ -112,7 +118,7 @@ internal class RuntimeWarmupCoordinator(
         onWarmupStage(modelId, ModelLoadingStage.WARMING_UP, 0.98f)
         runtimeResidencyManager.onGenerationStarted()
         val warmupResult = runCatching {
-            nativeInference.generateStreamWithCache(
+            cacheAwareGeneration.generateStreamWithCache(
                 requestId = "warmup-$modelId-${warmupStartedAtMs}",
                 request = InferenceRequest(prompt = WARMUP_PROMPT, maxTokens = WARMUP_MAX_TOKENS),
                 cacheKey = null,
@@ -146,8 +152,8 @@ internal class RuntimeWarmupCoordinator(
             )
         }
 
-        nativeInference.recordWarmup(warmupDurationMs)
-        val residencyState = nativeInference.residencyState()
+        residencyPort.recordWarmup(warmupDurationMs)
+        val residencyState = residencyPort.residencyState()
         recordResidencyMetrics(
             observabilityModule = observabilityModule,
             residencyState = residencyState,

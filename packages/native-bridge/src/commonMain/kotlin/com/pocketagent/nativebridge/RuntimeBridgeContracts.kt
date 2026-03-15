@@ -78,7 +78,9 @@ data class RuntimeLoadConfig(
     val strictGpuOffload: Boolean = true,
     @Deprecated("Use kvCacheTypeK and kvCacheTypeV.")
     val kvCacheType: KvCacheType = KvCacheType.Q8_0,
+    @Suppress("DEPRECATION")
     val kvCacheTypeK: KvCacheType = kvCacheType,
+    @Suppress("DEPRECATION")
     val kvCacheTypeV: KvCacheType = kvCacheType,
     val kvUnified: Boolean = true,
     val speculativeEnabled: Boolean = false,
@@ -104,7 +106,9 @@ data class RuntimeGenerationConfig(
     val strictGpuOffload: Boolean = true,
     @Deprecated("Use kvCacheTypeK and kvCacheTypeV.")
     val kvCacheType: KvCacheType = KvCacheType.Q8_0,
+    @Suppress("DEPRECATION")
     val kvCacheTypeK: KvCacheType = kvCacheType,
+    @Suppress("DEPRECATION")
     val kvCacheTypeV: KvCacheType = kvCacheType,
     val kvUnified: Boolean = true,
     val sampling: RuntimeSamplingConfig = RuntimeSamplingConfig(),
@@ -136,7 +140,6 @@ data class RuntimeGenerationConfig(
             gpuBackend = gpuBackend,
             flashAttnMode = flashAttnMode,
             strictGpuOffload = strictGpuOffload,
-            kvCacheType = kvCacheType,
             kvCacheTypeK = kvCacheTypeK,
             kvCacheTypeV = kvCacheTypeV,
             kvUnified = kvUnified,

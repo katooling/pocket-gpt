@@ -1,8 +1,9 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.inference.InferenceModule
-import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.RuntimeResidencyState
+import com.pocketagent.nativebridge.RuntimeInferencePorts
+import com.pocketagent.nativebridge.runtimeInferencePorts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,6 +22,7 @@ internal data class ResidentRuntimeSlot(
 
 internal class RuntimeResidencyManager(
     private val inferenceModule: InferenceModule,
+    private val runtimeInferencePorts: RuntimeInferencePorts = inferenceModule.runtimeInferencePorts(),
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val onAfterLoad: (ResidentRuntimeSlot) -> Unit = {},
@@ -355,7 +357,7 @@ internal class RuntimeResidencyManager(
     }
 
     private fun updateNativeResidencyLocked() {
-        (inferenceModule as? LlamaCppInferenceModule)?.updateResidencySlot(
+        runtimeInferencePorts.residency?.updateResidencySlot(
             slotId = residentSlot?.slotId,
             expiresAtEpochMs = residentSlot?.expiresAtEpochMs,
         )

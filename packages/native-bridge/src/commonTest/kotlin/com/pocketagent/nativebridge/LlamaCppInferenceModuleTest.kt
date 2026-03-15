@@ -1,6 +1,7 @@
 package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.InferenceRequest
+import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.ModelCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -207,6 +208,32 @@ class LlamaCppInferenceModuleTest {
 
         assertEquals("cache-key-v1", bridge.lastCacheKey)
         assertEquals(CachePolicy.PREFIX_KV_REUSE, bridge.lastCachePolicy)
+    }
+
+    @Test
+    fun `runtime inference ports expose llama capabilities through provider seam`() {
+        val module = LlamaCppInferenceModule(FakeBridge())
+        val ports = module.runtimeInferencePorts()
+
+        assertTrue(ports.managedRuntime === module)
+        assertTrue(ports.cacheAwareGeneration === module)
+        assertTrue(ports.modelRegistry === module)
+        assertTrue(ports.residency === module)
+        assertTrue(ports.sessionCache === module)
+    }
+
+    @Test
+    fun `runtime inference ports are empty for inference modules without provider support`() {
+        val module = object : InferenceModule {
+            override fun listAvailableModels(): List<String> = emptyList()
+            override fun loadModel(modelId: String): Boolean = false
+            override fun generateStream(request: InferenceRequest, onToken: (String) -> Unit) = Unit
+            override fun unloadModel() = Unit
+        }
+
+        val ports = module.runtimeInferencePorts()
+
+        assertEquals(RuntimeInferencePorts(), ports)
     }
 }
 

@@ -5,7 +5,13 @@ import com.pocketagent.inference.InferenceRequest
 
 class LlamaCppInferenceModule(
     private val runtimeBridge: LlamaCppRuntimeBridge = NativeJniLlamaCppBridge(),
-) : InferenceModule {
+) : InferenceModule,
+    RuntimeInferencePortProvider,
+    ManagedRuntimePort,
+    CacheAwareGenerationPort,
+    RuntimeModelRegistryPort,
+    RuntimeResidencyPort,
+    RuntimeSessionCachePort {
     private var activeModelId: String? = null
     private val modelPathById: MutableMap<String, String> = mutableMapOf()
     private val modelMetadataById: MutableMap<String, ModelRuntimeMetadata> = mutableMapOf()
@@ -24,6 +30,16 @@ class LlamaCppInferenceModule(
         return bridgeModels.filter { modelPathById[it]?.isNotBlank() == true }
     }
 
+    override fun runtimeInferencePorts(): RuntimeInferencePorts {
+        return RuntimeInferencePorts(
+            managedRuntime = this,
+            cacheAwareGeneration = this,
+            modelRegistry = this,
+            residency = this,
+            sessionCache = this,
+        )
+    }
+
     override fun loadModel(modelId: String): Boolean {
         return loadModel(
             modelId = modelId,
@@ -32,10 +48,10 @@ class LlamaCppInferenceModule(
         )
     }
 
-    fun loadModel(
+    override fun loadModel(
         modelId: String,
         modelVersion: String?,
-        strictGpuOffload: Boolean = runtimeGenerationConfig.strictGpuOffload,
+        strictGpuOffload: Boolean,
     ): Boolean {
         if (!runtimeBridge.listAvailableModels().contains(modelId)) {
             return false
@@ -108,7 +124,7 @@ class LlamaCppInferenceModule(
         }
     }
 
-    fun generateStreamWithCache(
+    override fun generateStreamWithCache(
         requestId: String,
         request: InferenceRequest,
         cacheKey: String?,
@@ -161,7 +177,7 @@ class LlamaCppInferenceModule(
         return unloaded
     }
 
-    fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
+    override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
         val resolvedConfig = resolveRuntimeGenerationConfig(config)
         runtimeGenerationConfig = config
         runtimeBridge.setRuntimeGenerationConfig(resolvedConfig)
@@ -178,29 +194,29 @@ class LlamaCppInferenceModule(
 
     fun getRuntimeGenerationConfig(): RuntimeGenerationConfig = runtimeBridge.getRuntimeGenerationConfig()
 
-    fun supportsGpuOffload(): Boolean = runtimeBridge.supportsGpuOffload()
+    override fun supportsGpuOffload(): Boolean = runtimeBridge.supportsGpuOffload()
 
     fun cancelGeneration(): Boolean {
         return runtimeBridge.cancelGeneration()
     }
 
-    fun cancelGeneration(requestId: String): Boolean {
+    override fun cancelGeneration(requestId: String): Boolean {
         return runtimeBridge.cancelGeneration(requestId)
     }
 
-    fun runtimeBackend(): RuntimeBackend = runtimeBridge.runtimeBackend()
+    override fun runtimeBackend(): RuntimeBackend = runtimeBridge.runtimeBackend()
 
-    fun lastBridgeError(): BridgeError? = runtimeBridge.lastError()
+    override fun lastBridgeError(): BridgeError? = runtimeBridge.lastError()
 
     fun loadedModel(): LoadedModelInfo? = runtimeBridge.getLoadedModel()
 
-    fun currentModelLifecycleState(): ModelLifecycleEvent = runtimeBridge.currentModelLifecycleState()
+    override fun currentModelLifecycleState(): ModelLifecycleEvent = runtimeBridge.currentModelLifecycleState()
 
-    fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+    override fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
         return runtimeBridge.observeModelLifecycleState(listener)
     }
 
-    fun registerModelPath(modelId: String, absolutePath: String) {
+    override fun registerModelPath(modelId: String, absolutePath: String) {
         val normalizedPath = absolutePath.trim()
         if (normalizedPath.isBlank()) {
             return
@@ -208,37 +224,37 @@ class LlamaCppInferenceModule(
         modelPathById[modelId] = normalizedPath
     }
 
-    fun registeredModelPath(modelId: String): String? {
+    override fun registeredModelPath(modelId: String): String? {
         return modelPathById[modelId]
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
     }
 
-    fun registerModelMetadata(modelId: String, metadata: ModelRuntimeMetadata) {
+    override fun registerModelMetadata(modelId: String, metadata: ModelRuntimeMetadata) {
         modelMetadataById[modelId] = metadata
     }
 
-    fun cachedModelMetadata(modelId: String): ModelRuntimeMetadata? = modelMetadataById[modelId]
+    override fun cachedModelMetadata(modelId: String): ModelRuntimeMetadata? = modelMetadataById[modelId]
 
-    fun cachedModelLayerCount(modelId: String): Int? = modelMetadataById[modelId]?.layerCount
+    override fun cachedModelLayerCount(modelId: String): Int? = modelMetadataById[modelId]?.layerCount
 
-    fun cachedModelSizeBytes(modelId: String): Long? = modelMetadataById[modelId]?.sizeBytes
+    override fun cachedModelSizeBytes(modelId: String): Long? = modelMetadataById[modelId]?.sizeBytes
 
     fun activeModelLayerCount(): Int? = activeModelId?.let(::cachedModelLayerCount)
 
     fun activeModelSizeBytes(): Long? = activeModelId?.let(::cachedModelSizeBytes)
 
-    fun actualGpuLayers(): Int? = runtimeBridge.actualGpuLayers()
+    override fun actualGpuLayers(): Int? = runtimeBridge.actualGpuLayers()
 
-    fun actualDraftGpuLayers(): Int? = runtimeBridge.actualDraftGpuLayers()
+    override fun actualDraftGpuLayers(): Int? = runtimeBridge.actualDraftGpuLayers()
 
-    fun lastGpuLoadRetryCount(): Int? = runtimeBridge.lastGpuLoadRetryCount()
+    override fun lastGpuLoadRetryCount(): Int? = runtimeBridge.lastGpuLoadRetryCount()
 
-    fun currentRssMb(): Double? = runtimeBridge.currentRssMb()
+    override fun currentRssMb(): Double? = runtimeBridge.currentRssMb()
 
-    fun isRuntimeReleased(): Boolean = runtimeBridge.isRuntimeReleased()
+    override fun isRuntimeReleased(): Boolean = runtimeBridge.isRuntimeReleased()
 
-    fun cachedEstimatedMaxGpuLayers(modelId: String, nCtx: Int): Int? {
+    override fun cachedEstimatedMaxGpuLayers(modelId: String, nCtx: Int): Int? {
         val resolvedCtx = nCtx.coerceAtLeast(1)
         val cacheKey = modelId to resolvedCtx
         estimatedGpuLayersByModelAndContext[cacheKey]?.let { return it }
@@ -250,7 +266,7 @@ class LlamaCppInferenceModule(
         return estimate
     }
 
-    fun updateResidencySlot(slotId: String?, expiresAtEpochMs: Long?) {
+    override fun updateResidencySlot(slotId: String?, expiresAtEpochMs: Long?) {
         runtimeResidencyState = runtimeResidencyState.copy(
             slotId = slotId,
             expiresAtEpochMs = expiresAtEpochMs,
@@ -258,25 +274,25 @@ class LlamaCppInferenceModule(
         )
     }
 
-    fun residencyState(): RuntimeResidencyState = runtimeResidencyState
+    override fun residencyState(): RuntimeResidencyState = runtimeResidencyState
 
-    fun prefixCacheDiagnosticsLine(): String? {
+    override fun prefixCacheDiagnosticsLine(): String? {
         return runtimeBridge.prefixCacheDiagnosticsLine()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
     }
 
-    fun saveSessionCache(filePath: String): Boolean {
+    override fun saveSessionCache(filePath: String): Boolean {
         if (activeModelId == null) return false
         return runtimeBridge.saveSessionCache(filePath)
     }
 
-    fun loadSessionCache(filePath: String): Boolean {
+    override fun loadSessionCache(filePath: String): Boolean {
         if (activeModelId == null) return false
         return runtimeBridge.loadSessionCache(filePath)
     }
 
-    fun recordWarmup(durationMs: Long) {
+    override fun recordWarmup(durationMs: Long) {
         runtimeResidencyState = runtimeResidencyState.copy(
             lastWarmupDurationMs = durationMs.coerceAtLeast(0L),
             lastAccessAtEpochMs = System.currentTimeMillis(),

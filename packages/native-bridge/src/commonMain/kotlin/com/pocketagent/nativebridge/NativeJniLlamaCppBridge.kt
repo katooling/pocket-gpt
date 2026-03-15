@@ -477,7 +477,7 @@ class NativeJniLlamaCppBridge(
                     nCtx = config.nCtx,
                     nGpuLayers = attempt.targetGpuLayers,
                     flashAttnCode = config.flashAttnMode.code,
-                    kvCacheTypeCode = config.kvCacheType.code,
+                    kvCacheTypeCode = compatibilityKvCacheType(config).code,
                     kvCacheTypeKCode = config.kvCacheTypeK.code,
                     kvCacheTypeVCode = config.kvCacheTypeV.code,
                     kvUnified = config.kvUnified,
@@ -1582,5 +1582,12 @@ class NativeJniLlamaCppBridge(
                 ModelLoadingStage.COMPLETED -> "Loaded"
             }
         }
+    }
+}
+
+private fun compatibilityKvCacheType(config: RuntimeGenerationConfig): KvCacheType {
+    return when {
+        config.kvCacheTypeK == config.kvCacheTypeV -> config.kvCacheTypeK
+        else -> config.kvCacheTypeV
     }
 }

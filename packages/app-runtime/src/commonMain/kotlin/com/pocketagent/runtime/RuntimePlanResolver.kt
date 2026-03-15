@@ -1,8 +1,9 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
-import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.ModelRuntimeMetadata
+import com.pocketagent.nativebridge.RuntimeInferencePorts
+import com.pocketagent.nativebridge.RuntimeModelRegistryPort
 import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import java.io.File
 import java.security.MessageDigest
@@ -43,8 +44,9 @@ internal class RuntimePlanResolver(
         requestConfig: PerformanceRuntimeConfig,
         residencyPolicy: ModelResidencyPolicy,
         deviceState: DeviceState,
-        nativeInference: LlamaCppInferenceModule?,
+        runtimeInferencePorts: RuntimeInferencePorts = RuntimeInferencePorts(),
     ): ResolvedRuntimePlan {
+        val modelRegistry = runtimeInferencePorts.modelRegistry
         val diagnostics = mutableListOf<String>()
         val baseDefaults = PerformanceRuntimeConfig.forProfile(
             profile = requestConfig.profile,
@@ -56,9 +58,9 @@ internal class RuntimePlanResolver(
             diagnostics += "layer=request_override"
         }
 
-        val modelSizeBytes = resolveModelSizeBytes(modelId = modelId, nativeInference = nativeInference)
-        val modelMetadata = nativeInference?.cachedModelMetadata(modelId)
-        val modelLayerCount = nativeInference?.cachedModelLayerCount(modelId)
+        val modelSizeBytes = resolveModelSizeBytes(modelId = modelId, modelRegistry = modelRegistry)
+        val modelMetadata = modelRegistry?.cachedModelMetadata(modelId)
+        val modelLayerCount = modelRegistry?.cachedModelLayerCount(modelId)
 
         var effectiveConfig = requestConfig.applyContextBucket(taskType = taskType, deviceState = deviceState)
         if (effectiveConfig != requestConfig) {
@@ -71,7 +73,7 @@ internal class RuntimePlanResolver(
         }
         effectiveConfig = thermalAdjustedConfig
 
-        val estimatedGpuLayers = nativeInference?.cachedEstimatedMaxGpuLayers(modelId, effectiveConfig.nCtx)
+        val estimatedGpuLayers = modelRegistry?.cachedEstimatedMaxGpuLayers(modelId, effectiveConfig.nCtx)
         val gpuEstimatedConfig = effectiveConfig.applyGpuLayerEstimate(estimatedGpuLayers)
         if (gpuEstimatedConfig != effectiveConfig) {
             diagnostics += "layer=gpu_layer_estimate"
@@ -92,7 +94,7 @@ internal class RuntimePlanResolver(
             recommendedGpuLayers = { candidateConfig ->
                 listOfNotNull(
                     recommendedGpuLayers(modelId, candidateConfig)?.takeIf { it >= 0 },
-                    nativeInference?.cachedEstimatedMaxGpuLayers(modelId, candidateConfig.nCtx)?.takeIf { it >= 0 },
+                    modelRegistry?.cachedEstimatedMaxGpuLayers(modelId, candidateConfig.nCtx)?.takeIf { it >= 0 },
                 ).minOrNull()
             },
         )
@@ -102,7 +104,7 @@ internal class RuntimePlanResolver(
         val speculativeGated = effectiveConfig.gateSpeculative(
             modelId = modelId,
             deviceState = deviceState,
-            nativeInference = nativeInference,
+            modelRegistry = modelRegistry,
         )
         if (speculativeGated != effectiveConfig) {
             diagnostics += "layer=speculative_gate"
@@ -128,7 +130,7 @@ internal class RuntimePlanResolver(
                 generationConfig.toLoadConfig().toString(),
             ).joinToString("|"),
         )
-        val resolvedModelPathHash = sha256Hex(nativeInference?.registeredModelPath(modelId).orEmpty())
+        val resolvedModelPathHash = sha256Hex(modelRegistry?.registeredModelPath(modelId).orEmpty())
         val templateFingerprint = sha256Hex(
             listOf(modelId, taskType, stopSequences.joinToString(separator = "\\u001f")).joinToString("|"),
         )
@@ -159,11 +161,11 @@ internal class RuntimePlanResolver(
 
     private fun resolveModelSizeBytes(
         modelId: String,
-        nativeInference: LlamaCppInferenceModule?,
+        modelRegistry: RuntimeModelRegistryPort?,
     ): Long {
-        return nativeInference?.cachedModelMetadata(modelId)?.sizeBytes
-            ?: nativeInference?.cachedModelSizeBytes(modelId)
-            ?: nativeInference?.registeredModelPath(modelId)?.let(modelFileSizeBytes)
+        return modelRegistry?.cachedModelMetadata(modelId)?.sizeBytes
+            ?: modelRegistry?.cachedModelSizeBytes(modelId)
+            ?: modelRegistry?.registeredModelPath(modelId)?.let(modelFileSizeBytes)
             ?: 0L
     }
 }
@@ -351,7 +353,7 @@ private fun resolveNKeep(taskType: String, nCtx: Int): Int {
 private fun PerformanceRuntimeConfig.gateSpeculative(
     modelId: String,
     deviceState: DeviceState,
-    nativeInference: LlamaCppInferenceModule?,
+    modelRegistry: RuntimeModelRegistryPort?,
 ): PerformanceRuntimeConfig {
     if (!speculativeEnabled) {
         return this
@@ -363,8 +365,8 @@ private fun PerformanceRuntimeConfig.gateSpeculative(
     if (draftModelId.isEmpty()) {
         return copy(speculativeEnabled = false, speculativeDraftModelId = null, speculativeDraftGpuLayers = 0)
     }
-    val draftPath = nativeInference?.registeredModelPath(draftModelId)
-    val targetPath = nativeInference?.registeredModelPath(modelId)
+    val draftPath = modelRegistry?.registeredModelPath(draftModelId)
+    val targetPath = modelRegistry?.registeredModelPath(modelId)
     if (draftPath.isNullOrBlank() || draftPath == targetPath) {
         return copy(speculativeEnabled = false, speculativeDraftModelId = null, speculativeDraftGpuLayers = 0)
     }

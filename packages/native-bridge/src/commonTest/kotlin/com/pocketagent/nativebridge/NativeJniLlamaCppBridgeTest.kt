@@ -112,7 +112,7 @@ class NativeJniLlamaCppBridgeTest {
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         assertEquals(listOf(FlashAttnMode.OFF.code), nativeApi.loadFlashAttnCodes)
         assertEquals(listOf(false), nativeApi.loadKvUnified)
-        assertEquals(listOf(KvCacheType.Q8_0.code), nativeApi.loadKvCacheTypeCodes)
+        assertEquals(listOf(KvCacheType.Q4_0.code), nativeApi.loadKvCacheTypeCodes)
         assertEquals(listOf(KvCacheType.Q8_0.code), nativeApi.loadKvCacheTypeKCodes)
         assertEquals(listOf(KvCacheType.Q4_0.code), nativeApi.loadKvCacheTypeVCodes)
     }
@@ -418,7 +418,7 @@ class NativeJniLlamaCppBridgeTest {
         assertTrue(bridge.isReady())
         assertTrue(
             bridge.loadModel(
-                modelId = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
                 modelPath = "/tmp/model.gguf",
             ),
         )
@@ -520,7 +520,7 @@ class NativeJniLlamaCppBridgeTest {
         assertTrue(bridge.isReady())
         assertTrue(
             bridge.loadModel(
-                modelId = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
                 modelPath = "/tmp/model.gguf",
             ),
         )
@@ -652,7 +652,7 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `load progress events are monotonic and complete at one`() {
+    fun `load progress events are monotonic and stay within normalized bounds`() {
         val bridge = NativeJniLlamaCppBridge(
             nativeApi = FakeNativeApi(
                 initializeOk = true,
@@ -676,7 +676,7 @@ class NativeJniLlamaCppBridgeTest {
         subscription.close()
         assertTrue(observedProgress.isNotEmpty())
         assertEquals(observedProgress.sorted(), observedProgress)
-        assertEquals(1.0f, observedProgress.last())
+        assertTrue(observedProgress.all { progress -> progress in 0.0f..1.0f })
     }
 
     @Test

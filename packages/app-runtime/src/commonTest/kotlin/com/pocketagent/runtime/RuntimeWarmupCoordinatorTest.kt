@@ -2,14 +2,16 @@ package com.pocketagent.runtime
 
 import com.pocketagent.core.ObservabilityModule
 import com.pocketagent.inference.ModelCatalog
-import com.pocketagent.nativebridge.BridgeError
-import com.pocketagent.nativebridge.CachePolicy
-import com.pocketagent.nativebridge.GenerationFinishReason
-import com.pocketagent.nativebridge.GenerationResult
-import com.pocketagent.nativebridge.LlamaCppInferenceModule
-import com.pocketagent.nativebridge.LlamaCppRuntimeBridge
+import com.pocketagent.inference.InferenceModule
+import com.pocketagent.inference.InferenceRequest
+import com.pocketagent.nativebridge.CacheAwareGenerationPort
+import com.pocketagent.nativebridge.ManagedRuntimePort
 import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.RuntimeBackend
+import com.pocketagent.nativebridge.RuntimeGenerationConfig
+import com.pocketagent.nativebridge.RuntimeInferencePorts
+import com.pocketagent.nativebridge.RuntimeResidencyPort
+import com.pocketagent.nativebridge.RuntimeResidencyState
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,12 +21,21 @@ import kotlin.test.assertTrue
 class RuntimeWarmupCoordinatorTest {
     @Test
     fun `warmup keeps active model resident and reuses same load key`() {
-        val bridge = WarmupFakeBridge()
-        val inferenceModule = LlamaCppInferenceModule(bridge)
+        val inferenceModule = WarmupInferenceModule()
+        val warmupPorts = WarmupRuntimePorts()
+        val runtimeInferencePorts = RuntimeInferencePorts(
+            managedRuntime = warmupPorts,
+            cacheAwareGeneration = warmupPorts,
+            residency = warmupPorts,
+        )
         val runtimeConfig = warmupRuntimeConfig()
         val artifactVerifier = ArtifactVerifier(runtimeConfig)
         val observability = WarmupObservabilityModule()
-        val residencyManager = RuntimeResidencyManager(inferenceModule, nowMs = monotonicClock())
+        val residencyManager = RuntimeResidencyManager(
+            inferenceModule,
+            runtimeInferencePorts = runtimeInferencePorts,
+            nowMs = monotonicClock(),
+        )
         val lifecycleStages = mutableListOf<ModelLoadingStage>()
         val coordinator = RuntimeWarmupCoordinator(
             inferenceModule = inferenceModule,
@@ -35,6 +46,7 @@ class RuntimeWarmupCoordinatorTest {
             availableCpuThreads = { 6 },
             nowMs = monotonicClock(),
             onWarmupStage = { _, stage, _ -> lifecycleStages += stage },
+            runtimeInferencePorts = runtimeInferencePorts,
         )
 
         val first = coordinator.warmup()
@@ -46,10 +58,10 @@ class RuntimeWarmupCoordinatorTest {
         assertTrue(second.attempted)
         assertTrue(second.warmed)
         assertTrue(second.residentHit)
-        assertEquals(1, bridge.loadCalls)
-        assertEquals(2, bridge.generateCalls)
-        assertEquals(8, bridge.lastMaxTokens)
-        assertTrue(bridge.lastPrompt.contains("shader") || bridge.lastPrompt.contains("warmup"))
+        assertEquals(1, inferenceModule.loadCalls)
+        assertEquals(2, warmupPorts.generateCalls)
+        assertEquals(8, warmupPorts.lastMaxTokens)
+        assertTrue(warmupPorts.lastPrompt.contains("shader") || warmupPorts.lastPrompt.contains("warmup"))
         assertEquals(1, residencyManager.listResident().size)
         assertTrue(observability.metrics.keys.contains("inference.model_load_ms"))
         assertTrue(observability.metrics.keys.contains("inference.warmup_ms"))
@@ -59,35 +71,72 @@ class RuntimeWarmupCoordinatorTest {
     }
 }
 
-private class WarmupFakeBridge : LlamaCppRuntimeBridge {
+private class WarmupInferenceModule : InferenceModule {
     var loadCalls: Int = 0
-    var generateCalls: Int = 0
-    var lastMaxTokens: Int = 0
-    var lastPrompt: String = ""
-
-    override fun isReady(): Boolean = true
+    private var loadedModelId: String? = null
 
     override fun listAvailableModels(): List<String> = listOf(ModelCatalog.QWEN_3_5_0_8B_Q4)
 
-    override fun loadModel(modelId: String, modelPath: String?): Boolean {
-        loadCalls += 1
+    override fun loadModel(modelId: String): Boolean {
+        if (loadedModelId != modelId) {
+            loadCalls += 1
+            loadedModelId = modelId
+        }
         return true
     }
 
-    override fun generate(
+    override fun generateStream(request: InferenceRequest, onToken: (String) -> Unit) = Unit
+
+    override fun unloadModel() {
+        loadedModelId = null
+    }
+}
+
+private class WarmupRuntimePorts : ManagedRuntimePort, CacheAwareGenerationPort, RuntimeResidencyPort {
+    var generateCalls: Int = 0
+    var lastMaxTokens: Int = 0
+    var lastPrompt: String = ""
+    private var config: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
+    private var residencyState = RuntimeResidencyState()
+
+    override fun loadModel(modelId: String, modelVersion: String?, strictGpuOffload: Boolean): Boolean = true
+
+    override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
+        this.config = config
+    }
+
+    override fun supportsGpuOffload(): Boolean = true
+
+    override fun runtimeBackend(): RuntimeBackend = RuntimeBackend.NATIVE_JNI
+
+    override fun lastBridgeError() = null
+
+    override fun currentModelLifecycleState() = com.pocketagent.nativebridge.ModelLifecycleEvent(
+        state = com.pocketagent.nativebridge.ModelLifecycleState.UNLOADED,
+    )
+
+    override fun observeModelLifecycleState(listener: (com.pocketagent.nativebridge.ModelLifecycleEvent) -> Unit): AutoCloseable {
+        listener(currentModelLifecycleState())
+        return AutoCloseable { }
+    }
+
+    override fun currentRssMb(): Double? = null
+
+    override fun isRuntimeReleased(): Boolean = true
+
+    override fun generateStreamWithCache(
         requestId: String,
-        prompt: String,
-        maxTokens: Int,
+        request: InferenceRequest,
         cacheKey: String?,
-        cachePolicy: CachePolicy,
+        cachePolicy: com.pocketagent.nativebridge.CachePolicy,
         onToken: (String) -> Unit,
-    ): GenerationResult {
+    ): com.pocketagent.nativebridge.GenerationResult {
         generateCalls += 1
-        lastPrompt = prompt
-        lastMaxTokens = maxTokens
+        lastPrompt = request.prompt
+        lastMaxTokens = request.maxTokens
         onToken("ok")
-        return GenerationResult(
-            finishReason = GenerationFinishReason.COMPLETED,
+        return com.pocketagent.nativebridge.GenerationResult(
+            finishReason = com.pocketagent.nativebridge.GenerationFinishReason.COMPLETED,
             tokenCount = 1,
             firstTokenMs = 1L,
             totalMs = 2L,
@@ -95,11 +144,32 @@ private class WarmupFakeBridge : LlamaCppRuntimeBridge {
         )
     }
 
-    override fun unloadModel() = Unit
+    override fun cancelGeneration(requestId: String): Boolean = true
 
-    override fun runtimeBackend(): RuntimeBackend = RuntimeBackend.NATIVE_JNI
+    override fun actualGpuLayers(): Int? = config.gpuLayers
 
-    override fun lastError(): BridgeError? = null
+    override fun actualDraftGpuLayers(): Int? = config.speculativeDraftGpuLayers
+
+    override fun lastGpuLoadRetryCount(): Int? = 0
+
+    override fun updateResidencySlot(slotId: String?, expiresAtEpochMs: Long?) {
+        val wasResident = residencyState.resident
+        val sameSlot = slotId != null && slotId == residencyState.slotId
+        residencyState = residencyState.copy(
+            slotId = slotId,
+            expiresAtEpochMs = expiresAtEpochMs,
+            resident = slotId != null,
+            residentHit = wasResident && sameSlot,
+        )
+    }
+
+    override fun residencyState(): RuntimeResidencyState = residencyState
+
+    override fun prefixCacheDiagnosticsLine(): String? = null
+
+    override fun recordWarmup(durationMs: Long) {
+        residencyState = residencyState.copy(lastWarmupDurationMs = durationMs)
+    }
 }
 
 private class WarmupObservabilityModule : ObservabilityModule {

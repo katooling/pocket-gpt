@@ -3,15 +3,17 @@ package com.pocketagent.runtime
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.nativebridge.CachePolicy
-import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.nativebridge.RuntimeInferencePorts
+import com.pocketagent.nativebridge.runtimeInferencePorts
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-class InferenceExecutor(
+internal class InferenceExecutor(
     private val inferenceModule: InferenceModule,
     private val runtimeConfig: RuntimeConfig,
+    private val runtimeInferencePorts: RuntimeInferencePorts = inferenceModule.runtimeInferencePorts(),
 ) {
     private val activeByRequestId = ConcurrentHashMap<String, ActiveGenerationState>()
     private val activeBySessionId = ConcurrentHashMap<String, ActiveGenerationState>()
@@ -29,7 +31,7 @@ class InferenceExecutor(
         val state = ActiveGenerationState(requestId = requestId, sessionId = sessionId)
         activeByRequestId[requestId] = state
         activeBySessionId[sessionId] = state
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
+        val nativeInference = runtimeInferencePorts.cacheAwareGeneration
         val streamedText = StringBuilder()
         var stoppedBySequence = false
         var finishReason = "completed"
@@ -163,7 +165,13 @@ class InferenceExecutor(
                 code = "REQUEST_NOT_ACTIVE",
                 detail = "requestId=$requestId",
             )
-        val native = inferenceModule as? LlamaCppInferenceModule
+        val native = runtimeInferencePorts.cacheAwareGeneration
+            ?: return CancellationResult(
+                cancelled = false,
+                code = "RUNTIME_NOT_NATIVE_BRIDGE",
+                detail = "requestId=$requestId",
+            )
+        val managedRuntime = runtimeInferencePorts.managedRuntime
             ?: return CancellationResult(
                 cancelled = false,
                 code = "RUNTIME_NOT_NATIVE_BRIDGE",
@@ -173,7 +181,7 @@ class InferenceExecutor(
         if (cancelled) {
             return CancellationResult(cancelled = true, code = "CANCELLED")
         }
-        val bridgeError = native.lastBridgeError()
+        val bridgeError = managedRuntime.lastBridgeError()
         return CancellationResult(
             cancelled = false,
             code = bridgeError?.code ?: "CANCEL_REJECTED",
@@ -207,7 +215,7 @@ class InferenceExecutor(
             idleLatch.set(null)
             return true
         }
-        val native = inferenceModule as? LlamaCppInferenceModule
+        val native = runtimeInferencePorts.cacheAwareGeneration
         for (requestId in activeByRequestId.keys.toList()) {
             native?.cancelGeneration(requestId) ?: break
         }
