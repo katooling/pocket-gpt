@@ -2,6 +2,7 @@ package com.pocketagent.android.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.pocketagent.android.data.chat.SessionPersistence
 import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.controllers.DeviceStateProvider
@@ -10,7 +11,6 @@ import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.FirstSessionTelemetryEvent
 import com.pocketagent.android.ui.state.RuntimeUiState
-import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.state.UiError
 import java.time.Instant

@@ -1,6 +1,6 @@
 package com.pocketagent.android.ui.state
 
-import com.pocketagent.nativebridge.ModelLifecycleErrorCode
+import com.pocketagent.android.runtime.errorCodeName
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.ToolExecutionResult
@@ -54,11 +54,11 @@ object UiErrorMapper {
             normalized.contains("runtime backend is adb_fallback") || normalized.contains("runtime backend is unavailable") ->
                 "Native runtime backend is unavailable. Confirm device/runtime setup and retry." to RecoveryAction.RESTART_APP
             normalized.contains("template_unavailable") || normalized.contains("model profile missing") ->
-                "Model interaction template is unavailable. Reinstall/update model setup, then refresh checks." to RecoveryAction.CHANGE_MODEL
+                "Model interaction template is unavailable. Reinstall or update the model library entry, then refresh checks." to RecoveryAction.CHANGE_MODEL
             normalized.contains("startup checks timed out") || normalized.contains("timed out") ->
                 "Runtime checks timed out. Refresh runtime checks before sending a message." to RecoveryAction.REFRESH_CHECKS
             else ->
-                "Runtime setup is incomplete. Open model setup, refresh checks, and retry." to RecoveryAction.REFRESH_CHECKS
+                "Runtime setup is incomplete. Open the model library, refresh checks, and retry." to RecoveryAction.REFRESH_CHECKS
         }
         return UiError(
             code = STARTUP_CODE,
@@ -168,21 +168,23 @@ object UiErrorMapper {
 
     fun fromModelLifecycleResult(result: RuntimeModelLifecycleCommandResult): UiError? {
         if (result.success) return null
-        val errorCode = result.errorCode ?: ModelLifecycleErrorCode.UNKNOWN
+        val errorCode = result.errorCodeName() ?: "UNKNOWN"
         val (userMessage, recovery) = when (errorCode) {
-            ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE ->
+            "MODEL_FILE_UNAVAILABLE" ->
                 "Model file is unavailable. Re-download or re-import the model." to RecoveryAction.REDOWNLOAD_MODEL
-            ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE ->
+            "RUNTIME_INCOMPATIBLE" ->
                 "Model is not compatible with this runtime. Choose a different model." to RecoveryAction.CHANGE_MODEL
-            ModelLifecycleErrorCode.OUT_OF_MEMORY ->
+            "OUT_OF_MEMORY" ->
                 "Model could not fit in available memory. Try a smaller model, lower context, or offload the current model first." to RecoveryAction.CHANGE_MODEL
-            ModelLifecycleErrorCode.BACKEND_INIT_FAILED ->
+            "BACKEND_INIT_FAILED" ->
                 "Runtime backend failed to initialize. Restart the app and try again." to RecoveryAction.RESTART_APP
-            ModelLifecycleErrorCode.BUSY_GENERATION ->
+            "BUSY_GENERATION" ->
                 "Model is busy with an active generation. Try loading again shortly." to RecoveryAction.RETRY_LOAD
-            ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST ->
+            "CANCELLED_BY_NEWER_REQUEST" ->
                 "Load was superseded by a newer request." to RecoveryAction.NONE
-            ModelLifecycleErrorCode.UNKNOWN ->
+            "UNKNOWN" ->
+                "Model failed to load. Please try again." to RecoveryAction.RETRY_LOAD
+            else ->
                 "Model failed to load. Please try again." to RecoveryAction.RETRY_LOAD
         }
         return UiError(

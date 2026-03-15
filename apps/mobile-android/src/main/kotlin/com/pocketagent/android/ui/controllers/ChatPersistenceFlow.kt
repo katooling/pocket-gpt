@@ -1,13 +1,16 @@
 package com.pocketagent.android.ui.controllers
 
+import com.pocketagent.android.data.chat.SessionStateLoadResult
+import com.pocketagent.android.data.chat.StoredChatMessage
+import com.pocketagent.android.data.chat.StoredChatState
+import com.pocketagent.android.data.chat.toStoredChatState
+import com.pocketagent.android.data.chat.toUiMessage
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.MessageUiModel
-import com.pocketagent.android.ui.state.PersistedChatState
-import com.pocketagent.android.ui.state.SessionStateLoadResult
 import com.pocketagent.android.ui.state.UiError
 
 data class PersistenceBootstrapState(
-    val persisted: PersistedChatState,
+    val persisted: StoredChatState,
     val loadError: UiError?,
     val shouldRunStartupProbe: Boolean,
 )
@@ -20,7 +23,7 @@ class ChatPersistenceFlow(
         val persisted = when (persistedResult) {
             is SessionStateLoadResult.Success -> persistedResult.state
             is SessionStateLoadResult.RecoverableCorruption -> persistedResult.resetState
-            is SessionStateLoadResult.FatalCorruption -> PersistedChatState()
+            is SessionStateLoadResult.FatalCorruption -> StoredChatState()
         }
         val loadError = sessionStateLoadError(persistedResult)
         return PersistenceBootstrapState(
@@ -30,39 +33,20 @@ class ChatPersistenceFlow(
         )
     }
 
-    fun toPersistedState(state: ChatUiState): PersistedChatState {
-        return PersistedChatState(
-            sessions = state.sessions.map { session ->
-                val persistedMessages = session.messages.map { message -> message.copy(isStreaming = false) }
-                session.copy(
-                    messages = persistedMessages,
-                    messageCount = if (session.messagesLoaded) persistedMessages.size else session.messageCount,
-                )
-            },
-            activeSessionId = state.activeSessionId,
-            routingMode = state.runtime.routingMode.name,
-            performanceProfile = state.runtime.performanceProfile.name,
-            keepAlivePreference = state.runtime.keepAlivePreference.name,
-            gpuAccelerationEnabled = state.runtime.gpuAccelerationEnabled,
-            onboardingCompleted = !state.showOnboarding,
-            firstSessionStage = state.firstSessionStage.name,
-            advancedUnlocked = state.advancedUnlocked,
-            firstAnswerCompleted = state.firstAnswerCompleted,
-            followUpCompleted = state.followUpCompleted,
-            firstSessionTelemetryEvents = state.firstSessionTelemetryEvents,
-        )
+    fun toStoredState(state: ChatUiState): StoredChatState {
+        return state.toStoredChatState()
     }
 
-    fun savePersistedState(state: PersistedChatState) {
+    fun saveStoredState(state: StoredChatState) {
         persistenceCoordinator.saveState(state)
     }
 
     fun saveState(state: ChatUiState) {
-        savePersistedState(toPersistedState(state))
+        saveStoredState(toStoredState(state))
     }
 
     fun loadSessionMessages(sessionId: String): List<MessageUiModel>? {
-        return persistenceCoordinator.loadSessionMessages(sessionId)
+        return persistenceCoordinator.loadSessionMessages(sessionId)?.map(StoredChatMessage::toUiMessage)
     }
 
     private fun sessionStateLoadError(loadResult: SessionStateLoadResult): UiError? {

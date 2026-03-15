@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui.controllers
 
+import com.pocketagent.android.data.chat.toUiSession
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.ui.addTelemetryEventIfMissing
@@ -20,6 +21,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 
 data class StartupBootstrapResult(
     val state: ChatUiState,
+    val hydrateSessionId: String?,
     val shouldRunStartupProbe: Boolean,
     val shouldPersist: Boolean,
 )
@@ -38,6 +40,7 @@ class ChatStartupFlow(
     private val ioDispatcher: CoroutineDispatcher,
     private val runtimeStartupProbeTimeoutMs: Long,
     private val nativeRuntimeLibraryPackaged: Boolean,
+    private val sessionService: AndroidChatSessionService = AndroidChatSessionService(),
     private val timelineProjector: TimelineProjector = TimelineProjector(),
 ) {
     fun bootstrap(loadedState: PersistenceBootstrapState): StartupBootstrapResult {
@@ -95,48 +98,36 @@ class ChatStartupFlow(
             ).withUiError(loadError)
         }
 
-        val restoredSessions = persisted.sessions.map { session ->
-            if (session.messagesLoaded) {
+        val restoredSessions = persisted.sessions.map { storedSession ->
+            val session = storedSession.toUiSession()
+            if (storedSession.messagesLoaded) {
                 val turns = timelineProjector.toTurns(session)
                 runtimeGateway.restoreSession(sessionId = SessionId(session.id), turns = turns)
             }
             session
         }
-
-        if (restoredSessions.isEmpty()) {
-            val newSessionId = runtimeGateway.createSession().value
+        val sessionBootstrap = sessionService.bootstrap(
+            sessions = restoredSessions,
+            persistedActiveSessionId = persisted.activeSessionId,
+        )
+        val resolvedSessions = if (sessionBootstrap.shouldCreateInitialSession) {
             val now = System.currentTimeMillis()
-            return StartupBootstrapResult(
-                state = ChatUiState(
-                    sessions = listOf(
-                        ChatSessionUiModel(
-                            id = newSessionId,
-                            title = "New chat",
-                            createdAtEpochMs = now,
-                            updatedAtEpochMs = now,
-                            messages = emptyList(),
-                        ),
-                    ),
-                    activeSessionId = newSessionId,
-                    runtime = bootstrapRuntimeState,
-                    showOnboarding = !persisted.onboardingCompleted,
-                    firstSessionStage = initialFirstSessionStage,
-                    advancedUnlocked = restoredAdvancedUnlocked,
-                    firstAnswerCompleted = persisted.firstAnswerCompleted,
-                    followUpCompleted = persisted.followUpCompleted,
-                    firstSessionTelemetryEvents = persisted.firstSessionTelemetryEvents,
-                ),
-                shouldRunStartupProbe = loadedState.shouldRunStartupProbe,
-                shouldPersist = true,
-            )
+            sessionService.createSession(
+                sessions = emptyList(),
+                sessionId = runtimeGateway.createSession().value,
+                title = "New chat",
+                nowEpochMs = now,
+            ).toUiSessions()
+        } else {
+            sessionBootstrap.toUiSessions()
         }
-
-        val activeSessionId = persisted.activeSessionId
-            ?.takeIf { id -> restoredSessions.any { it.id == id } }
-            ?: restoredSessions.last().id
+        val activeSessionId = when {
+            sessionBootstrap.shouldCreateInitialSession -> resolvedSessions.lastOrNull()?.id
+            else -> sessionBootstrap.activeSessionId
+        }
         return StartupBootstrapResult(
             state = ChatUiState(
-                sessions = restoredSessions,
+                sessions = resolvedSessions,
                 activeSessionId = activeSessionId,
                 runtime = bootstrapRuntimeState,
                 showOnboarding = !persisted.onboardingCompleted,
@@ -146,8 +137,9 @@ class ChatStartupFlow(
                 followUpCompleted = persisted.followUpCompleted,
                 firstSessionTelemetryEvents = persisted.firstSessionTelemetryEvents,
             ),
+            hydrateSessionId = if (sessionBootstrap.shouldCreateInitialSession) null else sessionBootstrap.hydrateSessionId,
             shouldRunStartupProbe = loadedState.shouldRunStartupProbe,
-            shouldPersist = routingModeAdjusted,
+            shouldPersist = routingModeAdjusted || sessionBootstrap.shouldPersist || sessionBootstrap.shouldCreateInitialSession,
         )
     }
 

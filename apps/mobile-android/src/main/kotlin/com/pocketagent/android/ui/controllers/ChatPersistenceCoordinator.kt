@@ -1,20 +1,24 @@
 package com.pocketagent.android.ui.controllers
 
-import com.pocketagent.android.ui.state.PersistedChatState
-import com.pocketagent.android.ui.state.MessageUiModel
-import com.pocketagent.android.ui.state.SessionStateLoadResult
-import com.pocketagent.android.ui.state.SessionPersistence
+import com.pocketagent.android.data.chat.SessionPersistence
+import com.pocketagent.android.data.chat.SessionStateLoadResult
+import com.pocketagent.android.data.chat.StoredChatMessage
+import com.pocketagent.android.data.chat.StoredChatState
 
 class ChatPersistenceCoordinator(
     private val sessionPersistence: SessionPersistence,
 ) {
-    fun loadState(): PersistedChatState = sessionPersistence.loadState()
-    fun loadBootstrapState(): PersistedChatState = sessionPersistence.loadBootstrapState()
-    fun loadStateResult(): SessionStateLoadResult = sessionPersistence.loadStateResult()
-    fun loadBootstrapStateResult(): SessionStateLoadResult = sessionPersistence.loadBootstrapStateResult()
-    fun loadSessionMessages(sessionId: String): List<MessageUiModel>? = sessionPersistence.loadSessionMessages(sessionId)
+    fun loadState(): StoredChatState = sessionPersistence.loadState()
 
-    fun saveState(state: PersistedChatState) {
+    fun loadBootstrapState(): StoredChatState = sessionPersistence.loadBootstrapState()
+
+    fun loadStateResult(): SessionStateLoadResult = sessionPersistence.loadStateResult()
+
+    fun loadBootstrapStateResult(): SessionStateLoadResult = sessionPersistence.loadBootstrapStateResult()
+
+    fun loadSessionMessages(sessionId: String): List<StoredChatMessage>? = sessionPersistence.loadSessionMessages(sessionId)
+
+    fun saveState(state: StoredChatState) {
         sessionPersistence.saveState(state)
     }
 

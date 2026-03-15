@@ -9,12 +9,12 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatKeepAlivePreference
 import com.pocketagent.runtime.ChatStreamCommand
-import com.pocketagent.runtime.ChatStreamRequestPlanner
 import com.pocketagent.runtime.InteractionMessage
+import com.pocketagent.runtime.PreparedChatStream
+import com.pocketagent.runtime.ChatStreamRequestPlanner
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.ResolvedPerformancePlan
 import com.pocketagent.runtime.RuntimePerformanceProfile
-import com.pocketagent.runtime.StreamChatRequestV2
 
 fun interface DeviceStateProvider {
     fun current(): DeviceState
@@ -35,6 +35,11 @@ class ChatSendFlow(
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
     private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
 ) {
+    data class PreparedSendStream(
+        val deviceState: DeviceState,
+        val preparedStream: PreparedChatStream,
+    )
+
     private val planner = ChatStreamRequestPlanner(
         runtimeGenerationTimeoutMs = runtimeGenerationTimeoutMs,
         recommendedConfig = { modelIdHint, baseConfig, gpuQualifiedLayers ->
@@ -83,31 +88,34 @@ class ChatSendFlow(
         )
     }
 
-    fun buildStreamChatRequest(
-        sessionId: String,
+    fun prepareChatStream(
+        sessionId: SessionId,
         requestId: String,
         messages: List<InteractionMessage>,
-        taskTypeHint: String,
-        performanceConfig: PerformanceRuntimeConfig,
-        requestTimeoutMs: Long,
-        keepAlivePreference: RuntimeKeepAlivePreference,
-        previousResponseId: String? = null,
-    ): StreamChatRequestV2 {
-        return planner.prepare(
-            ChatStreamCommand(
-                sessionId = SessionId(sessionId),
-                requestId = requestId,
-                messages = messages,
-                promptHint = taskTypeHint,
-                deviceState = deviceStateProvider.current(),
-                performanceProfile = performanceConfig.profile,
-                gpuEnabled = performanceConfig.gpuEnabled,
-                gpuQualifiedLayers = performanceConfig.gpuLayers,
-                previousResponseId = previousResponseId,
-                keepAlivePreference = keepAlivePreference.toRuntimePreference(),
-                requestTimeoutOverrideMs = requestTimeoutMs,
-            ),
-        ).runtimeRequest
+        promptHint: String,
+        previousResponseId: String?,
+        runtime: RuntimeUiState,
+        prepare: (ChatStreamCommand) -> PreparedChatStream,
+    ): PreparedSendStream {
+        val deviceState = deviceStateProvider.current()
+        val command = ChatStreamCommand(
+            sessionId = sessionId,
+            requestId = requestId,
+            messages = messages,
+            promptHint = promptHint,
+            deviceState = deviceState,
+            performanceProfile = runtime.performanceProfile,
+            gpuEnabled = runtime.gpuAccelerationEnabled,
+            gpuQualifiedLayers = runtime.gpuMaxQualifiedLayers.coerceAtLeast(0),
+            modelIdHint = runtime.activeModelId,
+            previousResponseId = previousResponseId,
+            keepAlivePreference = runtime.keepAlivePreference.toRuntimePreference(),
+            requestTimeoutOverrideMs = runtimeGenerationTimeoutMs.takeIf { it > 0L },
+        )
+        return PreparedSendStream(
+            deviceState = deviceState,
+            preparedStream = prepare(command),
+        )
     }
 
     private fun RuntimeKeepAlivePreference.toRuntimePreference(): ChatKeepAlivePreference {
@@ -120,5 +128,4 @@ class ChatSendFlow(
             RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY -> ChatKeepAlivePreference.UNLOAD_IMMEDIATELY
         }
     }
-
 }

@@ -12,9 +12,8 @@ import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.state.StreamStateReducer
 import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.android.ui.state.UiError
+import com.pocketagent.core.SessionId
 import com.pocketagent.core.RuntimeExecutionStats
-import com.pocketagent.runtime.ChatKeepAlivePreference
-import com.pocketagent.runtime.ChatStreamCommand
 import com.pocketagent.runtime.ChatStreamDelta
 import com.pocketagent.runtime.ChatStreamEvent
 import kotlinx.coroutines.flow.update
@@ -36,7 +35,6 @@ internal fun ChatViewModel.sendMessageInternal() {
         )
         return
     }
-    val currentDeviceState = deviceStateProvider.current()
     val attachedImages = snapshot.composer.attachedImages
     val userMessage = createMessage(
         role = MessageRole.USER,
@@ -70,22 +68,17 @@ internal fun ChatViewModel.sendMessageInternal() {
     val requestId = newRequestId()
     val previousResponseId = timelineProjector.latestAssistantRequestId(sessionAfterUserMessage)
     val transcriptMessages = timelineProjector.toTranscript(sessionAfterUserMessage)
-    val preparedStream = runtimeFacade.prepareChatStream(
-        ChatStreamCommand(
-            sessionId = com.pocketagent.core.SessionId(activeSession.id),
-            requestId = requestId,
-            messages = transcriptMessages,
-            promptHint = prompt,
-            deviceState = currentDeviceState,
-            performanceProfile = snapshot.runtime.performanceProfile,
-            gpuEnabled = snapshot.runtime.gpuAccelerationEnabled,
-            gpuQualifiedLayers = snapshot.runtime.gpuMaxQualifiedLayers.coerceAtLeast(0),
-            modelIdHint = snapshot.runtime.activeModelId,
-            previousResponseId = previousResponseId,
-            keepAlivePreference = snapshot.runtime.keepAlivePreference.toRuntimeKeepAlivePreference(),
-            requestTimeoutOverrideMs = runtimeGenerationTimeoutMs.takeIf { it > 0L },
-        ),
+    val sendPreparation = sendFlow.prepareChatStream(
+        sessionId = SessionId(activeSession.id),
+        requestId = requestId,
+        messages = transcriptMessages,
+        promptHint = prompt,
+        previousResponseId = previousResponseId,
+        runtime = snapshot.runtime,
+        prepare = runtimeFacade::prepareChatStream,
     )
+    val currentDeviceState = sendPreparation.deviceState
+    val preparedStream = sendPreparation.preparedStream
     val performanceConfig = preparedStream.plan.effectiveConfig
     val targetPerformanceConfig = preparedStream.plan.baseConfig
     val requestTimeoutMs = preparedStream.plan.requestTimeoutMs
@@ -204,7 +197,7 @@ internal fun ChatViewModel.sendMessageInternal() {
             }
             runCatching { runtimeFacade.gpuOffloadStatus() }
                 .getOrNull()
-                ?.let { probe -> updateRuntimeGpuProbeState(probe) }
+                ?.let { probe -> updateRuntimeGpuProbeStateInternal(probe) }
             refreshRuntimeDiagnostics()
             persistState()
         }
@@ -349,16 +342,5 @@ internal fun ChatViewModel.sendMessageInternal() {
             },
         )
         activeSendRequestId = null
-    }
-}
-
-private fun com.pocketagent.android.ui.state.RuntimeKeepAlivePreference.toRuntimeKeepAlivePreference(): ChatKeepAlivePreference {
-    return when (this) {
-        com.pocketagent.android.ui.state.RuntimeKeepAlivePreference.AUTO -> ChatKeepAlivePreference.AUTO
-        com.pocketagent.android.ui.state.RuntimeKeepAlivePreference.ALWAYS -> ChatKeepAlivePreference.ALWAYS
-        com.pocketagent.android.ui.state.RuntimeKeepAlivePreference.ONE_MINUTE -> ChatKeepAlivePreference.ONE_MINUTE
-        com.pocketagent.android.ui.state.RuntimeKeepAlivePreference.FIVE_MINUTES -> ChatKeepAlivePreference.FIVE_MINUTES
-        com.pocketagent.android.ui.state.RuntimeKeepAlivePreference.FIFTEEN_MINUTES -> ChatKeepAlivePreference.FIFTEEN_MINUTES
-        com.pocketagent.android.ui.state.RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY -> ChatKeepAlivePreference.UNLOAD_IMMEDIATELY
     }
 }

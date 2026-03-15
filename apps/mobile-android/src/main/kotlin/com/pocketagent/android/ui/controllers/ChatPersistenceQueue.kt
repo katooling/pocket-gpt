@@ -1,8 +1,8 @@
 package com.pocketagent.android.ui.controllers
 
+import com.pocketagent.android.data.chat.PersistedChatStateCodec
+import com.pocketagent.android.data.chat.StoredChatState
 import com.pocketagent.android.ui.state.ChatUiState
-import com.pocketagent.android.ui.state.PersistedChatState
-import com.pocketagent.android.ui.state.PersistedChatStateCodec
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -22,8 +22,8 @@ data class PersistenceQueueMetrics(
 class ChatPersistenceQueue(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
-    private val toPersistedState: (ChatUiState) -> PersistedChatState,
-    private val savePersistedState: (PersistedChatState) -> Unit,
+    private val toStoredState: (ChatUiState) -> StoredChatState,
+    private val saveStoredState: (StoredChatState) -> Unit,
     private val debounceMs: Long = 120L,
     private val clockMs: () -> Long = System::currentTimeMillis,
     private val onMetrics: (PersistenceQueueMetrics) -> Unit = {},
@@ -31,7 +31,7 @@ class ChatPersistenceQueue(
     private val lock = Any()
     private var workerJob: Job? = null
     private var pendingState: ChatUiState? = null
-    private var lastSaved: PersistedChatState? = null
+    private var lastSaved: StoredChatState? = null
     private var writes: Int = 0
     private val recentDurationsMs = ArrayDeque<Long>()
     private val recentPayloadBytes = ArrayDeque<Int>()
@@ -66,19 +66,19 @@ class ChatPersistenceQueue(
                 snapshot
             } ?: break
 
-            val persisted = toPersistedState(state)
-            if (persisted == lastSaved) {
+            val stored = toStoredState(state)
+            if (stored == lastSaved) {
                 if (!hasPendingState()) {
                     break
                 }
                 continue
             }
 
-            val payloadBytes = PersistedChatStateCodec.encode(persisted).toByteArray(StandardCharsets.UTF_8).size
+            val payloadBytes = PersistedChatStateCodec.encode(stored).toByteArray(StandardCharsets.UTF_8).size
             val started = clockMs()
-            savePersistedState(persisted)
+            saveStoredState(stored)
             val durationMs = (clockMs() - started).coerceAtLeast(0L)
-            lastSaved = persisted
+            lastSaved = stored
             recordMetrics(durationMs = durationMs, payloadBytes = payloadBytes)
 
             if (!hasPendingState()) {
@@ -136,4 +136,3 @@ class ChatPersistenceQueue(
         private const val METRICS_WINDOW_SIZE = 64
     }
 }
-

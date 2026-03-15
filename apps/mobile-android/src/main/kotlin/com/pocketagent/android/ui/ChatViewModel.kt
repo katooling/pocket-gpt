@@ -2,6 +2,7 @@ package com.pocketagent.android.ui
 
 import android.util.Log
 import com.pocketagent.android.BuildConfig
+import com.pocketagent.android.data.chat.SessionPersistence
 import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeResult
@@ -12,6 +13,9 @@ import com.pocketagent.android.ui.controllers.ChatStreamCoordinator
 import com.pocketagent.android.ui.controllers.ChatPersistenceCoordinator
 import com.pocketagent.android.ui.controllers.ChatPersistenceQueue
 import com.pocketagent.android.ui.controllers.DeviceStateProvider
+import com.pocketagent.android.ui.controllers.AndroidChatConversationService
+import com.pocketagent.android.ui.controllers.AndroidChatSessionService
+import com.pocketagent.android.ui.controllers.toUiSessions
 import com.pocketagent.android.ui.controllers.ChatSendFlow
 import com.pocketagent.android.ui.controllers.ChatSendController
 import com.pocketagent.android.ui.controllers.PersistenceQueueMetrics
@@ -39,7 +43,6 @@ import com.pocketagent.android.ui.state.PersistedInteractionPart
 import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.RuntimeUiState
-import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.android.ui.state.UiError
@@ -63,7 +66,7 @@ class ChatViewModel(
     internal val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     internal val runtimeGenerationTimeoutMs: Long = 0L,
     private val runtimeStartupProbeTimeoutMs: Long = DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS,
-    private val sendController: ChatSendController = ChatSendController(runtimeFacade, ioDispatcher),
+    internal val sendController: ChatSendController = ChatSendController(runtimeFacade, ioDispatcher),
     internal val streamCoordinator: ChatStreamCoordinator = ChatStreamCoordinator(),
     private val startupProbeController: StartupProbeController = StartupProbeController(),
     private val startupReadinessCoordinator: StartupReadinessCoordinator = StartupReadinessCoordinator(
@@ -72,6 +75,8 @@ class ChatViewModel(
     private val persistenceCoordinator: ChatPersistenceCoordinator = ChatPersistenceCoordinator(sessionPersistence),
     internal val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
     internal val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
+    internal val sessionService: AndroidChatSessionService = AndroidChatSessionService(),
+    internal val conversationService: AndroidChatConversationService = AndroidChatConversationService(sessionService),
     internal val timelineProjector: TimelineProjector = TimelineProjector(),
     internal val persistenceFlow: ChatPersistenceFlow = ChatPersistenceFlow(persistenceCoordinator),
     internal val startupFlow: ChatStartupFlow = ChatStartupFlow(
@@ -81,6 +86,7 @@ class ChatViewModel(
         ioDispatcher = ioDispatcher,
         runtimeStartupProbeTimeoutMs = runtimeStartupProbeTimeoutMs,
         nativeRuntimeLibraryPackaged = BuildConfig.NATIVE_RUNTIME_LIBRARY_PACKAGED,
+        sessionService = sessionService,
         timelineProjector = timelineProjector,
     ),
     internal val sendFlow: ChatSendFlow = ChatSendFlow(
@@ -93,16 +99,16 @@ class ChatViewModel(
 ) : ViewModel() {
     internal val _uiState = MutableStateFlow(ChatUiState())
     val uiState = _uiState.asStateFlow()
-    private var gpuProbeRefreshJob: Job? = null
+    internal var gpuProbeRefreshJob: Job? = null
     @Volatile
     internal var activeSendRequestId: String? = null
     @Volatile
-    private var lastKeepAliveTouchAtMs: Long = 0L
+    internal var lastKeepAliveTouchAtMs: Long = 0L
     internal val persistenceQueue = ChatPersistenceQueue(
         scope = viewModelScope,
         ioDispatcher = ioDispatcher,
-        toPersistedState = { state -> persistenceFlow.toPersistedState(state) },
-        savePersistedState = { persisted -> persistenceFlow.savePersistedState(persisted) },
+        toStoredState = { state -> persistenceFlow.toStoredState(state) },
+        saveStoredState = { stored -> persistenceFlow.saveStoredState(stored) },
         debounceMs = CHAT_PERSIST_DEBOUNCE_MS,
         onMetrics = { metrics ->
             val shouldLog = metrics.writeCount <= 3 || metrics.writeCount % 8 == 0
@@ -118,7 +124,7 @@ class ChatViewModel(
             }
         },
     )
-    private val startupProbeOrchestrator = ChatStartupProbeOrchestrator(
+    internal val startupProbeOrchestrator = ChatStartupProbeOrchestrator(
         scope = viewModelScope,
         ioDispatcher = ioDispatcher,
         runtimeGateway = runtimeFacade,
@@ -127,11 +133,11 @@ class ChatViewModel(
         updateState = { transform -> _uiState.update(transform) },
         onPersist = { persistState() },
         onProbeApplied = {
-            refreshGpuProbeStatusIfPending()
+            refreshGpuProbeStatusIfPendingInternal()
             refreshRuntimeDiagnostics()
         },
         log = { phase, probeToken, detail, error ->
-            logStartupProbe(
+            logStartupProbeInternal(
                 phase = phase,
                 probeToken = probeToken,
                 statusDetailOverride = detail,
@@ -141,7 +147,7 @@ class ChatViewModel(
     )
 
     init {
-        bootstrapState()
+        bootstrapStateInternal()
     }
 
     fun onComposerChanged(text: String) {
@@ -163,103 +169,23 @@ class ChatViewModel(
     }
 
     fun editMessage(messageId: String) {
-        val snapshot = _uiState.value
-        val activeSession = snapshot.activeSession ?: return
-        val message = activeSession.messages.firstOrNull { it.id == messageId } ?: return
-        if (message.role != MessageRole.USER) return
-        _uiState.update { state ->
-            state.copy(
-                composer = state.composer.copy(
-                    text = message.content,
-                    editingMessageId = messageId,
-                    attachedImages = message.imagePaths.ifEmpty {
-                        listOfNotNull(message.imagePath)
-                    },
-                ),
-            )
-        }
+        editMessageInternal(messageId)
     }
 
     fun cancelEdit() {
-        _uiState.update { state ->
-            state.copy(
-                composer = state.composer.copy(
-                    text = "",
-                    editingMessageId = null,
-                    attachedImages = emptyList(),
-                ),
-            )
-        }
+        cancelEditInternal()
     }
 
     fun submitEdit() {
-        val snapshot = _uiState.value
-        val activeSession = snapshot.activeSession ?: return
-        val editingId = snapshot.composer.editingMessageId ?: return
-        val editIndex = activeSession.messages.indexOfFirst { it.id == editingId }
-        if (editIndex < 0) return
-
-        // Remove the edited message and all subsequent messages
-        val trimmedMessages = activeSession.messages.take(editIndex)
-        updateActiveSession(activeSession.id) { session ->
-            session.copy(
-                messages = trimmedMessages,
-                updatedAtEpochMs = System.currentTimeMillis(),
-            )
-        }
-        _uiState.update { state ->
-            state.copy(
-                composer = state.composer.copy(editingMessageId = null),
-            )
-        }
-        persistState()
-        // Now send the edited text as a new message
-        sendMessage()
+        submitEditInternal()
     }
 
     fun regenerateResponse(messageId: String) {
-        val snapshot = _uiState.value
-        val activeSession = snapshot.activeSession ?: return
-        val messageIndex = activeSession.messages.indexOfFirst { it.id == messageId }
-        if (messageIndex < 0) return
-        val message = activeSession.messages[messageIndex]
-        if (message.role != MessageRole.ASSISTANT) return
-
-        // Find the last user message before this assistant message
-        val userMessage = activeSession.messages.take(messageIndex)
-            .lastOrNull { it.role == MessageRole.USER }
-            ?: return
-
-        // Remove the assistant message and everything after it
-        val trimmedMessages = activeSession.messages.take(messageIndex)
-        updateActiveSession(activeSession.id) { session ->
-            session.copy(
-                messages = trimmedMessages,
-                updatedAtEpochMs = System.currentTimeMillis(),
-            )
-        }
-
-        // Re-send from the last user message's content
-        _uiState.update { state ->
-            state.copy(
-                composer = state.composer.copy(
-                    text = userMessage.content,
-                    attachedImages = userMessage.imagePaths.ifEmpty {
-                        listOfNotNull(userMessage.imagePath)
-                    },
-                ),
-            )
-        }
-        persistState()
-        sendMessage()
+        regenerateResponseInternal(messageId)
     }
 
     fun updateSessionCompletionSettings(settings: CompletionSettings) {
-        val activeSession = _uiState.value.activeSession ?: return
-        updateActiveSession(activeSession.id) { session ->
-            session.copy(completionSettings = settings)
-        }
-        persistState()
+        updateSessionCompletionSettingsInternal(settings)
     }
 
     fun setCompletionSettingsOpen(isOpen: Boolean) {
@@ -267,25 +193,11 @@ class ChatViewModel(
     }
 
     fun addAttachedImage(imagePath: String) {
-        _uiState.update { state ->
-            val current = state.composer.attachedImages
-            if (current.size >= 5) return@update state
-            state.copy(
-                composer = state.composer.copy(
-                    attachedImages = current + imagePath,
-                ),
-            )
-        }
+        addAttachedImageInternal(imagePath)
     }
 
     fun removeAttachedImage(index: Int) {
-        _uiState.update { state ->
-            val current = state.composer.attachedImages.toMutableList()
-            if (index in current.indices) current.removeAt(index)
-            state.copy(
-                composer = state.composer.copy(attachedImages = current),
-            )
-        }
+        removeAttachedImageInternal(index)
     }
 
     fun cancelActiveSend() {
@@ -301,542 +213,95 @@ class ChatViewModel(
     }
 
     fun createSession() {
-        val newSessionId = runtimeFacade.createSession().value
-        val now = System.currentTimeMillis()
-        val session = ChatSessionUiModel(
-            id = newSessionId,
-            title = "New chat",
-            createdAtEpochMs = now,
-            updatedAtEpochMs = now,
-            messages = emptyList(),
-            messagesLoaded = true,
-            messageCount = 0,
-        )
-        _uiState.update { state ->
-            state.copy(
-                sessions = state.sessions + session,
-                activeSessionId = session.id,
-                isSessionDrawerOpen = false,
-            )
-        }
-        persistState()
+        createSessionInternal()
     }
 
     fun switchSession(sessionId: String) {
-        _uiState.update { state ->
-            state.copy(activeSessionId = sessionId, isSessionDrawerOpen = false)
-        }
-        hydrateSessionMessagesIfNeeded(sessionId)
-        persistState()
+        switchSessionInternal(sessionId)
     }
 
     fun deleteSession(sessionId: String) {
-        runtimeFacade.deleteSession(SessionId(sessionId))
-        _uiState.update { state ->
-            val remaining = state.sessions.filterNot { it.id == sessionId }
-            val nextActive = when {
-                remaining.isEmpty() -> null
-                state.activeSessionId == sessionId -> remaining.last().id
-                else -> state.activeSessionId
-            }
-            state.copy(
-                sessions = remaining,
-                activeSessionId = nextActive,
-            )
-        }
-        if (_uiState.value.sessions.isEmpty()) {
-            createSession()
-            return
-        }
-        _uiState.value.activeSessionId?.let(::hydrateSessionMessagesIfNeeded)
-        persistState()
+        deleteSessionInternal(sessionId)
     }
 
     fun attachImage(imagePath: String) {
-        val snapshot = _uiState.value
-        val activeSession = snapshot.activeSession ?: return
-        if (!sendFlow.isRuntimeReadyForSend(snapshot.runtime)) {
-            val uiError = startupFlow.startupBlockError(snapshot.runtime)
-            applyBlockedRuntimeGuardrail(
-                sessionId = activeSession.id,
-                uiError = uiError,
-            )
-            return
-        }
-        val imageMessage = createMessage(
-            role = MessageRole.USER,
-            content = "Analyze attached image",
-            kind = MessageKind.IMAGE,
-            imagePath = imagePath,
-        )
-        updateActiveSession(activeSession.id) { session ->
-            session.copy(
-                messages = session.messages + imageMessage,
-                updatedAtEpochMs = System.currentTimeMillis(),
-            )
-        }
-        _uiState.update {
-            it.copy(
-                composer = it.composer.copy(isSending = true),
-                runtime = it.runtime.copy(
-                    modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                    modelStatusDetail = "Loading runtime model...",
-                ).clearError(),
-            )
-        }
-        persistState()
-
-        viewModelScope.launch(ioDispatcher) {
-            runCatching {
-                sendController.analyzeImage(imagePath = imagePath, prompt = "Describe this image.")
-            }.onSuccess { result ->
-                val mappedError = UiErrorMapper.fromImageResult(result)
-                if (mappedError != null) {
-                    appendSystemMessage(
-                        sessionId = activeSession.id,
-                        content = formatUserFacingError(mappedError),
-                    )
-                    _uiState.update { state ->
-                        state.copy(
-                            composer = state.composer.copy(isSending = false),
-                            runtime = state.runtime.copy(
-                                modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                                modelStatusDetail = mappedError.userMessage,
-                            ).withUiError(mappedError),
-                        )
-                    }
-                    persistState()
-                    return@onSuccess
-                }
-                val responseText = when (result) {
-                    is com.pocketagent.runtime.ImageAnalysisResult.Success -> result.content
-                    is com.pocketagent.runtime.ImageAnalysisResult.Failure -> {
-                        result.failure.technicalDetail ?: result.failure.userMessage
-                    }
-                }
-                val assistant = createMessage(
-                    role = MessageRole.ASSISTANT,
-                    content = responseText,
-                    kind = MessageKind.IMAGE,
-                )
-                updateActiveSession(activeSession.id) { session ->
-                    session.copy(
-                        messages = session.messages + assistant,
-                        updatedAtEpochMs = System.currentTimeMillis(),
-                    )
-                }
-                _uiState.update { state ->
-                    state.copy(
-                        composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime.copy(
-                                runtimeBackend = runtimeFacade.runtimeBackend(),
-                            modelRuntimeStatus = ModelRuntimeStatus.READY,
-                            modelStatusDetail = "Image analysis completed",
-                        ).clearError(),
-                    )
-                }
-                persistState()
-            }.onFailure { error ->
-                val uiError = UiErrorMapper.runtimeFailure(error.message ?: "Image analysis failed.")
-                appendSystemMessage(
-                    sessionId = activeSession.id,
-                    content = formatUserFacingError(uiError),
-                )
-                _uiState.update { state ->
-                    state.copy(
-                        composer = state.composer.copy(isSending = false),
-                        runtime = state.runtime.copy(
-                            modelRuntimeStatus = ModelRuntimeStatus.ERROR,
-                            modelStatusDetail = uiError.userMessage,
-                        ).withUiError(uiError),
-                    )
-                }
-                persistState()
-            }
-        }
+        attachImageInternal(imagePath)
     }
 
     fun runTool(toolName: String, jsonArgs: String) {
-        val activeSession = _uiState.value.activeSession ?: return
-        val request = createMessage(
-            role = MessageRole.USER,
-            content = "Run tool: $toolName",
-            kind = MessageKind.TEXT,
-        )
-        val toolCallId = newToolCallId()
-        val assistantToolCall = createMessage(
-            role = MessageRole.ASSISTANT,
-            content = "",
-            kind = MessageKind.TOOL,
-            toolName = toolName,
-            toolArgsJson = jsonArgs,
-            toolCallId = toolCallId,
-            toolCallStatus = PersistedToolCallStatus.RUNNING,
-        )
-        updateActiveSession(activeSession.id) { session ->
-            session.copy(
-                messages = session.messages + request + assistantToolCall,
-                updatedAtEpochMs = System.currentTimeMillis(),
-            )
-        }
-        _uiState.update {
-            it.copy(
-                composer = it.composer.copy(isSending = true),
-                runtime = it.runtime.copy(
-                    modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-                    modelStatusDetail = "Preparing local tool...",
-                ).clearError(),
-            )
-        }
-        persistState()
-
-        executeToolCommand(
-            sessionId = activeSession.id,
-            toolName = toolName,
-            jsonArgs = jsonArgs,
-            toolCallId = toolCallId,
-        )
+        runToolInternal(toolName, jsonArgs)
     }
 
     fun exportDiagnostics() {
-        val activeSession = _uiState.value.activeSession ?: return
-        viewModelScope.launch(ioDispatcher) {
-            runCatching { runtimeFacade.exportDiagnostics() }
-                .onSuccess { diagnostics ->
-                    val diagnosticsMessage = createMessage(
-                        role = MessageRole.SYSTEM,
-                        content = diagnostics,
-                        kind = MessageKind.DIAGNOSTIC,
-                    )
-                    updateActiveSession(activeSession.id) { session ->
-                        session.copy(
-                            messages = session.messages + diagnosticsMessage,
-                            updatedAtEpochMs = System.currentTimeMillis(),
-                        )
-                    }
-                    _uiState.update { state ->
-                        state.copy(runtime = state.runtime.clearError())
-                    }
-                    persistState()
-                }
-                .onFailure { error ->
-                    val uiError = UiErrorMapper.runtimeFailure(error.message ?: "Diagnostics export failed.")
-                    appendSystemMessage(
-                        sessionId = activeSession.id,
-                        content = formatUserFacingError(uiError),
-                    )
-                    _uiState.update { state ->
-                        state.copy(runtime = state.runtime.withUiError(uiError))
-                    }
-                    persistState()
-                }
-        }
+        exportDiagnosticsInternal()
     }
 
     fun setRoutingMode(mode: RoutingMode) {
-        val effectiveMode = coerceSupportedRoutingMode(mode)
-        if (_uiState.value.runtime.routingMode == effectiveMode) {
-            return
-        }
-        runtimeFacade.setRoutingMode(effectiveMode)
-        _uiState.update { state ->
-            state.copy(runtime = state.runtime.copy(routingMode = effectiveMode))
-        }
-        persistState()
+        setRoutingModeInternal(mode)
     }
 
     fun setPerformanceProfile(profile: RuntimePerformanceProfile) {
-        if (_uiState.value.runtime.performanceProfile == profile) {
-            return
-        }
-        _uiState.update { state ->
-            state.copy(
-                runtime = state.runtime.copy(
-                    performanceProfile = profile,
-                    modelStatusDetail = performanceProfileStatusDetail(
-                        profile = profile,
-                        gpuEnabled = state.runtime.gpuAccelerationEnabled,
-                        gpuSupported = state.runtime.gpuAccelerationSupported,
-                    ),
-                ),
-            )
-        }
-        persistState()
+        setPerformanceProfileInternal(profile)
     }
 
     fun setKeepAlivePreference(preference: RuntimeKeepAlivePreference) {
-        if (_uiState.value.runtime.keepAlivePreference == preference) {
-            return
-        }
-        _uiState.update { state ->
-            state.copy(runtime = state.runtime.copy(keepAlivePreference = preference))
-        }
-        persistState()
+        setKeepAlivePreferenceInternal(preference)
     }
 
     fun setGpuAccelerationEnabled(enabled: Boolean) {
-        val snapshot = _uiState.value.runtime
-        val supported = snapshot.gpuAccelerationSupported
-        val effective = enabled && supported
-        val detail = if (enabled && !supported) {
-            when (snapshot.gpuProbeStatus) {
-                com.pocketagent.android.runtime.GpuProbeStatus.PENDING ->
-                    "Validating GPU support... keeping CPU until probe is qualified."
-                com.pocketagent.android.runtime.GpuProbeStatus.FAILED ->
-                    "GPU acceleration unavailable (${snapshot.gpuProbeFailureReason ?: "probe_failed"}). Using CPU."
-                else ->
-                    "GPU acceleration is unavailable on this build/device. Using CPU."
-            }
-        } else {
-            performanceProfileStatusDetail(
-                profile = snapshot.performanceProfile,
-                gpuEnabled = effective,
-                gpuSupported = supported,
-            )
-        }
-        if (
-            snapshot.gpuAccelerationEnabled == effective &&
-            snapshot.modelStatusDetail == detail
-        ) {
-            return
-        }
-        _uiState.update { state ->
-            state.copy(
-                runtime = state.runtime.copy(
-                    gpuAccelerationEnabled = effective,
-                    modelStatusDetail = detail,
-                ),
-            )
-        }
-        persistState()
+        setGpuAccelerationEnabledInternal(enabled)
     }
 
     fun setSessionDrawerOpen(isOpen: Boolean) {
-        _uiState.update { it.copy(isSessionDrawerOpen = isOpen) }
+        setSessionDrawerOpenInternal(isOpen)
     }
 
     fun setAdvancedSheetOpen(isOpen: Boolean) {
-        if (_uiState.value.isAdvancedSheetOpen == isOpen) {
-            return
-        }
-        _uiState.update {
-            it.copy(
-                isAdvancedSheetOpen = isOpen,
-                showAdvancedUnlockCue = if (isOpen) false else it.showAdvancedUnlockCue,
-            )
-        }
-        persistState()
+        setAdvancedSheetOpenInternal(isOpen)
     }
 
     fun setToolDialogOpen(isOpen: Boolean) {
-        _uiState.update { it.copy(isToolDialogOpen = isOpen) }
+        setToolDialogOpenInternal(isOpen)
     }
 
     fun setPrivacySheetOpen(isOpen: Boolean) {
-        _uiState.update { it.copy(isPrivacySheetOpen = isOpen) }
+        setPrivacySheetOpenInternal(isOpen)
     }
 
     fun prefillComposer(text: String) {
-        _uiState.update { state ->
-            state.copy(
-                composer = state.composer.copy(text = text),
-                isToolDialogOpen = false,
-            )
-        }
+        prefillComposerInternal(text)
     }
 
     fun nextOnboardingPage() {
-        _uiState.update { state ->
-            state.copy(onboardingPage = (state.onboardingPage + 1).coerceAtMost(ONBOARDING_LAST_PAGE))
-        }
+        nextOnboardingPageInternal()
     }
 
     fun completeOnboarding() {
-        _uiState.update { state ->
-            state.copy(
-                showOnboarding = false,
-                onboardingPage = ONBOARDING_LAST_PAGE,
-                firstSessionStage = if (sendFlow.isRuntimeReadyForSend(state.runtime)) {
-                    FirstSessionStage.READY_TO_CHAT
-                } else {
-                    FirstSessionStage.GET_READY
-                },
-            )
-        }
-        recordFirstSessionEventOnce(TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED)
-        persistState()
+        completeOnboardingInternal()
     }
 
     fun skipOnboarding() {
-        completeOnboarding()
+        skipOnboardingInternal()
     }
 
     fun refreshRuntimeReadiness(statusDetailOverride: String? = null) {
-        activeSendRequestId?.let { requestId ->
-            runtimeFacade.cancelGenerationByRequest(requestId)
-        }
-        _uiState.value.activeSessionId?.let { sessionId ->
-            runtimeFacade.cancelGeneration(SessionId(sessionId))
-        }
-        launchStartupProbe(statusDetailOverride)
+        refreshRuntimeReadinessInternal(statusDetailOverride)
     }
 
     fun onGetReadyTapped() {
-        _uiState.update { state ->
-            state.copy(
-                firstSessionStage = FirstSessionStage.GET_READY,
-            )
-        }
-        recordFirstSessionEventOnce(TELEMETRY_EVENT_GET_READY_STARTED)
-        persistState()
+        onGetReadyTappedInternal()
     }
 
     fun onFirstAnswerCompleted() {
-        _uiState.update { state ->
-            state.copy(
-                firstAnswerCompleted = true,
-                firstSessionStage = FirstSessionStage.FIRST_ANSWER_DONE,
-            )
-        }
-        recordFirstSessionEventOnce(TELEMETRY_EVENT_FIRST_ANSWER_COMPLETED)
-        persistState()
+        onFirstAnswerCompletedInternal()
     }
 
     fun onFollowUpCompleted() {
-        _uiState.update { state ->
-            state.copy(
-                followUpCompleted = true,
-                firstSessionStage = FirstSessionStage.FOLLOW_UP_DONE,
-            )
-        }
-        recordFirstSessionEventOnce(TELEMETRY_EVENT_FOLLOW_UP_COMPLETED)
-        persistState()
+        onFollowUpCompletedInternal()
     }
 
     fun onAdvancedUnlocked() {
-        _uiState.update { state ->
-            state.copy(
-                advancedUnlocked = true,
-                showAdvancedUnlockCue = true,
-                firstSessionStage = FirstSessionStage.ADVANCED_UNLOCKED,
-            )
-        }
-        recordFirstSessionEventOnce(TELEMETRY_EVENT_ADVANCED_UNLOCKED)
-        persistState()
-    }
-
-    private fun bootstrapState() {
-        val loadedState = persistenceFlow.loadBootstrapState()
-        val bootstrapResult = startupFlow.bootstrap(loadedState)
-        _uiState.value = bootstrapResult.state
-        _uiState.value.activeSessionId?.let(::hydrateSessionMessagesIfNeeded)
-        refreshRuntimeDiagnostics()
-        refreshGpuProbeStatusIfPending()
-        ensureSimpleFirstEnteredTelemetryIfNeeded()
-        if (bootstrapResult.shouldPersist) {
-            persistState()
-        }
-        if (bootstrapResult.shouldRunStartupProbe) {
-            launchStartupProbe()
-        }
-    }
-
-    private fun launchStartupProbe(statusDetailOverride: String? = null) {
-        startupProbeOrchestrator.launch(statusDetailOverride = statusDetailOverride)
-    }
-
-    private fun refreshGpuProbeStatusIfPending() {
-        if (_uiState.value.runtime.gpuProbeStatus != GpuProbeStatus.PENDING) {
-            gpuProbeRefreshJob?.cancel()
-            gpuProbeRefreshJob = null
-            return
-        }
-        if (gpuProbeRefreshJob?.isActive == true) {
-            return
-        }
-        gpuProbeRefreshJob = viewModelScope.launch(ioDispatcher) {
-            while (isActive) {
-                val nextProbe = runCatching { runtimeFacade.gpuOffloadStatus() }.getOrElse {
-                    GpuProbeResult(
-                        status = GpuProbeStatus.FAILED,
-                        failureReason = GpuProbeFailureReason.UNKNOWN,
-                        detail = "gpu_probe_refresh_failed:${it.message ?: it::class.simpleName}",
-                    )
-                }
-                val changed = updateRuntimeGpuProbeState(nextProbe)
-                if (changed) {
-                    persistState()
-                }
-                if (nextProbe.status != GpuProbeStatus.PENDING) {
-                    return@launch
-                }
-                delay(GPU_PROBE_REFRESH_INTERVAL_MS)
-            }
-        }
-    }
-
-    internal fun updateRuntimeGpuProbeState(probe: GpuProbeResult): Boolean {
-        var changed = false
-        _uiState.update { state ->
-            val gpuSupported = probe.status == GpuProbeStatus.QUALIFIED && probe.maxStableGpuLayers > 0
-            val runtime = state.runtime
-            val nextRuntime = runtime.copy(
-                gpuAccelerationSupported = gpuSupported,
-                gpuAccelerationEnabled = runtime.gpuAccelerationEnabled && gpuSupported,
-                gpuProbeStatus = probe.status,
-                gpuProbeFailureReason = probe.failureReason?.name,
-                gpuMaxQualifiedLayers = probe.maxStableGpuLayers,
-            )
-            changed = runtime != nextRuntime
-            if (!changed) {
-                state
-            } else {
-                state.copy(runtime = nextRuntime)
-            }
-        }
-        return changed
-    }
-
-    internal fun refreshRuntimeDiagnostics() {
-        viewModelScope.launch(ioDispatcher) {
-            val diagnostics = runCatching { runtimeFacade.runtimeDiagnosticsSnapshot() }
-                .getOrDefault(com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshot())
-            val loadedModel = runCatching { runtimeFacade.loadedModel() }.getOrNull()
-            _uiState.update { state ->
-                state.copy(
-                    runtime = state.runtime.copy(
-                        activeModelId = loadedModel?.modelId ?: state.runtime.activeModelId,
-                        activeBackend = diagnostics.activeBackend ?: state.runtime.activeBackend,
-                        backendProfile = diagnostics.backendProfile ?: state.runtime.backendProfile,
-                        compiledBackend = diagnostics.compiledBackend ?: state.runtime.compiledBackend,
-                        activeModelQuantization = diagnostics.activeModelQuantization
-                            ?: state.runtime.activeModelQuantization,
-                        nativeRuntimeSupported = diagnostics.nativeRuntimeSupported
-                            ?: state.runtime.nativeRuntimeSupported,
-                        strictAcceleratorFailFast = diagnostics.strictAcceleratorFailFast
-                            ?: state.runtime.strictAcceleratorFailFast,
-                        autoBackendCpuFallback = diagnostics.autoBackendCpuFallback
-                            ?: state.runtime.autoBackendCpuFallback,
-                    ),
-                )
-            }
-        }
-    }
-
-    private fun logStartupProbe(
-        phase: String,
-        probeToken: Long,
-        statusDetailOverride: String?,
-        error: Throwable? = null,
-    ) {
-        val message = "STARTUP_PROBE|phase=$phase|token=$probeToken|detail=${statusDetailOverride.orEmpty()}"
-        runCatching {
-            if (error == null) {
-                Log.i(LOG_TAG, message)
-            } else {
-                Log.w(LOG_TAG, message, error)
-            }
-        }
+        onAdvancedUnlockedInternal()
     }
 
     internal fun updateStreamingMessage(sessionId: String, messageId: String, text: String) {
@@ -957,37 +422,8 @@ class ChatViewModel(
         }
     }
 
-    private fun hydrateSessionMessagesIfNeeded(sessionId: String) {
-        val session = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return
-        if (session.messagesLoaded) {
-            return
-        }
-        viewModelScope.launch(ioDispatcher) {
-            val messages = persistenceFlow.loadSessionMessages(sessionId).orEmpty()
-            val hydratedSession = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return@launch
-            if (hydratedSession.messagesLoaded) {
-                return@launch
-            }
-            val restoredSession = hydratedSession.copy(
-                messages = messages,
-                messagesLoaded = true,
-                messageCount = messages.size,
-            )
-            runtimeFacade.restoreSession(
-                sessionId = SessionId(sessionId),
-                turns = timelineProjector.toTurns(restoredSession),
-            )
-            updateActiveSession(sessionId) { restoredSession }
-            persistState()
-        }
-    }
-
     private fun normalizeSession(session: ChatSessionUiModel): ChatSessionUiModel {
-        return if (session.messagesLoaded) {
-            session.copy(messageCount = session.messages.size)
-        } else {
-            session
-        }
+        return sessionService.normalize(session)
     }
 
     internal fun persistState() {
@@ -1005,7 +441,7 @@ class ChatViewModel(
         super.onCleared()
     }
 
-    private fun executeToolCommand(
+    internal fun executeToolCommand(
         sessionId: String,
         toolName: String,
         jsonArgs: String,

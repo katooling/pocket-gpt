@@ -1,15 +1,12 @@
 package com.pocketagent.android.ui.controllers
 
 import com.pocketagent.android.runtime.ChatRuntimeService
-import com.pocketagent.android.runtime.RuntimeGateway
 import com.pocketagent.android.ui.state.StreamReducerState
 import com.pocketagent.android.ui.state.StreamStateReducer
 import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.ChatStreamPlan
 import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
-import com.pocketagent.runtime.StreamChatRequestV2
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
@@ -24,38 +21,6 @@ class ChatStreamCoordinator(
     private val noFirstTokenWarnMs: Long = 150_000L,
     private val noFirstTokenStallMs: Long = 600_000L,
 ) {
-    @Deprecated("Use collectStream(runtimeService, preparedStream, ...) instead.")
-    suspend fun collectStream(
-        runtimeGateway: RuntimeGateway,
-        request: StreamChatRequestV2,
-        requestTimeoutMs: Long,
-        streamReducer: StreamStateReducer,
-        sendStartedAtMs: Long,
-        onEvent: (ChatStreamEvent, StreamReducerState) -> Unit,
-        onElapsed: (Long, String?) -> Unit,
-        onBeforeTerminal: () -> Unit,
-        onTerminal: (StreamTerminalState) -> Unit,
-    ) {
-        collectStream(
-            runtimeService = runtimeGateway,
-            preparedStream = PreparedChatStream(
-                plan = ChatStreamPlan(
-                    requestId = request.requestId,
-                    requestTimeoutMs = requestTimeoutMs,
-                    baseConfig = request.performanceConfig,
-                    effectiveConfig = request.performanceConfig,
-                ),
-                runtimeRequest = request,
-            ),
-            streamReducer = streamReducer,
-            sendStartedAtMs = sendStartedAtMs,
-            onEvent = onEvent,
-            onElapsed = onElapsed,
-            onBeforeTerminal = onBeforeTerminal,
-            onTerminal = onTerminal,
-        )
-    }
-
     suspend fun collectStream(
         runtimeService: ChatRuntimeService,
         preparedStream: PreparedChatStream,
