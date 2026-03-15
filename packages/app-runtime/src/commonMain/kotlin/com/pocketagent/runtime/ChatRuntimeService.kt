@@ -57,9 +57,40 @@ class ChatStreamRequestPlanner(
             gpuLayers = command.gpuQualifiedLayers,
             modelIdHint = command.modelIdHint,
         )
+        return prepare(
+            command = command,
+            performancePlan = performancePlan,
+            requestTimeoutMs = resolveRequestTimeoutMs(
+                performanceConfig = performancePlan.effectiveConfig,
+                overrideTimeoutMs = command.requestTimeoutOverrideMs,
+            ),
+        )
+    }
+
+    fun prepare(
+        command: ChatStreamCommand,
+        performanceConfig: PerformanceRuntimeConfig,
+        requestTimeoutMs: Long,
+    ): PreparedChatStream {
+        val performancePlan = ResolvedPerformancePlan(
+            baseConfig = performanceConfig,
+            effectiveConfig = performanceConfig,
+        )
+        return prepare(
+            command = command,
+            performancePlan = performancePlan,
+            requestTimeoutMs = requestTimeoutMs,
+        )
+    }
+
+    private fun prepare(
+        command: ChatStreamCommand,
+        performancePlan: ResolvedPerformancePlan,
+        requestTimeoutMs: Long,
+    ): PreparedChatStream {
         val requestTimeoutMs = resolveRequestTimeoutMs(
             performanceConfig = performancePlan.effectiveConfig,
-            overrideTimeoutMs = command.requestTimeoutOverrideMs,
+            overrideTimeoutMs = requestTimeoutMs,
         )
         val runtimeRequest = StreamChatRequestV2(
             sessionId = command.sessionId,
