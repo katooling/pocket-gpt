@@ -10,10 +10,9 @@ import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatKeepAlivePreference
 import com.pocketagent.runtime.ChatStreamCommand
 import com.pocketagent.runtime.ChatStreamRequestPlanner
-import com.pocketagent.runtime.DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS
 import com.pocketagent.runtime.InteractionMessage
-import com.pocketagent.runtime.ModelResidencyPolicy
 import com.pocketagent.runtime.PerformanceRuntimeConfig
+import com.pocketagent.runtime.ResolvedPerformancePlan
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
 
@@ -30,11 +29,6 @@ fun interface DeviceStateProvider {
         }
     }
 }
-
-data class ResolvedPerformancePlan(
-    val baseConfig: PerformanceRuntimeConfig,
-    val effectiveConfig: PerformanceRuntimeConfig,
-)
 
 class ChatSendFlow(
     private val runtimeGenerationTimeoutMs: Long,
@@ -127,35 +121,4 @@ class ChatSendFlow(
         }
     }
 
-    @Deprecated("Moved to ChatStreamRequestPlanner in app-runtime.")
-    private fun resolveResidencyPolicy(preference: RuntimeKeepAlivePreference): ModelResidencyPolicy {
-        return planner.prepare(
-            ChatStreamCommand(
-                sessionId = SessionId("legacy"),
-                requestId = "legacy",
-                messages = emptyList(),
-                promptHint = "",
-                deviceState = deviceStateProvider.current(),
-                performanceProfile = RuntimePerformanceProfile.BALANCED,
-                gpuEnabled = false,
-                gpuQualifiedLayers = 0,
-                keepAlivePreference = preference.toRuntimePreference(),
-            ),
-        ).runtimeRequest.residencyPolicy
-    }
-
-    @Deprecated("Moved to ChatStreamRequestPlanner in app-runtime.")
-    private fun resolveTaskType(prompt: String): String {
-        return if (prompt.length >= LONG_PROMPT_LENGTH) "long_text" else "short_text"
-    }
-
-    @Deprecated("Moved to ChatStreamRequestPlanner in app-runtime.")
-    private fun resolveMaxTokens(prompt: String, performanceConfig: PerformanceRuntimeConfig): Int {
-        return performanceConfig.maxTokensDefault.coerceAtLeast(MIN_MAX_TOKENS)
-    }
-
-    private companion object {
-        private const val LONG_PROMPT_LENGTH = 160
-        private const val MIN_MAX_TOKENS = 16
-    }
 }

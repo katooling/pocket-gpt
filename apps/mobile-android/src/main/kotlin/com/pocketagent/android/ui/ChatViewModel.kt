@@ -61,7 +61,7 @@ class ChatViewModel(
     internal val runtimeFacade: ChatRuntimeService,
     sessionPersistence: SessionPersistence,
     internal val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val runtimeGenerationTimeoutMs: Long = 0L,
+    internal val runtimeGenerationTimeoutMs: Long = 0L,
     private val runtimeStartupProbeTimeoutMs: Long = DEFAULT_RUNTIME_STARTUP_PROBE_TIMEOUT_MS,
     private val sendController: ChatSendController = ChatSendController(runtimeFacade, ioDispatcher),
     internal val streamCoordinator: ChatStreamCoordinator = ChatStreamCoordinator(),
