@@ -1,6 +1,7 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.core.ChatResponse
+import com.pocketagent.core.ChatToolCall
 import com.pocketagent.core.ConversationModule
 import com.pocketagent.core.ObservabilityModule
 import com.pocketagent.core.PolicyModule
@@ -155,6 +156,7 @@ internal class SendMessageUseCase(
         var firstTokenLatencyMs = -1L
         var finishReason = "completed"
         var responseText = ""
+        var parsedToolCalls: List<InteractionToolCall> = emptyList()
         var executionResult: InferenceExecutionResult? = null
         val timeoutGuard = GenerationTimeoutGuard(
             timeoutMs = executionContext.requestTimeoutMs,
@@ -194,7 +196,12 @@ internal class SendMessageUseCase(
             if (flushed.isNotEmpty()) {
                 request.onToken(flushed)
             }
-            responseText = ThinkingBlockFilter.stripThinkingBlocks(executionResult.text).trim()
+            val cleanedText = ThinkingBlockFilter.stripThinkingBlocks(executionResult.text)
+            val parsedToolCalls = ToolCallParser.parse(cleanedText)
+            responseText = parsedToolCalls.textWithoutToolCalls.trim()
+            if (parsedToolCalls.toolCalls.isNotEmpty()) {
+                finishReason = "tool_calls"
+            }
             if (timeoutGuard.timedOut()) {
                 throw RuntimeGenerationTimeoutException(executionContext.requestTimeoutMs)
             }
@@ -218,7 +225,7 @@ internal class SendMessageUseCase(
         if (timeoutGuard.timedOut()) {
             throw RuntimeGenerationTimeoutException(executionContext.requestTimeoutMs)
         }
-        check(responseText.isNotBlank()) { "Runtime returned no tokens." }
+        check(responseText.isNotBlank() || finishReason == "tool_calls") { "Runtime returned no tokens." }
         if (firstTokenLatencyMs < 0) {
             firstTokenLatencyMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(1L)
         }

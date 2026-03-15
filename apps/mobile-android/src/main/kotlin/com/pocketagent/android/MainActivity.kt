@@ -1,7 +1,6 @@
 package com.pocketagent.android
 
 import android.app.ActivityManager
-import android.content.ComponentCallbacks2
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -91,7 +90,7 @@ class MainActivity : ComponentActivity() {
                 when {
                     level >= TRIM_MEMORY_RUNNING_LOW_LEVEL -> runtimeGateway.shortenKeepAlive(15_000L)
                     level >= TRIM_MEMORY_RUNNING_MODERATE_LEVEL -> runtimeGateway.shortenKeepAlive(60_000L)
-                    level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> runtimeGateway.shortenKeepAlive(120_000L)
+                    level >= TRIM_MEMORY_UI_HIDDEN_LEVEL -> runtimeGateway.shortenKeepAlive(120_000L)
                 }
                 false
             }
@@ -127,6 +126,7 @@ class MainActivity : ComponentActivity() {
         private const val TRIM_MEMORY_RUNNING_MODERATE_LEVEL = 5
         private const val TRIM_MEMORY_RUNNING_LOW_LEVEL = 10
         private const val TRIM_MEMORY_RUNNING_CRITICAL_LEVEL = 15
+        private const val TRIM_MEMORY_UI_HIDDEN_LEVEL = 20
         private const val TRIM_MEMORY_BACKGROUND_LEVEL = 40
         private const val TRIM_MEMORY_COMPLETE_LEVEL = 80
     }
