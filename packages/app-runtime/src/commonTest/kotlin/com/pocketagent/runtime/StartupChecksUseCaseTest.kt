@@ -170,15 +170,15 @@ class StartupChecksUseCaseTest {
     fun `dev fast startup profile accepts fast tier artifacts without qwen config`() {
         val payload = "payload-fast".encodeToByteArray()
         val inference = StartupInferenceModule(
-            availableModels = listOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M),
+            availableModels = listOf(ModelCatalog.SMOLLM3_3B_Q4_K_M),
             loadModelResult = true,
         )
         val runtimeConfig = startupRuntimeConfig(validSha = true).copy(
-            artifactPayloadByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to payload),
-            artifactFilePathByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to ""),
-            artifactSha256ByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to startupSha256(payload)),
-            artifactProvenanceIssuerByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to "internal-release"),
-            artifactProvenanceSignatureByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to "sig-fast"),
+            artifactPayloadByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to payload),
+            artifactFilePathByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to ""),
+            artifactSha256ByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to startupSha256(payload)),
+            artifactProvenanceIssuerByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release"),
+            artifactProvenanceSignatureByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to "sig-fast"),
             modelRuntimeProfile = ModelRuntimeProfile.DEV_FAST,
         )
         val useCase = buildUseCase(
@@ -194,7 +194,7 @@ class StartupChecksUseCaseTest {
         val checks = useCase.run()
 
         assertTrue(checks.none { it.startsWith("MODEL_ARTIFACT_CONFIG_MISSING:") })
-        assertTrue(checks.none { it.contains(ModelCatalog.QWEN_3_5_0_8B_Q4) || it.contains(ModelCatalog.QWEN_3_5_2B_Q4) })
+        assertTrue(checks.none { it.contains("Missing runtime model(s):") })
         assertEquals(0, inference.loadCalls)
     }
 
@@ -202,15 +202,15 @@ class StartupChecksUseCaseTest {
     fun `prod startup profile falls back to configured fast tier model when startup candidates are unavailable`() {
         val payload = "payload-fast-fallback".encodeToByteArray()
         val inference = StartupInferenceModule(
-            availableModels = listOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M),
+            availableModels = listOf(ModelCatalog.SMOLLM3_3B_Q4_K_M),
             loadModelResult = true,
         )
         val runtimeConfig = startupRuntimeConfig(validSha = true).copy(
-            artifactPayloadByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to payload),
-            artifactFilePathByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to ""),
-            artifactSha256ByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to startupSha256(payload)),
-            artifactProvenanceIssuerByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to "internal-release"),
-            artifactProvenanceSignatureByModelId = mapOf(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M to "sig-fast-fallback"),
+            artifactPayloadByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to payload),
+            artifactFilePathByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to ""),
+            artifactSha256ByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to startupSha256(payload)),
+            artifactProvenanceIssuerByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release"),
+            artifactProvenanceSignatureByModelId = mapOf(ModelCatalog.SMOLLM3_3B_Q4_K_M to "sig-fast-fallback"),
             modelRuntimeProfile = ModelRuntimeProfile.PROD,
         )
         val useCase = buildUseCase(

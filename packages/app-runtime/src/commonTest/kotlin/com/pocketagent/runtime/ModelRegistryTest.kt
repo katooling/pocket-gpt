@@ -15,14 +15,13 @@ class ModelRegistryTest {
         val metadata = registry.allMetadata().associateBy { it.modelId }
         assertTrue(metadata.containsKey(ModelCatalog.QWEN_3_5_0_8B_Q4))
         assertTrue(metadata.containsKey(ModelCatalog.QWEN_3_5_2B_Q4))
-        assertTrue(metadata.containsKey(ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M))
-        assertTrue(metadata.containsKey(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M))
+        assertTrue(metadata.containsKey(ModelCatalog.SMOLLM3_3B_Q4_K_M))
         assertEquals(
             ModelCatalog.QWEN_3_5_0_8B_Q4,
             registry.defaultGetReadyModelId(profile = ModelRuntimeProfile.PROD),
         )
         assertEquals(
-            ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
+            ModelCatalog.QWEN_3_5_0_8B_Q4,
             registry.defaultGetReadyModelId(profile = ModelRuntimeProfile.DEV_FAST),
         )
     }
@@ -32,7 +31,7 @@ class ModelRegistryTest {
         val policy = ModelRegistry.default().startupPolicy(profile = ModelRuntimeProfile.PROD)
 
         assertEquals(
-            listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4),
+            listOf(ModelCatalog.QWEN_3_5_0_8B_Q4, ModelCatalog.QWEN_3_5_2B_Q4, ModelCatalog.SMOLLM3_3B_Q4_K_M),
             policy.candidateModelIds,
         )
         assertEquals(emptyList(), policy.requiredModelIds)
@@ -66,13 +65,14 @@ class ModelRegistryTest {
     }
 
     @Test
-    fun `dev fast startup policy prefers fast and debug tiers`() {
+    fun `dev fast startup policy falls back to startup candidates when no fast tier models`() {
         val policy = ModelRegistry.default().startupPolicy(profile = ModelRuntimeProfile.DEV_FAST)
 
         assertEquals(
             setOf(
-                ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
-                ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                ModelCatalog.QWEN_3_5_0_8B_Q4,
+                ModelCatalog.QWEN_3_5_2B_Q4,
+                ModelCatalog.SMOLLM3_3B_Q4_K_M,
             ),
             policy.candidateModelIds.toSet(),
         )
@@ -89,8 +89,8 @@ class ModelRegistryTest {
             metadataByModelId.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4).routingModes,
         )
         assertEquals(
-            setOf(RoutingMode.SMOLLM2_360M),
-            metadataByModelId.getValue(ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M).routingModes,
+            setOf(RoutingMode.AUTO, RoutingMode.SMOLLM3_3B),
+            metadataByModelId.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M).routingModes,
         )
     }
 }

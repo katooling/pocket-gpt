@@ -7,13 +7,13 @@ import com.pocketagent.core.PolicyModule
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.RuntimeExecutionStats
 import com.pocketagent.core.SessionId
-import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.MemoryChunk
 import com.pocketagent.memory.MemoryModule
-import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.nativebridge.RuntimeInferencePorts
+import com.pocketagent.nativebridge.runtimeInferencePorts
 
 internal class SendMessageUseCase(
     private val conversationModule: ConversationModule,
@@ -31,25 +31,20 @@ internal class SendMessageUseCase(
     private val runtimeResidencyManager: RuntimeResidencyManager,
     private val cancelByRequest: (String) -> Boolean,
     private val cancelBySession: (SessionId) -> Boolean,
+    private val runtimeInferencePorts: RuntimeInferencePorts = inferenceModule.runtimeInferencePorts(),
 ) {
     data class Request(
         val sessionId: SessionId,
         val userText: String,
         val messages: List<InteractionMessage> = emptyList(),
         val taskType: String,
-        val deviceState: DeviceState,
-        val maxTokens: Int,
-        val keepModelLoaded: Boolean,
+        val executionContext: RuntimeRequestContext,
         val onToken: (String) -> Unit,
-        val requestTimeoutMs: Long,
-        val requestId: String,
-        val previousResponseId: String? = null,
-        val performanceConfig: PerformanceRuntimeConfig,
-        val residencyPolicy: ModelResidencyPolicy,
         val routingMode: RoutingMode,
     )
 
     fun execute(request: Request): ChatResponse {
+        val executionContext = request.executionContext
         val latestUserText = request.messages.latestUserMessageText().ifBlank { request.userText }
         requirePolicyEvent(
             eventType = "routing.model_select",
@@ -58,7 +53,7 @@ internal class SendMessageUseCase(
         val modelId = modelLifecycleCoordinator.selectRunnableModelId(
             routingMode = request.routingMode,
             taskType = request.taskType,
-            deviceState = request.deviceState,
+            deviceState = executionContext.deviceState,
         )
         check(artifactVerifier.manager().setActiveModel(modelId)) {
             "Model artifact not registered for runtime model: $modelId"
@@ -81,7 +76,7 @@ internal class SendMessageUseCase(
             ),
         )
 
-        val contextBudget = routingModule.selectContextBudget(request.taskType, request.deviceState)
+        val contextBudget = routingModule.selectContextBudget(request.taskType, executionContext.deviceState)
         val promptCharBudget = when (request.taskType) {
             "long_text" -> MAX_PROMPT_CHARS_LONG
             else -> MAX_PROMPT_CHARS_SHORT
@@ -97,20 +92,23 @@ internal class SendMessageUseCase(
             messages = transcriptMessages,
             memorySnippets = memorySnippets,
             taskType = request.taskType,
-            deviceState = request.deviceState,
+            deviceState = executionContext.deviceState,
             promptCharBudget = minOf(contextBudget * 4, promptCharBudget),
         )
         val prompt = renderedPrompt.prompt
-        val nativeInference = inferenceModule as? LlamaCppInferenceModule
+        val managedRuntime = runtimeInferencePorts.managedRuntime
+        val cacheAwareGeneration = runtimeInferencePorts.cacheAwareGeneration
+        val modelRegistry = runtimeInferencePorts.modelRegistry
+        val residencyPort = runtimeInferencePorts.residency
         val runtimePlan = runtimePlanResolver.resolve(
             sessionId = request.sessionId.value,
             modelId = modelId,
             taskType = request.taskType,
             stopSequences = renderedPrompt.stopSequences,
-            requestConfig = request.performanceConfig,
-            residencyPolicy = request.residencyPolicy,
-            deviceState = request.deviceState,
-            nativeInference = nativeInference,
+            requestConfig = executionContext.performanceConfig,
+            residencyPolicy = executionContext.residencyPolicy,
+            deviceState = executionContext.deviceState,
+            runtimeInferencePorts = runtimeInferencePorts,
         )
         runtimePlan.loadBlockedReason?.let { blockedReason ->
             throw RuntimeModelLoadPlanningException(
@@ -129,9 +127,9 @@ internal class SendMessageUseCase(
         val startedMs = System.currentTimeMillis()
 
         val effectivePerformanceConfig = runtimePlan.effectiveConfig
-        val thermalThrottled = effectivePerformanceConfig != request.performanceConfig
+        val thermalThrottled = effectivePerformanceConfig != executionContext.performanceConfig
 
-        nativeInference?.setRuntimeGenerationConfig(runtimePlan.generationConfig)
+        managedRuntime?.setRuntimeGenerationConfig(runtimePlan.generationConfig)
 
         check(
             runtimeResidencyManager.ensureLoaded(
@@ -143,7 +141,7 @@ internal class SendMessageUseCase(
         ) {
             "Failed to load runtime model: $modelId"
         }
-        nativeInference?.residencyState()?.let { state ->
+        residencyPort?.residencyState()?.let { state ->
             recordResidencyMetrics(
                 observabilityModule = observabilityModule,
                 residencyState = state,
@@ -158,10 +156,10 @@ internal class SendMessageUseCase(
         var responseText = ""
         var executionResult: InferenceExecutionResult? = null
         val timeoutGuard = GenerationTimeoutGuard(
-            timeoutMs = request.requestTimeoutMs,
+            timeoutMs = executionContext.requestTimeoutMs,
             onTimeout = {
                 if (runtimeConfig.streamContractV2Enabled) {
-                    cancelByRequest(request.requestId)
+                    cancelByRequest(executionContext.requestId)
                 } else {
                     cancelBySession(request.sessionId)
                 }
@@ -171,8 +169,8 @@ internal class SendMessageUseCase(
         try {
             executionResult = inferenceExecutor.execute(
                 sessionId = request.sessionId.value,
-                requestId = request.requestId,
-                request = InferenceRequest(prompt = prompt, maxTokens = request.maxTokens),
+                requestId = executionContext.requestId,
+                request = InferenceRequest(prompt = prompt, maxTokens = executionContext.maxTokens),
                 cacheKey = prefixCacheKey,
                 cachePolicy = cachePolicy,
                 stopSequences = renderedPrompt.stopSequences,
@@ -190,16 +188,16 @@ internal class SendMessageUseCase(
             finishReason = executionResult.finishReason
             responseText = executionResult.text.trim()
             if (timeoutGuard.timedOut()) {
-                throw RuntimeGenerationTimeoutException(request.requestTimeoutMs)
+                throw RuntimeGenerationTimeoutException(executionContext.requestTimeoutMs)
             }
         } catch (error: RuntimeException) {
             if (timeoutGuard.timedOut()) {
-                throw RuntimeGenerationTimeoutException(request.requestTimeoutMs)
+                throw RuntimeGenerationTimeoutException(executionContext.requestTimeoutMs)
             }
             throw error
         } finally {
             timeoutGuard.finish()
-            if (!request.keepModelLoaded || !request.residencyPolicy.keepLoadedWhileAppForeground) {
+            if (!executionContext.keepModelLoaded || !executionContext.residencyPolicy.keepLoadedWhileAppForeground) {
                 runtimeResidencyManager.unload(reason = "request_policy")
                 runtimeResidencyManager.onGenerationFinished(slotId = null, keepAliveMs = null)
             } else {
@@ -210,7 +208,7 @@ internal class SendMessageUseCase(
             }
         }
         if (timeoutGuard.timedOut()) {
-            throw RuntimeGenerationTimeoutException(request.requestTimeoutMs)
+            throw RuntimeGenerationTimeoutException(executionContext.requestTimeoutMs)
         }
         check(responseText.isNotBlank()) { "Runtime returned no tokens." }
         if (firstTokenLatencyMs < 0) {
@@ -246,27 +244,28 @@ internal class SendMessageUseCase(
             "inference.thermal_throttled",
             if (thermalThrottled) 1.0 else 0.0,
         )
-        nativeInference?.actualGpuLayers()?.let {
+        cacheAwareGeneration?.actualGpuLayers()?.let {
             observabilityModule.recordLatencyMetric("inference.actual_applied_gpu_layers", it.toDouble())
         }
-        nativeInference?.actualDraftGpuLayers()?.let {
+        cacheAwareGeneration?.actualDraftGpuLayers()?.let {
             observabilityModule.recordLatencyMetric("inference.actual_applied_draft_gpu_layers", it.toDouble())
         }
-        nativeInference?.lastGpuLoadRetryCount()?.let {
+        cacheAwareGeneration?.lastGpuLoadRetryCount()?.let {
             observabilityModule.recordLatencyMetric("inference.gpu_load_retry_count", it.toDouble())
         }
-        observabilityModule.recordThermalSnapshot(request.deviceState.thermalLevel)
+        observabilityModule.recordThermalSnapshot(executionContext.deviceState.thermalLevel)
         conversationModule.appendAssistantTurn(request.sessionId, responseText)
 
-        val actualGpuLayers = nativeInference?.actualGpuLayers() ?: runtimePlan.effectiveConfig.gpuLayers
-        val actualDraftGpuLayers = nativeInference?.actualDraftGpuLayers() ?: runtimePlan.effectiveConfig.speculativeDraftGpuLayers
+        val actualGpuLayers = cacheAwareGeneration?.actualGpuLayers() ?: runtimePlan.effectiveConfig.gpuLayers
+        val actualDraftGpuLayers = cacheAwareGeneration?.actualDraftGpuLayers()
+            ?: runtimePlan.effectiveConfig.speculativeDraftGpuLayers
         return ChatResponse(
             sessionId = request.sessionId,
             modelId = modelId,
             text = responseText,
             firstTokenLatencyMs = firstTokenLatencyMs,
             totalLatencyMs = totalLatency,
-            requestId = request.requestId,
+            requestId = executionContext.requestId,
             finishReason = finishReason,
             runtimeStats = RuntimeExecutionStats(
                 prefillMs = prefillMs,
@@ -275,9 +274,9 @@ internal class SendMessageUseCase(
                 peakRssMb = peakRssMb,
                 appliedGpuLayers = actualGpuLayers,
                 appliedDraftGpuLayers = actualDraftGpuLayers,
-                gpuLoadRetryCount = nativeInference?.lastGpuLoadRetryCount(),
-                modelLayerCount = nativeInference?.cachedModelLayerCount(modelId),
-                estimatedMaxGpuLayers = nativeInference?.cachedEstimatedMaxGpuLayers(
+                gpuLoadRetryCount = cacheAwareGeneration?.lastGpuLoadRetryCount(),
+                modelLayerCount = modelRegistry?.cachedModelLayerCount(modelId),
+                estimatedMaxGpuLayers = modelRegistry?.cachedEstimatedMaxGpuLayers(
                     modelId = modelId,
                     nCtx = runtimePlan.generationConfig.nCtx,
                 ),

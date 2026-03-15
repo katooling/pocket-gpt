@@ -1,7 +1,6 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
-import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.nativebridge.FlashAttnMode
 import com.pocketagent.nativebridge.KvCacheType
 
@@ -104,6 +103,7 @@ data class PerformanceRuntimeConfig(
                 )
             }
 
+            @Suppress("DEPRECATION")
             return PerformanceRuntimeConfig(
                 profile = profile,
                 requestTimeoutMs = profilePreset.timeoutMs,
@@ -139,7 +139,7 @@ data class PerformanceRuntimeConfig(
                 xtcProbability = 0.0f,
                 seed = -1,
                 speculativeEnabled = profile != RuntimePerformanceProfile.BATTERY,
-                speculativeDraftModelId = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                speculativeDraftModelId = null,
                 speculativeMaxDraftTokens = if (profile == RuntimePerformanceProfile.FAST) 8 else 6,
                 speculativeMinDraftTokens = 2,
                 speculativeDraftGpuLayers = defaultDraftGpuLayers(

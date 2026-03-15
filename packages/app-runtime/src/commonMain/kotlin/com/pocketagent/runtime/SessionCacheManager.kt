@@ -4,7 +4,7 @@ import java.io.File
 
 /**
  * Provides save/load operations for session cache serialization.
- * Implemented by [com.pocketagent.nativebridge.LlamaCppInferenceModule].
+ * Implemented by the active [RuntimeSessionCachePort].
  */
 fun interface SessionCacheSerializer {
     fun saveSessionCache(filePath: String): Boolean

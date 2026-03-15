@@ -39,14 +39,16 @@ fun main() {
         sessionId = session,
         userText = prompt,
         taskType = "short_text",
-        deviceState = DeviceState(batteryPercent = 70, thermalLevel = 3, ramClassGb = 8),
-        maxTokens = 64,
-        keepModelLoaded = false,
+        context = RuntimeRequestContext(
+            deviceState = DeviceState(batteryPercent = 70, thermalLevel = 3, ramClassGb = 8),
+            maxTokens = 64,
+            keepModelLoaded = false,
+            requestTimeoutMs = 90_000L,
+            requestId = "stage-runner-${System.currentTimeMillis()}",
+            performanceConfig = PerformanceRuntimeConfig.default(),
+            residencyPolicy = ModelResidencyPolicy(),
+        ),
         onToken = {},
-        requestTimeoutMs = 90_000L,
-        requestId = "stage-runner-${System.currentTimeMillis()}",
-        performanceConfig = PerformanceRuntimeConfig.default(),
-        residencyPolicy = ModelResidencyPolicy(),
     )
     println("Model: ${response.modelId}")
     println("Response: ${response.text}")

@@ -78,11 +78,10 @@ class ModelLifecycleCoordinatorTest {
     }
 
     @Test
-    fun `select runnable model honors explicit smollm routing modes`() {
+    fun `select runnable model honors explicit smollm3 routing mode`() {
         val inference = LifecycleInferenceModule(
             availableModels = listOf(
-                ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
-                ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                ModelCatalog.SMOLLM3_3B_Q4_K_M,
             ),
         )
         val coordinator = ModelLifecycleCoordinator(
@@ -91,27 +90,20 @@ class ModelLifecycleCoordinatorTest {
             runtimeConfig = lifecycleRuntimeConfig(),
         )
 
-        val selected360 = coordinator.selectRunnableModelId(
-            routingMode = RoutingMode.SMOLLM2_360M,
-            taskType = "short_text",
-            deviceState = DEVICE_STATE,
-        )
-        val selected135 = coordinator.selectRunnableModelId(
-            routingMode = RoutingMode.SMOLLM2_135M,
+        val selected = coordinator.selectRunnableModelId(
+            routingMode = RoutingMode.SMOLLM3_3B,
             taskType = "short_text",
             deviceState = DEVICE_STATE,
         )
 
-        assertEquals(ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M, selected360)
-        assertEquals(ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M, selected135)
+        assertEquals(ModelCatalog.SMOLLM3_3B_Q4_K_M, selected)
     }
 
     @Test
-    fun `preferred model order falls back to smollm fast tiers when qwen unavailable`() {
+    fun `preferred model order falls back to smollm3 when qwen unavailable`() {
         val inference = LifecycleInferenceModule(
             availableModels = listOf(
-                ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
-                ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                ModelCatalog.SMOLLM3_3B_Q4_K_M,
             ),
         )
         val coordinator = ModelLifecycleCoordinator(
@@ -126,7 +118,7 @@ class ModelLifecycleCoordinatorTest {
             deviceState = DEVICE_STATE,
         )
 
-        assertEquals(ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M, selected)
+        assertEquals(ModelCatalog.SMOLLM3_3B_Q4_K_M, selected)
     }
 }
 

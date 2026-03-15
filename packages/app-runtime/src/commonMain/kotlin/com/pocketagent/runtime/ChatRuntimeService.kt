@@ -60,7 +60,7 @@ class ChatStreamRequestPlanner(
         return prepare(
             command = command,
             performancePlan = performancePlan,
-            requestTimeoutMs = resolveRequestTimeoutMs(
+            requestTimeoutOverrideMs = resolveRequestTimeoutMs(
                 performanceConfig = performancePlan.effectiveConfig,
                 overrideTimeoutMs = command.requestTimeoutOverrideMs,
             ),
@@ -79,7 +79,7 @@ class ChatStreamRequestPlanner(
         return prepare(
             command = command,
             performancePlan = performancePlan,
-            requestTimeoutMs = requestTimeoutMs,
+            requestTimeoutOverrideMs = requestTimeoutMs,
         )
     }
 

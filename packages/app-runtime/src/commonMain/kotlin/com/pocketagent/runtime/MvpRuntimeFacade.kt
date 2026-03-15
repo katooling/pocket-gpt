@@ -9,6 +9,7 @@ import com.pocketagent.core.InMemoryConversationModule
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.nativebridge.ModelLifecycleEvent
+import com.pocketagent.nativebridge.createDefaultRuntimeInferenceModule
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
 import java.util.UUID
@@ -18,22 +19,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
-
-@Deprecated(
-    message = "Use StreamChatRequestV2 with canonical interaction messages.",
-    replaceWith = ReplaceWith("StreamChatRequestV2"),
-)
-data class StreamUserMessageRequest(
-    val sessionId: SessionId,
-    val userText: String,
-    val taskType: String,
-    val deviceState: DeviceState,
-    val maxTokens: Int = 128,
-    val requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
-    val requestId: String = defaultRequestId(),
-    val performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
-    val residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
-)
 
 data class StreamChatRequestV2(
     val sessionId: SessionId,
@@ -77,16 +62,6 @@ sealed interface ChatStreamEvent {
         val detail: String? = null,
     ) : ChatStreamEvent
 
-    @Deprecated(
-        message = "Use Delta with ChatStreamDelta.TextDelta.",
-        replaceWith = ReplaceWith("Delta"),
-    )
-    data class TokenDelta(
-        override val requestId: String,
-        val token: String,
-        val accumulatedText: String,
-    ) : ChatStreamEvent
-
     data class Delta(
         override val requestId: String,
         val delta: ChatStreamDelta,
@@ -122,9 +97,6 @@ sealed interface ChatStreamEvent {
 
 interface MvpRuntimeFacade {
     fun createSession(): SessionId
-    fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
-        return streamChat(request.toV2Request())
-    }
     fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent>
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean = false
@@ -156,6 +128,29 @@ interface RuntimeContainer {
         sessionId: SessionId,
         messages: List<InteractionMessage>,
         taskType: String,
+        context: RuntimeRequestContext,
+        onToken: (String) -> Unit,
+    ): ChatResponse {
+        return sendChatMessages(
+            sessionId = sessionId,
+            messages = messages,
+            taskType = taskType,
+            deviceState = context.deviceState,
+            maxTokens = context.maxTokens,
+            keepModelLoaded = context.keepModelLoaded,
+            onToken = onToken,
+            requestTimeoutMs = context.requestTimeoutMs,
+            requestId = context.requestId,
+            previousResponseId = context.previousResponseId,
+            performanceConfig = context.performanceConfig,
+            residencyPolicy = context.residencyPolicy,
+        )
+    }
+
+    fun sendChatMessages(
+        sessionId: SessionId,
+        messages: List<InteractionMessage>,
+        taskType: String,
         deviceState: DeviceState,
         maxTokens: Int,
         keepModelLoaded: Boolean = false,
@@ -166,6 +161,29 @@ interface RuntimeContainer {
         performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
         residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
     ): ChatResponse
+
+    fun sendUserMessage(
+        sessionId: SessionId,
+        userText: String,
+        taskType: String,
+        context: RuntimeRequestContext,
+        onToken: (String) -> Unit,
+    ): ChatResponse {
+        return sendUserMessage(
+            sessionId = sessionId,
+            userText = userText,
+            taskType = taskType,
+            deviceState = context.deviceState,
+            maxTokens = context.maxTokens,
+            keepModelLoaded = context.keepModelLoaded,
+            onToken = onToken,
+            requestTimeoutMs = context.requestTimeoutMs,
+            requestId = context.requestId,
+            performanceConfig = context.performanceConfig,
+            residencyPolicy = context.residencyPolicy,
+        )
+    }
+
     fun sendUserMessage(
         sessionId: SessionId,
         userText: String,
@@ -250,10 +268,6 @@ class DefaultMvpRuntimeFacade(
 
     override fun createSession(): SessionId = container.createSession()
 
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
-        return streamChat(request.toV2Request())
-    }
-
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = callbackFlow {
         val startedAtMs = System.currentTimeMillis()
         val terminalSent = AtomicBoolean(false)
@@ -293,9 +307,16 @@ class DefaultMvpRuntimeFacade(
                     sessionId = request.sessionId,
                     messages = request.messages,
                     taskType = request.taskType,
-                    deviceState = request.deviceState,
-                    maxTokens = request.maxTokens,
-                    keepModelLoaded = true,
+                    context = RuntimeRequestContext(
+                        deviceState = request.deviceState,
+                        maxTokens = request.maxTokens,
+                        keepModelLoaded = true,
+                        requestTimeoutMs = request.requestTimeoutMs,
+                        requestId = request.requestId,
+                        previousResponseId = request.previousResponseId,
+                        performanceConfig = request.performanceConfig,
+                        residencyPolicy = request.residencyPolicy,
+                    ),
                     onToken = { token ->
                         if (firstTokenMs == null) {
                             firstTokenMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
@@ -320,11 +341,6 @@ class DefaultMvpRuntimeFacade(
                             ),
                         )
                     },
-                    requestTimeoutMs = request.requestTimeoutMs,
-                    requestId = request.requestId,
-                    previousResponseId = request.previousResponseId,
-                    performanceConfig = request.performanceConfig,
-                    residencyPolicy = request.residencyPolicy,
                 )
                 finished.set(true)
                 terminalSent.set(true)
@@ -497,7 +513,7 @@ class DefaultRuntimeContainer(
         conversationModule = conversationModule,
         memoryModule = memoryModule,
         runtimeConfig = runtimeConfig,
-        inferenceModule = inferenceModule ?: com.pocketagent.nativebridge.LlamaCppInferenceModule(),
+        inferenceModule = inferenceModule ?: createDefaultRuntimeInferenceModule(),
         memoryBudgetTracker = memoryBudgetTracker,
         recommendedGpuLayers = recommendedGpuLayers,
     ),
@@ -522,15 +538,17 @@ class DefaultRuntimeContainer(
             sessionId = sessionId,
             messages = messages,
             taskType = taskType,
-            deviceState = deviceState,
-            maxTokens = maxTokens,
-            keepModelLoaded = keepModelLoaded,
+            context = RuntimeRequestContext(
+                deviceState = deviceState,
+                maxTokens = maxTokens,
+                keepModelLoaded = keepModelLoaded,
+                requestTimeoutMs = requestTimeoutMs,
+                requestId = requestId,
+                previousResponseId = previousResponseId,
+                performanceConfig = performanceConfig,
+                residencyPolicy = residencyPolicy,
+            ),
             onToken = onToken,
-            requestTimeoutMs = requestTimeoutMs,
-            requestId = requestId,
-            previousResponseId = previousResponseId,
-            performanceConfig = performanceConfig,
-            residencyPolicy = residencyPolicy,
         )
     }
 
@@ -551,14 +569,16 @@ class DefaultRuntimeContainer(
             sessionId = sessionId,
             userText = userText,
             taskType = taskType,
-            deviceState = deviceState,
-            maxTokens = maxTokens,
+            context = RuntimeRequestContext(
+                deviceState = deviceState,
+                maxTokens = maxTokens,
+                keepModelLoaded = keepModelLoaded,
+                requestTimeoutMs = requestTimeoutMs,
+                requestId = requestId,
+                performanceConfig = performanceConfig,
+                residencyPolicy = residencyPolicy,
+            ),
             onToken = onToken,
-            keepModelLoaded = keepModelLoaded,
-            requestTimeoutMs = requestTimeoutMs,
-            requestId = requestId,
-            performanceConfig = performanceConfig,
-            residencyPolicy = residencyPolicy,
         )
     }
 
@@ -639,30 +659,10 @@ class DefaultRuntimeContainer(
     }
 }
 
-private const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 600_000L
+internal const val DEFAULT_REQUEST_TIMEOUT_MS: Long = 600_000L
 
-private fun defaultRequestId(): String {
+internal fun defaultRequestId(): String {
     return "req-${System.currentTimeMillis()}-${UUID.randomUUID().toString().substring(0, 8)}"
-}
-
-private fun StreamUserMessageRequest.toV2Request(): StreamChatRequestV2 {
-    return StreamChatRequestV2(
-        sessionId = sessionId,
-        messages = listOf(
-            InteractionMessage(
-                id = "legacy-user-${requestId}",
-                role = InteractionRole.USER,
-                parts = listOf(InteractionContentPart.Text(userText)),
-            ),
-        ),
-        taskType = taskType,
-        deviceState = deviceState,
-        maxTokens = maxTokens,
-        requestTimeoutMs = requestTimeoutMs,
-        requestId = requestId,
-        performanceConfig = performanceConfig,
-        residencyPolicy = residencyPolicy,
-    )
 }
 
 private fun streamContractV2Enabled(): Boolean {

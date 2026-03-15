@@ -4,7 +4,7 @@ import com.pocketagent.inference.ArtifactDistributionChannel
 import com.pocketagent.inference.ArtifactVerificationResult
 import com.pocketagent.inference.ModelArtifact
 import com.pocketagent.inference.ModelArtifactManager
-import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.nativebridge.RuntimeModelRegistryPort
 import java.io.BufferedInputStream
 import java.io.File
 import java.nio.file.Files
@@ -46,13 +46,13 @@ class ArtifactVerifier(
 
     fun manager(): ModelArtifactManager = modelArtifactManager
 
-    fun registerRuntimeModelPaths(inferenceModule: LlamaCppInferenceModule) {
+    internal fun registerRuntimeModelPaths(modelRegistry: RuntimeModelRegistryPort) {
         config.artifactFilePathByModelId.forEach { (modelId, rawPath) ->
             val path = rawPath.trim()
             if (path.isNotEmpty()) {
-                inferenceModule.registerModelPath(modelId = modelId, absolutePath = path)
+                modelRegistry.registerModelPath(modelId = modelId, absolutePath = path)
                 ModelRuntimeMetadataSidecar.read(path)?.let { metadata ->
-                    inferenceModule.registerModelMetadata(modelId = modelId, metadata = metadata)
+                    modelRegistry.registerModelMetadata(modelId = modelId, metadata = metadata)
                 }
             }
         }

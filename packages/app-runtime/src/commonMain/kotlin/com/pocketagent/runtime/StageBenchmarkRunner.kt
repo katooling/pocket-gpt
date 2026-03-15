@@ -122,14 +122,16 @@ private class RuntimeContainerBenchmarkRuntime(
             sessionId = sessionId,
             userText = userText,
             taskType = taskType,
-            deviceState = deviceState,
-            maxTokens = maxTokens,
-            keepModelLoaded = false,
+            context = RuntimeRequestContext(
+                deviceState = deviceState,
+                maxTokens = maxTokens,
+                keepModelLoaded = false,
+                requestTimeoutMs = 90_000L,
+                requestId = "benchmark-${System.currentTimeMillis()}",
+                performanceConfig = PerformanceRuntimeConfig.default(),
+                residencyPolicy = ModelResidencyPolicy(),
+            ),
             onToken = {},
-            requestTimeoutMs = 90_000L,
-            requestId = "benchmark-${System.currentTimeMillis()}",
-            performanceConfig = PerformanceRuntimeConfig.default(),
-            residencyPolicy = ModelResidencyPolicy(),
         )
     }
 
