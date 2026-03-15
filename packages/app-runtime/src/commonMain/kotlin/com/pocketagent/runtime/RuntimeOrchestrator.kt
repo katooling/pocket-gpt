@@ -68,11 +68,11 @@ class RuntimeOrchestrator(
     private var currentRuntimeLifecycleEvent: ModelLifecycleEvent = ModelLifecycleEvent(state = ModelLifecycleState.UNLOADED)
     private val imageInputModule = RuntimeImageInputModule(inferenceModule)
     private val sessionManager = RuntimeSessionManager(conversationModule, memoryModule)
-    private val templateRegistry = ModelTemplateRegistry(
-        profileByModelId = ModelTemplateRegistry.defaultProfiles(modelRegistry = modelRegistry),
+    private val interactionRegistry = ModelInteractionRegistry(
+        profileByModelId = ModelInteractionRegistry.defaultProfiles(),
     )
     private val interactionPlanner = InteractionPlanner(
-        templateRegistry = templateRegistry,
+        interactionRegistry = interactionRegistry,
         enabledToolNames = toolModule.listEnabledTools(),
     )
     private val inferenceExecutor = InferenceExecutor(
@@ -639,7 +639,10 @@ class RuntimeOrchestrator(
 
     override fun loadedModel(): RuntimeLoadedModel? {
         val modelId = runtimeResidencyManager.loadedModelId() ?: return null
-        return RuntimeLoadedModel(modelId = modelId, modelVersion = artifactVerifier.manager().getActiveModelVersion())
+        return RuntimeLoadedModel(
+            modelId = modelId,
+            modelVersion = resolveResidentModelVersion(modelId),
+        )
     }
 
     override fun activeGenerationCount(): Int = runtimeResidencyManager.queueDepth()
@@ -721,7 +724,7 @@ class RuntimeOrchestrator(
         }
         emitLoadingStage(
             modelId = slot.modelId,
-            modelVersion = artifactVerifier.manager().getActiveModelVersion(),
+            modelVersion = resolveResidentModelVersion(slot.modelId),
             stage = ModelLoadingStage.RESTORING_SESSION_CACHE,
             progress = 0.94f,
         )
@@ -734,17 +737,29 @@ class RuntimeOrchestrator(
         )
         emitCompletedLifecycleEvent(
             modelId = slot.modelId,
-            modelVersion = artifactVerifier.manager().getActiveModelVersion(),
+            modelVersion = resolveResidentModelVersion(slot.modelId),
         )
     }
 
     private fun emitWarmupLifecycleStage(modelId: String, stage: ModelLoadingStage, progress: Float) {
         emitLoadingStage(
             modelId = modelId,
-            modelVersion = artifactVerifier.manager().getActiveModelVersion(),
+            modelVersion = resolveResidentModelVersion(modelId),
             stage = stage,
             progress = progress,
         )
+    }
+
+    private fun resolveResidentModelVersion(modelId: String): String? {
+        val currentEvent = currentRuntimeLifecycleEvent
+        if (currentEvent.state == ModelLifecycleState.LOADED && currentEvent.modelId == modelId) {
+            return currentEvent.modelVersion
+        }
+        val runtimeEvent = runtimeInferencePorts.managedRuntime?.currentModelLifecycleState()
+        if (runtimeEvent?.state == ModelLifecycleState.LOADED && runtimeEvent.modelId == modelId) {
+            return runtimeEvent.modelVersion
+        }
+        return null
     }
 
     private fun awaitNativeCleanup(managedRuntime: ManagedRuntimePort) {
