@@ -16,20 +16,22 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.runtime.ChatStreamEvent
+import com.pocketagent.runtime.ChatStreamDelta
+import com.pocketagent.runtime.ChatStreamEvent.Delta
 import com.pocketagent.runtime.ChatStreamEvent.Started
-import com.pocketagent.runtime.ChatStreamEvent.TokenDelta
 import com.pocketagent.runtime.ChatStreamEvent.Completed
+import com.pocketagent.runtime.ChatStreamPlan
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.InteractionContentPart
 import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.PerformanceRuntimeConfig
+import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.StreamUserMessageRequest
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.android.testutil.fakeUri
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
@@ -56,8 +58,9 @@ class GatewayAdaptersTest {
         val sessionId = gateway.createSession()
         gateway.setRoutingMode(RoutingMode.QWEN_2B)
 
-        val streamEvents = gateway.streamChat(
-            StreamChatRequestV2(
+        val streamEvents = gateway.streamPreparedChat(
+            preparedRequest(
+                StreamChatRequestV2(
                 sessionId = sessionId,
                 messages = listOf(
                     InteractionMessage(
@@ -67,6 +70,7 @@ class GatewayAdaptersTest {
                 ),
                 taskType = "short_text",
                 deviceState = com.pocketagent.inference.DeviceState(80, 3, 8),
+                ),
             ),
         ).toList()
         val tool = gateway.runTool("calculator", """{"expression":"1+1"}""")
@@ -238,8 +242,9 @@ class GatewayAdaptersTest {
             gpuOffloadQualifier = qualifier,
         )
 
-        gateway.streamChat(
-            StreamChatRequestV2(
+        gateway.streamPreparedChat(
+            preparedRequest(
+                StreamChatRequestV2(
                 sessionId = SessionId("session-remote"),
                 messages = listOf(
                     InteractionMessage(
@@ -254,6 +259,7 @@ class GatewayAdaptersTest {
                     availableCpuThreads = 4,
                     gpuEnabled = true,
                     gpuLayers = 8,
+                ),
                 ),
             ),
         ).toList()
@@ -287,8 +293,9 @@ class GatewayAdaptersTest {
             gpuOffloadQualifier = qualifier,
         )
 
-        gateway.streamChat(
-            StreamChatRequestV2(
+        gateway.streamPreparedChat(
+            preparedRequest(
+                StreamChatRequestV2(
                 sessionId = SessionId("session-1"),
                 messages = listOf(
                     InteractionMessage(
@@ -303,6 +310,7 @@ class GatewayAdaptersTest {
                     availableCpuThreads = 4,
                     gpuEnabled = true,
                     gpuLayers = 8,
+                ),
                 ),
             ),
         ).toList()
@@ -335,6 +343,18 @@ private class FakeGpuQualifier(
     }
 }
 
+private fun preparedRequest(request: StreamChatRequestV2): PreparedChatStream {
+    return PreparedChatStream(
+        plan = ChatStreamPlan(
+            requestId = request.requestId,
+            requestTimeoutMs = request.requestTimeoutMs,
+            baseConfig = request.performanceConfig,
+            effectiveConfig = request.performanceConfig,
+        ),
+        runtimeRequest = request,
+    )
+}
+
 private class RecordingMvpRuntimeFacade(
     private val gpuSupported: Boolean = true,
     private val streamChatEvents: Flow<ChatStreamEvent>? = null,
@@ -345,10 +365,15 @@ private class RecordingMvpRuntimeFacade(
 
     override fun createSession(): SessionId = SessionId("session-1")
 
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> {
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
+        streamChatEvents?.let { return it }
         return flowOf(
             Started(requestId = request.requestId, startedAtEpochMs = 1L),
-            TokenDelta(requestId = request.requestId, token = "hi ", accumulatedText = "hi"),
+            Delta(
+                requestId = request.requestId,
+                delta = ChatStreamDelta.TextDelta("hi "),
+                accumulatedText = "hi",
+            ),
             Completed(
                 requestId = request.requestId,
                 response = ChatResponse(
@@ -359,33 +384,6 @@ private class RecordingMvpRuntimeFacade(
                     totalLatencyMs = 2L,
                 ),
                 finishReason = "completed",
-            ),
-        )
-    }
-
-    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
-        streamChatEvents?.let { return it }
-        val latestUserText = request.messages
-            .asReversed()
-            .firstOrNull { message -> message.role == InteractionRole.USER }
-            ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
-            .orEmpty()
-        return streamUserMessage(
-            StreamUserMessageRequest(
-                sessionId = request.sessionId,
-                userText = latestUserText,
-                taskType = request.taskType,
-                deviceState = request.deviceState,
-                maxTokens = request.maxTokens,
-                requestTimeoutMs = request.requestTimeoutMs,
-                requestId = request.requestId,
-                performanceConfig = request.performanceConfig,
-                residencyPolicy = request.residencyPolicy,
             ),
         )
     }

@@ -27,7 +27,7 @@ class AndroidRuntimeProvisioningStoreBaselineTest {
             AndroidRuntimeProvisioningStore.legacyPathKeyForTesting(ModelCatalog.QWEN_3_5_2B_Q4),
         )
         assertTrue(
-            AndroidRuntimeProvisioningStore.legacyPathKeyForTesting(ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M)
+            AndroidRuntimeProvisioningStore.legacyPathKeyForTesting(ModelCatalog.SMOLLM3_3B_Q4_K_M)
                 ?.startsWith("legacy_path_cat_") == true,
         )
     }

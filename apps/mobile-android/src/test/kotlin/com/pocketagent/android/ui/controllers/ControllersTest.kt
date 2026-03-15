@@ -1,17 +1,13 @@
 package com.pocketagent.android.ui.controllers
 
-import com.pocketagent.android.runtime.RuntimeGateway
-import com.pocketagent.android.ui.state.PersistedChatState
-import com.pocketagent.android.ui.state.SessionPersistence
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
-import com.pocketagent.runtime.ImageFailure
-import com.pocketagent.runtime.StreamChatRequestV2
+import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.ToolExecutionResult
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -86,29 +82,18 @@ class ControllersTest {
         assertTrue(checks.single().contains("failed unexpectedly"))
     }
 
-    @Test
-    fun `persistence coordinator delegates load and save`() {
-        val persistence = RecordingSessionPersistence()
-        val coordinator = ChatPersistenceCoordinator(sessionPersistence = persistence)
-        val initial = coordinator.loadState()
-        assertEquals(emptyList(), initial.sessions)
-
-        val next = PersistedChatState(routingMode = RoutingMode.QWEN_2B.name)
-        coordinator.saveState(next)
-        assertEquals(next, persistence.lastSaved)
-    }
 }
 
 private class RecordingRuntimeGateway(
     private val startupBehavior: () -> List<String> = { emptyList() },
-) : RuntimeGateway {
+) : ChatRuntimeService {
     var lastToolName: String? = null
     var lastToolJsonArgs: String? = null
     var lastImagePath: String? = null
     var lastImagePrompt: String? = null
 
     override fun createSession(): SessionId = SessionId("session-1")
-    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = emptyFlow()
+    override fun streamPreparedChat(prepared: PreparedChatStream): Flow<ChatStreamEvent> = emptyFlow()
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = true
 
@@ -141,14 +126,4 @@ private class RecordingRuntimeGateway(
     override fun runtimeBackend(): String? = null
 
     override fun supportsGpuOffload(): Boolean = false
-}
-
-private class RecordingSessionPersistence : SessionPersistence {
-    var lastSaved: PersistedChatState = PersistedChatState()
-
-    override fun loadState(): PersistedChatState = PersistedChatState()
-
-    override fun saveState(state: PersistedChatState) {
-        lastSaved = state
-    }
 }

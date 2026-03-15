@@ -7,7 +7,10 @@ import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.StreamUserMessageRequest
+import com.pocketagent.runtime.InteractionContentPart
+import com.pocketagent.runtime.InteractionMessage
+import com.pocketagent.runtime.InteractionRole
+import com.pocketagent.runtime.StreamChatRequestV2
 import java.io.File
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
@@ -84,13 +87,10 @@ class RealRuntimeAppPathInstrumentationTest {
         val sessionId = facade.createSession()
         facade.setRoutingMode(RoutingMode.QWEN_0_8B)
         var completed: ChatStreamEvent.Completed? = null
-        facade.streamUserMessage(
-            StreamUserMessageRequest(
+        facade.streamChat(
+            chatRequest(
                 sessionId = sessionId,
                 userText = "Give one short sentence proving app-path native inference.",
-                taskType = "short_text",
-                deviceState = DeviceState(batteryPercent = 85, thermalLevel = 3, ramClassGb = 8),
-                maxTokens = 32,
                 requestTimeoutMs = 300_000L,
             ),
         ).collect { event ->
@@ -125,14 +125,14 @@ class RealRuntimeAppPathInstrumentationTest {
         )
         val smolTarget = when {
             smol360Raw.isNotEmpty() -> SmolTarget(
-                modelId = ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M,
+                modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
                 modelPath = requireFile(smol360Raw),
-                routingMode = RoutingMode.SMOLLM2_360M,
+                routingMode = RoutingMode.SMOLLM3_3B,
             )
             else -> SmolTarget(
-                modelId = ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M,
+                modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
                 modelPath = requireFile(smol135Raw),
-                routingMode = RoutingMode.SMOLLM2_135M,
+                routingMode = RoutingMode.SMOLLM3_3B,
             )
         }
         val modelPath0_8b = requireFile(modelPath0_8bRaw)
@@ -174,14 +174,12 @@ class RealRuntimeAppPathInstrumentationTest {
         val sessionId = facade.createSession()
         facade.setRoutingMode(smolTarget.routingMode)
         var completed: ChatStreamEvent.Completed? = null
-        facade.streamUserMessage(
-            StreamUserMessageRequest(
+        facade.streamChat(
+            chatRequest(
                 sessionId = sessionId,
                 userText = "Reply with one short sentence proving explicit SmolLM routing is active.",
-                taskType = "short_text",
-                deviceState = DeviceState(batteryPercent = 83, thermalLevel = 3, ramClassGb = 8),
-                maxTokens = 32,
                 requestTimeoutMs = 300_000L,
+                deviceState = DeviceState(batteryPercent = 83, thermalLevel = 3, ramClassGb = 8),
             ),
         ).collect { event ->
             if (event is ChatStreamEvent.Completed) {
@@ -286,4 +284,25 @@ class RealRuntimeAppPathInstrumentationTest {
         private const val ARG_MODEL_PATH_SMOL_360M = "stage2_model_smol_360m_path"
         private const val ARG_MODEL_PATH_SMOL_135M = "stage2_model_smol_135m_path"
     }
+}
+
+private fun chatRequest(
+    sessionId: com.pocketagent.core.SessionId,
+    userText: String,
+    requestTimeoutMs: Long,
+    deviceState: DeviceState = DeviceState(batteryPercent = 85, thermalLevel = 3, ramClassGb = 8),
+): StreamChatRequestV2 {
+    return StreamChatRequestV2(
+        sessionId = sessionId,
+        messages = listOf(
+            InteractionMessage(
+                role = InteractionRole.USER,
+                parts = listOf(InteractionContentPart.Text(userText)),
+            ),
+        ),
+        taskType = "short_text",
+        deviceState = deviceState,
+        maxTokens = 32,
+        requestTimeoutMs = requestTimeoutMs,
+    )
 }

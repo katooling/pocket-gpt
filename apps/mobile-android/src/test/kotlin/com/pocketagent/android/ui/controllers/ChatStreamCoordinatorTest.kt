@@ -1,6 +1,6 @@
 package com.pocketagent.android.ui.controllers
 
-import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.ui.state.StreamReducerState
 import com.pocketagent.android.ui.state.StreamStateReducer
 import com.pocketagent.android.ui.state.StreamTerminalState
@@ -11,10 +11,12 @@ import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ChatStreamDelta
+import com.pocketagent.runtime.ChatStreamPlan
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.InteractionContentPart
 import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
+import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.awaitCancellation
@@ -67,9 +69,8 @@ class ChatStreamCoordinatorTest {
         var tokenEvents = 0
 
         coordinator.collectStream(
-            runtimeGateway = runtime,
-            request = request("req-complete"),
-            requestTimeoutMs = 200L,
+            runtimeService = runtime,
+            preparedStream = preparedRequest("req-complete", 200L),
             streamReducer = reducer,
             sendStartedAtMs = System.currentTimeMillis(),
             onEvent = { event, _: StreamReducerState ->
@@ -106,9 +107,8 @@ class ChatStreamCoordinatorTest {
         var terminalState: StreamTerminalState? = null
 
         coordinator.collectStream(
-            runtimeGateway = runtime,
-            request = request("req-timeout"),
-            requestTimeoutMs = 30L,
+            runtimeService = runtime,
+            preparedStream = preparedRequest("req-timeout", 30L),
             streamReducer = reducer,
             sendStartedAtMs = System.currentTimeMillis(),
             onEvent = { _, _ -> },
@@ -160,9 +160,8 @@ class ChatStreamCoordinatorTest {
         var terminalState: StreamTerminalState? = null
 
         coordinator.collectStream(
-            runtimeGateway = runtime,
-            request = request("req-post-token"),
-            requestTimeoutMs = 30L,
+            runtimeService = runtime,
+            preparedStream = preparedRequest("req-post-token", 30L),
             streamReducer = reducer,
             sendStartedAtMs = System.currentTimeMillis(),
             onEvent = { _, _ -> },
@@ -213,9 +212,8 @@ class ChatStreamCoordinatorTest {
         var terminalState: StreamTerminalState? = null
 
         coordinator.collectStream(
-            runtimeGateway = runtime,
-            request = request("req-legacy"),
-            requestTimeoutMs = 200L,
+            runtimeService = runtime,
+            preparedStream = preparedRequest("req-legacy", 200L),
             streamReducer = reducer,
             sendStartedAtMs = System.currentTimeMillis(),
             onEvent = { _, _ -> },
@@ -245,15 +243,28 @@ private fun request(requestId: String): StreamChatRequestV2 {
     )
 }
 
+private fun preparedRequest(requestId: String, timeoutMs: Long): PreparedChatStream {
+    val request = request(requestId).copy(requestTimeoutMs = timeoutMs)
+    return PreparedChatStream(
+        plan = ChatStreamPlan(
+            requestId = requestId,
+            requestTimeoutMs = timeoutMs,
+            baseConfig = request.performanceConfig,
+            effectiveConfig = request.performanceConfig,
+        ),
+        runtimeRequest = request,
+    )
+}
+
 private class FlowRuntimeGateway(
     private val flowFactory: (StreamChatRequestV2) -> Flow<ChatStreamEvent>,
-) : RuntimeGateway {
+) : ChatRuntimeService {
     var cancelByRequestCalls: Int = 0
 
     override fun createSession(): SessionId = SessionId("session-1")
 
-    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
-        return flowFactory(request)
+    override fun streamPreparedChat(prepared: PreparedChatStream): Flow<ChatStreamEvent> {
+        return flowFactory(prepared.runtimeRequest)
     }
 
     override fun cancelGeneration(sessionId: SessionId): Boolean = true

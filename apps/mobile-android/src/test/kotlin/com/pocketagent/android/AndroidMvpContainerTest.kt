@@ -172,10 +172,12 @@ class AndroidMvpContainerTest {
             artifactProvenanceIssuerByModelId = mapOf(
                 ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
                 ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+                ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release",
             ),
             artifactProvenanceSignatureByModelId = mapOf(
                 ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
                 ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
+                ModelCatalog.SMOLLM3_3B_Q4_K_M to provenanceSignature("internal-release", ModelCatalog.SMOLLM3_3B_Q4_K_M, payloads.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M)),
             ),
         )
 
@@ -199,10 +201,12 @@ class AndroidMvpContainerTest {
             artifactProvenanceIssuerByModelId = mapOf(
                 ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
                 ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+                ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release",
             ),
             artifactProvenanceSignatureByModelId = mapOf(
                 ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
                 ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
+                ModelCatalog.SMOLLM3_3B_Q4_K_M to provenanceSignature("internal-release", ModelCatalog.SMOLLM3_3B_Q4_K_M, payloads.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M)),
             ),
         )
 
@@ -244,10 +248,12 @@ class AndroidMvpContainerTest {
             artifactProvenanceIssuerByModelId = mapOf(
                 ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
                 ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+                ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release",
             ),
             artifactProvenanceSignatureByModelId = mapOf(
                 ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
                 ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
+                ModelCatalog.SMOLLM3_3B_Q4_K_M to provenanceSignature("internal-release", ModelCatalog.SMOLLM3_3B_Q4_K_M, payloads.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M)),
             ),
             requireNativeRuntimeForStartupChecks = true,
         )
@@ -270,10 +276,12 @@ class AndroidMvpContainerTest {
             artifactProvenanceIssuerByModelId = mapOf(
                 ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
                 ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
+                ModelCatalog.SMOLLM3_3B_Q4_K_M to "internal-release",
             ),
             artifactProvenanceSignatureByModelId = mapOf(
                 ModelCatalog.QWEN_3_5_0_8B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_0_8B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_0_8B_Q4)),
                 ModelCatalog.QWEN_3_5_2B_Q4 to provenanceSignature("internal-release", ModelCatalog.QWEN_3_5_2B_Q4, payloads.getValue(ModelCatalog.QWEN_3_5_2B_Q4)),
+                ModelCatalog.SMOLLM3_3B_Q4_K_M to provenanceSignature("internal-release", ModelCatalog.SMOLLM3_3B_Q4_K_M, payloads.getValue(ModelCatalog.SMOLLM3_3B_Q4_K_M)),
             ),
             requireNativeRuntimeForStartupChecks = false,
         )
@@ -468,6 +476,7 @@ private class RecordingInferenceModule(
     private val availableModels: List<String> = listOf(
         ModelCatalog.QWEN_3_5_0_8B_Q4,
         ModelCatalog.QWEN_3_5_2B_Q4,
+        ModelCatalog.SMOLLM3_3B_Q4_K_M,
     ),
 ) : InferenceModule {
     val loadCalls = mutableListOf<String>()
@@ -501,6 +510,7 @@ private class BackendAwareTestBridge(
     override fun listAvailableModels(): List<String> = listOf(
         ModelCatalog.QWEN_3_5_0_8B_Q4,
         ModelCatalog.QWEN_3_5_2B_Q4,
+        ModelCatalog.SMOLLM3_3B_Q4_K_M,
     )
 
     override fun loadModel(modelId: String, modelPath: String?): Boolean = isReady()
@@ -610,6 +620,7 @@ private fun testPayloads(): Map<String, ByteArray> {
     return mapOf(
         ModelCatalog.QWEN_3_5_0_8B_Q4 to "artifact-qwen-0.8b".encodeToByteArray(),
         ModelCatalog.QWEN_3_5_2B_Q4 to "artifact-qwen-2b".encodeToByteArray(),
+        ModelCatalog.SMOLLM3_3B_Q4_K_M to "artifact-smollm3-3b".encodeToByteArray(),
     )
 }
 

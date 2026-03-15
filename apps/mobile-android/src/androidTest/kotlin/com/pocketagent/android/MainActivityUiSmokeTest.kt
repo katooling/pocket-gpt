@@ -28,12 +28,13 @@ import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.runtime.ChatStreamDelta
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.InteractionContentPart
+import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.MvpRuntimeFacade
 import com.pocketagent.runtime.StreamChatRequestV2
-import com.pocketagent.runtime.StreamUserMessageRequest
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -157,9 +158,8 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithTag("advanced_sheet_button").performClick()
         composeRule.onNodeWithText("Advanced controls").assertIsDisplayed()
         composeRule.captureScreenshotIfEnabled("ui-09-advanced-controls-sheet")
-        composeRule.onNodeWithText("Open model setup").performClick()
-        composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
-        composeRule.captureScreenshotIfEnabled("ui-10-model-provisioning-sheet")
+        composeRule.onNodeWithText("Open model library").assertIsDisplayed()
+        composeRule.onNodeWithText("Open runtime controls").assertIsDisplayed()
     }
 
     @Test
@@ -181,16 +181,18 @@ class MainActivityUiSmokeTest {
     }
 
     @Test
-    fun modelSetupSheetOpensFromAdvancedControls() {
+    fun modelLibrarySheetOpensFromAdvancedControls() {
         composeRule.unlockAdvancedControls()
         composeRule.onNodeWithTag("advanced_sheet_button").performClick()
-        composeRule.onNodeWithText("Open model setup").performClick()
-        composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
+        composeRule.onNodeWithText("Open model library").performClick()
+        composeRule.onNodeWithText("Model library").assertIsDisplayed()
         composeRule.onNodeWithText("Qwen 3.5 0.8B (Q4)").assertIsDisplayed()
         composeRule.onNodeWithText("Qwen 3.5 2B (Q4)").assertIsDisplayed()
-        composeRule.onNodeWithTag("model_provisioning_list")
+        composeRule.onNodeWithTag("model_library_list")
             .performScrollToNode(hasText("Downloads"))
         composeRule.onNodeWithText("Downloads").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("Load").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Offload").fetchSemanticsNodes().isEmpty())
         assertFalse(
             composeRule.onAllNodesWithText("Downloads are disabled in this build. Use local import for now.")
                 .fetchSemanticsNodes()
@@ -199,16 +201,17 @@ class MainActivityUiSmokeTest {
     }
 
     @Test
-    fun modelSetupSheetCanScrollToBottomWithoutCrash() {
+    fun runtimeModelSheetOpensFromAdvancedControls() {
         composeRule.unlockAdvancedControls()
         composeRule.onNodeWithTag("advanced_sheet_button").performClick()
-        composeRule.onNodeWithText("Open model setup").performClick()
-        composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
-        composeRule.onNodeWithTag("model_provisioning_list")
-            .performScrollToNode(hasText("Close"))
-        assertTrue(
-            composeRule.onAllNodesWithText("Close").fetchSemanticsNodes().isNotEmpty(),
-        )
+        composeRule.onNodeWithText("Open runtime controls").performClick()
+        composeRule.onNodeWithText("Runtime model").assertIsDisplayed()
+        composeRule.onNodeWithText("Runtime load state").assertIsDisplayed()
+        composeRule.onNodeWithTag("runtime_model_list")
+            .performScrollToNode(hasText("Open model library"))
+        composeRule.onNodeWithText("Open model library").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("Downloads").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Start download").fetchSemanticsNodes().isEmpty())
     }
 
     @Test
@@ -272,7 +275,7 @@ class MainActivityUiSmokeTest {
     fun gpuToggleAndModelActivationStressDoesNotCrash() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val gpuToggleLabel = context.getString(R.string.ui_gpu_acceleration_toggle)
-        val openModelSetupLabel = context.getString(R.string.ui_open_model_setup)
+        val openModelLibraryLabel = context.getString(R.string.ui_open_model_library)
         val setActiveLabel = context.getString(R.string.ui_model_activate_version)
         val refreshRuntimeLabel = context.getString(R.string.ui_refresh_runtime_checks)
         val closeLabel = context.getString(R.string.ui_close)
@@ -286,8 +289,8 @@ class MainActivityUiSmokeTest {
                 composeRule.onNodeWithText(gpuToggleLabel).performClick()
             }
         }
-        composeRule.onNodeWithText(openModelSetupLabel).performClick()
-        composeRule.onNodeWithText("Model provisioning").assertIsDisplayed()
+        composeRule.onNodeWithText(openModelLibraryLabel).performClick()
+        composeRule.onNodeWithText("Model library").assertIsDisplayed()
         if (composeRule.onAllNodesWithText(setActiveLabel).fetchSemanticsNodes().isNotEmpty()) {
             composeRule.onAllNodesWithText(setActiveLabel).onFirst().performClick()
         }
@@ -446,17 +449,27 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
         return SessionId("fake-session-$sessionCounter")
     }
 
-    override fun streamUserMessage(request: StreamUserMessageRequest): Flow<ChatStreamEvent> = flow {
+    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = flow {
         synchronized(cancelledRequestIds) {
             cancelledRequestIds.remove(request.requestId)
         }
+        val latestUserText = request.messages
+            .asReversed()
+            .firstOrNull { message -> message.role == InteractionRole.USER }
+            ?.parts
+            ?.joinToString(separator = "\n") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                }
+            }
+            .orEmpty()
         emit(
             ChatStreamEvent.Started(
                 requestId = request.requestId,
                 startedAtEpochMs = System.currentTimeMillis(),
             ),
         )
-        val normalizedPrompt = request.userText.lowercase()
+        val normalizedPrompt = latestUserText.lowercase()
         if (normalizedPrompt.contains("calculate 4*9")) {
             emit(
                 ChatStreamEvent.Completed(
@@ -493,7 +506,7 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
             )
             return@flow
         }
-        if (request.userText.contains("slow screenshot prompt")) {
+        if (latestUserText.contains("slow screenshot prompt")) {
             repeat(20) {
                 delay(200)
                 if (isCancelled(request.requestId)) {
@@ -519,7 +532,7 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
             )
             return@flow
         }
-        if (request.userText.contains("force runtime error")) {
+        if (latestUserText.contains("force runtime error")) {
             emit(
                 ChatStreamEvent.Failed(
                     requestId = request.requestId,
@@ -531,8 +544,20 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
             )
             return@flow
         }
-        emit(ChatStreamEvent.TokenDelta(request.requestId, "runtime ", "runtime"))
-        emit(ChatStreamEvent.TokenDelta(request.requestId, "response ", "runtime response"))
+        emit(
+            ChatStreamEvent.Delta(
+                requestId = request.requestId,
+                delta = ChatStreamDelta.TextDelta("runtime "),
+                accumulatedText = "runtime",
+            ),
+        )
+        emit(
+            ChatStreamEvent.Delta(
+                requestId = request.requestId,
+                delta = ChatStreamDelta.TextDelta("response "),
+                accumulatedText = "runtime response",
+            ),
+        )
         emit(
             ChatStreamEvent.Completed(
                 requestId = request.requestId,
@@ -542,42 +567,15 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
                         RoutingMode.AUTO -> "auto"
                         RoutingMode.QWEN_0_8B -> "qwen-0.8b"
                         RoutingMode.QWEN_2B -> "qwen-2b"
-                        RoutingMode.SMOLLM2_360M -> "smollm2-360m"
-                        RoutingMode.SMOLLM2_135M -> "smollm2-135m"
+                        RoutingMode.SMOLLM3_3B -> "smollm3-3b"
                     },
-                    text = "runtime response for ${request.userText}",
+                    text = "runtime response for $latestUserText",
                     firstTokenLatencyMs = 42,
                     totalLatencyMs = 85,
                 ),
                 finishReason = "completed",
                 firstTokenMs = 42,
                 completionMs = 85,
-            ),
-        )
-    }
-
-    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
-        val latestUserText = request.messages
-            .asReversed()
-            .firstOrNull { message -> message.role == InteractionRole.USER }
-            ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
-            .orEmpty()
-        return streamUserMessage(
-            StreamUserMessageRequest(
-                sessionId = request.sessionId,
-                userText = latestUserText,
-                taskType = request.taskType,
-                deviceState = request.deviceState,
-                maxTokens = request.maxTokens,
-                requestTimeoutMs = request.requestTimeoutMs,
-                requestId = request.requestId,
-                performanceConfig = request.performanceConfig,
-                residencyPolicy = request.residencyPolicy,
             ),
         )
     }

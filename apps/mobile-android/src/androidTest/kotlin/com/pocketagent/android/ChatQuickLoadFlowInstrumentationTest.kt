@@ -10,11 +10,15 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.pocketagent.android.data.chat.SessionPersistence
+import com.pocketagent.android.data.chat.StoredChatState
 import com.pocketagent.android.runtime.ProvisionedModelState
 import com.pocketagent.android.runtime.ProvisioningGateway
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
+import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
@@ -23,8 +27,6 @@ import com.pocketagent.android.ui.ModelProvisioningViewModel
 import com.pocketagent.android.ui.PocketAgentApp
 import com.pocketagent.android.ui.PocketAgentTheme
 import com.pocketagent.android.ui.ChatViewModel
-import com.pocketagent.android.ui.state.PersistedChatState
-import com.pocketagent.android.ui.state.SessionPersistence
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.core.SessionId
@@ -33,9 +35,9 @@ import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.nativebridge.ModelLifecycleState
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
+import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
-import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,7 +60,7 @@ class ChatQuickLoadFlowInstrumentationTest {
         val viewModel = ChatViewModel(
             runtimeFacade = runtimeGateway,
             sessionPersistence = InMemorySessionPersistence(
-                initialState = PersistedChatState(
+                initialState = StoredChatState(
                     onboardingCompleted = true,
                     advancedUnlocked = true,
                 ),
@@ -113,7 +115,7 @@ private data class QuickLoadFlowHarness(
 
 private class QuickLoadRuntimeGateway(
     private val harness: QuickLoadFlowHarness,
-) : com.pocketagent.android.runtime.RuntimeGateway {
+) : com.pocketagent.android.runtime.ChatRuntimeService {
     private var sessionCounter = 0
     private var mode: RoutingMode = RoutingMode.AUTO
 
@@ -122,7 +124,8 @@ private class QuickLoadRuntimeGateway(
         return SessionId("session-$sessionCounter")
     }
 
-    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = flow {
+    override fun streamPreparedChat(prepared: PreparedChatStream): Flow<ChatStreamEvent> = flow {
+        val request = prepared.runtimeRequest
         emit(
             ChatStreamEvent.Started(
                 requestId = request.requestId,
@@ -205,6 +208,7 @@ private class QuickLoadProvisioningGateway(
     private val harness: QuickLoadFlowHarness,
 ) : ProvisioningGateway {
     private val downloads = MutableStateFlow<List<com.pocketagent.android.runtime.modelmanager.DownloadTaskState>>(emptyList())
+    private val preferences = MutableStateFlow(DownloadPreferencesState())
     private val lifecycle = MutableStateFlow(
         RuntimeModelLifecycleSnapshot.initial().copy(
             state = ModelLifecycleState.UNLOADED,
@@ -219,6 +223,10 @@ private class QuickLoadProvisioningGateway(
     override fun currentSnapshot(): RuntimeProvisioningSnapshot = sampleSnapshot(harness)
 
     override fun observeDownloads(): StateFlow<List<com.pocketagent.android.runtime.modelmanager.DownloadTaskState>> = downloads
+
+    override fun observeDownloadPreferences(): StateFlow<DownloadPreferencesState> = preferences
+
+    override fun currentDownloadPreferences(): DownloadPreferencesState = preferences.value
 
     override fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot> = lifecycle
 
@@ -285,7 +293,13 @@ private class QuickLoadProvisioningGateway(
         return RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion): String = "task-1"
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String = "task-1"
+
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
+
+    override fun setDownloadWifiOnlyEnabled(enabled: Boolean) = Unit
+
+    override fun acknowledgeLargeDownloadCellularWarning() = Unit
 
     override fun pauseDownload(taskId: String) = Unit
 
@@ -294,16 +308,18 @@ private class QuickLoadProvisioningGateway(
     override fun retryDownload(taskId: String) = Unit
 
     override fun cancelDownload(taskId: String) = Unit
+
+    override fun syncDownloadsFromScheduler() = Unit
 }
 
 private class InMemorySessionPersistence(
-    initialState: PersistedChatState = PersistedChatState(),
+    initialState: StoredChatState = StoredChatState(),
 ) : SessionPersistence {
     private var current = initialState
 
-    override fun loadState(): PersistedChatState = current
+    override fun loadState(): StoredChatState = current
 
-    override fun saveState(state: PersistedChatState) {
+    override fun saveState(state: StoredChatState) {
         current = state
     }
 }

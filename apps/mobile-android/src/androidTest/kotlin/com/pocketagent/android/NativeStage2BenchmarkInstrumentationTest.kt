@@ -250,8 +250,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         container.setRoutingMode(
             when (modelId) {
                 ModelCatalog.QWEN_3_5_2B_Q4 -> RoutingMode.QWEN_2B
-                ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M -> RoutingMode.SMOLLM2_360M
-                ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M -> RoutingMode.SMOLLM2_135M
+                ModelCatalog.SMOLLM3_3B_Q4_K_M -> RoutingMode.SMOLLM3_3B
                 else -> RoutingMode.QWEN_0_8B
             },
         )
@@ -427,8 +426,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         return when (modelId) {
             ModelCatalog.QWEN_3_5_0_8B_Q4 -> ARG_MODEL_PATH_0_8B
             ModelCatalog.QWEN_3_5_2B_Q4 -> ARG_MODEL_PATH_2B
-            ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M -> ARG_MODEL_PATH_SMOL_360M
-            ModelCatalog.SMOLLM2_135M_INSTRUCT_Q4_K_M -> ARG_MODEL_PATH_SMOL_135M
+            ModelCatalog.SMOLLM3_3B_Q4_K_M -> ARG_MODEL_PATH_SMOL_360M
             else -> ARG_MODEL_PATH_0_8B
         }
     }

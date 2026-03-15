@@ -153,6 +153,44 @@ class ModelProvisioningViewModelTest {
     }
 
     @Test
+    fun `library ui state exposes provisioning and download data`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway().apply {
+            downloads.value = listOf(sampleDownloadTask())
+        }
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+        viewModel.refreshManifest()
+        advanceUntilIdle()
+
+        val libraryState = viewModel.uiState.value.toModelLibraryUiState(defaultGetReadyModelId = "qwen3.5-0.8b-q4")
+
+        assertTrue(libraryState != null)
+        assertEquals("qwen3.5-0.8b-q4", libraryState?.snapshot?.models?.firstOrNull()?.modelId)
+        assertEquals(1, libraryState?.downloads?.size)
+        assertEquals(null, libraryState?.defaultModelVersion?.modelId)
+    }
+
+    @Test
+    fun `runtime ui state exposes lifecycle and installed versions`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway().apply {
+            lifecycle.value = RuntimeModelLifecycleSnapshot(
+                loadedModel = RuntimeLoadedModel(
+                    modelId = "qwen3.5-0.8b-q4",
+                    modelVersion = "1",
+                ),
+            )
+        }
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+
+        val runtimeState = viewModel.uiState.value.toRuntimeModelUiState()
+
+        assertTrue(runtimeState != null)
+        assertEquals("qwen3.5-0.8b-q4", runtimeState?.lifecycle?.loadedModel?.modelId)
+        assertTrue(runtimeState?.snapshot?.models?.firstOrNull()?.installedVersions?.isNotEmpty() == true)
+    }
+
+    @Test
     fun `enqueue download forwards explicit request options`() = runTest(dispatcher) {
         val gateway = FakeProvisioningGateway()
         val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)

@@ -8,7 +8,11 @@ import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.StreamUserMessageRequest
+import com.pocketagent.runtime.ChatStreamDelta
+import com.pocketagent.runtime.InteractionContentPart
+import com.pocketagent.runtime.InteractionMessage
+import com.pocketagent.runtime.InteractionRole
+import com.pocketagent.runtime.StreamChatRequestV2
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.collect
@@ -127,10 +131,15 @@ class RealRuntimeJourneyInstrumentationTest {
                 val sendStart = System.currentTimeMillis()
 
                 withTimeout(replyTimeoutMs) {
-                    facade.streamUserMessage(
-                        StreamUserMessageRequest(
+                    facade.streamChat(
+                        StreamChatRequestV2(
                             sessionId = SessionId(sessionId.value),
-                            userText = "ola, how you doin",
+                            messages = listOf(
+                                InteractionMessage(
+                                    role = InteractionRole.USER,
+                                    parts = listOf(InteractionContentPart.Text("ola, how you doin")),
+                                ),
+                            ),
                             taskType = "short_text",
                             deviceState = DeviceState(
                                 batteryPercent = 72,
@@ -142,8 +151,9 @@ class RealRuntimeJourneyInstrumentationTest {
                         ),
                     ).collect { event ->
                         when (event) {
-                            is ChatStreamEvent.TokenDelta -> {
-                                if (firstTokenLatencyMs == null && event.accumulatedText.isNotBlank()) {
+                            is ChatStreamEvent.Delta -> {
+                                val hasTextDelta = event.delta is ChatStreamDelta.TextDelta
+                                if (firstTokenLatencyMs == null && hasTextDelta && event.accumulatedText.isNotBlank()) {
                                     firstTokenLatencyMs = System.currentTimeMillis() - sendStart
                                     trace("first_token", "latency_ms=$firstTokenLatencyMs")
                                 }

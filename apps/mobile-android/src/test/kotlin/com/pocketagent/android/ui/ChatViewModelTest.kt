@@ -1,6 +1,12 @@
 package com.pocketagent.android.ui
 
-import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.data.chat.SessionPersistence
+import com.pocketagent.android.data.chat.SessionStateLoadResult
+import com.pocketagent.android.data.chat.StoredChatMessage
+import com.pocketagent.android.data.chat.StoredChatState
+import com.pocketagent.android.data.chat.toStoredMessage
+import com.pocketagent.android.data.chat.toStoredSession
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.ProvisioningRecoverySignal
@@ -17,11 +23,8 @@ import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.ChatGatePrimaryAction
 import com.pocketagent.android.ui.state.ChatGateStatus
-import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.RuntimeUiState
-import com.pocketagent.android.ui.state.SessionPersistence
-import com.pocketagent.android.ui.state.SessionStateLoadResult
 import com.pocketagent.android.ui.state.resolveChatGateState
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
@@ -33,6 +36,7 @@ import com.pocketagent.runtime.ImageFailure
 import com.pocketagent.runtime.InteractionContentPart
 import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
+import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
@@ -204,7 +208,7 @@ class ChatViewModelTest {
             ),
         )
         val persistence = RecordingPersistence(
-            initialState = PersistedChatState(
+            initialState = StoredChatState(
                 sessions = listOf(
                     ChatSessionUiModel(
                         id = "session-1",
@@ -220,7 +224,7 @@ class ChatViewModelTest {
                                 kind = MessageKind.TEXT,
                             ),
                         ),
-                    ),
+                    ).toStoredSession(),
                     ChatSessionUiModel(
                         id = "session-2",
                         title = "Unloaded",
@@ -229,11 +233,11 @@ class ChatViewModelTest {
                         messages = emptyList(),
                         messagesLoaded = false,
                         messageCount = unloadedMessages.size,
-                    ),
+                    ).toStoredSession(),
                 ),
                 activeSessionId = "session-1",
             ),
-            sessionMessages = mapOf("session-2" to unloadedMessages),
+            sessionMessages = mapOf("session-2" to unloadedMessages.map(MessageUiModel::toStoredMessage)),
         )
         val runtime = RecordingRuntimeFacade()
         val viewModel = ChatViewModel(
@@ -385,8 +389,8 @@ class ChatViewModelTest {
             ),
         )
         val persistence = RecordingPersistence(
-            initialState = PersistedChatState(
-                sessions = listOf(persistedSession),
+            initialState = StoredChatState(
+                sessions = listOf(persistedSession.toStoredSession()),
                 activeSessionId = persistedSession.id,
                 routingMode = RoutingMode.QWEN_0_8B.name,
                 keepAlivePreference = RuntimeKeepAlivePreference.FIVE_MINUTES.name,
@@ -460,6 +464,28 @@ class ChatViewModelTest {
         viewModel.switchSession(secondSessionId)
         val secondSession = viewModel.uiState.value.activeSession!!
         assertTrue(secondSession.messages.any { it.content == "session two message" })
+    }
+
+    @Test
+    fun `deleting only session creates replacement session`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        val initialSessionId = viewModel.uiState.value.activeSession!!.id
+
+        viewModel.deleteSession(initialSessionId)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(1, state.sessions.size)
+        assertTrue(state.activeSession != null)
+        assertTrue(state.activeSession!!.id != initialSessionId)
+        assertEquals("New chat", state.activeSession!!.title)
     }
 
     @Test
@@ -1173,34 +1199,34 @@ class ChatViewModelTest {
 }
 
 private class RecordingPersistence(
-    private val initialState: PersistedChatState = PersistedChatState(),
-    private val sessionMessages: Map<String, List<MessageUiModel>> = emptyMap(),
+    private val initialState: StoredChatState = StoredChatState(),
+    private val sessionMessages: Map<String, List<StoredChatMessage>> = emptyMap(),
 ) : SessionPersistence {
-    val savedStates = mutableListOf<PersistedChatState>()
+    val savedStates = mutableListOf<StoredChatState>()
     private var current = initialState
 
-    override fun loadState(): PersistedChatState = current
+    override fun loadState(): StoredChatState = current
 
-    override fun loadBootstrapState(): PersistedChatState = current
+    override fun loadBootstrapState(): StoredChatState = current
 
-    override fun loadSessionMessages(sessionId: String): List<MessageUiModel>? {
+    override fun loadSessionMessages(sessionId: String): List<StoredChatMessage>? {
         return sessionMessages[sessionId]
     }
 
-    override fun saveState(state: PersistedChatState) {
+    override fun saveState(state: StoredChatState) {
         current = state
         savedStates += state
     }
 }
 
 private class CorruptLoadPersistence : SessionPersistence {
-    private var persisted = PersistedChatState()
+    private var persisted = StoredChatState()
 
-    override fun loadState(): PersistedChatState = persisted
+    override fun loadState(): StoredChatState = persisted
 
     override fun loadStateResult(): SessionStateLoadResult {
         return SessionStateLoadResult.RecoverableCorruption(
-            resetState = PersistedChatState(),
+            resetState = StoredChatState(),
             code = "CHAT_STATE_CORRUPT_JSON",
             userMessage = "Saved chat state was corrupted and reset.",
             technicalDetail = "code=CHAT_STATE_CORRUPT_JSON;backup=chat-state-1;error=parse",
@@ -1209,7 +1235,7 @@ private class CorruptLoadPersistence : SessionPersistence {
 
     override fun loadBootstrapStateResult(): SessionStateLoadResult = loadStateResult()
 
-    override fun saveState(state: PersistedChatState) {
+    override fun saveState(state: StoredChatState) {
         persisted = state
     }
 }
@@ -1224,7 +1250,7 @@ private class RecordingRuntimeFacade(
     private val runtimeBackend: String? = null,
     private val runtimeDiagnostics: RuntimeDiagnosticsSnapshot = RuntimeDiagnosticsSnapshot(),
     private val gpuStatusSequence: MutableList<com.pocketagent.android.runtime.GpuProbeResult> = mutableListOf(),
-) : RuntimeGateway {
+) : ChatRuntimeService {
     private var sessionCounter = 0
     private var routingMode: RoutingMode = RoutingMode.AUTO
     var failTool: Boolean = false
@@ -1240,7 +1266,8 @@ private class RecordingRuntimeFacade(
         return SessionId("session-$sessionCounter")
     }
 
-    override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> = flow {
+    override fun streamPreparedChat(prepared: PreparedChatStream): Flow<ChatStreamEvent> = flow {
+        val request = prepared.runtimeRequest
         lastStreamRequest = request
         emit(
             ChatStreamEvent.Started(
@@ -1411,7 +1438,7 @@ private enum class StreamTerminal {
 
 private class TimeoutStartupProbeController : StartupProbeController() {
     override suspend fun runStartupChecks(
-        runtimeGateway: RuntimeGateway,
+        runtimeGateway: ChatRuntimeService,
         ioDispatcher: CoroutineDispatcher,
         timeoutMs: Long,
     ): List<String> {
@@ -1424,7 +1451,7 @@ private class ThrowingOnSecondStartupProbeController : StartupProbeController() 
     private var calls: Int = 0
 
     override suspend fun runStartupChecks(
-        runtimeGateway: RuntimeGateway,
+        runtimeGateway: ChatRuntimeService,
         ioDispatcher: CoroutineDispatcher,
         timeoutMs: Long,
     ): List<String> {
@@ -1440,7 +1467,7 @@ private class NonCooperativeStartupProbeController : StartupProbeController() {
     private var calls: Int = 0
 
     override suspend fun runStartupChecks(
-        runtimeGateway: RuntimeGateway,
+        runtimeGateway: ChatRuntimeService,
         ioDispatcher: CoroutineDispatcher,
         timeoutMs: Long,
     ): List<String> {
@@ -1464,7 +1491,7 @@ private class CountingStartupProbeController : StartupProbeController() {
     var callCount: Int = 0
 
     override suspend fun runStartupChecks(
-        runtimeGateway: RuntimeGateway,
+        runtimeGateway: ChatRuntimeService,
         ioDispatcher: CoroutineDispatcher,
         timeoutMs: Long,
     ): List<String> {

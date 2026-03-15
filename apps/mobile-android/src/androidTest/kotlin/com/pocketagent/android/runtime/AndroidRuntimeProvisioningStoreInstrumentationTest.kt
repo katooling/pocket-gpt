@@ -257,7 +257,7 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
             content = "persisted-dynamic-model-content",
         )
         val sourceUri = android.net.Uri.fromFile(source)
-        val modelId = ModelCatalog.SMOLLM2_360M_INSTRUCT_Q4_K_M
+        val modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M
 
         val imported = store.importModel(
             modelId = modelId,
@@ -396,7 +396,7 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
         File(appContext.filesDir, "runtime-model-downloads").deleteRecursively()
         File("/sdcard/Download/${appContext.packageName}/models").deleteRecursively()
         File("/storage/emulated/0/Download/${appContext.packageName}/models").deleteRecursively()
-        appContext.externalMediaDirs
+        arrayOf(appContext.getExternalFilesDir(null))
             .filterNotNull()
             .forEach { mediaDir ->
                 File(mediaDir, "models").deleteRecursively()

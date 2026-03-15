@@ -1,8 +1,8 @@
 package com.pocketagent.android.ui.controllers
 
+import com.pocketagent.android.data.chat.StoredChatState
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ComposerUiState
-import com.pocketagent.android.ui.state.PersistedChatState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -18,15 +18,15 @@ class ChatPersistenceQueueTest {
 
     @Test
     fun `queue debounces writes and persists latest snapshot`() = runTest(dispatcher) {
-        val persisted = mutableListOf<PersistedChatState>()
+        val persisted = mutableListOf<StoredChatState>()
         val queue = ChatPersistenceQueue(
             scope = this,
             ioDispatcher = dispatcher,
             debounceMs = 100L,
-            toPersistedState = { state ->
-                PersistedChatState(activeSessionId = state.composer.text.ifBlank { null })
+            toStoredState = { state ->
+                StoredChatState(activeSessionId = state.composer.text.ifBlank { null })
             },
-            savePersistedState = { state ->
+            saveStoredState = { state ->
                 persisted += state
             },
         )
@@ -49,10 +49,10 @@ class ChatPersistenceQueueTest {
             scope = this,
             ioDispatcher = dispatcher,
             debounceMs = 10L,
-            toPersistedState = { state ->
-                PersistedChatState(activeSessionId = state.composer.text.ifBlank { null })
+            toStoredState = { state ->
+                StoredChatState(activeSessionId = state.composer.text.ifBlank { null })
             },
-            savePersistedState = {},
+            saveStoredState = {},
         )
 
         queue.enqueue(ChatUiState(composer = ComposerUiState(text = "one")))
@@ -65,4 +65,3 @@ class ChatPersistenceQueueTest {
         assertTrue(metrics.medianPayloadBytes > 0)
     }
 }
-
