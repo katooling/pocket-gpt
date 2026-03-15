@@ -2,6 +2,7 @@ package com.pocketagent.android.runtime
 
 import android.net.Uri
 import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadNetworkPreference
 import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
@@ -125,6 +126,39 @@ class GatewayAdaptersTest {
         assertEquals("task-1", dependency.lastResumedTaskId)
         assertEquals("task-1", dependency.lastRetriedTaskId)
         assertEquals("task-1", dependency.lastCancelledTaskId)
+    }
+
+    @Test
+    fun `default provisioning gateway delegates download preference controls and request options`() = runTest {
+        val dependency = RecordingProvisioningDependencyAccess().apply {
+            meteredWarningResult = true
+        }
+        val gateway = DefaultProvisioningGateway(dependency)
+        val version = ModelDistributionVersion(
+            modelId = "qwen3.5-0.8b-q4",
+            version = "2",
+            downloadUrl = "https://example.com/model-v2.gguf",
+            expectedSha256 = "b".repeat(64),
+            provenanceIssuer = "issuer",
+            provenanceSignature = "sig",
+            runtimeCompatibility = "android-arm64-v8a",
+            fileSizeBytes = 2L * 1024L * 1024L * 1024L,
+        )
+        val options = DownloadRequestOptions(
+            networkPreference = DownloadNetworkPreference.UNMETERED_ONLY,
+            userInitiated = false,
+        )
+
+        assertEquals("task-1", gateway.enqueueDownload(version, options))
+        assertEquals(options, dependency.lastEnqueuedOptions)
+        assertTrue(gateway.shouldWarnForMeteredLargeDownload(version))
+        assertEquals(version, dependency.lastWarningVersion)
+
+        gateway.setDownloadWifiOnlyEnabled(true)
+        gateway.acknowledgeLargeDownloadCellularWarning()
+
+        assertTrue(gateway.currentDownloadPreferences().wifiOnlyEnabled)
+        assertTrue(gateway.currentDownloadPreferences().largeDownloadCellularWarningAcknowledged)
     }
 
     @Test
@@ -420,6 +454,9 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
     var lastResumedTaskId: String? = null
     var lastRetriedTaskId: String? = null
     var lastCancelledTaskId: String? = null
+    var lastEnqueuedOptions: DownloadRequestOptions? = null
+    var meteredWarningResult: Boolean = false
+    var lastWarningVersion: ModelDistributionVersion? = null
 
     override fun currentProvisioningSnapshot(): RuntimeProvisioningSnapshot {
         return RuntimeProvisioningSnapshot(
@@ -523,9 +560,15 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
         return RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String = "task-1"
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+        lastEnqueuedOptions = options
+        return "task-1"
+    }
 
-    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean {
+        lastWarningVersion = version
+        return meteredWarningResult
+    }
 
     override fun setDownloadWifiOnlyEnabled(enabled: Boolean) {
         downloadPreferences.value = downloadPreferences.value.copy(wifiOnlyEnabled = enabled)

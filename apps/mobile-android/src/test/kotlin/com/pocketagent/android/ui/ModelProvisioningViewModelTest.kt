@@ -10,6 +10,7 @@ import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadNetworkPreference
 import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
@@ -132,6 +133,42 @@ class ModelProvisioningViewModelTest {
     }
 
     @Test
+    fun `download preference actions update observed state and warning checks delegate`() = runTest(dispatcher) {
+        val version = sampleDownloadVersion()
+        val gateway = FakeProvisioningGateway().apply {
+            shouldWarnForMeteredLargeDownloadResult = true
+        }
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.shouldWarnForMeteredLargeDownload(version))
+        assertEquals(version, gateway.lastWarnVersion)
+
+        viewModel.setDownloadWifiOnlyEnabled(true)
+        viewModel.acknowledgeLargeDownloadCellularWarning()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.downloadPreferences.wifiOnlyEnabled)
+        assertTrue(viewModel.uiState.value.downloadPreferences.largeDownloadCellularWarningAcknowledged)
+    }
+
+    @Test
+    fun `enqueue download forwards explicit request options`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway()
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        val version = sampleDownloadVersion()
+        val options = DownloadRequestOptions(
+            networkPreference = DownloadNetworkPreference.UNMETERED_ONLY,
+            userInitiated = false,
+        )
+        advanceUntilIdle()
+
+        assertEquals("task-1", viewModel.enqueueDownload(version, options))
+        assertEquals(version, gateway.lastEnqueuedVersion)
+        assertEquals(options, gateway.lastEnqueuedOptions)
+    }
+
+    @Test
     fun `load and offload model update lifecycle state`() = runTest(dispatcher) {
         val gateway = FakeProvisioningGateway()
         val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
@@ -162,6 +199,10 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     var removeCalls: Int = 0
     var cancelCalls: Int = 0
     var importFailure: Throwable? = null
+    var lastEnqueuedVersion: ModelDistributionVersion? = null
+    var lastEnqueuedOptions: DownloadRequestOptions? = null
+    var shouldWarnForMeteredLargeDownloadResult: Boolean = false
+    var lastWarnVersion: ModelDistributionVersion? = null
 
     override fun currentSnapshot(): RuntimeProvisioningSnapshot {
         snapshotCalls += 1
@@ -243,9 +284,16 @@ private class FakeProvisioningGateway : ProvisioningGateway {
         return RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String = "task-1"
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+        lastEnqueuedVersion = version
+        lastEnqueuedOptions = options
+        return "task-1"
+    }
 
-    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean {
+        lastWarnVersion = version
+        return shouldWarnForMeteredLargeDownloadResult
+    }
 
     override fun setDownloadWifiOnlyEnabled(enabled: Boolean) {
         downloadPreferences.value = downloadPreferences.value.copy(wifiOnlyEnabled = enabled)
@@ -323,5 +371,18 @@ private fun sampleDownloadTask(): DownloadTaskState {
         progressBytes = 50L,
         totalBytes = 100L,
         updatedAtEpochMs = 1L,
+    )
+}
+
+private fun sampleDownloadVersion(): ModelDistributionVersion {
+    return ModelDistributionVersion(
+        modelId = "qwen3.5-0.8b-q4",
+        version = "1",
+        downloadUrl = "https://example.com/model.gguf",
+        expectedSha256 = "a".repeat(64),
+        provenanceIssuer = "issuer",
+        provenanceSignature = "sig",
+        runtimeCompatibility = "android-arm64-v8a",
+        fileSizeBytes = 2L * 1024L * 1024L * 1024L,
     )
 }
