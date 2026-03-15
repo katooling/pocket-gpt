@@ -9,4 +9,11 @@ data class ChatResponse(
     val requestId: String = "",
     val finishReason: String = "completed",
     val runtimeStats: RuntimeExecutionStats? = null,
+    val toolCalls: List<ChatToolCall> = emptyList(),
+)
+
+data class ChatToolCall(
+    val id: String,
+    val name: String,
+    val argumentsJson: String,
 )
