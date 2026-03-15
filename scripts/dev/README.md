@@ -83,7 +83,7 @@ Examples:
 - `bash scripts/dev/device-test.sh 10 scenario-a --framework espresso`
 - `bash scripts/dev/device-test.sh 10 scenario-a --framework maestro`
 
-For runtime tuning analysis after repeated device runs, use `docs/testing/runtime-tuning-debugging.md`. It explains how to read `RUNTIME_TUNING|...` diagnostics lines, where the generated `runtime-log-signals.{json,md}` artifacts land, and how to correlate them with benchmark artifacts under `scripts/benchmarks/runs/...`.
+For runtime tuning analysis after repeated device runs, use `docs/testing/runtime-tuning-debugging.md`. It explains how to read `RUNTIME_TUNING|...` diagnostics lines, where the generated `runtime-log-signals.{json,md}` artifacts land, and how to correlate them with benchmark artifacts under `scripts/benchmarks/runs/...` or `devctl` lane artifacts under `tmp/devctl-artifacts/...`.
 
 ## Stage-2 Benchmark Wrapper
 
@@ -152,9 +152,12 @@ Optional cache controls (env):
 ```bash
 python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
+python3 tools/devctl/main.py lane maestro --include-tags smoke
+python3 tools/devctl/main.py lane maestro --include-tags model-management
 python3 tools/devctl/main.py lane screenshot-pack
 python3 tools/devctl/main.py lane screenshot-pack --product-signal-only
 python3 tools/devctl/main.py lane journey [--repeats N]
+python3 tools/devctl/main.py lane journey --steps instrumentation,send-capture,maestro
 ```
 
 ## Gate Wrappers (Policy)
@@ -181,6 +184,7 @@ Device-lock behavior:
    - `export POCKETGPT_RUN_OWNER='<your-name-or-handle>'`
 6. Real-runtime provisioning auto-resolves the currently installed instrumentation runner before sanity probes (avoids flavor/package-name drift failures).
 7. Model artifacts are re-pushed only when remote file size does not match the selected host artifact.
+8. Local `devctl` lane artifacts now default to `tmp/devctl-artifacts/`. Override with `POCKET_GPT_DEVCTL_ARTIFACT_ROOT=/absolute/path` when you want a different scratch location.
 
 Wrapper:
 
@@ -260,15 +264,20 @@ set +a
 : "${MAESTRO_CLOUD_API_KEY:?Set MAESTRO_CLOUD_API_KEY in .env}"
 ./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
 APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
-maestro cloud --android-api-level 34 --app-file "${APK_PATH}" --flows tests/maestro/
+maestro cloud --android-api-level 34 --device-locale en_US --app-file "${APK_PATH}" --flows tests/maestro-cloud/ --include-tags cloud-smoke
 ```
 
 Optional:
 
 1. Set project explicitly when needed: `--project-id <project-id>`
-2. Filter by tags (if tags are added to flows): `--include-tags ...`, `--exclude-tags ...`
+2. Prefer tag-scoped runs for stable hosted smoke: `--include-tags cloud-smoke` or dedicated wrappers such as `bash scripts/dev/maestro-cloud-smoke.sh`
 3. Add CI metadata: `--branch "$GITHUB_REF_NAME" --commit-sha "$GITHUB_SHA"`
-4. Android device model selection is not deterministic in our current lane. As of March 8, 2026 with Maestro CLI `2.2.0`, Android cloud runs executed on `Pixel 6`; use `--android-api-level` as the reliable selector.
+4. Android device model selection is not deterministic in our current lane. As of March 15, 2026 with Maestro CLI `2.2.0`, Android cloud runs executed on `Pixel 6`; use `--android-api-level` and `--device-locale` as the reliable selectors.
+5. Maestro Cloud Android binaries should include `arm64-v8a` or be multi-arch. Quick local check:
+
+```bash
+unzip -Z1 "${APK_PATH}" | rg '^lib/'
+```
 
 First-run flow gate command (writes JUnit report for CI/local triage):
 
@@ -280,11 +289,26 @@ maestro cloud --android-api-level 34 \
   --output tmp/maestro-cloud-first-run.xml
 ```
 
+Focused model-management split smoke on Maestro Cloud:
+
+```bash
+bash scripts/dev/maestro-cloud-smoke.sh
+```
+
 Important:
 
 1. `maestro cloud` runs the Maestro flow files directly.
 2. It does not run `devctl` device health checks, real-runtime provisioning preflight, per-device lock handling, or local benchmark artifact/logcat capture contracts.
 3. Keep `devctl lane maestro` and `devctl lane journey` as promotion/closure gates.
+
+## Artifact Pruning
+
+Delete stale local lane and cloud reports when they stop being useful:
+
+```bash
+bash scripts/dev/prune-devctl-artifacts.sh
+bash scripts/dev/prune-devctl-artifacts.sh --days 7 --include-cloud
+```
 
 ## Hybrid Reliability Gate Policy (CI + Main)
 

@@ -41,6 +41,12 @@ python3 tools/devctl/main.py governance screenshot-inventory-check
 - QA: `docs/operations/role-playbooks/qa-playbook.md`
 - Marketing: `docs/operations/role-playbooks/marketing-playbook.md`
 
+## 5) Set up on a physical phone (optional)
+
+If you want to test on a real device instead of the emulator:
+
+- `docs/start-here/phone-setup-guide.md`
+
 ## 5) Work contract
 
 1. `docs/operations/execution-board.md` is the only mutable status board.

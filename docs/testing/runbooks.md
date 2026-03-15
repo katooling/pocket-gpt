@@ -50,6 +50,8 @@ python3 tools/devctl/main.py gate promotion --include-screenshot-pack
 ```bash
 python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
+python3 tools/devctl/main.py lane maestro --include-tags smoke
+python3 tools/devctl/main.py lane maestro --include-tags model-management
 ```
 
 ## Runbook: Local Lifecycle E2E (First-Run Download -> Chat)
@@ -92,6 +94,7 @@ Use when PR carries `risk:e2e-lifecycle`, `risk:runtime`, `risk:provisioning`, o
 bash scripts/dev/test.sh merge
 python3 tools/devctl/main.py lane android-instrumented
 python3 tools/devctl/main.py lane maestro
+python3 tools/devctl/main.py lane journey --steps instrumentation,send-capture,maestro
 maestro --device "$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')" test tests/maestro/scenario-first-run-download-chat.yaml
 ```
 
@@ -110,17 +113,14 @@ For CI-equivalent crash-signature guard behavior (logcat scan for app `SIGSEGV`/
 bash scripts/ci/run_lifecycle_e2e.sh local-manual
 ```
 
-## Runbook: Cloud Regression Fan-Out (Supplemental)
+## Runbook: Cloud Smoke (Supplemental)
 
 ```bash
-set -a
-source .env
-set +a
-: "${MAESTRO_CLOUD_API_KEY:?Set MAESTRO_CLOUD_API_KEY in .env}"
-./gradlew --no-daemon -Ppocketgpt.enableNativeBuild=true :apps:mobile-android:assembleDebug
-APK_PATH="$(find apps/mobile-android/build/outputs/apk/debug -type f -name '*.apk' | sort | head -n 1)"
-maestro cloud --android-api-level 34 --app-file "${APK_PATH}" --flows tests/maestro/ --format junit --output tmp/maestro-cloud-regression.xml
+bash scripts/dev/maestro-cloud-smoke.sh
 ```
+
+This runs only flows tagged `cloud-smoke` under `tests/maestro-cloud/`.
+Keep long-running hosted benchmarks in dedicated scripts such as `bash scripts/dev/maestro-cloud-gpu-benchmark.sh`.
 
 ## Runbook: Cloud GPU vs CPU Benchmark (Supplemental)
 
@@ -155,7 +155,7 @@ Then:
 
 1. Export diagnostics from the app's advanced settings sheet.
 2. In the diagnostic message, inspect `RUNTIME_TUNING|...`, `RUNTIME_TUNING_SAMPLE|...`, `RUNTIME_RESIDENCY|...`, and `PREFIX_CACHE_DIAG|...`.
-3. Correlate them with files under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
+3. Correlate them with files under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/` for stage-2 benchmark sweeps or `tmp/devctl-artifacts/YYYY-MM-DD/<device-id>/journey/<stamp>/` for `devctl lane journey` runs:
    - `summary.json`
    - `runtime-log-signals.md`
    - `scenario-a.csv` / `scenario-b.csv`

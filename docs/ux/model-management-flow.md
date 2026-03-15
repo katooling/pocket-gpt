@@ -85,7 +85,7 @@ Provisioning readiness (`RuntimeProvisioningSnapshot`) is separate:
 
 ### A) Local import
 
-1. Open `Advanced` -> `Open model setup`.
+1. Open `Advanced` -> `Open model library`.
 2. Import at least one required GGUF model (recommended first: `Qwen 3.5 0.8B (Q4)`).
 3. App records versioned metadata:
    - absolute path
@@ -97,12 +97,20 @@ Provisioning readiness (`RuntimeProvisioningSnapshot`) is separate:
 
 ### B) Download manager
 
-1. Open model setup and refresh manifest.
+1. Open model library and refresh manifest.
 2. Start download for model/version.
 3. Task states: `Queued -> Downloading -> Verifying -> InstalledInactive/Completed`.
 4. Checksum and runtime compatibility are hard gates.
 5. Provenance metadata is retained; policy enforcement is determined by version verification policy (`INTEGRITY_ONLY` or `PROVENANCE_STRICT`).
 6. Pause/resume/retry/cancel are supported in-app.
+
+### C) Runtime controls
+
+1. Open `Advanced` -> `Open runtime controls` or tap the runtime model chip in chat.
+2. Review current runtime load state, requested model, and any lifecycle failure details.
+3. Load an installed version or load the last-used model.
+4. Offload from the runtime controls surface when a model is loaded.
+5. Runtime load/offload is intentionally separated from download/import management.
 
 ## Verification and Failure Rules
 

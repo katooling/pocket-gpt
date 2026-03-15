@@ -5,7 +5,8 @@ Foundation repository for an offline, privacy-first mobile AI product.
 ## Source of truth
 
 - Dev/test commands: `scripts/dev/README.md`
-  - Newcomer quick path: `scripts/dev/README.md#newcomer-confidence-checklist-4-commands`
+  - Newcomer quick path: `scripts/dev/README.md`
+  - Phone setup: `docs/start-here/phone-setup-guide.md`
 - Test strategy + release gates: `docs/testing/test-strategy.md`
 - Task-focused runbooks: `docs/testing/runbooks.md`
 - Execution status board: `docs/operations/execution-board.md`

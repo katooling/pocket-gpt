@@ -54,7 +54,7 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
    - `ERROR` -> `Runtime error`
 5. Runtime error banner includes deterministic code + user message.
 6. Error banner CTA hierarchy is fixed:
-   - primary: `Fix model setup`
+   - primary: `Fix model library`
    - secondary: `Refresh runtime checks`
    - tertiary: `Show technical details`
 
@@ -139,17 +139,21 @@ Capture implemented user-facing behavior that is easy to miss when reading only 
 
 ## Model Provisioning and Download Manager UX (Phase-2)
 
-1. Model setup sheet includes explicit sections for:
+1. The app now uses two bottom sheets:
+   - `Model library` for import, downloads, activation, removal, and storage
+   - `Runtime model` for load, offload, and lifecycle state
+2. Model library includes explicit sections for:
    - required models
    - downloads
    - installed versions
    - storage summary
-2. Import path remains available in all builds and writes versioned model records.
-3. Download path is available in the primary app build and supports queue/pause/resume/retry.
-4. Active downloads can be cancelled from the model setup sheet; cancellation also cleans temporary files.
-5. Download completion result is `verified, activation pending` (no auto-activation).
-6. Installed versions can be manually activated; active version deletion is blocked.
-7. Runtime unlock is only confirmed after activation + refresh startup checks.
+3. Runtime model includes runtime load state, last-used model affordance, and installed versions that can be loaded now.
+4. Import path remains available in all builds and writes versioned model records.
+5. Download path is available in the primary app build and supports queue/pause/resume/retry.
+6. Active downloads can be cancelled from the model library sheet; cancellation also cleans temporary files.
+7. Download completion result is `verified, activation pending` (no auto-activation).
+8. Installed versions can be manually activated from model library; active version deletion is blocked.
+9. Runtime unlock is only confirmed after activation + refresh startup checks.
 
 ## Manifest Outage Behavior
 

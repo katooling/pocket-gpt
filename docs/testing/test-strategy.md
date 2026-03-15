@@ -1,6 +1,6 @@
 # Test Strategy (Canonical Playbook)
 
-Last updated: 2026-03-10
+Last updated: 2026-03-15
 
 ## Source Of Truth
 
@@ -58,8 +58,8 @@ Last updated: 2026-03-10
 4. `python3 tools/devctl/main.py gate promotion [--include-screenshot-pack]` for promotion readiness.
 5. `bash scripts/dev/test.sh merge` remains the canonical broad merge-equivalent unit/contract lane.
 6. `python3 tools/devctl/main.py lane android-instrumented` for Android smoke.
-7. `python3 tools/devctl/main.py lane maestro` for E2E app workflows (onboarding bootstrap separated from post-onboarding scenario A/B/C).
-8. `python3 tools/devctl/main.py lane journey` for strict send/runtime journey evidence.
+7. `python3 tools/devctl/main.py lane maestro` for E2E app workflows; prefer tag-scoped runs when you only need one risk slice (for example `--include-tags smoke` or `--include-tags model-management`).
+8. `python3 tools/devctl/main.py lane journey` for strict send/runtime journey evidence; add `--steps instrumentation,send-capture,maestro` only when you explicitly want Maestro replay in the same lane.
 9. `python3 tools/devctl/main.py lane screenshot-pack [--product-signal-only]` for UI screenshot contract.
 10. Stage-2 runtime closure lanes remain physical-device signoff lanes.
 
@@ -93,9 +93,9 @@ Last updated: 2026-03-10
 Primary workflow: `.github/workflows/ci.yml`
 
 1. Hosted required checks: `unit-and-host-tests`, `android-lint`, `native-build-package-check`, `android-instrumented-smoke`, `lifecycle-e2e-first-run` (risk-conditional on PRs, always-on for `main`).
-2. `android-instrumented-smoke` is intentionally scoped to one deterministic Compose smoke assertion (`MainActivityUiSmokeTest#onboardingFlowCanProgressAndComplete`) to reduce flake while lifecycle E2E covers full first-run/download/send behavior.
+2. `android-instrumented-smoke` is intentionally scoped to two deterministic checks: onboarding completion (`MainActivityUiSmokeTest#onboardingFlowCanProgressAndComplete`) plus the focused model-management Compose contract (`ModelManagementSheetComposeContractTest`). Full first-run/download/send behavior stays in lifecycle E2E.
 3. Governance checks run docs drift/health/accuracy and governance self-tests.
-4. Nightly workflows provide emulator matrix coverage and Maestro supplemental coverage (including first-run lifecycle); cloud first-run runs when API key is configured.
+4. Nightly workflows provide emulator matrix coverage and Maestro supplemental coverage (including first-run lifecycle and the model-management split smoke); cloud runs execute when API key is configured and should stay tag-scoped and short.
 5. Required checks for branch protection should include `lifecycle-e2e-first-run`.
 
 ## Engineering Principles (Applied)
@@ -111,6 +111,7 @@ Primary workflow: `.github/workflows/ci.yml`
 2. CI emulators are the best place for deterministic required checks that protect `main` and enforce contracts consistently.
 3. Cloud runs are most useful for supplemental fan-out and hosted reports, not as the only release gate.
 4. First-run lifecycle failures can be environment-sensitive; preserving first-attempt artifacts is essential even when retry passes.
+5. Cloud smoke should validate one focused contract per flow; benchmark and qualification paths should be tagged separately and kept out of smoke/default fan-out.
 
 ## Automation Boundary
 
@@ -128,6 +129,6 @@ Human-required checkpoints:
 
 ## Evidence Rules
 
-1. Raw artifacts stay under `scripts/benchmarks/runs/...` or uploaded CI artifacts.
+1. Raw artifacts stay under `tmp/devctl-artifacts/...` for `devctl` local lanes, `scripts/benchmarks/runs/...` for stage-2 benchmark evidence, or uploaded CI artifacts.
 2. Human-readable notes stay under `docs/operations/evidence/...`.
 3. Keep active notes only; prune superseded notes not referenced by active roadmap/PRD/ticket artifacts.
