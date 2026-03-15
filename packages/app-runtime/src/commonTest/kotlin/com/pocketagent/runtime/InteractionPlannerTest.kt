@@ -2,14 +2,21 @@ package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class InteractionPlannerTest {
     @Test
     fun `planner keeps latest user turn and linked tool context under tight budget`() {
         val planner = InteractionPlanner(
-            templateRegistry = ModelTemplateRegistry(
-                profileByModelId = mapOf("model-1" to ModelTemplateProfile.CHATML),
+            interactionRegistry = ModelInteractionRegistry(
+                profileByModelId = mapOf(
+                    "model-1" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.CHATML,
+                        thinkingSupport = ThinkingSupport.THINK_TAGS,
+                        toolCallSupport = ToolCallSupport.XmlTagFormat(),
+                    ),
+                ),
             ),
             templateRenderer = EchoTemplateRenderer(),
         )
@@ -48,8 +55,14 @@ class InteractionPlannerTest {
     @Test
     fun `planner never slices message text mid-template`() {
         val planner = InteractionPlanner(
-            templateRegistry = ModelTemplateRegistry(
-                profileByModelId = mapOf("model-1" to ModelTemplateProfile.CHATML),
+            interactionRegistry = ModelInteractionRegistry(
+                profileByModelId = mapOf(
+                    "model-1" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.CHATML,
+                        thinkingSupport = ThinkingSupport.THINK_TAGS,
+                        toolCallSupport = ToolCallSupport.XmlTagFormat(),
+                    ),
+                ),
             ),
             templateRenderer = EchoTemplateRenderer(),
         )
@@ -67,6 +80,52 @@ class InteractionPlannerTest {
         )
 
         assertTrue(rendered.prompt.contains("END_MARKER"))
+    }
+
+    @Test
+    fun `planner gates thinking and tool definitions by interaction support`() {
+        val planner = InteractionPlanner(
+            interactionRegistry = ModelInteractionRegistry(
+                profileByModelId = mapOf(
+                    "chatml-model" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.CHATML,
+                        thinkingSupport = ThinkingSupport.THINK_TAGS,
+                        toolCallSupport = ToolCallSupport.XmlTagFormat(),
+                    ),
+                    "gemma-model" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.GEMMA,
+                        thinkingSupport = ThinkingSupport.NONE,
+                        toolCallSupport = ToolCallSupport.NONE,
+                    ),
+                ),
+            ),
+            templateRenderer = EchoTemplateRenderer(),
+            enabledToolNames = listOf("calculator"),
+        )
+
+        val chatmlPrompt = planner.buildRenderedPrompt(
+            modelId = "chatml-model",
+            messages = listOf(message(InteractionRole.USER, "hello")),
+            memorySnippets = emptyList(),
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            promptCharBudget = 256,
+            showThinking = true,
+        )
+        assertTrue(chatmlPrompt.prompt.contains("/think"))
+        assertTrue(chatmlPrompt.prompt.contains("<tools>"))
+
+        val gemmaPrompt = planner.buildRenderedPrompt(
+            modelId = "gemma-model",
+            messages = listOf(message(InteractionRole.USER, "hello")),
+            memorySnippets = emptyList(),
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            promptCharBudget = 256,
+            showThinking = true,
+        )
+        assertFalse(gemmaPrompt.prompt.contains("/think"))
+        assertFalse(gemmaPrompt.prompt.contains("<tools>"))
     }
 }
 

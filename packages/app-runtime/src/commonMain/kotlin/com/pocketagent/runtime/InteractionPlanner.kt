@@ -5,7 +5,7 @@ import com.pocketagent.inference.DeviceState
 import kotlin.jvm.JvmName
 
 class InteractionPlanner(
-    private val templateRegistry: ModelTemplateRegistry = ModelTemplateRegistry(),
+    private val interactionRegistry: ModelInteractionRegistry = ModelInteractionRegistry(),
     private val templateRenderer: ChatTemplateRenderer = DefaultChatTemplateRenderer(),
     private val enabledToolNames: List<String> = emptyList(),
 ) {
@@ -18,18 +18,30 @@ class InteractionPlanner(
         promptCharBudget: Int,
         showThinking: Boolean? = null,
     ): RenderedPrompt {
-        val profile = templateRegistry.templateProfileForModel(modelId)
+        val interactionProfile = interactionRegistry.interactionProfileForModel(modelId)
+        val templateProfile = interactionProfile.templateProfile
         val enrichedMessages = mutableListOf<InteractionMessage>()
         val systemText = buildString {
             append("task=$taskType battery=${deviceState.batteryPercent} thermal=${deviceState.thermalLevel} ram_gb=${deviceState.ramClassGb}")
-            if (profile == ModelTemplateProfile.CHATML) {
+            if (interactionProfile.thinkingSupport != ThinkingSupport.NONE) {
                 showThinking?.let { enabled ->
                     append('\n')
                     append(if (enabled) "/think" else "/no_think")
                 }
             }
-            if (enabledToolNames.isNotEmpty() && profile == ModelTemplateProfile.CHATML) {
-                append(ToolCallParser.renderToolDefinitionsXml(enabledToolNames))
+            if (enabledToolNames.isNotEmpty() && interactionProfile.toolCallSupport != ToolCallSupport.NONE) {
+                when (val toolSupport = interactionProfile.toolCallSupport) {
+                    ToolCallSupport.NONE -> Unit
+                    is ToolCallSupport.XmlTagFormat -> {
+                        append(
+                            ToolCallParser.renderToolDefinitionsXml(
+                                toolNames = enabledToolNames,
+                                openTag = toolSupport.openTag,
+                                closeTag = toolSupport.closeTag,
+                            ),
+                        )
+                    }
+                }
             }
         }
         enrichedMessages += InteractionMessage(
@@ -54,7 +66,7 @@ class InteractionPlanner(
             messages = messages.takeLast(MAX_CONTEXT_MESSAGES),
             promptTokenBudget = promptTokenBudget,
         )
-        return templateRenderer.render(messages = enrichedMessages, modelProfile = profile)
+        return templateRenderer.render(messages = enrichedMessages, modelProfile = templateProfile)
     }
 
     @JvmName("buildRenderedPromptFromTurns")
@@ -78,7 +90,11 @@ class InteractionPlanner(
         )
     }
 
-    fun ensureTemplateAvailable(modelId: String): String? = templateRegistry.ensureTemplateAvailable(modelId)
+    fun ensureTemplateAvailable(modelId: String): String? = interactionRegistry.ensureTemplateAvailable(modelId)
+
+    fun interactionProfileForModel(modelId: String): ModelInteractionProfile {
+        return interactionRegistry.interactionProfileForModel(modelId)
+    }
 
     private fun pruneForBudget(
         messages: List<InteractionMessage>,

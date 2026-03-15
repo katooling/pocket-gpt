@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+@Suppress("DEPRECATION")
 class ModelTemplateRegistryTest {
     @Test
     fun `registry provides a template profile for every registered model`() {
