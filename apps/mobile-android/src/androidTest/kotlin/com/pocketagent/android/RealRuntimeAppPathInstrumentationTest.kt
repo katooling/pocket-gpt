@@ -117,21 +117,21 @@ class RealRuntimeAppPathInstrumentationTest {
             "Skipping SmolLM app-path lane. Provide a 0.8B model path via instrumentation arguments.",
             modelPath0_8bRaw.isNotEmpty(),
         )
-        val smol360Raw = args.getString(ARG_MODEL_PATH_SMOL_360M)?.trim().orEmpty()
-        val smol135Raw = args.getString(ARG_MODEL_PATH_SMOL_135M)?.trim().orEmpty()
+        val smol3Q4Raw = args.getString(ARG_MODEL_PATH_SMOLLM3_Q4)?.trim().orEmpty()
+        val smol3DraftRaw = args.getString(ARG_MODEL_PATH_SMOLLM3_DRAFT)?.trim().orEmpty()
         assumeTrue(
             "Skipping SmolLM app-path lane. Provide at least one SmolLM model path via instrumentation arguments.",
-            smol360Raw.isNotEmpty() || smol135Raw.isNotEmpty(),
+            smol3Q4Raw.isNotEmpty() || smol3DraftRaw.isNotEmpty(),
         )
         val smolTarget = when {
-            smol360Raw.isNotEmpty() -> SmolTarget(
+            smol3Q4Raw.isNotEmpty() -> SmolTarget(
                 modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
-                modelPath = requireFile(smol360Raw),
+                modelPath = requireFile(smol3Q4Raw),
                 routingMode = RoutingMode.SMOLLM3_3B,
             )
             else -> SmolTarget(
                 modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
-                modelPath = requireFile(smol135Raw),
+                modelPath = requireFile(smol3DraftRaw),
                 routingMode = RoutingMode.SMOLLM3_3B,
             )
         }
@@ -281,8 +281,8 @@ class RealRuntimeAppPathInstrumentationTest {
         private const val ARG_ENABLE_APP_PATH_TEST = "stage2_enable_app_path_test"
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
-        private const val ARG_MODEL_PATH_SMOL_360M = "stage2_model_smol_360m_path"
-        private const val ARG_MODEL_PATH_SMOL_135M = "stage2_model_smol_135m_path"
+        private const val ARG_MODEL_PATH_SMOLLM3_Q4 = "stage2_model_smol_360m_path"
+        private const val ARG_MODEL_PATH_SMOLLM3_DRAFT = "stage2_model_smol_135m_path"
     }
 }
 
