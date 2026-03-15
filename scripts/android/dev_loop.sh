@@ -9,7 +9,7 @@ APP_ACTIVITY="${APP_PACKAGE}/.MainActivity"
 INSTALL_TASK=":apps:mobile-android:installDebug"
 NO_INSTALL=0
 FULL_LOGCAT=0
-FILTER_PATTERN='com\.pocketagent\.android|AndroidRuntime|FATAL EXCEPTION|ANR in|OutOfMemoryError|PocketAgent|NATIVE_JNI|STAGE2_METRIC'
+FILTER_PATTERN='AndroidRuntime|FATAL EXCEPTION|ANR in|OutOfMemoryError|PocketAgent|NATIVE_JNI|STAGE2_METRIC|RuntimeGateway|NativeJniLlamaCppBridge|ChatViewModel'
 INSTALL_LOG=""
 
 usage() {
@@ -49,6 +49,17 @@ Usual fixes on Android devices:
 If the app is already installed and you only want to relaunch it, rerun with:
   bash scripts/android/dev_loop.sh --serial "$ADB_SERIAL" --no-install
 EOF
+}
+
+resolve_app_pid() {
+  local serial="$1"
+  local pid
+  pid="$(adb -s "${serial}" shell pidof -s "${APP_PACKAGE}" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
+  if [[ -n "${pid}" ]]; then
+    echo "${pid}"
+    return 0
+  fi
+  return 1
 }
 
 run_install_task() {
@@ -127,6 +138,9 @@ echo
 echo "Streaming logcat. Press Ctrl+C to stop."
 if [[ "${FULL_LOGCAT}" -eq 1 ]]; then
   adb -s "${SERIAL}" logcat
+elif APP_PID="$(resolve_app_pid "${SERIAL}")"; then
+  echo "Using app PID scoped logcat (pid=${APP_PID})."
+  adb -s "${SERIAL}" logcat --pid="${APP_PID}"
 elif has_rg; then
   adb -s "${SERIAL}" logcat | rg --line-buffered "${FILTER_PATTERN}"
 else

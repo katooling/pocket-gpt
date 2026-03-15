@@ -110,7 +110,14 @@ android {
                         "-DPOCKETGPT_FORCE_ARM_I8MM=${if (nativeArmI8mmEnabled) "ON" else "OFF"}",
                     )
                     cppFlags += listOf("-std=c++17", "-fexceptions", "-frtti")
-                    targets += listOf("pocket_llama")
+                    targets += listOf(
+                        "pocket_llama",
+                        "pocket_llama_v8",
+                        "pocket_llama_v8_2",
+                        "pocket_llama_v8_2_dotprod",
+                        "pocket_llama_v8_2_i8mm",
+                        "pocket_llama_v8_2_dotprod_i8mm",
+                    )
                 }
             }
         }
