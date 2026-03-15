@@ -132,6 +132,7 @@ class ChatSendFlow(
             frequencyPenalty = frequencyPenalty,
             presencePenalty = presencePenalty,
             systemPrompt = systemPrompt.ifBlank { null },
+            showThinking = showThinking,
         )
     }
 

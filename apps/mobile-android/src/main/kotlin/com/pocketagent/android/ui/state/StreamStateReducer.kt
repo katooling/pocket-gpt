@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui.state
 
 import com.pocketagent.core.RuntimeExecutionStats
+import com.pocketagent.core.ChatToolCall
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ChatStreamDelta
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
@@ -25,6 +26,8 @@ data class StreamTerminalState(
     val uiError: UiError? = null,
     val responseText: String? = null,
     val responseModelId: String? = null,
+    val reasoningContent: String? = null,
+    val toolCalls: List<ChatToolCall> = emptyList(),
     val completionMs: Long? = null,
     val firstTokenMs: Long? = null,
     val errorCode: String? = null,
@@ -69,6 +72,8 @@ class StreamStateReducer(
                         terminalEventSeen = event.terminalEventSeen,
                         responseText = event.response.text,
                         responseModelId = event.response.modelId,
+                        reasoningContent = event.response.reasoningContent,
+                        toolCalls = event.response.toolCalls,
                         completionMs = event.completionMs,
                         firstTokenMs = state.firstTokenMs ?: event.firstTokenMs,
                         runtimeStats = event.response.runtimeStats,

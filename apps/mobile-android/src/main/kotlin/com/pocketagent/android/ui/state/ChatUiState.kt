@@ -66,14 +66,15 @@ enum class PersistedToolCallStatus {
 }
 
 data class CompletionSettings(
-    val temperature: Float = 0.7f,
-    val topP: Float = 0.9f,
+    val temperature: Float = 0.6f,
+    val topP: Float = 0.95f,
     val topK: Int = 40,
     val maxTokens: Int = 2048,
     val repeatPenalty: Float = 1.1f,
     val frequencyPenalty: Float = 0.0f,
     val presencePenalty: Float = 0.0f,
     val systemPrompt: String = "",
+    val showThinking: Boolean = false,
 )
 
 data class ChatSessionUiModel(

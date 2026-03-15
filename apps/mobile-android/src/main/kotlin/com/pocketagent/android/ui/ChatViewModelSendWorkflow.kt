@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui
 
 import androidx.lifecycle.viewModelScope
+import com.pocketagent.android.ui.controllers.ToolLoopOutcome
 import com.pocketagent.android.ui.state.ComposerUiState
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
@@ -8,12 +9,17 @@ import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedInteractionMessage
 import com.pocketagent.android.ui.state.PersistedInteractionPart
+import com.pocketagent.android.ui.state.PersistedToolCall
+import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.state.StreamStateReducer
 import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.android.ui.state.UiError
-import com.pocketagent.core.SessionId
+import com.pocketagent.core.ChatToolCall
 import com.pocketagent.core.RuntimeExecutionStats
+import com.pocketagent.core.SessionId
+import com.pocketagent.inference.DeviceState
+import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.ChatStreamDelta
 import com.pocketagent.runtime.ChatStreamEvent
 import kotlinx.coroutines.flow.update
@@ -143,15 +149,20 @@ internal fun ChatViewModel.sendMessageInternal() {
             terminalEventSeen: Boolean = true,
             terminalModelId: String? = null,
             errorCode: String? = null,
+            messageId: String = assistantMessageId,
+            appliedConfig: PerformanceRuntimeConfig = performanceConfig,
+            targetConfig: PerformanceRuntimeConfig = targetPerformanceConfig,
+            deviceState: DeviceState = currentDeviceState,
+            fallbackModelId: String? = snapshot.runtime.activeModelId,
         ) {
             val partialStreamingText = messageContent(
                 sessionId = activeSession.id,
-                messageId = assistantMessageId,
+                messageId = messageId,
             ).orEmpty().trim()
             if (partialStreamingText.isNotBlank()) {
                 finalizeStreamingMessage(
                     sessionId = activeSession.id,
-                    messageId = assistantMessageId,
+                    messageId = messageId,
                     finalText = partialStreamingText,
                     role = MessageRole.ASSISTANT,
                     requestId = terminalRequestId,
@@ -168,7 +179,7 @@ internal fun ChatViewModel.sendMessageInternal() {
             } else {
                 finalizeStreamingMessage(
                     sessionId = activeSession.id,
-                    messageId = assistantMessageId,
+                    messageId = messageId,
                     finalText = formatUserFacingError(uiError),
                     role = MessageRole.SYSTEM,
                     requestId = terminalRequestId,
@@ -177,11 +188,11 @@ internal fun ChatViewModel.sendMessageInternal() {
                 )
             }
             runtimeTuning.recordFailure(
-                modelId = terminalModelId ?: snapshot.runtime.activeModelId,
-                appliedConfig = performanceConfig,
-                targetConfig = targetPerformanceConfig,
+                modelId = terminalModelId ?: fallbackModelId,
+                appliedConfig = appliedConfig,
+                targetConfig = targetConfig,
                 errorCode = errorCode ?: terminalReason.removePrefix("failed:"),
-                thermalThrottled = currentDeviceState.thermalLevel >= 5,
+                thermalThrottled = deviceState.thermalLevel >= 5,
             )
             _uiState.update { state ->
                 state.copy(
@@ -203,7 +214,15 @@ internal fun ChatViewModel.sendMessageInternal() {
             persistState()
         }
 
-        fun finalizeFromTerminal(terminal: StreamTerminalState) {
+        fun finalizeFromTerminal(
+            terminal: StreamTerminalState,
+            messageId: String,
+            turnStartedAtMs: Long,
+            appliedConfig: PerformanceRuntimeConfig,
+            targetConfig: PerformanceRuntimeConfig,
+            deviceState: DeviceState,
+            fallbackModelId: String?,
+        ): List<ChatToolCall> {
             if (terminal.uiError != null) {
                 finalizeWithRuntimeError(
                     uiError = terminal.uiError,
@@ -212,12 +231,17 @@ internal fun ChatViewModel.sendMessageInternal() {
                     terminalEventSeen = terminal.terminalEventSeen,
                     terminalModelId = terminal.responseModelId,
                     errorCode = terminal.errorCode,
+                    messageId = messageId,
+                    appliedConfig = appliedConfig,
+                    targetConfig = targetConfig,
+                    deviceState = deviceState,
+                    fallbackModelId = fallbackModelId,
                 )
-                return
+                return emptyList()
             }
             val finalText = terminal.responseText?.trim().orEmpty()
             val effectiveFirstToken = terminal.firstTokenMs
-            val effectiveCompletion = terminal.completionMs ?: (System.currentTimeMillis() - sendStartedAtMs)
+            val effectiveCompletion = terminal.completionMs ?: (System.currentTimeMillis() - turnStartedAtMs)
             val runtimeStats = terminal.runtimeStats
             val effectivePrefill = runtimeStats?.prefillMs ?: effectiveFirstToken
             val effectiveDecode = runtimeStats?.decodeMs ?: if (effectiveFirstToken != null) {
@@ -238,8 +262,10 @@ internal fun ChatViewModel.sendMessageInternal() {
             // Finalize the message with per-message generation metrics
             finalizeStreamingMessage(
                 sessionId = activeSession.id,
-                messageId = assistantMessageId,
+                messageId = messageId,
                 finalText = finalText,
+                reasoningContent = terminal.reasoningContent,
+                toolCalls = terminal.toolCalls.toPersistedToolCalls(),
                 requestId = terminal.requestId,
                 finishReason = terminal.finishReason,
                 terminalEventSeen = terminal.terminalEventSeen,
@@ -276,30 +302,258 @@ internal fun ChatViewModel.sendMessageInternal() {
                 resolvedRuntimeStats.estimatedMaxGpuLayers,
                 resolvedRuntimeStats.modelLayerCount,
             ).minOrNull()
-            val tunedAppliedConfig = performanceConfig.copy(
-                gpuLayers = resolvedRuntimeStats.appliedGpuLayers ?: performanceConfig.gpuLayers,
+            val tunedAppliedConfig = appliedConfig.copy(
+                gpuLayers = resolvedRuntimeStats.appliedGpuLayers ?: appliedConfig.gpuLayers,
                 speculativeDraftGpuLayers =
-                    resolvedRuntimeStats.appliedDraftGpuLayers ?: performanceConfig.speculativeDraftGpuLayers,
+                    resolvedRuntimeStats.appliedDraftGpuLayers ?: appliedConfig.speculativeDraftGpuLayers,
             )
-            val tunedTargetConfig = targetPerformanceConfig.copy(
-                gpuLayers = runtimeGpuCeiling?.let { minOf(targetPerformanceConfig.gpuLayers, it) }
-                    ?: targetPerformanceConfig.gpuLayers,
+            val tunedTargetConfig = targetConfig.copy(
+                gpuLayers = runtimeGpuCeiling?.let { minOf(targetConfig.gpuLayers, it) }
+                    ?: targetConfig.gpuLayers,
                 speculativeDraftGpuLayers = runtimeGpuCeiling?.let {
-                    minOf(targetPerformanceConfig.speculativeDraftGpuLayers, it)
-                } ?: targetPerformanceConfig.speculativeDraftGpuLayers,
+                    minOf(targetConfig.speculativeDraftGpuLayers, it)
+                } ?: targetConfig.speculativeDraftGpuLayers,
             )
             runtimeTuning.recordSuccess(
-                modelId = terminal.responseModelId ?: snapshot.runtime.activeModelId,
+                modelId = terminal.responseModelId ?: fallbackModelId,
                 appliedConfig = tunedAppliedConfig,
                 targetConfig = tunedTargetConfig,
                 runtimeStats = resolvedRuntimeStats,
-                thermalThrottled = currentDeviceState.thermalLevel >= 5,
+                thermalThrottled = deviceState.thermalLevel >= 5,
             )
             refreshRuntimeDiagnostics()
             persistState()
-            maybeAdvanceAfterAssistantResponse()
+            val pendingToolCalls = if (
+                terminal.finishReason == "tool_calls" &&
+                terminal.toolCalls.isNotEmpty()
+            ) {
+                terminal.toolCalls
+            } else {
+                emptyList()
+            }
+            if (pendingToolCalls.isEmpty()) {
+                maybeAdvanceAfterAssistantResponse()
+            }
+            return pendingToolCalls
         }
 
+        suspend fun executeToolCalls(toolCalls: List<ChatToolCall>): Boolean {
+            for (toolCall in toolCalls) {
+                updateToolCallStatus(
+                    sessionId = activeSession.id,
+                    toolCallId = toolCall.id,
+                    status = PersistedToolCallStatus.RUNNING,
+                )
+                val outcome = toolLoopUseCase.execute(
+                    toolName = toolCall.name,
+                    jsonArgs = toolCall.argumentsJson,
+                )
+                when (outcome) {
+                    is ToolLoopOutcome.Success -> {
+                        updateToolCallStatus(
+                            sessionId = activeSession.id,
+                            toolCallId = toolCall.id,
+                            status = PersistedToolCallStatus.COMPLETED,
+                        )
+                        val toolMessage = createMessage(
+                            role = MessageRole.TOOL,
+                            content = outcome.content,
+                            kind = MessageKind.TOOL,
+                            toolName = toolCall.name,
+                            toolCallId = toolCall.id,
+                        )
+                        updateActiveSession(activeSession.id) { session ->
+                            session.copy(
+                                messages = session.messages + toolMessage,
+                                updatedAtEpochMs = System.currentTimeMillis(),
+                            )
+                        }
+                    }
+
+                    is ToolLoopOutcome.Failure -> {
+                        updateToolCallStatus(
+                            sessionId = activeSession.id,
+                            toolCallId = toolCall.id,
+                            status = PersistedToolCallStatus.FAILED,
+                        )
+                        appendSystemMessage(
+                            sessionId = activeSession.id,
+                            content = formatUserFacingError(outcome.uiError),
+                        )
+                        _uiState.update { state ->
+                            state.copy(
+                                composer = state.composer.copy(isSending = false),
+                                runtime = state.runtime.copy(
+                                    modelRuntimeStatus = ModelRuntimeStatus.ERROR,
+                                    modelStatusDetail = outcome.uiError.userMessage,
+                                ).withUiError(outcome.uiError),
+                            )
+                        }
+                        persistState()
+                        return false
+                    }
+                }
+                persistState()
+            }
+            return true
+        }
+
+        suspend fun runAutomaticToolLoop(initialToolCalls: List<ChatToolCall>, initialPromptHint: String) {
+            var pendingToolCalls = initialToolCalls
+            var promptHint = initialPromptHint
+            var round = 0
+            while (pendingToolCalls.isNotEmpty() && round < MAX_AUTOMATIC_TOOL_LOOP_ROUNDS) {
+                round += 1
+                if (!executeToolCalls(pendingToolCalls)) {
+                    return
+                }
+                val loopSnapshot = _uiState.value
+                val loopSession = loopSnapshot.activeSession ?: return
+                val followUpAssistantMessageId = newMessageId(prefix = "assistant-stream")
+                val followUpRequestId = newRequestId()
+                val followUpSendPreparation = sendFlow.prepareChatStream(
+                    sessionId = SessionId(activeSession.id),
+                    requestId = followUpRequestId,
+                    messages = timelineProjector.toTranscript(loopSession),
+                    promptHint = promptHint,
+                    previousResponseId = timelineProjector.latestAssistantRequestId(loopSession),
+                    runtime = loopSnapshot.runtime,
+                    completionSettings = loopSession.completionSettings,
+                    prepare = runtimeFacade::prepareChatStream,
+                )
+                val followUpDeviceState = followUpSendPreparation.deviceState
+                val followUpPreparedStream = followUpSendPreparation.preparedStream
+                val followUpPerformanceConfig = followUpPreparedStream.plan.effectiveConfig
+                val followUpTargetPerformanceConfig = followUpPreparedStream.plan.baseConfig
+                val followUpRequestTimeoutMs = followUpPreparedStream.plan.requestTimeoutMs
+                val followUpStartedAtMs = System.currentTimeMillis()
+                val followUpStreamReducer = StreamStateReducer(requestTimeoutMs = followUpRequestTimeoutMs)
+                var followUpPendingStreamingText: String? = null
+                var followUpLastStreamingUiUpdateAtMs = 0L
+                var followUpTerminal: StreamTerminalState? = null
+                activeSendRequestId = followUpRequestId
+                _uiState.update { state ->
+                    state.copy(
+                        composer = state.composer.copy(isSending = true),
+                        runtime = sendReducer.onSendStarted(
+                            runtime = state.runtime,
+                            toolDriven = true,
+                        ),
+                    )
+                }
+                val followUpPlaceholder = MessageUiModel(
+                    id = followUpAssistantMessageId,
+                    role = MessageRole.ASSISTANT,
+                    content = "",
+                    timestampEpochMs = System.currentTimeMillis(),
+                    kind = MessageKind.TEXT,
+                    isStreaming = true,
+                    requestId = followUpRequestId,
+                    finishReason = null,
+                    terminalEventSeen = false,
+                    interaction = PersistedInteractionMessage(
+                        role = MessageRole.ASSISTANT.name,
+                        parts = listOf(PersistedInteractionPart(type = "text", text = "")),
+                        metadata = mapOf("state" to "streaming"),
+                    ),
+                )
+                updateActiveSession(activeSession.id) { session ->
+                    session.copy(
+                        messages = session.messages + followUpPlaceholder,
+                        updatedAtEpochMs = System.currentTimeMillis(),
+                    )
+                }
+                persistState()
+
+                fun flushFollowUpPendingStreamingText(force: Boolean = false, triggerToken: String? = null) {
+                    val text = followUpPendingStreamingText?.trim().orEmpty()
+                    if (text.isBlank()) {
+                        return
+                    }
+                    val now = System.currentTimeMillis()
+                    val forceByToken = triggerToken?.let { token ->
+                        token.contains('\n') || token.trim().endsWith(".") || token.trim().endsWith("!") || token.trim().endsWith("?")
+                    } ?: false
+                    val canFlush = force || followUpLastStreamingUiUpdateAtMs == 0L ||
+                        (now - followUpLastStreamingUiUpdateAtMs) >= STREAM_UI_UPDATE_MIN_INTERVAL_MS ||
+                        forceByToken
+                    if (!canFlush) {
+                        return
+                    }
+                    updateStreamingMessage(
+                        sessionId = activeSession.id,
+                        messageId = followUpAssistantMessageId,
+                        text = text,
+                    )
+                    followUpLastStreamingUiUpdateAtMs = now
+                }
+
+                streamCoordinator.collectStream(
+                    runtimeService = runtimeFacade,
+                    preparedStream = followUpPreparedStream,
+                    streamReducer = followUpStreamReducer,
+                    sendStartedAtMs = followUpStartedAtMs,
+                    onEvent = { event, nextState ->
+                        if (event is ChatStreamEvent.Delta) {
+                            when (val delta = event.delta) {
+                                is ChatStreamDelta.TextDelta -> {
+                                    followUpPendingStreamingText = nextState.accumulatedText
+                                    flushFollowUpPendingStreamingText(triggerToken = delta.text)
+                                }
+                            }
+                        }
+                        val detail = sendReducer.statusDetailForEvent(event)
+                        if (!detail.isNullOrBlank()) {
+                            _uiState.update { state ->
+                                state.copy(
+                                    runtime = state.runtime.copy(
+                                        modelStatusDetail = detail,
+                                    ),
+                                )
+                            }
+                        }
+                    },
+                    onElapsed = { elapsed, slowState ->
+                        _uiState.update { state ->
+                            state.copy(
+                                runtime = state.runtime.copy(
+                                    sendElapsedMs = elapsed,
+                                    sendSlowState = slowState,
+                                ),
+                            )
+                        }
+                    },
+                    onBeforeTerminal = {
+                        flushFollowUpPendingStreamingText(force = true)
+                    },
+                    onTerminal = { terminal ->
+                        followUpTerminal = terminal
+                    },
+                )
+                activeSendRequestId = null
+                val terminal = followUpTerminal ?: break
+                pendingToolCalls = finalizeFromTerminal(
+                    terminal = terminal,
+                    messageId = followUpAssistantMessageId,
+                    turnStartedAtMs = followUpStartedAtMs,
+                    appliedConfig = followUpPerformanceConfig,
+                    targetConfig = followUpTargetPerformanceConfig,
+                    deviceState = followUpDeviceState,
+                    fallbackModelId = loopSnapshot.runtime.activeModelId,
+                )
+                promptHint = terminal.responseText?.trim().orEmpty().ifBlank { promptHint }
+            }
+
+            if (pendingToolCalls.isNotEmpty()) {
+                appendSystemMessage(
+                    sessionId = activeSession.id,
+                    content = "Tool loop stopped after $MAX_AUTOMATIC_TOOL_LOOP_ROUNDS rounds.",
+                )
+                persistState()
+            }
+        }
+
+        var pendingToolCallsFromTurn: List<ChatToolCall> = emptyList()
         streamCoordinator.collectStream(
             runtimeService = runtimeFacade,
             preparedStream = preparedStream,
@@ -339,9 +593,36 @@ internal fun ChatViewModel.sendMessageInternal() {
                 flushPendingStreamingText(force = true)
             },
             onTerminal = { terminal ->
-                finalizeFromTerminal(terminal)
+                pendingToolCallsFromTurn = finalizeFromTerminal(
+                    terminal = terminal,
+                    messageId = assistantMessageId,
+                    turnStartedAtMs = sendStartedAtMs,
+                    appliedConfig = performanceConfig,
+                    targetConfig = targetPerformanceConfig,
+                    deviceState = currentDeviceState,
+                    fallbackModelId = snapshot.runtime.activeModelId,
+                )
             },
         )
         activeSendRequestId = null
+        if (pendingToolCallsFromTurn.isNotEmpty()) {
+            runAutomaticToolLoop(
+                initialToolCalls = pendingToolCallsFromTurn,
+                initialPromptHint = prompt,
+            )
+        }
     }
 }
+
+private fun List<ChatToolCall>.toPersistedToolCalls(): List<PersistedToolCall> {
+    return map { call ->
+        PersistedToolCall(
+            id = call.id,
+            name = call.name,
+            argumentsJson = call.argumentsJson,
+            status = PersistedToolCallStatus.PENDING,
+        )
+    }
+}
+
+private const val MAX_AUTOMATIC_TOOL_LOOP_ROUNDS = 2
