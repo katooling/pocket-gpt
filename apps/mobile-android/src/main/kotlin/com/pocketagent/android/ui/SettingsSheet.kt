@@ -65,9 +65,11 @@ internal fun PrivacyInfoSheet(onClose: () -> Unit) {
 @Composable
 internal fun AdvancedSettingsSheet(
     state: ChatUiState,
+    wifiOnlyDownloadsEnabled: Boolean,
     onRoutingModeSelected: (RoutingMode) -> Unit,
     onPerformanceProfileSelected: (RuntimePerformanceProfile) -> Unit,
     onKeepAlivePreferenceSelected: (RuntimeKeepAlivePreference) -> Unit,
+    onWifiOnlyDownloadsChanged: (Boolean) -> Unit,
     onGpuAccelerationEnabledChanged: (Boolean) -> Unit,
     onExportDiagnostics: () -> Unit,
     onOpenModelSetup: () -> Unit,
@@ -139,6 +141,31 @@ internal fun AdvancedSettingsSheet(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(keepAlivePreferenceLabel(preference))
             }
+        }
+
+        HorizontalDivider()
+        Text(stringResource(id = R.string.ui_download_controls_title), style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = stringResource(id = R.string.ui_download_controls_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = wifiOnlyDownloadsEnabled,
+                    role = Role.Switch,
+                    onValueChange = onWifiOnlyDownloadsChanged,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.Switch(
+                checked = wifiOnlyDownloadsEnabled,
+                onCheckedChange = null,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(id = R.string.ui_download_wifi_only_toggle))
         }
 
         HorizontalDivider()

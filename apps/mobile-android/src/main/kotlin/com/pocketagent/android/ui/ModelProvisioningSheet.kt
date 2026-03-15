@@ -248,6 +248,29 @@ internal fun ModelProvisioningSheet(
                         ),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    if (lifecycle.state == ModelLifecycleState.LOADING && lifecycle.loadingProgress != null) {
+                        val progress = lifecycle.loadingProgress.coerceIn(0f, 1f)
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            text = buildString {
+                                append(lifecycle.loadingDetail.orEmpty().ifBlank { "Loading model..." })
+                                append(" ")
+                                append((progress * 100).toInt())
+                                append("%")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else if (!lifecycle.loadingDetail.isNullOrBlank() && lifecycle.state == ModelLifecycleState.LOADING) {
+                        Text(
+                            text = lifecycle.loadingDetail.orEmpty(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     lifecycle.loadedModel?.let { loaded ->
                         Text(
                             text = stringResource(

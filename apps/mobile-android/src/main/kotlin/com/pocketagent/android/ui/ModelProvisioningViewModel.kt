@@ -9,6 +9,8 @@ import com.pocketagent.android.runtime.RuntimeDomainException
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
+import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
@@ -28,6 +30,7 @@ data class ModelProvisioningUiState(
     val snapshot: RuntimeProvisioningSnapshot? = null,
     val lifecycle: RuntimeModelLifecycleSnapshot = RuntimeModelLifecycleSnapshot.initial(),
     val downloads: List<DownloadTaskState> = emptyList(),
+    val downloadPreferences: DownloadPreferencesState = DownloadPreferencesState(),
     val manifest: ModelDistributionManifest = ModelDistributionManifest(models = emptyList()),
     val isImporting: Boolean = false,
     val statusMessage: String? = null,
@@ -52,6 +55,11 @@ class ModelProvisioningViewModel(
             gateway.observeDownloads().collect { downloads ->
                 _uiState.update { state -> state.copy(downloads = downloads) }
                 refreshSnapshot()
+            }
+        }
+        viewModelScope.launch {
+            gateway.observeDownloadPreferences().collect { preferences ->
+                _uiState.update { state -> state.copy(downloadPreferences = preferences) }
             }
         }
         viewModelScope.launch {
@@ -188,8 +196,23 @@ class ModelProvisioningViewModel(
         return result
     }
 
-    fun enqueueDownload(version: ModelDistributionVersion): String {
-        return gateway.enqueueDownload(version = version)
+    fun enqueueDownload(
+        version: ModelDistributionVersion,
+        options: DownloadRequestOptions = DownloadRequestOptions(),
+    ): String {
+        return gateway.enqueueDownload(version = version, options = options)
+    }
+
+    fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean {
+        return gateway.shouldWarnForMeteredLargeDownload(version)
+    }
+
+    fun setDownloadWifiOnlyEnabled(enabled: Boolean) {
+        gateway.setDownloadWifiOnlyEnabled(enabled)
+    }
+
+    fun acknowledgeLargeDownloadCellularWarning() {
+        gateway.acknowledgeLargeDownloadCellularWarning()
     }
 
     fun pauseDownload(taskId: String) {
@@ -209,7 +232,7 @@ class ModelProvisioningViewModel(
     }
 
     fun refreshDownloads() {
-        gateway.syncDownloadsFromWorkManager()
+        gateway.syncDownloadsFromScheduler()
     }
 
     private fun userMessageFor(error: Throwable): String {
