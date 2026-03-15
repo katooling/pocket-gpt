@@ -1,0 +1,7 @@
+appId: com.pocketagent.android
+tags:
+  - cloud-smoke
+  - runtime-readiness
+---
+- runFlow: shared/bootstrap-runtime-ready.yaml
+- takeScreenshot: "cloud-runtime-ready"

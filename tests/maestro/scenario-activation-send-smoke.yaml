@@ -36,10 +36,12 @@ tags:
     visible: "Runtime: Ready"
     timeout: 180000
 - assertNotVisible: "UI-STARTUP-001"
-- tapOn: "Message"
+- tapOn:
+    id: "composer_input"
 - eraseText
 - inputText: "Reply with exactly: ACTIVATION_SMOKE_OK"
-- tapOn: "Send"
+- tapOn:
+    id: "send_button"
 - assertVisible: "Reply with exactly: ACTIVATION_SMOKE_OK"
 - extendedWaitUntil:
     visible: "ACTIVATION_SMOKE_OK"

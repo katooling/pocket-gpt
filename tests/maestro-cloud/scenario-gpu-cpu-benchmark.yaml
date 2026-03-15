@@ -119,7 +119,8 @@ tags:
 - assertVisible: "Advanced controls"
 - takeScreenshot: "cloud-gpu-benchmark-gpu"
 - back
-- tapOn: "Sessions"
+- tapOn:
+    id: "session_drawer_button"
 - tapOn: "Create session"
 - tapOn: "Advanced"
 - assertVisible: "Advanced controls"

@@ -28,7 +28,7 @@ Source of truth for execution commands and cloud guidance:
 3. Screenshot checkpoints feed `tests/ui-screenshots/inventory.yaml` through `lane screenshot-pack`.
 4. Release-gate usage remains through `devctl` lanes; direct `maestro`/cloud execution is supplemental.
 5. CI lifecycle gate flow is `scenario-first-run-download-chat.yaml` (`lifecycle-e2e-first-run` job in CI).
-6. Prefer the most stable selector that Maestro can actually see. In the current Pocket GPT Android build, Compose `testTag` values are good for instrumentation but are not yet a reliable Maestro Cloud selector surface, so most Maestro flows still use visible text.
+6. Prefer the most stable selector that Maestro can actually see. The current Pocket GPT Android build exposes selected Compose `testTag` values as Android resource IDs, so stable controls such as `session_drawer_button`, `composer_input`, and `send_button` should use `id:` selectors. Use visible text when there is no durable resource-id surface.
 7. Keep split-surface validation concentrated in dedicated model-management flows and focused Compose/instrumentation tests; do not re-assert the same library/runtime separation in unrelated long journeys.
 8. Tag every stable flow. `devctl lane maestro` now supports `--include-tags`, `--exclude-tags`, and `--flows` so you can run one risk slice without cloning/renaming files.
 

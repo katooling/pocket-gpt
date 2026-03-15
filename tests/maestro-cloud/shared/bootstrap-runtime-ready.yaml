@@ -1,7 +1,4 @@
 appId: com.pocketagent.android
-tags:
-  - smoke
-  - sessions
 ---
 - launchApp:
     clearState: true
@@ -25,16 +22,20 @@ tags:
       - tapOn: "Skip"
 - runFlow:
     when:
-      visible: "Get ready"
+      visible: "Open advanced controls"
     commands:
-      - tapOn: "Get ready"
-- tapOn:
-    id: "session_drawer_button"
-- assertVisible: "Create session"
-- assertVisible: "New chat"
-- tapOn: "Delete session New chat"
-- assertVisible: "Delete conversation?"
-- tapOn: "Delete"
-- assertVisible: "Create session"
-- assertVisible: "New chat"
-- takeScreenshot: "scenario-session-drawer-after-delete"
+      - tapOn: "Open advanced controls"
+- runFlow:
+    when:
+      visible: "Advanced controls"
+    commands:
+      - back
+- runFlow:
+    when:
+      visible: "Refresh runtime checks"
+    commands:
+      - tapOn: "Refresh runtime checks"
+- extendedWaitUntil:
+    visible: "Runtime: Ready"
+    timeout: 180000
+- assertNotVisible: "UI-STARTUP-001"
