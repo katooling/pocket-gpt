@@ -2,10 +2,10 @@ package com.pocketagent.android.ui
 
 import android.util.Log
 import com.pocketagent.android.BuildConfig
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeResult
 import com.pocketagent.android.runtime.GpuProbeStatus
-import com.pocketagent.android.runtime.RuntimeGateway
 import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.controllers.ChatPersistenceFlow
 import com.pocketagent.android.ui.controllers.ChatStreamCoordinator
@@ -58,7 +58,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class ChatViewModel(
-    internal val runtimeFacade: RuntimeGateway,
+    internal val runtimeFacade: ChatRuntimeService,
     sessionPersistence: SessionPersistence,
     internal val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val runtimeGenerationTimeoutMs: Long = 0L,
@@ -309,6 +309,8 @@ class ChatViewModel(
             createdAtEpochMs = now,
             updatedAtEpochMs = now,
             messages = emptyList(),
+            messagesLoaded = true,
+            messageCount = 0,
         )
         _uiState.update { state ->
             state.copy(
@@ -324,6 +326,7 @@ class ChatViewModel(
         _uiState.update { state ->
             state.copy(activeSessionId = sessionId, isSessionDrawerOpen = false)
         }
+        hydrateSessionMessagesIfNeeded(sessionId)
         persistState()
     }
 
@@ -345,6 +348,7 @@ class ChatViewModel(
             createSession()
             return
         }
+        _uiState.value.activeSessionId?.let(::hydrateSessionMessagesIfNeeded)
         persistState()
     }
 
@@ -725,6 +729,7 @@ class ChatViewModel(
         val loadedState = persistenceFlow.loadBootstrapState()
         val bootstrapResult = startupFlow.bootstrap(loadedState)
         _uiState.value = bootstrapResult.state
+        _uiState.value.activeSessionId?.let(::hydrateSessionMessagesIfNeeded)
         refreshRuntimeDiagnostics()
         refreshGpuProbeStatusIfPending()
         ensureSimpleFirstEnteredTelemetryIfNeeded()
@@ -943,12 +948,45 @@ class ChatViewModel(
         _uiState.update { state ->
             val updatedSessions = state.sessions.map { session ->
                 if (session.id == sessionId) {
-                    transform(session)
+                    normalizeSession(transform(session))
                 } else {
                     session
                 }
             }
             state.copy(sessions = updatedSessions)
+        }
+    }
+
+    private fun hydrateSessionMessagesIfNeeded(sessionId: String) {
+        val session = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return
+        if (session.messagesLoaded) {
+            return
+        }
+        viewModelScope.launch(ioDispatcher) {
+            val messages = persistenceFlow.loadSessionMessages(sessionId).orEmpty()
+            val hydratedSession = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return@launch
+            if (hydratedSession.messagesLoaded) {
+                return@launch
+            }
+            val restoredSession = hydratedSession.copy(
+                messages = messages,
+                messagesLoaded = true,
+                messageCount = messages.size,
+            )
+            runtimeFacade.restoreSession(
+                sessionId = SessionId(sessionId),
+                turns = timelineProjector.toTurns(restoredSession),
+            )
+            updateActiveSession(sessionId) { restoredSession }
+            persistState()
+        }
+    }
+
+    private fun normalizeSession(session: ChatSessionUiModel): ChatSessionUiModel {
+        return if (session.messagesLoaded) {
+            session.copy(messageCount = session.messages.size)
+        } else {
+            session
         }
     }
 

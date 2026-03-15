@@ -2,7 +2,7 @@ package com.pocketagent.android.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.controllers.DeviceStateProvider
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
@@ -121,7 +121,7 @@ internal fun newToolCallId(): String = "toolcall-${UUID.randomUUID()}"
 internal fun newMessageId(prefix: String): String = "$prefix-${UUID.randomUUID()}"
 
 class ChatViewModelFactory(
-    private val runtimeFacade: RuntimeGateway,
+    private val runtimeFacade: ChatRuntimeService,
     private val sessionPersistence: SessionPersistence,
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
     private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,

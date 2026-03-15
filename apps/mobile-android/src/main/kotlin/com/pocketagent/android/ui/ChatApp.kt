@@ -1,6 +1,8 @@
 package com.pocketagent.android.ui
 
+import android.Manifest
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.ModelPathOrigin
@@ -100,10 +103,50 @@ fun PocketAgentApp(
     var modelSheetOpen by remember { mutableStateOf(false) }
     var selectedModelIdForImport by remember { mutableStateOf<String?>(null) }
     var pendingGetReadyActivation by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var pendingMeteredWarningVersion by remember { mutableStateOf<ModelDistributionVersion?>(null) }
+    var pendingNotificationPermissionVersion by remember { mutableStateOf<ModelDistributionVersion?>(null) }
     var lastDownloadTransitionRefreshKey by remember { mutableStateOf<String?>(null) }
     var readinessRefreshSequence by remember { mutableStateOf(0L) }
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
     val defaultGetReadyModelId = remember { resolveDefaultGetReadyModelId(isDebugBuild = BuildConfig.DEBUG) }
+    val beginDownload: (ModelDistributionVersion) -> Unit = { version ->
+        startModelDownload(
+            context = context,
+            version = version,
+            enqueueDownload = { selected -> provisioningViewModel.enqueueDownload(selected) },
+            onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
+        )
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val version = pendingNotificationPermissionVersion
+        pendingNotificationPermissionVersion = null
+        if (version == null) {
+            return@rememberLauncherForActivityResult
+        }
+        if (!granted) {
+            provisioningViewModel.setStatusMessage(
+                context.getString(R.string.ui_model_download_notifications_disabled),
+            )
+        }
+        beginDownload(version)
+    }
+    val launchDownloadFlow: (ModelDistributionVersion) -> Unit = { version ->
+        when {
+            provisioningViewModel.shouldWarnForMeteredLargeDownload(version) -> {
+                pendingMeteredWarningVersion = version
+            }
+
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED -> {
+                pendingNotificationPermissionVersion = version
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+
+            else -> beginDownload(version)
+        }
+    }
     val openModelSetupAction: () -> Unit = {
         provisioningViewModel.refreshSnapshot()
         modelSheetOpen = true
@@ -153,12 +196,7 @@ fun PocketAgentApp(
             }
 
             pendingGetReadyActivation = defaultVersion.modelId to defaultVersion.version
-            startModelDownload(
-                context = context,
-                version = defaultVersion,
-                enqueueDownload = provisioningViewModel::enqueueDownload,
-                onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
-            )
+            launchDownloadFlow(defaultVersion)
             modelSheetOpen = true
         }
     }
@@ -455,9 +493,11 @@ fun PocketAgentApp(
         ) {
             AdvancedSettingsSheet(
                 state = state,
+                wifiOnlyDownloadsEnabled = provisioningState.downloadPreferences.wifiOnlyEnabled,
                 onRoutingModeSelected = viewModel::setRoutingMode,
                 onPerformanceProfileSelected = viewModel::setPerformanceProfile,
                 onKeepAlivePreferenceSelected = viewModel::setKeepAlivePreference,
+                onWifiOnlyDownloadsChanged = provisioningViewModel::setDownloadWifiOnlyEnabled,
                 onGpuAccelerationEnabledChanged = viewModel::setGpuAccelerationEnabled,
                 onExportDiagnostics = viewModel::exportDiagnostics,
                 onOpenModelSetup = {
@@ -501,12 +541,7 @@ fun PocketAgentApp(
                     modelPicker.launch(arrayOf("*/*"))
                 },
                 onDownloadVersion = { version ->
-                    startModelDownload(
-                        context = context,
-                        version = version,
-                        enqueueDownload = provisioningViewModel::enqueueDownload,
-                        onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
-                    )
+                    launchDownloadFlow(version)
                 },
                 onPauseDownload = { taskId ->
                     provisioningViewModel.pauseDownload(taskId)
@@ -660,6 +695,38 @@ fun PocketAgentApp(
         }
     }
 
+    pendingMeteredWarningVersion?.let { version ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingMeteredWarningVersion = null },
+            title = { Text(stringResource(id = R.string.ui_large_download_metered_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        id = R.string.ui_large_download_metered_body,
+                        version.modelId,
+                        version.fileSizeBytes.formatAsGiB(),
+                    ),
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMeteredWarningVersion = null }) {
+                    Text(stringResource(id = R.string.ui_cancel_button))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        provisioningViewModel.acknowledgeLargeDownloadCellularWarning()
+                        pendingMeteredWarningVersion = null
+                        launchDownloadFlow(version)
+                    },
+                ) {
+                    Text(stringResource(id = R.string.ui_large_download_metered_continue))
+                }
+            },
+        )
+    }
+
     if (state.showOnboarding) {
         OnboardingOverlay(
             page = state.onboardingPage,
@@ -706,6 +773,10 @@ private fun lifecycleStatusMessage(
         ModelLifecycleErrorCode.BACKEND_INIT_FAILED -> context.getString(
             R.string.ui_model_runtime_error_backend_init,
             result.detail ?: "backend_init_failed",
+        )
+        ModelLifecycleErrorCode.OUT_OF_MEMORY -> context.getString(
+            R.string.ui_model_runtime_error_out_of_memory,
+            result.detail ?: "out_of_memory",
         )
         ModelLifecycleErrorCode.BUSY_GENERATION -> context.getString(R.string.ui_model_runtime_error_busy_generation)
         ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST -> context.getString(

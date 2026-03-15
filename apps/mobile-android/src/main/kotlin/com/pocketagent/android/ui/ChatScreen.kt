@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -48,16 +49,21 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -65,13 +71,16 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatGatePrimaryAction
 import com.pocketagent.android.ui.state.ChatGateState
@@ -83,6 +92,8 @@ import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
+import java.io.File
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ChatScreenBody(
@@ -546,11 +557,36 @@ private fun MessageList(
 ) {
     val clipboardManager = LocalClipboardManager.current
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val latestMessage = activeSession?.messages?.lastOrNull()
+    val isNearBottom by remember(listState, activeSession?.id) {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            if (layoutInfo.totalItemsCount == 0) {
+                true
+            } else {
+                val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                lastVisibleIndex >= layoutInfo.totalItemsCount - 2
+            }
+        }
+    }
 
-    LaunchedEffect(activeSession?.id, activeSession?.messages?.size) {
+    LaunchedEffect(activeSession?.id) {
         val messages = activeSession?.messages ?: return@LaunchedEffect
         if (messages.isNotEmpty()) {
             listState.scrollToItem(index = messages.lastIndex)
+        }
+    }
+
+    LaunchedEffect(
+        activeSession?.id,
+        activeSession?.messages?.size,
+        latestMessage?.content,
+        latestMessage?.isStreaming,
+    ) {
+        val messages = activeSession?.messages ?: return@LaunchedEffect
+        if (messages.isNotEmpty() && isNearBottom) {
+            listState.animateScrollToItem(index = messages.lastIndex)
         }
     }
 
@@ -565,55 +601,83 @@ private fun MessageList(
     }
     if (activeSession.messages.isEmpty()) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            if (!activeSession.messagesLoaded) {
                 Text(
-                    text = stringResource(id = R.string.ui_chat_empty_state),
+                    text = "Loading conversation...",
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                SuggestedPromptCard(
-                    prompt = stringResource(id = R.string.ui_prompt_quick_answer),
-                    onClick = onSuggestedPrompt,
-                )
-                SuggestedPromptCard(
-                    prompt = stringResource(id = R.string.ui_prompt_image_help),
-                    onClick = onSuggestedPrompt,
-                )
-                SuggestedPromptCard(
-                    prompt = stringResource(id = R.string.ui_prompt_local_search),
-                    onClick = onSuggestedPrompt,
-                )
-                SuggestedPromptCard(
-                    prompt = stringResource(id = R.string.ui_prompt_reminder),
-                    onClick = onSuggestedPrompt,
-                )
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.ui_chat_empty_state),
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SuggestedPromptCard(
+                        prompt = stringResource(id = R.string.ui_prompt_quick_answer),
+                        onClick = onSuggestedPrompt,
+                    )
+                    SuggestedPromptCard(
+                        prompt = stringResource(id = R.string.ui_prompt_image_help),
+                        onClick = onSuggestedPrompt,
+                    )
+                    SuggestedPromptCard(
+                        prompt = stringResource(id = R.string.ui_prompt_local_search),
+                        onClick = onSuggestedPrompt,
+                    )
+                    SuggestedPromptCard(
+                        prompt = stringResource(id = R.string.ui_prompt_reminder),
+                        onClick = onSuggestedPrompt,
+                    )
+                }
             }
         }
         return
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier,
-        reverseLayout = false,
-        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp, alignment = Alignment.Top),
-    ) {
-        items(
-            items = activeSession.messages,
-            key = { it.id },
-            contentType = { it.kind },
-        ) { message ->
-            MessageBubble(
-                message = message,
-                runtimeStatusDetail = runtimeStatusDetail,
-                clipboardManager = clipboardManager,
-                onEditMessage = onEditMessage,
-                onRegenerateMessage = onRegenerateMessage,
-            )
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            reverseLayout = false,
+            contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp, alignment = Alignment.Top),
+        ) {
+            items(
+                items = activeSession.messages,
+                key = { it.id },
+                contentType = { it.kind },
+            ) { message ->
+                MessageBubble(
+                    message = message,
+                    runtimeStatusDetail = runtimeStatusDetail,
+                    clipboardManager = clipboardManager,
+                    onEditMessage = onEditMessage,
+                    onRegenerateMessage = onRegenerateMessage,
+                )
+            }
+        }
+        if (!isNearBottom) {
+            FloatingActionButton(
+                onClick = {
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(activeSession.messages.lastIndex)
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+                    .size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ExpandMore,
+                    contentDescription = "Scroll to latest message",
+                )
+            }
         }
     }
 }
@@ -651,21 +715,18 @@ private fun MessageBubble(
                     .padding(12.dp),
                 ) {
                     // Image/tool header labels
+                    val attachmentPaths = message.imagePaths.ifEmpty {
+                        listOfNotNull(message.imagePath)
+                    }
                     when {
-                        message.imagePaths.isNotEmpty() -> {
+                        attachmentPaths.isNotEmpty() -> {
                             Text(
-                                text = "${message.imagePaths.size} image(s) attached",
+                                text = "${attachmentPaths.size} image(s) attached",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                        }
-                        message.imagePath != null -> {
-                            Text(
-                                text = stringResource(id = R.string.ui_image_message_label, message.imagePath),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            AttachmentThumbnailRow(attachmentPaths = attachmentPaths)
                             Spacer(modifier = Modifier.height(4.dp))
                         }
                         message.toolName != null -> {
@@ -948,7 +1009,8 @@ private fun MarkdownMessageContent(
     content: String,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager? = null,
 ) {
-    val codeFenceParts = remember(content) { content.split("```") }
+    val sanitizedContent = remember(content) { sanitizeMarkdownForRendering(content) }
+    val codeFenceParts = remember(sanitizedContent) { sanitizedContent.split("```") }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         codeFenceParts.forEachIndexed { index, part ->
             if (index % 2 == 1) {
@@ -1013,21 +1075,21 @@ private fun MarkdownMessageContent(
                     // Heading support
                     when {
                         line.startsWith("### ") -> {
-                            Text(
+                            MarkdownInlineText(
                                 text = renderInlineMarkdown(line.drop(4)),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                         line.startsWith("## ") -> {
-                            Text(
+                            MarkdownInlineText(
                                 text = renderInlineMarkdown(line.drop(3)),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                         line.startsWith("# ") -> {
-                            Text(
+                            MarkdownInlineText(
                                 text = renderInlineMarkdown(line.drop(2)),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
@@ -1043,7 +1105,7 @@ private fun MarkdownMessageContent(
                                         .height(20.dp),
                                 ) {}
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(
+                                MarkdownInlineText(
                                     text = renderInlineMarkdown(line.drop(2)),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1051,14 +1113,14 @@ private fun MarkdownMessageContent(
                             }
                         }
                         line.startsWith("- ") || line.startsWith("* ") -> {
-                            Text(
+                            MarkdownInlineText(
                                 text = renderInlineMarkdown("• ${line.drop(2)}"),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
                         line.matches(Regex("^\\d+\\.\\s.*")) -> {
                             // Ordered list
-                            Text(
+                            MarkdownInlineText(
                                 text = renderInlineMarkdown(line),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
@@ -1070,7 +1132,7 @@ private fun MarkdownMessageContent(
                             )
                         }
                         else -> {
-                            Text(
+                            MarkdownInlineText(
                                 text = renderInlineMarkdown(line),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
@@ -1127,12 +1189,17 @@ private fun renderInlineMarkdown(text: String): AnnotatedString {
                 }
                 // Link: [text](url)
                 match.groupValues[10].isNotEmpty() -> {
+                    pushStringAnnotation(
+                        tag = URL_ANNOTATION_TAG,
+                        annotation = match.groupValues[11],
+                    )
                     withStyle(SpanStyle(
                         color = androidx.compose.ui.graphics.Color(0xFF1A73E8),
-                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                        textDecoration = TextDecoration.Underline,
                     )) {
                         append(match.groupValues[10])
                     }
+                    pop()
                 }
                 else -> append(match.value)
             }
@@ -1143,6 +1210,66 @@ private fun renderInlineMarkdown(text: String): AnnotatedString {
         }
     }
 }
+
+@Composable
+private fun MarkdownInlineText(
+    text: AnnotatedString,
+    style: TextStyle,
+    color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
+    fontWeight: FontWeight? = null,
+) {
+    val uriHandler = LocalUriHandler.current
+    ClickableText(
+        text = text,
+        style = style.merge(
+            TextStyle(
+                color = color,
+                fontWeight = fontWeight,
+            ),
+        ),
+        onClick = { offset ->
+            text.getStringAnnotations(
+                tag = URL_ANNOTATION_TAG,
+                start = offset,
+                end = offset,
+            ).firstOrNull()?.let { annotation ->
+                uriHandler.openUri(annotation.item)
+            }
+        },
+    )
+}
+
+@Composable
+private fun AttachmentThumbnailRow(
+    attachmentPaths: List<String>,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        attachmentPaths.take(3).forEach { path ->
+            AsyncImage(
+                model = File(path),
+                contentDescription = stringResource(id = R.string.ui_image_message_label, path),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(88.dp)
+                    .clip(MaterialTheme.shapes.small),
+            )
+        }
+    }
+}
+
+private fun sanitizeMarkdownForRendering(content: String): String {
+    val codeFenceCount = "```".toRegex().findAll(content).count()
+    return if (codeFenceCount % 2 == 0) {
+        content
+    } else {
+        "$content\n```"
+    }
+}
+
+private const val URL_ANNOTATION_TAG = "url"
 
 @Composable
 internal fun ComposerBar(
