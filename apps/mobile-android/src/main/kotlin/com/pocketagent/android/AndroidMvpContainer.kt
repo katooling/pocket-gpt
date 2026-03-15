@@ -22,6 +22,7 @@ import com.pocketagent.memory.MemoryModule
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeBackend
+import com.pocketagent.android.runtime.RuntimeBootstrapper
 import com.pocketagent.runtime.PolicyAwareNetworkClient
 import com.pocketagent.runtime.ModelResidencyPolicy
 import com.pocketagent.runtime.PerformanceRuntimeConfig
@@ -87,6 +88,22 @@ class AndroidMvpContainer(
         memoryModule = memoryModule,
         runtimeConfig = runtimeConfig,
         networkPolicyClient = networkPolicyClient,
+        memoryBudgetTracker = appContext?.let { context ->
+            RuntimeBootstrapper.runtimeTuning(context.applicationContext).memoryBudgetTracker
+        },
+        recommendedGpuLayers = { modelId, config ->
+            appContext?.let { context ->
+                val runtimeTuning = RuntimeBootstrapper.runtimeTuning(context.applicationContext)
+                runtimeTuning
+                    .applyRecommendedConfig(
+                        modelIdHint = modelId,
+                        baseConfig = config,
+                        gpuQualifiedLayers = config.gpuLayers.coerceAtLeast(0),
+                    )
+                    .gpuLayers
+                    .takeIf { it != config.gpuLayers }
+            }
+        },
     )
 
     fun createSession(): SessionId = orchestrator.createSession()

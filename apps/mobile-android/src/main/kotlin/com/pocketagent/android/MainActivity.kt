@@ -11,7 +11,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.compose.material3.Surface
 import com.pocketagent.android.runtime.AndroidGpuOffloadQualifier
 import com.pocketagent.android.runtime.AndroidGpuOffloadSupport
-import com.pocketagent.android.runtime.AndroidRuntimeTuningStore
 import com.pocketagent.android.runtime.DefaultProvisioningGateway
 import com.pocketagent.android.runtime.MvpRuntimeGateway
 import com.pocketagent.android.runtime.RuntimeBootstrapper
@@ -29,7 +28,7 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val runtimeTuning by lazy {
-        AndroidRuntimeTuningStore(applicationContext)
+        RuntimeBootstrapper.runtimeTuning(applicationContext)
     }
 
     private val runtimeGateway by lazy {

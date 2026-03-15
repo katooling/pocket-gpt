@@ -5,12 +5,15 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
+import com.pocketagent.android.runtime.AndroidRuntimeTuningStore
 import com.pocketagent.android.runtime.ModelMemoryEstimator
 import com.pocketagent.android.runtime.createDefaultAndroidInferenceModule
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
+import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifestProvider
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
@@ -34,6 +37,7 @@ import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.runtime.WarmupResult
 import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
+import com.pocketagent.nativebridge.ModelLifecycleEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,6 +56,7 @@ import kotlin.concurrent.write
 object AppRuntimeDependencies {
     private val lock = Any()
     private var runtimeProvisioningStore: AndroidRuntimeProvisioningStore? = null
+    private var runtimeTuningStore: AndroidRuntimeTuningStore? = null
     private var modelDownloadManager: ModelDownloadManager? = null
     private var modelManifestProvider: ModelDistributionManifestProvider? = null
     private var sharedConversationModule: ConversationModule? = null
@@ -59,6 +64,8 @@ object AppRuntimeDependencies {
     private var runtimeGraph: AppRuntimeGraph? = null
     private val lifecycleCommandMutex = Mutex()
     private val lifecycleState = MutableStateFlow(RuntimeModelLifecycleSnapshot.initial())
+    @Volatile
+    private var lifecycleEventSubscription: AutoCloseable? = null
     @Volatile
     private var lifecycleActionToken: Long = 0L
     private val warmupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -84,11 +91,14 @@ object AppRuntimeDependencies {
     fun resetRuntimeFacadeFactoryForTests() {
         runtimeFacadeFactory = productionRuntimeFacadeFactory
         warmupOrchestrator.cancelActiveWarmup()
+        lifecycleEventSubscription?.close()
+        lifecycleEventSubscription = null
         lifecycleState.value = RuntimeModelLifecycleSnapshot.initial()
         lifecycleActionToken = 0L
         lastMemoryEstimate = null
         synchronized(lock) {
             runtimeGraph = null
+            runtimeTuningStore = null
         }
     }
 
@@ -103,13 +113,26 @@ object AppRuntimeDependencies {
         synchronized(lock) {
             val graph = getOrCreateRuntimeGraph(context)
             val store = graph.provisioningStore
+            val runtimeTuning = graph.runtimeTuning
             val newFacade = RuntimeCompositionRoot.createFacade(
                 runtimeConfig = store.runtimeConfig(),
                 conversationModule = graph.conversationModule,
                 memoryModule = graph.memoryModule,
                 inferenceModule = createDefaultAndroidInferenceModule(context.applicationContext),
+                memoryBudgetTracker = runtimeTuning.memoryBudgetTracker,
+                recommendedGpuLayers = { modelId, config ->
+                    runtimeTuning
+                        .applyRecommendedConfig(
+                            modelIdHint = modelId,
+                            baseConfig = config,
+                            gpuQualifiedLayers = config.gpuLayers.coerceAtLeast(0),
+                        )
+                        .gpuLayers
+                        .takeIf { it != config.gpuLayers }
+                },
             )
             graph.runtimeFacade.replace(newFacade)
+            attachLifecycleObserver(graph)
             reconcileLifecycleState(graph)
             if (startupWarmupEnabled()) {
                 scheduleWarmupIfSupported(newFacade)
@@ -133,6 +156,12 @@ object AppRuntimeDependencies {
 
     fun currentProvisioningSnapshot(context: Context): RuntimeProvisioningSnapshot {
         return getOrCreateRuntimeGraph(context).provisioningStore.snapshot()
+    }
+
+    fun runtimeTuning(context: Context): AndroidRuntimeTuningStore {
+        return synchronized(lock) {
+            runtimeTuningStore ?: AndroidRuntimeTuningStore(context.applicationContext).also { runtimeTuningStore = it }
+        }
     }
 
     suspend fun importModelFromUri(
@@ -210,8 +239,9 @@ object AppRuntimeDependencies {
     fun enqueueDownload(
         context: Context,
         version: ModelDistributionVersion,
+        options: DownloadRequestOptions = DownloadRequestOptions(),
     ): String {
-        return getOrCreateRuntimeGraph(context).modelDownloadManager.enqueueDownload(version)
+        return getOrCreateRuntimeGraph(context).modelDownloadManager.enqueueDownload(version, options)
     }
 
     fun pauseDownload(context: Context, taskId: String) {
@@ -230,12 +260,35 @@ object AppRuntimeDependencies {
         getOrCreateRuntimeGraph(context).modelDownloadManager.cancelDownload(taskId)
     }
 
-    fun syncDownloadsFromWorkManager(context: Context) {
-        getOrCreateRuntimeGraph(context).modelDownloadManager.syncFromWorkManagerState()
+    fun syncDownloadsFromScheduler(context: Context) {
+        getOrCreateRuntimeGraph(context).modelDownloadManager.syncFromSchedulerState()
     }
 
     fun observeDownloads(context: Context): StateFlow<List<DownloadTaskState>> {
         return getOrCreateRuntimeGraph(context).modelDownloadManager.observeDownloads()
+    }
+
+    fun observeDownloadPreferences(context: Context): StateFlow<DownloadPreferencesState> {
+        return getOrCreateRuntimeGraph(context).modelDownloadManager.observeDownloadPreferences()
+    }
+
+    fun currentDownloadPreferences(context: Context): DownloadPreferencesState {
+        return getOrCreateRuntimeGraph(context).modelDownloadManager.currentDownloadPreferences()
+    }
+
+    fun shouldWarnForMeteredLargeDownload(
+        context: Context,
+        version: ModelDistributionVersion,
+    ): Boolean {
+        return getOrCreateRuntimeGraph(context).modelDownloadManager.shouldWarnForMeteredLargeDownload(version)
+    }
+
+    fun setDownloadWifiOnlyEnabled(context: Context, enabled: Boolean) {
+        getOrCreateRuntimeGraph(context).modelDownloadManager.setWifiOnlyEnabled(enabled)
+    }
+
+    fun acknowledgeLargeDownloadCellularWarning(context: Context) {
+        getOrCreateRuntimeGraph(context).modelDownloadManager.acknowledgeLargeDownloadCellularWarning()
     }
 
     fun observeModelLifecycle(context: Context): StateFlow<RuntimeModelLifecycleSnapshot> {
@@ -261,6 +314,8 @@ object AppRuntimeDependencies {
             errorCode = null,
             errorDetail = null,
             loadingDetail = "Checking model availability...",
+            loadingStage = com.pocketagent.nativebridge.ModelLoadingStage.PRECHECK,
+            loadingProgress = 0f,
             queuedOffload = false,
             updatedAtEpochMs = System.currentTimeMillis(),
         )
@@ -293,6 +348,8 @@ object AppRuntimeDependencies {
             }
             lifecycleState.value = lifecycleState.value.copy(
                 loadingDetail = "Checking available memory...",
+                loadingStage = com.pocketagent.nativebridge.ModelLoadingStage.PRECHECK,
+                loadingProgress = 0f,
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
             val memoryEstimate = runCatching {
@@ -328,16 +385,22 @@ object AppRuntimeDependencies {
             if (previousModelLoaded) {
                 lifecycleState.value = lifecycleState.value.copy(
                     loadingDetail = "Releasing previous model...",
+                    loadingStage = com.pocketagent.nativebridge.ModelLoadingStage.UNLOADING_PREVIOUS,
+                    loadingProgress = 0.05f,
                     updatedAtEpochMs = System.currentTimeMillis(),
                 )
             }
             lifecycleState.value = lifecycleState.value.copy(
                 loadingDetail = "Initializing runtime...",
+                loadingStage = com.pocketagent.nativebridge.ModelLoadingStage.INITIALIZING_RUNTIME,
+                loadingProgress = 0.1f,
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
             installProductionRuntime(context)
             lifecycleState.value = lifecycleState.value.copy(
                 loadingDetail = "Loading model...",
+                loadingStage = com.pocketagent.nativebridge.ModelLoadingStage.LOADING_MODEL,
+                loadingProgress = 0.15f,
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
             val result = graph.runtimeFacade.loadModel(modelId = modelId, modelVersion = version)
@@ -426,6 +489,9 @@ object AppRuntimeDependencies {
                 queuedOffload = true,
                 errorCode = null,
                 errorDetail = result.detail,
+                loadingDetail = null,
+                loadingStage = null,
+                loadingProgress = null,
                 lastUsedModel = resolvedLastUsed,
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
@@ -437,6 +503,9 @@ object AppRuntimeDependencies {
                 queuedOffload = false,
                 errorCode = null,
                 errorDetail = result.detail,
+                loadingDetail = null,
+                loadingStage = null,
+                loadingProgress = null,
                 lastUsedModel = resolvedLastUsed,
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
@@ -447,6 +516,8 @@ object AppRuntimeDependencies {
                 queuedOffload = false,
                 errorCode = result.errorCode ?: ModelLifecycleErrorCode.UNKNOWN,
                 errorDetail = result.detail,
+                loadingStage = null,
+                loadingProgress = null,
                 lastUsedModel = resolvedLastUsed,
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
@@ -501,6 +572,8 @@ object AppRuntimeDependencies {
             requestedModel = null,
             lastUsedModel = lastUsed,
             queuedOffload = lifecycleState.value.queuedOffload && activeGenerationCount > 0,
+            loadingStage = if (normalizedLoaded != null) null else lifecycleState.value.loadingStage,
+            loadingProgress = if (normalizedLoaded != null) null else lifecycleState.value.loadingProgress,
             updatedAtEpochMs = System.currentTimeMillis(),
         )
     }
@@ -518,6 +591,7 @@ object AppRuntimeDependencies {
     private fun createRuntimeGraph(context: Context): AppRuntimeGraph {
         val provisioningStore = runtimeProvisioningStore
             ?: AndroidRuntimeProvisioningStore(context.applicationContext).also { runtimeProvisioningStore = it }
+        val runtimeTuning = runtimeTuning(context)
         val conversationModule = getOrCreateConversationModule()
         val memoryModule = getOrCreateMemoryModule()
         val downloadManager = modelDownloadManager ?: ModelDownloadManager(
@@ -525,7 +599,7 @@ object AppRuntimeDependencies {
             provisioningStore = provisioningStore,
         ).also { manager ->
             modelDownloadManager = manager
-            manager.syncFromWorkManagerState()
+            manager.syncFromSchedulerState()
         }
         val manifestProvider = modelManifestProvider
             ?: ModelDistributionManifestProvider(context.applicationContext)
@@ -534,10 +608,11 @@ object AppRuntimeDependencies {
             provisioningStore = provisioningStore,
             modelDownloadManager = downloadManager,
             modelManifestProvider = manifestProvider,
+            runtimeTuning = runtimeTuning,
             conversationModule = conversationModule,
             memoryModule = memoryModule,
             runtimeFacade = hotSwappableRuntimeFacade,
-        )
+        ).also(::attachLifecycleObserver)
     }
 
     private fun getOrCreateConversationModule(): ConversationModule {
@@ -550,6 +625,47 @@ object AppRuntimeDependencies {
         return synchronized(lock) {
             sharedMemoryModule ?: FileBackedMemoryModule.defaultRuntimeModule().also { sharedMemoryModule = it }
         }
+    }
+
+    private fun attachLifecycleObserver(graph: AppRuntimeGraph) {
+        lifecycleEventSubscription?.close()
+        lifecycleEventSubscription = graph.runtimeFacade.observeModelLifecycleEvents(::applyLifecycleEvent)
+        graph.runtimeFacade.currentModelLifecycleEvent()?.let(::applyLifecycleEvent)
+    }
+
+    private fun applyLifecycleEvent(event: ModelLifecycleEvent) {
+        val current = lifecycleState.value
+        val eventModel = event.modelId?.let { RuntimeLoadedModel(it, event.modelVersion) }
+        val loadedModel = when (event.state) {
+            ModelLifecycleState.LOADED -> eventModel ?: current.loadedModel
+            ModelLifecycleState.UNLOADED ->
+                current.loadedModel?.takeUnless { it.modelId == event.modelId }
+            else -> current.loadedModel
+        }
+        val requestedModel = when (event.state) {
+            ModelLifecycleState.LOADING,
+            ModelLifecycleState.OFFLOADING,
+            -> current.requestedModel ?: eventModel
+
+            ModelLifecycleState.LOADED,
+            ModelLifecycleState.UNLOADED,
+            -> null
+
+            ModelLifecycleState.FAILED ->
+                current.requestedModel ?: eventModel
+        }
+        lifecycleState.value = current.copy(
+            state = event.state,
+            loadedModel = loadedModel,
+            requestedModel = requestedModel,
+            errorCode = event.error?.code ?: if (event.state == ModelLifecycleState.FAILED) current.errorCode else null,
+            errorDetail = event.error?.detail ?: if (event.state == ModelLifecycleState.FAILED) current.errorDetail else null,
+            loadingDetail = event.loadingDetail ?: current.loadingDetail,
+            loadingStage = event.loadingStage,
+            loadingProgress = event.loadingProgress,
+            queuedOffload = current.queuedOffload && event.state == ModelLifecycleState.OFFLOADING,
+            updatedAtEpochMs = System.currentTimeMillis(),
+        )
     }
 }
 
@@ -678,6 +794,45 @@ internal class HotSwappableRuntimeFacade(
     override fun onAppBackground(): Boolean {
         return withDelegate { facade ->
             (facade as? RuntimeResourceControl)?.onAppBackground() ?: false
+        }
+    }
+
+    override fun onAppForeground(): Boolean {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.onAppForeground() ?: false
+        }
+    }
+
+    override fun addAutoReleaseDisableReason(reason: String) {
+        withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.addAutoReleaseDisableReason(reason)
+        }
+    }
+
+    override fun removeAutoReleaseDisableReason(reason: String) {
+        withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.removeAutoReleaseDisableReason(reason)
+        }
+    }
+
+    override fun exportDiagnosticsJson(): String? {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.exportDiagnosticsJson()
+                ?: facade.exportDiagnosticsJson()
+        }
+    }
+
+    override fun currentModelLifecycleEvent(): ModelLifecycleEvent? {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.currentModelLifecycleEvent()
+                ?: facade.currentModelLifecycleEvent()
+        }
+    }
+
+    override fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        return withDelegate { facade ->
+            (facade as? RuntimeResourceControl)?.observeModelLifecycleEvents(listener)
+                ?: facade.observeModelLifecycleEvents(listener)
         }
     }
 

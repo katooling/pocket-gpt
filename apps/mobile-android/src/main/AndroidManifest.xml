@@ -2,8 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
@@ -33,5 +36,12 @@
             android:name=".runtime.LlamaRuntimeService"
             android:exported="false"
             android:process=":llama_runtime" />
+        <service
+            android:name=".runtime.modelmanager.ModelDownloadJobService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver
+            android:name=".runtime.modelmanager.ModelDownloadCancelReceiver"
+            android:exported="false" />
     </application>
 </manifest>
