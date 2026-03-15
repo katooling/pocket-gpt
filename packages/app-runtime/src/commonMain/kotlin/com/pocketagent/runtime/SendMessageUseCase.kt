@@ -197,9 +197,10 @@ internal class SendMessageUseCase(
                 request.onToken(flushed)
             }
             val cleanedText = ThinkingBlockFilter.stripThinkingBlocks(executionResult.text)
-            val parsedToolCalls = ToolCallParser.parse(cleanedText)
-            responseText = parsedToolCalls.textWithoutToolCalls.trim()
-            if (parsedToolCalls.toolCalls.isNotEmpty()) {
+            val toolCallResult = ToolCallParser.parse(cleanedText)
+            parsedToolCalls = toolCallResult.toolCalls
+            responseText = toolCallResult.textWithoutToolCalls.trim()
+            if (parsedToolCalls.isNotEmpty()) {
                 finishReason = "tool_calls"
             }
             if (timeoutGuard.timedOut()) {

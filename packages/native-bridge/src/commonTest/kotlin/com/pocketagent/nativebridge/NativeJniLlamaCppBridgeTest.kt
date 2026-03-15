@@ -102,7 +102,6 @@ class NativeJniLlamaCppBridgeTest {
                 gpuLayers = 16,
                 flashAttnMode = FlashAttnMode.OFF,
                 kvUnified = false,
-                kvCacheType = KvCacheType.Q8_0,
                 kvCacheTypeK = KvCacheType.Q8_0,
                 kvCacheTypeV = KvCacheType.Q4_0,
             ),
