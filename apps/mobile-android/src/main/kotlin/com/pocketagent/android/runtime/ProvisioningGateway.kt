@@ -3,6 +3,8 @@ package com.pocketagent.android.runtime
 import android.net.Uri
 import com.pocketagent.android.AppRuntimeDependencies
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
+import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
@@ -12,6 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 interface ProvisioningGateway {
     fun currentSnapshot(): RuntimeProvisioningSnapshot
     fun observeDownloads(): StateFlow<List<DownloadTaskState>>
+    fun observeDownloadPreferences(): StateFlow<DownloadPreferencesState>
+    fun currentDownloadPreferences(): DownloadPreferencesState
     fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot>
     fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot
     suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult
@@ -22,12 +26,15 @@ interface ProvisioningGateway {
     suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult
     suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult
     suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult
-    fun enqueueDownload(version: ModelDistributionVersion): String
+    fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions = DownloadRequestOptions()): String
+    fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean
+    fun setDownloadWifiOnlyEnabled(enabled: Boolean)
+    fun acknowledgeLargeDownloadCellularWarning()
     fun pauseDownload(taskId: String)
     fun resumeDownload(taskId: String)
     fun retryDownload(taskId: String)
     fun cancelDownload(taskId: String)
-    fun syncDownloadsFromWorkManager()
+    fun syncDownloadsFromScheduler()
 }
 
 class DefaultProvisioningGateway(
@@ -43,6 +50,14 @@ class DefaultProvisioningGateway(
 
     override fun observeDownloads(): StateFlow<List<DownloadTaskState>> {
         return dependencies.observeDownloads()
+    }
+
+    override fun observeDownloadPreferences(): StateFlow<DownloadPreferencesState> {
+        return dependencies.observeDownloadPreferences()
+    }
+
+    override fun currentDownloadPreferences(): DownloadPreferencesState {
+        return dependencies.currentDownloadPreferences()
     }
 
     override fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot> {
@@ -88,8 +103,20 @@ class DefaultProvisioningGateway(
         return dependencies.offloadModel(reason = reason)
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion): String {
-        return dependencies.enqueueDownload(version = version)
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+        return dependencies.enqueueDownload(version = version, options = options)
+    }
+
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean {
+        return dependencies.shouldWarnForMeteredLargeDownload(version)
+    }
+
+    override fun setDownloadWifiOnlyEnabled(enabled: Boolean) {
+        dependencies.setDownloadWifiOnlyEnabled(enabled)
+    }
+
+    override fun acknowledgeLargeDownloadCellularWarning() {
+        dependencies.acknowledgeLargeDownloadCellularWarning()
     }
 
     override fun pauseDownload(taskId: String) {
@@ -108,14 +135,16 @@ class DefaultProvisioningGateway(
         dependencies.cancelDownload(taskId)
     }
 
-    override fun syncDownloadsFromWorkManager() {
-        dependencies.syncDownloadsFromWorkManager()
+    override fun syncDownloadsFromScheduler() {
+        dependencies.syncDownloadsFromScheduler()
     }
 }
 
 interface ProvisioningDependencyAccess {
     fun currentProvisioningSnapshot(): RuntimeProvisioningSnapshot
     fun observeDownloads(): StateFlow<List<DownloadTaskState>>
+    fun observeDownloadPreferences(): StateFlow<DownloadPreferencesState>
+    fun currentDownloadPreferences(): DownloadPreferencesState
     fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot>
     fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot
     suspend fun importModelFromUri(
@@ -131,12 +160,15 @@ interface ProvisioningDependencyAccess {
     suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult
     suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult
     suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult
-    fun enqueueDownload(version: ModelDistributionVersion): String
+    fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions = DownloadRequestOptions()): String
+    fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean
+    fun setDownloadWifiOnlyEnabled(enabled: Boolean)
+    fun acknowledgeLargeDownloadCellularWarning()
     fun pauseDownload(taskId: String)
     fun resumeDownload(taskId: String)
     fun retryDownload(taskId: String)
     fun cancelDownload(taskId: String)
-    fun syncDownloadsFromWorkManager()
+    fun syncDownloadsFromScheduler()
 }
 
 class AppProvisioningDependencyAccess(
@@ -148,6 +180,14 @@ class AppProvisioningDependencyAccess(
 
     override fun observeDownloads(): StateFlow<List<DownloadTaskState>> {
         return AppRuntimeDependencies.observeDownloads(context)
+    }
+
+    override fun observeDownloadPreferences(): StateFlow<DownloadPreferencesState> {
+        return AppRuntimeDependencies.observeDownloadPreferences(context)
+    }
+
+    override fun currentDownloadPreferences(): DownloadPreferencesState {
+        return AppRuntimeDependencies.currentDownloadPreferences(context)
     }
 
     override fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot> {
@@ -199,8 +239,20 @@ class AppProvisioningDependencyAccess(
         return AppRuntimeDependencies.offloadModel(context = context, reason = reason)
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion): String {
-        return AppRuntimeDependencies.enqueueDownload(context = context, version = version)
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+        return AppRuntimeDependencies.enqueueDownload(context = context, version = version, options = options)
+    }
+
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean {
+        return AppRuntimeDependencies.shouldWarnForMeteredLargeDownload(context = context, version = version)
+    }
+
+    override fun setDownloadWifiOnlyEnabled(enabled: Boolean) {
+        AppRuntimeDependencies.setDownloadWifiOnlyEnabled(context, enabled)
+    }
+
+    override fun acknowledgeLargeDownloadCellularWarning() {
+        AppRuntimeDependencies.acknowledgeLargeDownloadCellularWarning(context)
     }
 
     override fun pauseDownload(taskId: String) {
@@ -219,7 +271,7 @@ class AppProvisioningDependencyAccess(
         AppRuntimeDependencies.cancelDownload(context, taskId)
     }
 
-    override fun syncDownloadsFromWorkManager() {
-        AppRuntimeDependencies.syncDownloadsFromWorkManager(context)
+    override fun syncDownloadsFromScheduler() {
+        AppRuntimeDependencies.syncDownloadsFromScheduler(context)
     }
 }

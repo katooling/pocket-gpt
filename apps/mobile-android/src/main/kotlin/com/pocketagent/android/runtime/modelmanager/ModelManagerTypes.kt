@@ -31,6 +31,21 @@ data class ModelDistributionVersion(
     val verificationPolicy: DownloadVerificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
 )
 
+enum class DownloadNetworkPreference {
+    ALLOW_METERED,
+    UNMETERED_ONLY,
+}
+
+data class DownloadRequestOptions(
+    val networkPreference: DownloadNetworkPreference = DownloadNetworkPreference.ALLOW_METERED,
+    val userInitiated: Boolean = true,
+)
+
+data class DownloadPreferencesState(
+    val wifiOnlyEnabled: Boolean = false,
+    val largeDownloadCellularWarningAcknowledged: Boolean = false,
+)
+
 data class ModelVersionDescriptor(
     val modelId: String,
     val version: String,
@@ -98,6 +113,10 @@ data class DownloadTaskState(
     val status: DownloadTaskStatus,
     val progressBytes: Long,
     val totalBytes: Long,
+    val resumeEtag: String? = null,
+    val resumeLastModified: String? = null,
+    val queueOrder: Long = 0L,
+    val networkPreference: DownloadNetworkPreference = DownloadNetworkPreference.ALLOW_METERED,
     val downloadSpeedBps: Long? = null,
     val etaSeconds: Long? = null,
     val lastProgressEpochMs: Long? = null,

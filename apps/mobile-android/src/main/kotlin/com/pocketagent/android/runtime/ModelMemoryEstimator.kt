@@ -2,6 +2,8 @@ package com.pocketagent.android.runtime
 
 import android.util.Log
 import com.pocketagent.nativebridge.KvCacheType
+import com.pocketagent.nativebridge.ModelRuntimeMetadata
+import com.pocketagent.runtime.RuntimeModelMemoryEstimator
 import org.json.JSONObject
 import java.io.File
 
@@ -19,9 +21,6 @@ import java.io.File
 object ModelMemoryEstimator {
 
     private const val LOG_TAG = "ModelMemoryEstimator"
-    private const val METADATA_OVERHEAD_MULTIPLIER = 1.1
-    private const val FALLBACK_OVERHEAD_MULTIPLIER = 1.2
-    private const val AVAILABLE_MEMORY_SAFETY_RATIO = 0.80
 
     data class EstimationResult(
         val estimatedBytes: Long,
@@ -83,32 +82,41 @@ object ModelMemoryEstimator {
         nUbatch: Int,
         availableMemoryBytes: Long?,
     ): EstimationResult {
-        val kvCacheBytes = calculateKvCacheBytes(gguf, nCtx, kvCacheType)
-        val computeBufferBytes = calculateComputeBufferBytes(gguf, nUbatch)
-        val baseMemory = modelFileSizeBytes + kvCacheBytes + computeBufferBytes
-        val estimatedBytes = (baseMemory * METADATA_OVERHEAD_MULTIPLIER).toLong()
-
-        val fits = availableMemoryBytes?.let { available ->
-            estimatedBytes <= (available * AVAILABLE_MEMORY_SAFETY_RATIO).toLong()
-        }
+        val estimate = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelFileSizeBytes,
+            metadata = ModelRuntimeMetadata(
+                layerCount = gguf.nLayers,
+                sizeBytes = modelFileSizeBytes,
+                embeddingSize = gguf.nEmbd,
+                headCountKv = gguf.nHeadKv,
+                keyLength = gguf.embdHeadK,
+                valueLength = gguf.embdHeadV,
+                vocabSize = gguf.nVocab,
+            ),
+            nCtx = nCtx,
+            kvCacheTypeK = kvCacheType,
+            kvCacheTypeV = kvCacheType,
+            nUbatch = nUbatch,
+            availableMemoryMb = availableMemoryBytes?.toDouble()?.div(MB),
+        )
 
         Log.d(LOG_TAG, "ESTIMATE|model_mb=%.0f|kv_mb=%.0f|compute_mb=%.0f|total_mb=%.0f|avail_mb=%s|fits=%s".format(
             modelFileSizeBytes / MB,
-            kvCacheBytes / MB,
-            computeBufferBytes / MB,
-            estimatedBytes / MB,
+            estimate.kvCacheBytes / MB,
+            estimate.computeBufferBytes / MB,
+            estimate.estimatedBytes / MB,
             availableMemoryBytes?.let { "%.0f".format(it / MB) } ?: "unknown",
-            fits?.toString() ?: "unknown",
+            estimate.fitsInMemory?.toString() ?: "unknown",
         ))
 
         return EstimationResult(
-            estimatedBytes = estimatedBytes,
+            estimatedBytes = estimate.estimatedBytes,
             modelFileSizeBytes = modelFileSizeBytes,
-            kvCacheBytes = kvCacheBytes,
-            computeBufferBytes = computeBufferBytes,
+            kvCacheBytes = estimate.kvCacheBytes,
+            computeBufferBytes = estimate.computeBufferBytes,
             usedGgufMetadata = true,
             availableMemoryBytes = availableMemoryBytes,
-            fitsInMemory = fits,
+            fitsInMemory = estimate.fitsInMemory,
         )
     }
 
@@ -116,56 +124,32 @@ object ModelMemoryEstimator {
         modelFileSizeBytes: Long,
         availableMemoryBytes: Long?,
     ): EstimationResult {
-        val estimatedBytes = (modelFileSizeBytes * FALLBACK_OVERHEAD_MULTIPLIER).toLong()
-
-        val fits = availableMemoryBytes?.let { available ->
-            estimatedBytes <= (available * AVAILABLE_MEMORY_SAFETY_RATIO).toLong()
-        }
+        val estimate = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelFileSizeBytes,
+            metadata = null,
+            nCtx = 2048,
+            kvCacheTypeK = KvCacheType.Q8_0,
+            kvCacheTypeV = KvCacheType.Q8_0,
+            nUbatch = 512,
+            availableMemoryMb = availableMemoryBytes?.toDouble()?.div(MB),
+        )
 
         Log.d(LOG_TAG, "ESTIMATE_FALLBACK|model_mb=%.0f|total_mb=%.0f|avail_mb=%s|fits=%s".format(
             modelFileSizeBytes / MB,
-            estimatedBytes / MB,
+            estimate.estimatedBytes / MB,
             availableMemoryBytes?.let { "%.0f".format(it / MB) } ?: "unknown",
-            fits?.toString() ?: "unknown",
+            estimate.fitsInMemory?.toString() ?: "unknown",
         ))
 
         return EstimationResult(
-            estimatedBytes = estimatedBytes,
+            estimatedBytes = estimate.estimatedBytes,
             modelFileSizeBytes = modelFileSizeBytes,
             kvCacheBytes = 0L,
             computeBufferBytes = 0L,
             usedGgufMetadata = false,
             availableMemoryBytes = availableMemoryBytes,
-            fitsInMemory = fits,
+            fitsInMemory = estimate.fitsInMemory,
         )
-    }
-
-    /**
-     * KV cache: nLayers × nCtx × (embdHeadK × bytesPerK + embdHeadV × bytesPerV) × nHeadKv
-     */
-    private fun calculateKvCacheBytes(gguf: GgufFields, nCtx: Int, kvCacheType: KvCacheType): Long {
-        val bytesPerElement = kvCacheTypeBytesPerElement(kvCacheType)
-        val keyCacheSize = gguf.nLayers.toLong() * nCtx * gguf.embdHeadK * gguf.nHeadKv * bytesPerElement
-        val valueCacheSize = gguf.nLayers.toLong() * nCtx * gguf.embdHeadV * gguf.nHeadKv * bytesPerElement
-        return (keyCacheSize + valueCacheSize).toLong()
-    }
-
-    /**
-     * Compute buffer: (nVocab + nEmbd) × nUbatch × 4 bytes
-     */
-    private fun calculateComputeBufferBytes(gguf: GgufFields, nUbatch: Int): Long {
-        return (gguf.nVocab.toLong() + gguf.nEmbd.toLong()) * nUbatch * 4L
-    }
-
-    private fun kvCacheTypeBytesPerElement(type: KvCacheType): Double {
-        return when (type) {
-            KvCacheType.F16 -> 2.0
-            KvCacheType.Q8_0 -> 1.0625   // 34/32
-            KvCacheType.Q4_0 -> 0.5625   // 18/32
-            KvCacheType.Q4_1 -> 0.625    // 20/32
-            KvCacheType.Q5_0 -> 0.6875   // 22/32
-            KvCacheType.Q5_1 -> 0.75     // 24/32
-        }
     }
 
     private fun readGgufMetadata(metadataFile: File): GgufFields? {

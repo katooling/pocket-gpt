@@ -5,10 +5,10 @@ import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.runtime.RuntimeDomainError
 import com.pocketagent.android.runtime.RuntimeDomainException
 import com.pocketagent.android.runtime.RuntimeErrorCodes
-import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -340,24 +340,28 @@ class ModelDistributionManifestProvider(
         private val VERSION_TOKEN_REGEX = Regex("[A-Za-z]+|\\d+")
 
         private fun fetchRemoteManifest(endpoint: String): String {
-            val connection = URL(endpoint).openConnection() as HttpURLConnection
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
-            connection.requestMethod = "GET"
-            return try {
-                val responseCode = connection.responseCode
-                if (responseCode !in 200..299) {
+            val request = Request.Builder()
+                .get()
+                .url(endpoint)
+                .build()
+            DownloadHttpClient.base().newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
                     throw RuntimeDomainException(
                         domainError = RuntimeDomainError(
                             code = RuntimeErrorCodes.MODEL_MANIFEST_HTTP_ERROR,
                             userMessage = "Model catalog refresh failed. Falling back to bundled catalog.",
-                            technicalDetail = "endpoint=$endpoint;http=$responseCode",
+                            technicalDetail = "endpoint=$endpoint;http=${response.code}",
                         ),
                     )
                 }
-                connection.inputStream.bufferedReader().use { it.readText() }
-            } finally {
-                connection.disconnect()
+                val body = response.body ?: throw RuntimeDomainException(
+                    domainError = RuntimeDomainError(
+                        code = RuntimeErrorCodes.MODEL_MANIFEST_HTTP_ERROR,
+                        userMessage = "Model catalog refresh failed. Falling back to bundled catalog.",
+                        technicalDetail = "endpoint=$endpoint;http=${response.code};empty_body",
+                    ),
+                )
+                return body.string()
             }
         }
     }

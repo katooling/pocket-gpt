@@ -10,7 +10,7 @@ import org.json.JSONObject
 
 internal object ModelDownloadTaskStateStore {
     private const val DB_NAME = "pocketagent_model_downloads.db"
-    private const val DB_VERSION = 2
+    private const val DB_VERSION = 3
     private const val TABLE = "download_tasks"
 
     private const val LEGACY_PREFS_NAME = "pocketagent_model_downloads"
@@ -26,13 +26,7 @@ internal object ModelDownloadTaskStateStore {
             val appContext = context.applicationContext
             migrateLegacyPrefsIfNeeded(appContext)
             val db = db(appContext).readableDatabase
-            db.query(TABLE, null, null, null, null, null, "updated_at_epoch_ms DESC").use { cursor ->
-                val out = mutableListOf<DownloadTaskState>()
-                while (cursor.moveToNext()) {
-                    decodeCursor(cursor)?.let(out::add)
-                }
-                return out
-            }
+            return queryStates(db)
         }
     }
 
@@ -74,6 +68,34 @@ internal object ModelDownloadTaskStateStore {
         }
     }
 
+    fun reconcile(
+        context: Context,
+        mutate: (MutableMap<String, DownloadTaskState>) -> Unit,
+    ): List<DownloadTaskState> {
+        synchronized(lock) {
+            val appContext = context.applicationContext
+            migrateLegacyPrefsIfNeeded(appContext)
+            val db = db(appContext).writableDatabase
+            db.beginTransaction()
+            try {
+                val existing = queryStates(db)
+                val states = existing.associateBy { it.taskId }.toMutableMap()
+                mutate(states)
+                val removedTaskIds = existing.map { it.taskId }.toSet() - states.keys
+                removedTaskIds.forEach { taskId ->
+                    db.delete(TABLE, "task_id = ?", arrayOf(taskId))
+                }
+                states.values.forEach { task ->
+                    upsertRow(db, task)
+                }
+                db.setTransactionSuccessful()
+                return states.values.sortedByDescending { it.updatedAtEpochMs }
+            } finally {
+                db.endTransaction()
+            }
+        }
+    }
+
     private fun upsertRow(db: SQLiteDatabase, task: DownloadTaskState) {
         val values = ContentValues().apply {
             put("task_id", task.taskId)
@@ -89,6 +111,10 @@ internal object ModelDownloadTaskStateStore {
             put("status", task.status.name)
             put("progress_bytes", task.progressBytes)
             put("total_bytes", task.totalBytes)
+            put("resume_etag", task.resumeEtag)
+            put("resume_last_modified", task.resumeLastModified)
+            put("queue_order", task.queueOrder)
+            put("network_preference", task.networkPreference.name)
             put("download_speed_bps", task.downloadSpeedBps)
             put("eta_seconds", task.etaSeconds)
             put("last_progress_epoch_ms", task.lastProgressEpochMs)
@@ -120,6 +146,13 @@ internal object ModelDownloadTaskStateStore {
             statusRaw = json.optString("status", DownloadTaskStatus.QUEUED.name),
             progressBytes = json.optLong("progressBytes", 0L).coerceAtLeast(0L),
             totalBytes = json.optLong("totalBytes", 0L).coerceAtLeast(0L),
+            resumeEtag = json.optString("resumeEtag", "").trim().ifEmpty { null },
+            resumeLastModified = json.optString("resumeLastModified", "").trim().ifEmpty { null },
+            queueOrder = json.optLong("queueOrder", 0L).coerceAtLeast(0L),
+            networkPreferenceRaw = json.optString(
+                "networkPreference",
+                DownloadNetworkPreference.ALLOW_METERED.name,
+            ),
             downloadSpeedBps = json.optLong("downloadSpeedBps", -1L).takeIf { value -> value > 0L },
             etaSeconds = json.optLong("etaSeconds", -1L).takeIf { value -> value >= 0L },
             lastProgressEpochMs = json.optLong("lastProgressEpochMs", -1L).takeIf { value -> value > 0L },
@@ -144,6 +177,10 @@ internal object ModelDownloadTaskStateStore {
             statusRaw = cursor.stringOrEmpty("status"),
             progressBytes = cursor.longOrZero("progress_bytes"),
             totalBytes = cursor.longOrZero("total_bytes"),
+            resumeEtag = cursor.stringOrEmpty("resume_etag").ifBlank { null },
+            resumeLastModified = cursor.stringOrEmpty("resume_last_modified").ifBlank { null },
+            queueOrder = cursor.longOrZero("queue_order"),
+            networkPreferenceRaw = cursor.stringOrEmpty("network_preference"),
             downloadSpeedBps = cursor.longOrNull("download_speed_bps"),
             etaSeconds = cursor.longOrNull("eta_seconds"),
             lastProgressEpochMs = cursor.longOrNull("last_progress_epoch_ms"),
@@ -167,6 +204,10 @@ internal object ModelDownloadTaskStateStore {
         statusRaw: String,
         progressBytes: Long,
         totalBytes: Long,
+        resumeEtag: String?,
+        resumeLastModified: String?,
+        queueOrder: Long,
+        networkPreferenceRaw: String,
         downloadSpeedBps: Long?,
         etaSeconds: Long?,
         lastProgressEpochMs: Long?,
@@ -184,6 +225,13 @@ internal object ModelDownloadTaskStateStore {
         }.getOrNull()
         val verificationPolicy = runCatching { DownloadVerificationPolicy.valueOf(verificationPolicyRaw) }.getOrNull()
         val processingStage = runCatching { DownloadProcessingStage.valueOf(processingStageRaw) }.getOrNull()
+        val networkPreference = runCatching {
+            if (networkPreferenceRaw.isBlank()) {
+                DownloadNetworkPreference.ALLOW_METERED
+            } else {
+                DownloadNetworkPreference.valueOf(networkPreferenceRaw)
+            }
+        }.getOrNull()
         if (taskId.isEmpty() || modelId.isEmpty() || version.isEmpty()) {
             return null
         }
@@ -196,6 +244,9 @@ internal object ModelDownloadTaskStateStore {
             }
             if (processingStage == null) {
                 add("invalid_processing_stage=$processingStageRaw")
+            }
+            if (networkPreference == null) {
+                add("invalid_network_preference=$networkPreferenceRaw")
             }
             if (failureReasonRaw.isNotBlank() && failure == null) {
                 add("invalid_failure_reason=$failureReasonRaw")
@@ -221,6 +272,10 @@ internal object ModelDownloadTaskStateStore {
             status = if (isCorrupt) DownloadTaskStatus.FAILED else status ?: DownloadTaskStatus.FAILED,
             progressBytes = progressBytes.coerceAtLeast(0L),
             totalBytes = totalBytes.coerceAtLeast(0L),
+            resumeEtag = resumeEtag?.takeIf { it.isNotBlank() },
+            resumeLastModified = resumeLastModified?.takeIf { it.isNotBlank() },
+            queueOrder = queueOrder.coerceAtLeast(0L),
+            networkPreference = networkPreference ?: DownloadNetworkPreference.ALLOW_METERED,
             downloadSpeedBps = downloadSpeedBps?.takeIf { value -> value > 0L },
             etaSeconds = etaSeconds?.takeIf { value -> value >= 0L },
             lastProgressEpochMs = lastProgressEpochMs?.takeIf { value -> value > 0L },
@@ -252,6 +307,16 @@ internal object ModelDownloadTaskStateStore {
         prefs.edit().remove(LEGACY_TASKS_KEY).apply()
     }
 
+    private fun queryStates(db: SQLiteDatabase): List<DownloadTaskState> {
+        db.query(TABLE, null, null, null, null, null, "updated_at_epoch_ms DESC").use { cursor ->
+            val out = mutableListOf<DownloadTaskState>()
+            while (cursor.moveToNext()) {
+                decodeCursor(cursor)?.let(out::add)
+            }
+            return out
+        }
+    }
+
     private fun db(context: Context): StoreDbHelper {
         return helper ?: synchronized(lock) {
             helper ?: StoreDbHelper(context.applicationContext).also { helper = it }
@@ -276,6 +341,10 @@ internal object ModelDownloadTaskStateStore {
                     status TEXT NOT NULL,
                     progress_bytes INTEGER NOT NULL,
                     total_bytes INTEGER NOT NULL,
+                    resume_etag TEXT,
+                    resume_last_modified TEXT,
+                    queue_order INTEGER NOT NULL DEFAULT 0,
+                    network_preference TEXT NOT NULL DEFAULT '${DownloadNetworkPreference.ALLOW_METERED.name}',
                     download_speed_bps INTEGER,
                     eta_seconds INTEGER,
                     last_progress_epoch_ms INTEGER,
@@ -293,6 +362,14 @@ internal object ModelDownloadTaskStateStore {
                 db.execSQL("ALTER TABLE $TABLE ADD COLUMN download_speed_bps INTEGER")
                 db.execSQL("ALTER TABLE $TABLE ADD COLUMN eta_seconds INTEGER")
                 db.execSQL("ALTER TABLE $TABLE ADD COLUMN last_progress_epoch_ms INTEGER")
+            }
+            if (oldVersion < 3) {
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN resume_etag TEXT")
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN resume_last_modified TEXT")
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN queue_order INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "ALTER TABLE $TABLE ADD COLUMN network_preference TEXT NOT NULL DEFAULT '${DownloadNetworkPreference.ALLOW_METERED.name}'",
+                )
             }
         }
     }

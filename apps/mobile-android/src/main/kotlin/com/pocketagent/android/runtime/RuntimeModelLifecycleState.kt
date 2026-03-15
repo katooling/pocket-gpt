@@ -1,6 +1,7 @@
 package com.pocketagent.android.runtime
 
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
+import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.ModelLifecycleState
 import com.pocketagent.runtime.RuntimeLoadedModel
 
@@ -12,6 +13,8 @@ data class RuntimeModelLifecycleSnapshot(
     val errorCode: ModelLifecycleErrorCode? = null,
     val errorDetail: String? = null,
     val loadingDetail: String? = null,
+    val loadingStage: ModelLoadingStage? = null,
+    val loadingProgress: Float? = null,
     val queuedOffload: Boolean = false,
     val updatedAtEpochMs: Long = System.currentTimeMillis(),
 ) {

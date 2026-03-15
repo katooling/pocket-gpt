@@ -12,4 +12,8 @@ object RuntimeBootstrapper {
     fun runtimeFacade(): MvpRuntimeFacade {
         return AppRuntimeDependencies.runtimeFacadeFactory()
     }
+
+    fun runtimeTuning(context: Context): AndroidRuntimeTuningStore {
+        return AppRuntimeDependencies.runtimeTuning(context.applicationContext)
+    }
 }

@@ -6,7 +6,10 @@ import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.runtime.ChatStreamEvent
 import com.pocketagent.runtime.ImageAnalysisResult
+import com.pocketagent.runtime.ChatStreamCommand
+import com.pocketagent.runtime.ChatStreamRequestPlanner
 import com.pocketagent.runtime.MvpRuntimeFacade
+import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.RuntimeResourceControl
@@ -24,8 +27,15 @@ fun interface DeviceGpuOffloadSupport {
     }
 }
 
-interface RuntimeGateway {
+interface ChatRuntimeService {
     fun createSession(): SessionId
+
+    fun prepareChatStream(command: ChatStreamCommand): PreparedChatStream =
+        ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L).prepare(command)
+
+    fun streamPreparedChat(prepared: PreparedChatStream): Flow<ChatStreamEvent> = streamChat(prepared.runtimeRequest)
+
+    @Deprecated("Use prepareChatStream + streamPreparedChat.")
     fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent>
     fun cancelGeneration(sessionId: SessionId): Boolean
     fun cancelGenerationByRequest(requestId: String): Boolean
@@ -69,15 +79,31 @@ interface RuntimeGateway {
     }
 }
 
+typealias RuntimeGateway = ChatRuntimeService
+
 class MvpRuntimeGateway(
     private val facade: MvpRuntimeFacade,
     private val deviceGpuOffloadSupport: DeviceGpuOffloadSupport = DeviceGpuOffloadSupport.ASSUME_SUPPORTED,
     private val gpuOffloadQualifier: GpuOffloadQualifier = GpuOffloadQualifier.DISABLED,
     private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
-) : RuntimeGateway {
+) : ChatRuntimeService {
     private val tag = "RuntimeGateway"
+    private val planner = ChatStreamRequestPlanner(
+        runtimeGenerationTimeoutMs = 0L,
+        recommendedConfig = { modelIdHint, baseConfig, gpuQualifiedLayers ->
+            runtimeTuning.applyRecommendedConfig(
+                modelIdHint = modelIdHint,
+                baseConfig = baseConfig,
+                gpuQualifiedLayers = gpuQualifiedLayers,
+            )
+        },
+    )
 
     override fun createSession(): SessionId = facade.createSession()
+
+    override fun prepareChatStream(command: ChatStreamCommand): PreparedChatStream {
+        return planner.prepare(command)
+    }
 
     override fun streamChat(request: StreamChatRequestV2): Flow<ChatStreamEvent> {
         return facade.streamChat(request)
