@@ -11,4 +11,5 @@ data class RuntimeRequestContext(
     val previousResponseId: String? = null,
     val performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
     val residencyPolicy: ModelResidencyPolicy = ModelResidencyPolicy(),
+    val samplingOverrides: SamplingOverrides? = null,
 )

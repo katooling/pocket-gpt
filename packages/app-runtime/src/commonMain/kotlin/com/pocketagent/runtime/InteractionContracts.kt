@@ -52,4 +52,5 @@ enum class ModelTemplateProfile {
     CHATML,
     LLAMA3,
     PHI,
+    GEMMA,
 }

@@ -10,6 +10,7 @@ data class ChatResponse(
     val finishReason: String = "completed",
     val runtimeStats: RuntimeExecutionStats? = null,
     val toolCalls: List<ChatToolCall> = emptyList(),
+    val reasoningContent: String? = null,
 )
 
 data class ChatToolCall(

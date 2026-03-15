@@ -71,7 +71,10 @@ class RuntimeOrchestrator(
     private val templateRegistry = ModelTemplateRegistry(
         profileByModelId = ModelTemplateRegistry.defaultProfiles(modelRegistry = modelRegistry),
     )
-    private val interactionPlanner = InteractionPlanner(templateRegistry = templateRegistry)
+    private val interactionPlanner = InteractionPlanner(
+        templateRegistry = templateRegistry,
+        enabledToolNames = toolModule.listEnabledTools(),
+    )
     private val inferenceExecutor = InferenceExecutor(
         inferenceModule = inferenceModule,
         runtimeConfig = runtimeConfig,

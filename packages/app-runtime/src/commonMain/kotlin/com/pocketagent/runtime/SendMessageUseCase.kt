@@ -88,6 +88,7 @@ internal class SendMessageUseCase(
         } else {
             conversationModule.listTurns(request.sessionId).map { turn -> turn.toInteractionMessage() }
         }
+        val showThinking = executionContext.samplingOverrides?.showThinking ?: false
         val renderedPrompt = interactionPlanner.buildRenderedPrompt(
             modelId = modelId,
             messages = transcriptMessages,
@@ -95,6 +96,7 @@ internal class SendMessageUseCase(
             taskType = request.taskType,
             deviceState = executionContext.deviceState,
             promptCharBudget = minOf(contextBudget * 4, promptCharBudget),
+            showThinking = showThinking,
         )
         val prompt = renderedPrompt.prompt
         val managedRuntime = runtimeInferencePorts.managedRuntime
@@ -126,7 +128,8 @@ internal class SendMessageUseCase(
             failureMessage = "Policy module rejected inference event type.",
         )
         val startedMs = System.currentTimeMillis()
-        val thinkingFilter = ThinkingBlockFilter()
+        val visibleThinkingFilter = ThinkingBlockFilter(enabled = true)
+        val reasoningCaptureFilter = ThinkingBlockFilter(enabled = showThinking)
 
         val effectivePerformanceConfig = runtimePlan.effectiveConfig
         val thermalThrottled = effectivePerformanceConfig != executionContext.performanceConfig
@@ -156,6 +159,7 @@ internal class SendMessageUseCase(
         var firstTokenLatencyMs = -1L
         var finishReason = "completed"
         var responseText = ""
+        var reasoningContent: String? = null
         var parsedToolCalls: List<InteractionToolCall> = emptyList()
         var executionResult: InferenceExecutionResult? = null
         val timeoutGuard = GenerationTimeoutGuard(
@@ -181,7 +185,8 @@ internal class SendMessageUseCase(
                     if (timeoutGuard.timedOut()) {
                         return@execute
                     }
-                    val visibleText = thinkingFilter.filterToken(token)
+                    val visibleText = visibleThinkingFilter.filterToken(token)
+                    reasoningCaptureFilter.filterToken(token)
                     if (visibleText.isNotEmpty()) {
                         if (firstTokenLatencyMs < 0) {
                             firstTokenLatencyMs = System.currentTimeMillis() - startedMs
@@ -192,11 +197,13 @@ internal class SendMessageUseCase(
                 },
             )
             finishReason = executionResult.finishReason
-            val flushed = thinkingFilter.flush()
+            val flushed = visibleThinkingFilter.flush()
+            reasoningCaptureFilter.flush()
             if (flushed.isNotEmpty()) {
                 request.onToken(flushed)
             }
             val cleanedText = ThinkingBlockFilter.stripThinkingBlocks(executionResult.text)
+            reasoningContent = reasoningCaptureFilter.capturedThinking().ifBlank { null }
             val toolCallResult = ToolCallParser.parse(cleanedText)
             parsedToolCalls = toolCallResult.toolCalls
             responseText = toolCallResult.textWithoutToolCalls.trim()
@@ -301,6 +308,7 @@ internal class SendMessageUseCase(
             toolCalls = parsedToolCalls.map { call ->
                 ChatToolCall(id = call.id, name = call.name, argumentsJson = call.argumentsJson)
             },
+            reasoningContent = reasoningContent,
         )
     }
     private fun buildPrefixCacheKey(

@@ -13,4 +13,5 @@ data class SamplingOverrides(
     val frequencyPenalty: Float? = null,
     val presencePenalty: Float? = null,
     val systemPrompt: String? = null,
+    val showThinking: Boolean? = null,
 )

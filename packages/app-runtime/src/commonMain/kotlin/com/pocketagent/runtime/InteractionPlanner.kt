@@ -16,11 +16,18 @@ class InteractionPlanner(
         taskType: String,
         deviceState: DeviceState,
         promptCharBudget: Int,
+        showThinking: Boolean? = null,
     ): RenderedPrompt {
         val profile = templateRegistry.templateProfileForModel(modelId)
         val enrichedMessages = mutableListOf<InteractionMessage>()
         val systemText = buildString {
             append("task=$taskType battery=${deviceState.batteryPercent} thermal=${deviceState.thermalLevel} ram_gb=${deviceState.ramClassGb}")
+            if (profile == ModelTemplateProfile.CHATML) {
+                showThinking?.let { enabled ->
+                    append('\n')
+                    append(if (enabled) "/think" else "/no_think")
+                }
+            }
             if (enabledToolNames.isNotEmpty() && profile == ModelTemplateProfile.CHATML) {
                 append(ToolCallParser.renderToolDefinitionsXml(enabledToolNames))
             }
@@ -58,6 +65,7 @@ class InteractionPlanner(
         taskType: String,
         deviceState: DeviceState,
         promptCharBudget: Int,
+        showThinking: Boolean? = null,
     ): RenderedPrompt {
         return buildRenderedPrompt(
             modelId = modelId,
@@ -66,6 +74,7 @@ class InteractionPlanner(
             taskType = taskType,
             deviceState = deviceState,
             promptCharBudget = promptCharBudget,
+            showThinking = showThinking,
         )
     }
 

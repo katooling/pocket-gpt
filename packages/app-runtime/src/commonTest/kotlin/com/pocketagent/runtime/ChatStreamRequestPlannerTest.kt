@@ -156,7 +156,7 @@ class ChatStreamRequestPlannerTest {
         val prepared = planner.prepare(command(samplingOverrides = null))
 
         val config = prepared.plan.effectiveConfig
-        assertEquals(0.7f, config.temperature)
+        assertEquals(0.6f, config.temperature)
         assertEquals(0.95f, config.topP)
         assertTrue(prepared.runtimeRequest.messages.isEmpty())
     }

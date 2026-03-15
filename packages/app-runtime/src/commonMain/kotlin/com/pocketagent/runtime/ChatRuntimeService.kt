@@ -119,6 +119,7 @@ class ChatStreamRequestPlanner(
             previousResponseId = command.previousResponseId,
             performanceConfig = effectiveConfig,
             residencyPolicy = resolveResidencyPolicy(command.keepAlivePreference),
+            samplingOverrides = command.samplingOverrides,
         )
         return PreparedChatStream(
             plan = ChatStreamPlan(

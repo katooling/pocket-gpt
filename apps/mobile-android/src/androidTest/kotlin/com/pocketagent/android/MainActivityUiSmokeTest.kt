@@ -565,10 +565,12 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
                     sessionId = request.sessionId,
                     modelId = when (mode) {
                         RoutingMode.AUTO -> "auto"
+                        RoutingMode.QWEN3_0_6B -> "qwen3-0.6b"
                         RoutingMode.QWEN_0_8B -> "qwen-0.8b"
                         RoutingMode.QWEN_2B -> "qwen-2b"
                         RoutingMode.SMOLLM3_3B -> "smollm3-3b"
                         RoutingMode.PHI_4_MINI -> "phi-4-mini"
+                        RoutingMode.GEMMA_2_2B -> "gemma-2-2b"
                     },
                     text = "runtime response for $latestUserText",
                     firstTokenLatencyMs = 42,

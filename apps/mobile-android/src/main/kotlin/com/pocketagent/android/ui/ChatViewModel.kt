@@ -40,6 +40,7 @@ import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.PersistedInteractionMessage
 import com.pocketagent.android.ui.state.PersistedInteractionPart
+import com.pocketagent.android.ui.state.PersistedToolCall
 import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.RuntimeUiState
@@ -335,6 +336,8 @@ class ChatViewModel(
         messageId: String,
         finalText: String,
         role: MessageRole = MessageRole.ASSISTANT,
+        reasoningContent: String? = null,
+        toolCalls: List<PersistedToolCall>? = null,
         requestId: String? = null,
         finishReason: String? = null,
         terminalEventSeen: Boolean = true,
@@ -361,8 +364,10 @@ class ChatViewModel(
                         )).copy(
                             role = role.name,
                             parts = listOf(PersistedInteractionPart(type = "text", text = finalText)),
+                            toolCalls = toolCalls ?: message.interaction?.toolCalls.orEmpty(),
                             metadata = (message.interaction?.metadata ?: emptyMap()) + ("state" to "final"),
                         ),
+                        reasoningContent = reasoningContent,
                         firstTokenMs = firstTokenMs,
                         tokensPerSec = tokensPerSec,
                         totalLatencyMs = totalLatencyMs,

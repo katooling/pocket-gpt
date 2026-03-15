@@ -124,7 +124,7 @@ data class PerformanceRuntimeConfig(
                 kvUnified = true,
                 kvCacheTypeK = KvCacheType.Q8_0,
                 kvCacheTypeV = KvCacheType.Q4_0,
-                temperature = if (profile == RuntimePerformanceProfile.BATTERY) 0.6f else 0.7f,
+                temperature = 0.6f,
                 topK = if (profile == RuntimePerformanceProfile.BATTERY) 24 else 40,
                 topP = if (profile == RuntimePerformanceProfile.BATTERY) 0.92f else 0.95f,
                 minP = 0.05f,

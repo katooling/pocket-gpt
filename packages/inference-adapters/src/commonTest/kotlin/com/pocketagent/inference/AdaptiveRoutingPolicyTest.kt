@@ -30,13 +30,13 @@ class AdaptiveRoutingPolicyTest {
             RoutingCase(
                 taskType = "short_text",
                 deviceState = DeviceState(batteryPercent = 19, thermalLevel = 3, ramClassGb = 12),
-                expectedModel = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                expectedModel = ModelCatalog.QWEN3_0_6B_Q4_K_M,
                 expectedContextBudget = 2048,
             ),
             RoutingCase(
                 taskType = "short_text",
                 deviceState = DeviceState(batteryPercent = 20, thermalLevel = 3, ramClassGb = 12),
-                expectedModel = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                expectedModel = ModelCatalog.QWEN3_0_6B_Q4_K_M,
                 expectedContextBudget = 4096,
             ),
             RoutingCase(
@@ -54,7 +54,7 @@ class AdaptiveRoutingPolicyTest {
             RoutingCase(
                 taskType = "short_text",
                 deviceState = DeviceState(batteryPercent = 90, thermalLevel = 6, ramClassGb = 12),
-                expectedModel = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                expectedModel = ModelCatalog.QWEN3_0_6B_Q4_K_M,
                 expectedContextBudget = 4096,
             ),
             RoutingCase(
