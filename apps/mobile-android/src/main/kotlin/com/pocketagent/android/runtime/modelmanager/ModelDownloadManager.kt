@@ -255,25 +255,14 @@ class ModelDownloadManager(
             current.values.toList().forEach { existing ->
                 val snapshot = snapshotsByTaskId[existing.taskId]
                 if (snapshot != null) {
-                    val status = when (snapshot.status) {
-                        ScheduledTaskStatus.ENQUEUED -> DownloadTaskStatus.QUEUED
-                        ScheduledTaskStatus.RUNNING -> if (existing.status == DownloadTaskStatus.VERIFYING) {
-                            DownloadTaskStatus.VERIFYING
-                        } else {
-                            DownloadTaskStatus.DOWNLOADING
-                        }
-                        ScheduledTaskStatus.SUCCEEDED -> DownloadTaskStatus.COMPLETED
-                        ScheduledTaskStatus.CANCELLED -> if (existing.status == DownloadTaskStatus.PAUSED) {
-                            DownloadTaskStatus.PAUSED
-                        } else {
-                            DownloadTaskStatus.CANCELLED
-                        }
-                        ScheduledTaskStatus.FAILED -> DownloadTaskStatus.FAILED
-                        ScheduledTaskStatus.BLOCKED -> existing.status
-                    }
+                    val status = reconcileDownloadStatusFromScheduler(
+                        existingStatus = existing.status,
+                        schedulerStatus = snapshot.status,
+                    )
+                    val preserveTimestamp = existing.status.isTerminalStatus() && status == existing.status
                     current[existing.taskId] = existing.copy(
-                        status = if (existing.status == DownloadTaskStatus.INSTALLED_INACTIVE) existing.status else status,
-                        updatedAtEpochMs = now,
+                        status = status,
+                        updatedAtEpochMs = if (preserveTimestamp) existing.updatedAtEpochMs else now,
                     )
                     return@forEach
                 }
@@ -376,3 +365,35 @@ class ModelDownloadManager(
 
 private val DownloadTaskState.shouldPollProgress: Boolean
     get() = !terminal && status != DownloadTaskStatus.PAUSED
+
+internal fun reconcileDownloadStatusFromScheduler(
+    existingStatus: DownloadTaskStatus,
+    schedulerStatus: ScheduledTaskStatus,
+): DownloadTaskStatus {
+    if (existingStatus.isTerminalStatus()) {
+        return existingStatus
+    }
+    return when (schedulerStatus) {
+        ScheduledTaskStatus.ENQUEUED -> DownloadTaskStatus.QUEUED
+        ScheduledTaskStatus.RUNNING -> if (existingStatus == DownloadTaskStatus.VERIFYING) {
+            DownloadTaskStatus.VERIFYING
+        } else {
+            DownloadTaskStatus.DOWNLOADING
+        }
+        ScheduledTaskStatus.SUCCEEDED -> DownloadTaskStatus.COMPLETED
+        ScheduledTaskStatus.CANCELLED -> if (existingStatus == DownloadTaskStatus.PAUSED) {
+            DownloadTaskStatus.PAUSED
+        } else {
+            DownloadTaskStatus.CANCELLED
+        }
+        ScheduledTaskStatus.FAILED -> DownloadTaskStatus.FAILED
+        ScheduledTaskStatus.BLOCKED -> existingStatus
+    }
+}
+
+internal fun DownloadTaskStatus.isTerminalStatus(): Boolean {
+    return this == DownloadTaskStatus.FAILED ||
+        this == DownloadTaskStatus.CANCELLED ||
+        this == DownloadTaskStatus.COMPLETED ||
+        this == DownloadTaskStatus.INSTALLED_INACTIVE
+}
