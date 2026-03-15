@@ -17,16 +17,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -72,7 +78,8 @@ internal fun AdvancedSettingsSheet(
     onWifiOnlyDownloadsChanged: (Boolean) -> Unit,
     onGpuAccelerationEnabledChanged: (Boolean) -> Unit,
     onExportDiagnostics: () -> Unit,
-    onOpenModelSetup: () -> Unit,
+    onOpenModelLibrary: () -> Unit,
+    onOpenRuntimeControls: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -88,6 +95,33 @@ internal fun AdvancedSettingsSheet(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
+
+        // --- Quick actions (most used) ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("open_model_library_button"),
+                onClick = onOpenModelLibrary,
+            ) {
+                Text(stringResource(id = R.string.ui_open_model_library))
+            }
+            OutlinedButton(
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("open_runtime_controls_button"),
+                onClick = onOpenRuntimeControls,
+            ) {
+                Text(stringResource(id = R.string.ui_open_runtime_controls))
+            }
+        }
+
+        HorizontalDivider()
+
+        // --- Speed & Battery ---
         Text(stringResource(id = R.string.ui_speed_battery_title), style = MaterialTheme.typography.labelLarge)
         Text(
             text = stringResource(id = R.string.ui_speed_battery_subtitle),
@@ -95,7 +129,8 @@ internal fun AdvancedSettingsSheet(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         RuntimePerformanceProfile.entries.forEach { profile ->
-            val profileDescription = stringResource(id = R.string.a11y_performance_profile, profile.name)
+            val (label, description) = performanceProfileLabels(profile)
+            val profileDescription = stringResource(id = R.string.a11y_performance_profile, label)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -112,11 +147,47 @@ internal fun AdvancedSettingsSheet(
                     onClick = null,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(profile.name)
+                Column {
+                    Text(label)
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
         HorizontalDivider()
+
+        // --- Downloads ---
+        Text(stringResource(id = R.string.ui_download_controls_title), style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = stringResource(id = R.string.ui_download_controls_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = wifiOnlyDownloadsEnabled,
+                    role = Role.Switch,
+                    onValueChange = onWifiOnlyDownloadsChanged,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.Switch(
+                checked = wifiOnlyDownloadsEnabled,
+                onCheckedChange = null,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(id = R.string.ui_download_wifi_only_toggle))
+        }
+
+        HorizontalDivider()
+
+        // --- Keep-alive ---
         Text(stringResource(id = R.string.ui_keep_alive_title), style = MaterialTheme.typography.labelLarge)
         Text(
             text = stringResource(id = R.string.ui_keep_alive_subtitle),
@@ -144,31 +215,8 @@ internal fun AdvancedSettingsSheet(
         }
 
         HorizontalDivider()
-        Text(stringResource(id = R.string.ui_download_controls_title), style = MaterialTheme.typography.labelLarge)
-        Text(
-            text = stringResource(id = R.string.ui_download_controls_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .toggleable(
-                    value = wifiOnlyDownloadsEnabled,
-                    role = Role.Switch,
-                    onValueChange = onWifiOnlyDownloadsChanged,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            androidx.compose.material3.Switch(
-                checked = wifiOnlyDownloadsEnabled,
-                onCheckedChange = null,
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(id = R.string.ui_download_wifi_only_toggle))
-        }
 
-        HorizontalDivider()
+        // --- GPU acceleration (Experimental) ---
         Text(stringResource(id = R.string.ui_advanced_experimental_title), style = MaterialTheme.typography.labelLarge)
         Row(
             modifier = Modifier
@@ -215,10 +263,18 @@ internal fun AdvancedSettingsSheet(
         }
 
         HorizontalDivider()
+
+        // --- Model selection (advanced, rarely changed) ---
         Text(stringResource(id = R.string.ui_model_selection_title), style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = stringResource(id = R.string.ui_model_selection_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         supportedRoutingModes().forEach { mode ->
-            val routingDescription = stringResource(id = R.string.a11y_routing_mode, mode.name)
+            val (label, description) = routingModeLabels(mode)
+            val routingDescription = stringResource(id = R.string.a11y_routing_mode, label)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -235,97 +291,136 @@ internal fun AdvancedSettingsSheet(
                     onClick = null,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(mode.name)
+                Column {
+                    Text(label)
+                    if (description.isNotBlank()) {
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
 
         HorizontalDivider()
 
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onExportDiagnostics,
-        ) {
-            Text(stringResource(id = R.string.ui_export_diagnostics))
-        }
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onOpenModelSetup,
-        ) {
-            Text(stringResource(id = R.string.ui_open_model_setup))
-        }
-
-        Text(
-            text = stringResource(
-                id = R.string.ui_model_status_label,
-                when (state.runtime.modelRuntimeStatus) {
-                    ModelRuntimeStatus.NOT_READY -> stringResource(id = R.string.ui_model_status_not_ready)
-                    ModelRuntimeStatus.LOADING -> stringResource(id = R.string.ui_model_status_loading)
-                    ModelRuntimeStatus.READY -> stringResource(id = R.string.ui_model_status_ready)
-                    ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
-                },
-            ),
-            style = MaterialTheme.typography.bodySmall,
+        // --- Diagnostics (collapsible) ---
+        DiagnosticsSection(
+            runtime = state.runtime,
+            onExportDiagnostics = onExportDiagnostics,
         )
-        state.runtime.runtimeBackend?.let { backend ->
-            Text(
-                text = stringResource(id = R.string.ui_runtime_backend_label, backend),
-                style = MaterialTheme.typography.bodySmall,
-            )
+    }
+}
+
+@Composable
+private fun DiagnosticsSection(
+    runtime: RuntimeUiState,
+    onExportDiagnostics: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = stringResource(id = R.string.ui_diagnostics_section_title),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Text(
+            text = if (expanded) "Hide" else "Show",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    if (expanded) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                DiagnosticLine(
+                    label = "Runtime",
+                    value = when (runtime.modelRuntimeStatus) {
+                        ModelRuntimeStatus.NOT_READY -> stringResource(id = R.string.ui_model_status_not_ready)
+                        ModelRuntimeStatus.LOADING -> stringResource(id = R.string.ui_model_status_loading)
+                        ModelRuntimeStatus.READY -> stringResource(id = R.string.ui_model_status_ready)
+                        ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
+                    },
+                )
+                runtime.runtimeBackend?.let { DiagnosticLine("Backend", it) }
+                runtime.modelStatusDetail?.let { DiagnosticLine("Detail", it) }
+                runtime.activeModelId?.let { DiagnosticLine("Active model", it) }
+                runtime.lastFirstTokenLatencyMs?.let { DiagnosticLine("First token", "${it}ms") }
+                runtime.lastTotalLatencyMs?.let { DiagnosticLine("Total latency", "${it}ms") }
+                runtime.lastPrefillMs?.let { DiagnosticLine("Prefill", "${it}ms") }
+                runtime.lastDecodeMs?.let { DiagnosticLine("Decode", "${it}ms") }
+                runtime.lastTokensPerSec?.let { DiagnosticLine("Decode rate", "${"%.2f".format(it)} tok/s") }
+                runtime.lastPeakRssMb?.let { DiagnosticLine("Peak RSS", "${"%.0f".format(it)} MB") }
+            }
         }
-        state.runtime.modelStatusDetail?.let { detail ->
-            Text(
-                text = detail,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        state.runtime.activeModelId?.let { modelId ->
-            Text(
-                text = stringResource(id = R.string.ui_active_model_label, modelId),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        state.runtime.lastFirstTokenLatencyMs?.let { latency ->
-            Text(
-                text = stringResource(id = R.string.ui_first_token_latency_label, latency),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        state.runtime.lastTotalLatencyMs?.let { latency ->
-            Text(
-                text = stringResource(id = R.string.ui_total_latency_label, latency),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        state.runtime.lastPrefillMs?.let { latency ->
-            Text(
-                text = "Last prefill latency: ${latency}ms",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        state.runtime.lastDecodeMs?.let { latency ->
-            Text(
-                text = "Last decode latency: ${latency}ms",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        state.runtime.lastTokensPerSec?.let { value ->
-            Text(
-                text = "Last decode rate: ${"%.2f".format(value)} tok/s",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        state.runtime.lastPeakRssMb?.let { value ->
-            Text(
-                text = "Last peak RSS: ${"%.0f".format(value)} MB",
-                style = MaterialTheme.typography.bodySmall,
-            )
+        TextButton(onClick = onExportDiagnostics) {
+            Text(stringResource(id = R.string.ui_export_diagnostics))
         }
         Text(
             text = "Diagnostics export includes runtime tuning recommendations and recent benchmark samples.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun DiagnosticLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun performanceProfileLabels(profile: RuntimePerformanceProfile): Pair<String, String> {
+    return when (profile) {
+        RuntimePerformanceProfile.BATTERY -> Pair(
+            stringResource(id = R.string.ui_performance_profile_battery),
+            stringResource(id = R.string.ui_performance_profile_battery_desc),
+        )
+        RuntimePerformanceProfile.BALANCED -> Pair(
+            stringResource(id = R.string.ui_performance_profile_balanced),
+            stringResource(id = R.string.ui_performance_profile_balanced_desc),
+        )
+        RuntimePerformanceProfile.FAST -> Pair(
+            stringResource(id = R.string.ui_performance_profile_fast),
+            stringResource(id = R.string.ui_performance_profile_fast_desc),
+        )
+    }
+}
+
+@Composable
+private fun routingModeLabels(mode: RoutingMode): Pair<String, String> {
+    return when (mode) {
+        RoutingMode.AUTO -> Pair(
+            stringResource(id = R.string.ui_routing_mode_auto),
+            stringResource(id = R.string.ui_routing_mode_auto_desc),
+        )
+        else -> Pair(mode.name, "")
     }
 }
 
@@ -363,8 +458,6 @@ internal fun shouldShowOpenClQuantizationWarning(runtime: RuntimeUiState): Boole
     val activeBackend = runtime.activeBackend?.trim()?.lowercase().orEmpty()
     val backendProfile = runtime.backendProfile?.trim()?.lowercase().orEmpty()
     val compiledBackends = runtime.compiledBackend?.trim()?.lowercase().orEmpty()
-    // Keep warning visible even if load was demoted to CPU because the selected
-    // profile can still be OpenCL, and unsupported quantization is the reason.
     val backendMayUseOpenCl = activeBackend == "opencl" ||
         backendProfile == "opencl" ||
         (backendProfile == "auto" && compiledBackends.contains("opencl"))

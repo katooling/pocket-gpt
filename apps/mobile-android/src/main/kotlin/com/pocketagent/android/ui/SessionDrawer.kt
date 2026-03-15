@@ -1,7 +1,9 @@
 package com.pocketagent.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +33,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatSessionUiModel
@@ -108,8 +111,8 @@ internal fun SessionDrawer(
     pendingDeleteSession?.let { session ->
         AlertDialog(
             onDismissRequest = { pendingDeleteSession = null },
-            title = { Text(text = "Delete conversation?") },
-            text = { Text(text = "\"${session.title}\" will be removed from this device.") },
+            title = { Text(text = stringResource(id = R.string.ui_session_delete_title)) },
+            text = { Text(text = stringResource(id = R.string.ui_session_delete_body, session.title)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -117,12 +120,15 @@ internal fun SessionDrawer(
                         onDeleteSession(session.id)
                     },
                 ) {
-                    Text(text = "Delete")
+                    Text(
+                        text = stringResource(id = R.string.ui_session_delete_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteSession = null }) {
-                    Text(text = "Cancel")
+                    Text(text = stringResource(id = R.string.ui_session_delete_cancel))
                 }
             },
         )
@@ -201,30 +207,43 @@ private fun SessionRow(
         id = R.string.a11y_delete_session,
         session.title,
     )
+    val subtitle = if (session.messageCount > 0) {
+        "${session.messageCount} messages"
+    } else {
+        stringResource(id = R.string.ui_session_no_messages)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (isActive) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .clickable { onSwitchSession(session.id) }
             .semantics {
                 selected = isActive
                 stateDescription = activeStateDescription
+                contentDescription = switchSessionDescription
             }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(
-            modifier = Modifier
-                .weight(1f)
-                .semantics {
-                    contentDescription = switchSessionDescription
-                },
-            onClick = { onSwitchSession(session.id) },
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = session.title,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = subtitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(
@@ -233,7 +252,11 @@ private fun SessionRow(
             },
             onClick = { onDeleteSession(session.id) },
         ) {
-            Icon(Icons.Default.Delete, contentDescription = null)
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

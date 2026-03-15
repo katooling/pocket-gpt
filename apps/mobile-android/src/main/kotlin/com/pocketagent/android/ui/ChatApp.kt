@@ -49,10 +49,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.R
-import com.pocketagent.android.runtime.ModelPathOrigin
 import com.pocketagent.android.runtime.MODEL_OFFLOAD_REASON_MANUAL
+import com.pocketagent.android.runtime.errorCodeName
+import com.pocketagent.android.runtime.isLoading
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
-import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
@@ -61,6 +61,11 @@ import com.pocketagent.android.ui.state.ChatGatePrimaryAction
 import com.pocketagent.android.ui.state.resolveChatGateState
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.launch
+
+private enum class ModelManagementSurface {
+    LIBRARY,
+    RUNTIME,
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,9 +78,6 @@ fun PocketAgentApp(
     val context = LocalContext.current
     val downloads = provisioningState.downloads
     val provisioningSnapshot = provisioningState.snapshot ?: return
-    val modelDistributionManifest = provisioningState.manifest
-    val modelImportInProgress = provisioningState.isImporting
-    val modelProvisioningStatus = provisioningState.statusMessage
     val chatGateState = resolveChatGateState(
         runtime = state.runtime,
         provisioningSnapshot = provisioningSnapshot,
@@ -84,23 +86,17 @@ fun PocketAgentApp(
     val activeRuntimeModelLabel = provisioningState.lifecycle.loadedModel?.let { model ->
         "${model.modelId} ${model.modelVersion.orEmpty()}".trim()
     }
-    val activeRuntimeModelSourceLabel = resolveLoadedModelSourceLabel(
-        context = context,
-        snapshot = provisioningSnapshot,
-        loadedModelId = provisioningState.lifecycle.loadedModel?.modelId,
-        loadedModelVersion = provisioningState.lifecycle.loadedModel?.modelVersion,
-    )
     val drawerState = rememberDrawerState(
         initialValue = if (state.isSessionDrawerOpen) DrawerValue.Open else DrawerValue.Closed,
     )
     val canLoadLastUsedModel = provisioningState.lifecycle.loadedModel == null &&
         provisioningState.lifecycle.lastUsedModel != null &&
-        provisioningState.lifecycle.state != com.pocketagent.nativebridge.ModelLifecycleState.LOADING
+        !provisioningState.lifecycle.isLoading()
     val lastUsedModelLabel = provisioningState.lifecycle.lastUsedModel?.let { model ->
         "${model.modelId} ${model.modelVersion.orEmpty()}".trim()
     }
     val scope = rememberCoroutineScope()
-    var modelSheetOpen by remember { mutableStateOf(false) }
+    var modelManagementSurface by remember { mutableStateOf<ModelManagementSurface?>(null) }
     var selectedModelIdForImport by remember { mutableStateOf<String?>(null) }
     var pendingGetReadyActivation by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingMeteredWarningVersion by remember { mutableStateOf<ModelDistributionVersion?>(null) }
@@ -109,6 +105,8 @@ fun PocketAgentApp(
     var readinessRefreshSequence by remember { mutableStateOf(0L) }
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
     val defaultGetReadyModelId = remember { resolveDefaultGetReadyModelId(isDebugBuild = BuildConfig.DEBUG) }
+    val modelLibraryState = provisioningState.toModelLibraryUiState(defaultGetReadyModelId) ?: return
+    val runtimeModelState = provisioningState.toRuntimeModelUiState() ?: return
     val beginDownload: (ModelDistributionVersion) -> Unit = { version ->
         startModelDownload(
             context = context,
@@ -147,9 +145,13 @@ fun PocketAgentApp(
             else -> beginDownload(version)
         }
     }
-    val openModelSetupAction: () -> Unit = {
+    val openModelLibraryAction: () -> Unit = {
         provisioningViewModel.refreshSnapshot()
-        modelSheetOpen = true
+        modelManagementSurface = ModelManagementSurface.LIBRARY
+    }
+    val openRuntimeControlsAction: () -> Unit = {
+        provisioningViewModel.refreshSnapshot()
+        modelManagementSurface = ModelManagementSurface.RUNTIME
     }
     val refreshRuntimeChecksAction: () -> Unit = {
         viewModel.refreshRuntimeReadiness()
@@ -172,7 +174,7 @@ fun PocketAgentApp(
                 provisioningViewModel.setStatusMessage(
                     context.getString(R.string.ui_model_downloads_manifest_empty),
                 )
-                modelSheetOpen = true
+                openModelLibraryAction()
                 return@launch
             }
 
@@ -197,13 +199,13 @@ fun PocketAgentApp(
 
             pendingGetReadyActivation = defaultVersion.modelId to defaultVersion.version
             launchDownloadFlow(defaultVersion)
-            modelSheetOpen = true
+            openModelLibraryAction()
         }
     }
     val onBlockedAction: (ChatGatePrimaryAction) -> Unit = { action ->
         when (action) {
             ChatGatePrimaryAction.GET_READY -> runGetReadyFlow()
-            ChatGatePrimaryAction.OPEN_MODEL_SETUP -> openModelSetupAction()
+            ChatGatePrimaryAction.OPEN_MODEL_SETUP -> openModelLibraryAction()
             ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS -> refreshRuntimeChecksAction()
             ChatGatePrimaryAction.NONE -> Unit
         }
@@ -317,7 +319,7 @@ fun PocketAgentApp(
         }
         if (transitioned?.status == DownloadTaskStatus.FAILED && pendingGetReadyActivation != null) {
             pendingGetReadyActivation = null
-            modelSheetOpen = true
+            openModelLibraryAction()
         }
         previousDownloadStatuses.clear()
         downloads.forEach { task ->
@@ -325,11 +327,12 @@ fun PocketAgentApp(
         }
     }
 
-    LaunchedEffect(modelSheetOpen) {
-        if (!modelSheetOpen) {
+    LaunchedEffect(modelManagementSurface) {
+        val surface = modelManagementSurface ?: return@LaunchedEffect
+        provisioningViewModel.refreshSnapshot()
+        if (surface != ModelManagementSurface.LIBRARY) {
             return@LaunchedEffect
         }
-        provisioningViewModel.refreshSnapshot()
         provisioningViewModel.refreshManifest()
     }
 
@@ -433,7 +436,7 @@ fun PocketAgentApp(
                 state = state,
                 onSuggestedPrompt = viewModel::prefillComposer,
                 onGetReadyTapped = runGetReadyFlow,
-                onOpenModelSetup = openModelSetupAction,
+                onOpenModelLibrary = openModelLibraryAction,
                 canLoadLastUsedModel = canLoadLastUsedModel,
                 lastUsedModelLabel = lastUsedModelLabel,
                 onLoadLastUsedModel = {
@@ -456,7 +459,7 @@ fun PocketAgentApp(
                     }
                 },
                 activeRuntimeModelLabel = activeRuntimeModelLabel,
-                activeRuntimeModelSourceLabel = activeRuntimeModelSourceLabel,
+                onOpenRuntimeControls = openRuntimeControlsAction,
                 onOpenAdvanced = { viewModel.setAdvancedSheetOpen(true) },
                 onRefreshRuntimeChecks = refreshRuntimeChecksAction,
                 onEditMessage = viewModel::editMessage,
@@ -500,10 +503,8 @@ fun PocketAgentApp(
                 onWifiOnlyDownloadsChanged = provisioningViewModel::setDownloadWifiOnlyEnabled,
                 onGpuAccelerationEnabledChanged = viewModel::setGpuAccelerationEnabled,
                 onExportDiagnostics = viewModel::exportDiagnostics,
-                onOpenModelSetup = {
-                    provisioningViewModel.refreshSnapshot()
-                    modelSheetOpen = true
-                },
+                onOpenModelLibrary = openModelLibraryAction,
+                onOpenRuntimeControls = openRuntimeControlsAction,
             )
         }
     }
@@ -522,20 +523,14 @@ fun PocketAgentApp(
         }
     }
 
-    if (modelSheetOpen) {
+    if (modelManagementSurface == ModelManagementSurface.LIBRARY) {
         val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { modelSheetOpen = false },
+            onDismissRequest = { modelManagementSurface = null },
             sheetState = modelSheetState,
         ) {
-            ModelProvisioningSheet(
-                snapshot = provisioningSnapshot,
-                lifecycle = provisioningState.lifecycle,
-                manifest = modelDistributionManifest,
-                downloads = downloads,
-                isImporting = modelImportInProgress,
-                statusMessage = modelProvisioningStatus,
-                defaultGetReadyModelId = defaultGetReadyModelId,
+            ModelLibrarySheet(
+                state = modelLibraryState,
                 onImportModel = { modelId ->
                     selectedModelIdForImport = modelId
                     modelPicker.launch(arrayOf("*/*"))
@@ -592,6 +587,63 @@ fun PocketAgentApp(
                         }
                     }
                 },
+                onRemoveVersion = { modelId, version ->
+                    scope.launch {
+                        val removed = provisioningViewModel.removeVersionAsync(modelId, version)
+                        provisioningViewModel.setStatusMessage(
+                            if (removed) {
+                                context.getString(R.string.ui_model_version_removed, modelId, version)
+                            } else {
+                                context.getString(R.string.ui_model_version_remove_blocked)
+                            },
+                        )
+                    }
+                },
+                onRefreshManifest = {
+                    scope.launch {
+                        provisioningViewModel.refreshManifest()
+                        val manifest = provisioningViewModel.uiState.value.manifest
+                        provisioningViewModel.setStatusMessage(
+                            if (manifest.models.isEmpty()) {
+                                context.getString(R.string.ui_model_downloads_manifest_empty)
+                            } else {
+                                context.getString(R.string.ui_model_refresh_manifest_success)
+                            },
+                        )
+                    }
+                },
+                onRefreshRuntime = {
+                    viewModel.refreshRuntimeReadiness()
+                    provisioningViewModel.refreshSnapshot()
+                    provisioningViewModel.setStatusMessage(
+                        context.getString(R.string.ui_model_refresh_runtime_feedback),
+                    )
+                },
+                onRefreshAll = {
+                    scope.launch {
+                        provisioningViewModel.refreshManifest()
+                        provisioningViewModel.refreshDownloads()
+                        provisioningViewModel.refreshSnapshot()
+                        viewModel.refreshRuntimeReadiness()
+                        provisioningViewModel.setStatusMessage(
+                            context.getString(R.string.ui_model_refresh_runtime_feedback),
+                        )
+                    }
+                },
+                onOpenRuntimeControls = openRuntimeControlsAction,
+                onClose = { modelManagementSurface = null },
+            )
+        }
+    }
+
+    if (modelManagementSurface == ModelManagementSurface.RUNTIME) {
+        val runtimeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { modelManagementSurface = null },
+            sheetState = runtimeSheetState,
+        ) {
+            RuntimeModelSheet(
+                state = runtimeModelState,
                 onLoadVersion = { modelId, version ->
                     scope.launch {
                         val result = provisioningViewModel.loadInstalledModel(modelId = modelId, version = version)
@@ -647,50 +699,9 @@ fun PocketAgentApp(
                         )
                     }
                 },
-                onRemoveVersion = { modelId, version ->
-                    scope.launch {
-                        val removed = provisioningViewModel.removeVersionAsync(modelId, version)
-                        provisioningViewModel.setStatusMessage(
-                            if (removed) {
-                                context.getString(R.string.ui_model_version_removed, modelId, version)
-                            } else {
-                                context.getString(R.string.ui_model_version_remove_blocked)
-                            },
-                        )
-                    }
-                },
-                onRefreshManifest = {
-                    scope.launch {
-                        provisioningViewModel.refreshManifest()
-                        val manifest = provisioningViewModel.uiState.value.manifest
-                        provisioningViewModel.setStatusMessage(
-                            if (manifest.models.isEmpty()) {
-                                context.getString(R.string.ui_model_downloads_manifest_empty)
-                            } else {
-                                context.getString(R.string.ui_model_refresh_manifest_success)
-                            },
-                        )
-                    }
-                },
-                onRefreshRuntime = {
-                    viewModel.refreshRuntimeReadiness()
-                    provisioningViewModel.refreshSnapshot()
-                    provisioningViewModel.setStatusMessage(
-                        context.getString(R.string.ui_model_refresh_runtime_feedback),
-                    )
-                },
-                onRefreshAll = {
-                    scope.launch {
-                        provisioningViewModel.refreshManifest()
-                        provisioningViewModel.refreshDownloads()
-                        provisioningViewModel.refreshSnapshot()
-                        viewModel.refreshRuntimeReadiness()
-                        provisioningViewModel.setStatusMessage(
-                            context.getString(R.string.ui_model_refresh_runtime_feedback),
-                        )
-                    }
-                },
-                onClose = { modelSheetOpen = false },
+                onRefreshRuntime = refreshRuntimeChecksAction,
+                onOpenModelLibrary = openModelLibraryAction,
+                onClose = { modelManagementSurface = null },
             )
         }
     }
@@ -759,63 +770,38 @@ private fun lifecycleStatusMessage(
     }
     val modelId = fallbackModelId.orEmpty()
     val version = fallbackVersion.orEmpty()
-    return when (result.errorCode) {
-        ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE -> context.getString(
+    return when (result.errorCodeName()) {
+        "MODEL_FILE_UNAVAILABLE" -> context.getString(
             R.string.ui_model_runtime_error_model_file_unavailable,
             modelId,
             version,
         )
-        ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE -> context.getString(
+        "RUNTIME_INCOMPATIBLE" -> context.getString(
             R.string.ui_model_runtime_error_incompatible,
             modelId,
             version,
         )
-        ModelLifecycleErrorCode.BACKEND_INIT_FAILED -> context.getString(
+        "BACKEND_INIT_FAILED" -> context.getString(
             R.string.ui_model_runtime_error_backend_init,
             result.detail ?: "backend_init_failed",
         )
-        ModelLifecycleErrorCode.OUT_OF_MEMORY -> context.getString(
+        "OUT_OF_MEMORY" -> context.getString(
             R.string.ui_model_runtime_error_out_of_memory,
             result.detail ?: "out_of_memory",
         )
-        ModelLifecycleErrorCode.BUSY_GENERATION -> context.getString(R.string.ui_model_runtime_error_busy_generation)
-        ModelLifecycleErrorCode.CANCELLED_BY_NEWER_REQUEST -> context.getString(
+        "BUSY_GENERATION" -> context.getString(R.string.ui_model_runtime_error_busy_generation)
+        "CANCELLED_BY_NEWER_REQUEST" -> context.getString(
             R.string.ui_model_runtime_error_cancelled_newer_request,
         )
-        ModelLifecycleErrorCode.UNKNOWN,
         null,
-        -> context.getString(
+        "UNKNOWN" -> context.getString(
             R.string.ui_model_runtime_error_unknown,
             result.detail ?: "unknown",
         )
-    }
-}
-
-private fun resolveLoadedModelSourceLabel(
-    context: android.content.Context,
-    snapshot: RuntimeProvisioningSnapshot,
-    loadedModelId: String?,
-    loadedModelVersion: String?,
-): String? {
-    if (loadedModelId.isNullOrBlank()) {
-        return null
-    }
-    val matched = snapshot.models.firstOrNull { model ->
-        if (model.modelId != loadedModelId) {
-            return@firstOrNull false
-        }
-        if (loadedModelVersion.isNullOrBlank()) {
-            return@firstOrNull true
-        }
-        model.activeVersion == loadedModelVersion || model.installedVersions.any { version ->
-            version.version == loadedModelVersion
-        }
-    } ?: return null
-    return when (matched.pathOrigin) {
-        ModelPathOrigin.MANAGED -> context.getString(R.string.ui_model_source_managed)
-        ModelPathOrigin.IMPORTED_EXTERNAL -> context.getString(R.string.ui_model_source_imported_external)
-        ModelPathOrigin.DISCOVERED_RECOVERED -> context.getString(R.string.ui_model_source_discovered_recovered)
-        else -> matched.pathOrigin
+        else -> context.getString(
+            R.string.ui_model_runtime_error_unknown,
+            result.detail ?: result.errorCodeName()?.lowercase() ?: "unknown",
+        )
     }
 }
 

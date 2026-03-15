@@ -1,11 +1,13 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,44 +27,63 @@ internal fun ToolDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = stringResource(id = R.string.ui_tool_prompt_helper),
+                    text = stringResource(id = R.string.ui_tool_dialog_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Button(
-                    onClick = { onUsePrompt("calculate 4*9") },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(id = R.string.ui_tool_calculator_prompt))
-                }
-                Button(
-                    onClick = { onUsePrompt("what time is it") },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(id = R.string.ui_tool_date_time_prompt))
-                }
-                Button(
-                    onClick = { onUsePrompt("search launch checklist") },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(id = R.string.ui_tool_local_search_prompt))
-                }
-                Button(
-                    onClick = { onUsePrompt("find notes runtime gate") },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(id = R.string.ui_tool_notes_prompt))
-                }
-                Button(
-                    onClick = { onUsePrompt("remind me to run QA closeout") },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(id = R.string.ui_tool_reminder_prompt))
-                }
+                ToolSuggestionCard(
+                    prompt = stringResource(id = R.string.ui_tool_calculator_prompt),
+                    onUsePrompt = onUsePrompt,
+                    onDismiss = onDismiss,
+                )
+                ToolSuggestionCard(
+                    prompt = stringResource(id = R.string.ui_tool_date_time_prompt),
+                    onUsePrompt = onUsePrompt,
+                    onDismiss = onDismiss,
+                )
+                ToolSuggestionCard(
+                    prompt = stringResource(id = R.string.ui_tool_local_search_prompt),
+                    onUsePrompt = onUsePrompt,
+                    onDismiss = onDismiss,
+                )
+                ToolSuggestionCard(
+                    prompt = stringResource(id = R.string.ui_tool_notes_prompt),
+                    onUsePrompt = onUsePrompt,
+                    onDismiss = onDismiss,
+                )
+                ToolSuggestionCard(
+                    prompt = stringResource(id = R.string.ui_tool_reminder_prompt),
+                    onUsePrompt = onUsePrompt,
+                    onDismiss = onDismiss,
+                )
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(id = R.string.ui_close)) }
         },
     )
+}
+
+@Composable
+private fun ToolSuggestionCard(
+    prompt: String,
+    onUsePrompt: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                onUsePrompt(prompt)
+                onDismiss()
+            },
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 1.dp,
+    ) {
+        Text(
+            text = prompt,
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }

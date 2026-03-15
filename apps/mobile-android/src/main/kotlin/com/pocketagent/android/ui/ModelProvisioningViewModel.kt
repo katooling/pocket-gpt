@@ -36,6 +36,49 @@ data class ModelProvisioningUiState(
     val statusMessage: String? = null,
 )
 
+data class ModelLibraryUiState(
+    val snapshot: RuntimeProvisioningSnapshot,
+    val manifest: ModelDistributionManifest,
+    val downloads: List<DownloadTaskState>,
+    val isImporting: Boolean,
+    val statusMessage: String?,
+    val defaultGetReadyModelId: String?,
+    val defaultModelVersion: ModelDistributionVersion?,
+)
+
+data class RuntimeModelUiState(
+    val snapshot: RuntimeProvisioningSnapshot,
+    val lifecycle: RuntimeModelLifecycleSnapshot,
+    val isImporting: Boolean,
+    val statusMessage: String?,
+)
+
+internal fun ModelProvisioningUiState.toModelLibraryUiState(defaultGetReadyModelId: String?): ModelLibraryUiState? {
+    val currentSnapshot = snapshot ?: return null
+    return ModelLibraryUiState(
+        snapshot = currentSnapshot,
+        manifest = manifest,
+        downloads = downloads,
+        isImporting = isImporting,
+        statusMessage = statusMessage,
+        defaultGetReadyModelId = defaultGetReadyModelId,
+        defaultModelVersion = resolveDefaultGetReadyVersion(
+            manifest = manifest,
+            defaultModelId = defaultGetReadyModelId,
+        ),
+    )
+}
+
+internal fun ModelProvisioningUiState.toRuntimeModelUiState(): RuntimeModelUiState? {
+    val currentSnapshot = snapshot ?: return null
+    return RuntimeModelUiState(
+        snapshot = currentSnapshot,
+        lifecycle = lifecycle,
+        isImporting = isImporting,
+        statusMessage = statusMessage,
+    )
+}
+
 class ModelProvisioningViewModel(
     private val gateway: ProvisioningGateway,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
