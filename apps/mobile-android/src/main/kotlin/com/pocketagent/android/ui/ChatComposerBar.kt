@@ -40,6 +40,7 @@ import com.pocketagent.android.ui.state.ChatGateStatus
 internal fun ComposerBar(
     text: String,
     isSending: Boolean,
+    isCancelling: Boolean = false,
     chatGateState: ChatGateState,
     editingMessageId: String? = null,
     attachedImages: List<String> = emptyList(),
@@ -58,6 +59,7 @@ internal fun ComposerBar(
     val canTriggerUserAction = chatGateState.isReady || canTriggerBlockedAction
     val sendButtonDescription = stringResource(id = R.string.a11y_send_button)
     val sendStateDescription = when {
+        isSending && isCancelling -> stringResource(id = R.string.a11y_send_state_cancelling)
         isSending -> stringResource(id = R.string.a11y_send_state_sending)
         !chatGateState.isReady -> stringResource(id = R.string.a11y_send_state_runtime_not_ready)
         text.isBlank() -> stringResource(id = R.string.a11y_send_state_disabled)
@@ -167,16 +169,17 @@ internal fun ComposerBar(
                     },
                 onClick = {
                     when {
-                        isSending -> onCancelSend()
+                        isSending && !isCancelling -> onCancelSend()
                         isEditing -> onSubmitEdit()
                         chatGateState.isReady -> onSend()
                         else -> onBlockedAction(chatGateState.primaryAction)
                     }
                 },
-                enabled = if (isSending) true else text.isNotBlank() && canTriggerUserAction,
+                enabled = if (isSending) !isCancelling else text.isNotBlank() && canTriggerUserAction,
             ) {
                 Text(
                     when {
+                        isSending && isCancelling -> stringResource(id = R.string.ui_cancelling_button)
                         isSending -> stringResource(id = R.string.ui_cancel_button)
                         isEditing -> "Update"
                         else -> stringResource(id = R.string.ui_send_button)

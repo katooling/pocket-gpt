@@ -1,5 +1,11 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatUiState
+import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 
@@ -35,6 +43,7 @@ import com.pocketagent.android.ui.state.RuntimeUiState
 @OptIn(ExperimentalLayoutApi::class)
 internal fun OfflineAndStatusHeader(
     state: ChatUiState,
+    modelLoadingState: ModelLoadingState,
     onGetReadyTapped: () -> Unit,
     onOpenModelLibrary: () -> Unit,
     canLoadLastUsedModel: Boolean,
@@ -53,6 +62,35 @@ internal fun OfflineAndStatusHeader(
         ModelRuntimeStatus.LOADING -> stringResource(id = R.string.ui_model_status_loading)
         ModelRuntimeStatus.READY -> stringResource(id = R.string.ui_model_status_ready)
         ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
+    }
+
+    val lifecycleLabel = modelLoadingState.readableRuntimeStateLabel()
+    val showRuntimeLifecycleChip = modelLoadingState !is ModelLoadingState.Loaded
+    val runtimeLifecycleColors = when (modelLoadingState) {
+        is ModelLoadingState.Loaded -> AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+        is ModelLoadingState.Loading -> AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        is ModelLoadingState.Offloading -> AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        is ModelLoadingState.Error -> AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            labelColor = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        is ModelLoadingState.Idle -> AssistChipDefaults.assistChipColors()
+    }
+    val runtimeLifecycleIcon = when (modelLoadingState) {
+        is ModelLoadingState.Loaded -> Icons.Filled.CheckCircle
+        is ModelLoadingState.Loading -> Icons.Filled.Sync
+        is ModelLoadingState.Offloading -> Icons.Filled.HourglassEmpty
+        is ModelLoadingState.Error -> Icons.Filled.Error
+        is ModelLoadingState.Idle -> Icons.Filled.RadioButtonUnchecked
     }
 
     @Composable
@@ -86,6 +124,26 @@ internal fun OfflineAndStatusHeader(
                 label = { StatusChipLabel(modelStatusText) },
                 colors = statusColors,
             )
+            if (showRuntimeLifecycleChip) {
+                AssistChip(
+                    onClick = onOpenRuntimeControls,
+                    colors = runtimeLifecycleColors,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = runtimeLifecycleIcon,
+                            contentDescription = null,
+                        )
+                    },
+                    label = {
+                        StatusChipLabel(
+                            stringResource(
+                                id = R.string.ui_model_runtime_badge_label,
+                                lifecycleLabel,
+                            ),
+                        )
+                    },
+                )
+            }
             if (!activeRuntimeModelLabel.isNullOrBlank()) {
                 AssistChip(
                     onClick = onOpenRuntimeControls,
@@ -110,7 +168,45 @@ internal fun OfflineAndStatusHeader(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            if (state.runtime.modelRuntimeStatus != ModelRuntimeStatus.READY) {
+            when (modelLoadingState) {
+                is ModelLoadingState.Loading -> {
+                    Text(
+                        text = modelLoadingState.stage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                is ModelLoadingState.Offloading -> {
+                    if (modelLoadingState.queued) {
+                        Text(
+                            text = stringResource(id = R.string.ui_model_runtime_offload_queued),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                is ModelLoadingState.Error -> {
+                    Text(
+                        text = modelLoadingState.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                else -> Unit
+            }
+            if (modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onOpenRuntimeControls) {
+                        Text(stringResource(id = R.string.ui_open_runtime_controls))
+                    }
+                    TextButton(onClick = onRefreshRuntimeChecks, enabled = false) {
+                        Text(stringResource(id = R.string.ui_refresh_runtime_checks))
+                    }
+                }
+            } else if (state.runtime.modelRuntimeStatus != ModelRuntimeStatus.READY) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onGetReadyTapped) {
                         Text(stringResource(id = R.string.ui_get_ready))
@@ -127,7 +223,10 @@ internal fun OfflineAndStatusHeader(
                     TextButton(onClick = onOpenAdvanced) {
                         Text(stringResource(id = R.string.ui_open_advanced_controls))
                     }
-                    TextButton(onClick = onRefreshRuntimeChecks) {
+                    TextButton(
+                        onClick = onRefreshRuntimeChecks,
+                        enabled = state.runtime.startupProbeState != com.pocketagent.android.ui.state.StartupProbeState.RUNNING,
+                    ) {
                         Text(stringResource(id = R.string.ui_refresh_runtime_checks))
                     }
                 }
@@ -177,6 +276,24 @@ internal fun OfflineAndStatusHeader(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ModelLoadingState.readableRuntimeStateLabel(): String {
+    return when (this) {
+        is ModelLoadingState.Idle -> stringResource(id = R.string.ui_model_runtime_state_unloaded)
+        is ModelLoadingState.Loading -> stringResource(id = R.string.ui_model_runtime_state_loading)
+        is ModelLoadingState.Loaded -> stringResource(id = R.string.ui_model_runtime_state_loaded)
+        is ModelLoadingState.Offloading -> {
+            if (queued) {
+                stringResource(id = R.string.ui_model_runtime_state_offloading_queued)
+            } else {
+                stringResource(id = R.string.ui_model_runtime_state_offloading)
+            }
+        }
+
+        is ModelLoadingState.Error -> stringResource(id = R.string.ui_model_runtime_state_failed)
     }
 }
 

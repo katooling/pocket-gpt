@@ -60,7 +60,7 @@ internal fun ChatViewModel.sendMessageInternal() {
     }
     _uiState.update { state ->
         state.copy(
-            composer = ComposerUiState(text = "", isSending = true),
+            composer = ComposerUiState(text = "", isSending = true, isCancelling = false),
             runtime = sendReducer.onSendStarted(
                 runtime = state.runtime,
                 toolDriven = false,
@@ -196,7 +196,7 @@ internal fun ChatViewModel.sendMessageInternal() {
             )
             _uiState.update { state ->
                 state.copy(
-                    composer = state.composer.copy(isSending = false),
+                    composer = state.composer.copy(isSending = false, isCancelling = false),
                     runtime = state.runtime
                         .copy(
                             modelRuntimeStatus = ModelRuntimeStatus.ERROR,
@@ -214,6 +214,61 @@ internal fun ChatViewModel.sendMessageInternal() {
             persistState()
         }
 
+        fun finalizeWithCancellation(
+            terminal: StreamTerminalState,
+            messageId: String,
+            userInitiated: Boolean,
+        ) {
+            val partialStreamingText = messageContent(
+                sessionId = activeSession.id,
+                messageId = messageId,
+            ).orEmpty().trim()
+            if (partialStreamingText.isNotBlank()) {
+                finalizeStreamingMessage(
+                    sessionId = activeSession.id,
+                    messageId = messageId,
+                    finalText = partialStreamingText,
+                    role = MessageRole.ASSISTANT,
+                    requestId = terminal.requestId,
+                    finishReason = terminal.finishReason,
+                    terminalEventSeen = terminal.terminalEventSeen,
+                )
+            } else {
+                updateActiveSession(activeSession.id) { session ->
+                    session.copy(
+                        messages = session.messages.filterNot { message -> message.id == messageId },
+                        updatedAtEpochMs = System.currentTimeMillis(),
+                    )
+                }
+            }
+            _uiState.update { state ->
+                state.copy(
+                    composer = state.composer.copy(isSending = false, isCancelling = false),
+                    runtime = state.runtime.copy(
+                        runtimeBackend = runtimeFacade.runtimeBackend(),
+                        startupProbeState = StartupProbeState.READY,
+                        modelRuntimeStatus = ModelRuntimeStatus.READY,
+                        modelStatusDetail = if (userInitiated) {
+                            "Generation cancelled."
+                        } else {
+                            "Generation stopped."
+                        },
+                        sendElapsedMs = null,
+                        sendSlowState = null,
+                    ).clearError(),
+                )
+            }
+            refreshRuntimeDiagnostics()
+            persistState()
+        }
+
+        fun isNonTimeoutCancellation(terminal: StreamTerminalState): Boolean {
+            val normalizedReason = terminal.finishReason.trim().lowercase()
+            val isCancellation = normalizedReason.contains("cancel")
+            val isTimeout = normalizedReason.contains("timeout")
+            return isCancellation && !isTimeout
+        }
+
         fun finalizeFromTerminal(
             terminal: StreamTerminalState,
             messageId: String,
@@ -223,6 +278,17 @@ internal fun ChatViewModel.sendMessageInternal() {
             deviceState: DeviceState,
             fallbackModelId: String?,
         ): List<ChatToolCall> {
+            val userInitiatedCancellation = consumeUserCancellationRequest(terminal.requestId)
+            val shouldFinalizeAsCancellation = isNonTimeoutCancellation(terminal) ||
+                (userInitiatedCancellation && terminal.uiError != null)
+            if (shouldFinalizeAsCancellation) {
+                finalizeWithCancellation(
+                    terminal = terminal,
+                    messageId = messageId,
+                    userInitiated = userInitiatedCancellation,
+                )
+                return emptyList()
+            }
             if (terminal.uiError != null) {
                 finalizeWithRuntimeError(
                     uiError = terminal.uiError,
@@ -280,7 +346,7 @@ internal fun ChatViewModel.sendMessageInternal() {
             )
             _uiState.update { state ->
                 state.copy(
-                    composer = state.composer.copy(isSending = false),
+                    composer = state.composer.copy(isSending = false, isCancelling = false),
                     runtime = state.runtime.copy(
                         runtimeBackend = runtimeFacade.runtimeBackend(),
                         startupProbeState = StartupProbeState.READY,
@@ -382,7 +448,7 @@ internal fun ChatViewModel.sendMessageInternal() {
                         )
                         _uiState.update { state ->
                             state.copy(
-                                composer = state.composer.copy(isSending = false),
+                                composer = state.composer.copy(isSending = false, isCancelling = false),
                                 runtime = state.runtime.copy(
                                     modelRuntimeStatus = ModelRuntimeStatus.ERROR,
                                     modelStatusDetail = outcome.uiError.userMessage,
@@ -434,7 +500,7 @@ internal fun ChatViewModel.sendMessageInternal() {
                 activeSendRequestId = followUpRequestId
                 _uiState.update { state ->
                     state.copy(
-                        composer = state.composer.copy(isSending = true),
+                        composer = state.composer.copy(isSending = true, isCancelling = false),
                         runtime = sendReducer.onSendStarted(
                             runtime = state.runtime,
                             toolDriven = true,
@@ -503,7 +569,7 @@ internal fun ChatViewModel.sendMessageInternal() {
                             }
                         }
                         val detail = sendReducer.statusDetailForEvent(event)
-                        if (!detail.isNullOrBlank()) {
+                        if (!detail.isNullOrBlank() && !isUserCancellationRequested(event.requestId)) {
                             _uiState.update { state ->
                                 state.copy(
                                     runtime = state.runtime.copy(
@@ -569,7 +635,7 @@ internal fun ChatViewModel.sendMessageInternal() {
                     }
                 }
                 val detail = sendReducer.statusDetailForEvent(event)
-                if (!detail.isNullOrBlank()) {
+                if (!detail.isNullOrBlank() && !isUserCancellationRequested(event.requestId)) {
                     _uiState.update { state ->
                         state.copy(
                             runtime = state.runtime.copy(

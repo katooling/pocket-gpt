@@ -42,7 +42,7 @@ internal fun ChatViewModel.executeToolCommandInternal(
                 }
                 _uiState.update { state ->
                     state.copy(
-                        composer = state.composer.copy(isSending = false),
+                        composer = state.composer.copy(isSending = false, isCancelling = false),
                         runtime = state.runtime.copy(
                             runtimeBackend = runtimeFacade.runtimeBackend(),
                             modelRuntimeStatus = ModelRuntimeStatus.READY,
@@ -64,7 +64,7 @@ internal fun ChatViewModel.executeToolCommandInternal(
                 )
                 _uiState.update { state ->
                     state.copy(
-                        composer = state.composer.copy(isSending = false),
+                        composer = state.composer.copy(isSending = false, isCancelling = false),
                         runtime = state.runtime.copy(
                             modelRuntimeStatus = ModelRuntimeStatus.ERROR,
                             modelStatusDetail = outcome.uiError.userMessage,

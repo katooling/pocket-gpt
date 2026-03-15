@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.pocketagent.android.data.chat.SessionPersistence
 import com.pocketagent.android.runtime.ChatRuntimeService
+import com.pocketagent.android.runtime.ProvisioningGateway
 import com.pocketagent.android.runtime.RuntimeTuning
 import com.pocketagent.android.ui.controllers.DeviceStateProvider
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
@@ -123,6 +124,7 @@ internal fun newMessageId(prefix: String): String = "$prefix-${UUID.randomUUID()
 class ChatViewModelFactory(
     private val runtimeFacade: ChatRuntimeService,
     private val sessionPersistence: SessionPersistence,
+    private val provisioningGateway: ProvisioningGateway? = null,
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
     private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
 ) : ViewModelProvider.Factory {
@@ -132,6 +134,7 @@ class ChatViewModelFactory(
             return ChatViewModel(
                 runtimeFacade = runtimeFacade,
                 sessionPersistence = sessionPersistence,
+                provisioningGateway = provisioningGateway,
                 deviceStateProvider = deviceStateProvider,
                 runtimeTuning = runtimeTuning,
             ) as T

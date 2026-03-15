@@ -58,6 +58,7 @@ import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
+import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import java.io.File
 import kotlinx.coroutines.launch
@@ -65,6 +66,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun ChatScreenBody(
     state: ChatUiState,
+    modelLoadingState: ModelLoadingState,
     onSuggestedPrompt: (String) -> Unit,
     onGetReadyTapped: () -> Unit,
     onOpenModelLibrary: () -> Unit,
@@ -86,6 +88,7 @@ internal fun ChatScreenBody(
     ) {
         OfflineAndStatusHeader(
             state = state,
+            modelLoadingState = modelLoadingState,
             onGetReadyTapped = onGetReadyTapped,
             onOpenModelLibrary = onOpenModelLibrary,
             canLoadLastUsedModel = canLoadLastUsedModel,
