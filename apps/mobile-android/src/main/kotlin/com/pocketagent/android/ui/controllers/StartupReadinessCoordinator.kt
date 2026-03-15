@@ -93,11 +93,8 @@ class StartupReadinessCoordinator(
     private fun optionalModelStatusDetail(startupChecks: List<String>): String {
         val missing = startupChecks
             .filter { it.lowercase().contains("optional runtime model unavailable") }
-            .flatMap { check ->
-                check.substringAfter(":", missingDelimiterValue = "")
-                    .split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
+            .mapNotNull { check ->
+                OPTIONAL_MODEL_ID_REGEX.find(check)?.groupValues?.getOrNull(1)?.trim()
             }
             .toSet()
         val startupModelCount = modelRegistry.startupPolicy(profile = runtimeProfile).candidateModelIds.size.coerceAtLeast(1)
@@ -105,7 +102,10 @@ class StartupReadinessCoordinator(
         return if (missing.isEmpty()) {
             "Runtime ready. Optional models are still being provisioned."
         } else {
-            "$readyCount model ready, ${missing.size} optional model unavailable (${missing.joinToString(", ")})."
+            val preview = missing.sorted().take(3)
+            val overflowCount = (missing.size - preview.size).coerceAtLeast(0)
+            val suffix = if (overflowCount > 0) ", +$overflowCount more" else ""
+            "$readyCount model ready, ${missing.size} optional model unavailable (${preview.joinToString(", ")}$suffix)."
         }
     }
 
@@ -126,5 +126,12 @@ class StartupReadinessCoordinator(
         } else {
             ModelRuntimeStatus.ERROR
         }
+    }
+
+    private companion object {
+        val OPTIONAL_MODEL_ID_REGEX = Regex(
+            pattern = """optional runtime model unavailable:\s*([a-z0-9._-]+)""",
+            option = RegexOption.IGNORE_CASE,
+        )
     }
 }

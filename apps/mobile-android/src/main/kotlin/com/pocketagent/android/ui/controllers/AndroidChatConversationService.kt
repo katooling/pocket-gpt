@@ -245,7 +245,7 @@ class AndroidChatConversationService(
                     updatedAtEpochMs = System.currentTimeMillis(),
                 )
             }.copy(
-                composer = state.composer.copy(isSending = true),
+                composer = state.composer.copy(isSending = true, isCancelling = false),
                 runtime = state.runtime.copy(
                     modelRuntimeStatus = ModelRuntimeStatus.LOADING,
                     modelStatusDetail = loadingDetail,
@@ -268,7 +268,7 @@ class AndroidChatConversationService(
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
         }.copy(
-            composer = state.composer.copy(isSending = false),
+            composer = state.composer.copy(isSending = false, isCancelling = false),
             runtime = state.runtime.copy(
                 runtimeBackend = runtimeBackend,
                 modelRuntimeStatus = ModelRuntimeStatus.READY,
@@ -289,7 +289,7 @@ class AndroidChatConversationService(
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
         }.copy(
-            composer = state.composer.copy(isSending = false),
+            composer = state.composer.copy(isSending = false, isCancelling = false),
             runtime = state.runtime.copy(
                 modelRuntimeStatus = ModelRuntimeStatus.ERROR,
                 modelStatusDetail = uiError.userMessage,
@@ -312,7 +312,7 @@ class AndroidChatConversationService(
                     updatedAtEpochMs = System.currentTimeMillis(),
                 )
             }.copy(
-                composer = state.composer.copy(isSending = true),
+                composer = state.composer.copy(isSending = true, isCancelling = false),
                 runtime = state.runtime.copy(
                     modelRuntimeStatus = ModelRuntimeStatus.LOADING,
                     modelStatusDetail = loadingDetail,

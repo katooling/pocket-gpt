@@ -217,6 +217,7 @@ internal class AppRuntimeLifecycleCoordinator(
     fun reconcileLifecycleState(graph: AppRuntimeGraph) {
         val loaded = graph.runtimeFacade.loadedModel()
         val activeGenerationCount = graph.runtimeFacade.activeGenerationCount()
+        val current = lifecycleState.value
         val normalizedLoaded = if (loaded != null) {
             val installedVersions = runCatching {
                 graph.provisioningStore.listInstalledVersions(loaded.modelId)
@@ -251,18 +252,40 @@ internal class AppRuntimeLifecycleCoordinator(
         val lastUsed = graph.provisioningStore.lastLoadedModel()?.let { ref ->
             RuntimeLoadedModel(modelId = ref.modelId, modelVersion = ref.version)
         }
-        lifecycleState.value = lifecycleState.value.copy(
-            state = when {
-                normalizedLoaded != null -> ModelLifecycleState.LOADED
-                lifecycleState.value.queuedOffload && activeGenerationCount > 0 -> ModelLifecycleState.OFFLOADING
-                else -> ModelLifecycleState.UNLOADED
-            },
+        val shouldKeepFailedState = current.state == ModelLifecycleState.FAILED &&
+            current.requestedModel != null &&
+            normalizedLoaded == null
+        val shouldKeepLoadingState = current.state == ModelLifecycleState.LOADING &&
+            current.requestedModel != null &&
+            normalizedLoaded == null
+        val shouldKeepOffloadingState = current.state == ModelLifecycleState.OFFLOADING &&
+            current.requestedModel != null &&
+            normalizedLoaded == null
+        val reconciledState = when {
+            normalizedLoaded != null -> ModelLifecycleState.LOADED
+            current.queuedOffload && activeGenerationCount > 0 -> ModelLifecycleState.OFFLOADING
+            shouldKeepLoadingState -> ModelLifecycleState.LOADING
+            shouldKeepOffloadingState -> ModelLifecycleState.OFFLOADING
+            shouldKeepFailedState -> ModelLifecycleState.FAILED
+            else -> ModelLifecycleState.UNLOADED
+        }
+        lifecycleState.value = current.copy(
+            state = reconciledState,
             loadedModel = normalizedLoaded,
-            requestedModel = null,
+            requestedModel = when (reconciledState) {
+                ModelLifecycleState.LOADING,
+                ModelLifecycleState.OFFLOADING,
+                ModelLifecycleState.FAILED,
+                -> current.requestedModel
+                else -> null
+            },
+            errorCode = if (reconciledState == ModelLifecycleState.FAILED) current.errorCode else null,
+            errorDetail = if (reconciledState == ModelLifecycleState.FAILED) current.errorDetail else null,
             lastUsedModel = lastUsed,
-            queuedOffload = lifecycleState.value.queuedOffload && activeGenerationCount > 0,
-            loadingStage = if (normalizedLoaded != null) null else lifecycleState.value.loadingStage,
-            loadingProgress = if (normalizedLoaded != null) null else lifecycleState.value.loadingProgress,
+            queuedOffload = current.queuedOffload && activeGenerationCount > 0,
+            loadingDetail = if (normalizedLoaded != null) null else current.loadingDetail,
+            loadingStage = if (normalizedLoaded != null) null else current.loadingStage,
+            loadingProgress = if (normalizedLoaded != null) null else current.loadingProgress,
             updatedAtEpochMs = System.currentTimeMillis(),
         )
     }
@@ -339,8 +362,11 @@ internal class AppRuntimeLifecycleCoordinator(
         val eventModel = event.modelId?.let { RuntimeLoadedModel(it, event.modelVersion) }
         val loadedModel = when (event.state) {
             ModelLifecycleState.LOADED -> eventModel ?: current.loadedModel
-            ModelLifecycleState.UNLOADED ->
-                current.loadedModel?.takeUnless { it.modelId == event.modelId }
+            ModelLifecycleState.UNLOADED -> when {
+                event.modelId == null -> null
+                current.loadedModel?.modelId == event.modelId -> null
+                else -> current.loadedModel
+            }
             else -> current.loadedModel
         }
         val requestedModel = when (event.state) {

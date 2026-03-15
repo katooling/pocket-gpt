@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeStatus
+import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
+import com.pocketagent.android.runtime.isOffloading
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
@@ -71,6 +73,7 @@ internal fun PrivacyInfoSheet(onClose: () -> Unit) {
 @Composable
 internal fun AdvancedSettingsSheet(
     state: ChatUiState,
+    runtimeLifecycle: RuntimeModelLifecycleSnapshot,
     wifiOnlyDownloadsEnabled: Boolean,
     onRoutingModeSelected: (RoutingMode) -> Unit,
     onPerformanceProfileSelected: (RuntimePerformanceProfile) -> Unit,
@@ -116,6 +119,54 @@ internal fun AdvancedSettingsSheet(
                 onClick = onOpenRuntimeControls,
             ) {
                 Text(stringResource(id = R.string.ui_open_runtime_controls))
+            }
+        }
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(
+                        id = R.string.ui_model_runtime_lifecycle_status,
+                        runtimeLifecycle.readableRuntimeStateLabel(),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (runtimeLifecycle.queuedOffload && runtimeLifecycle.isOffloading()) {
+                    Text(
+                        text = stringResource(id = R.string.ui_model_runtime_offload_queued),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                runtimeLifecycle.loadedModel?.let { loaded ->
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_model_runtime_loaded_version_label,
+                            loaded.modelId,
+                            loaded.modelVersion.orEmpty().ifBlank { "-" },
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                runtimeLifecycle.requestedModel?.let { requested ->
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_model_runtime_requested_version_label,
+                            requested.modelId,
+                            requested.modelVersion.orEmpty().ifBlank { "-" },
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 

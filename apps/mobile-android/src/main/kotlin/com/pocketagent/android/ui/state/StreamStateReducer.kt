@@ -81,10 +81,11 @@ class StreamStateReducer(
                 )
             }
             is ChatStreamEvent.Cancelled -> {
-                val uiError = if (event.reason.equals("timeout", ignoreCase = true)) {
+                val timedOut = event.reason.equals("timeout", ignoreCase = true)
+                val uiError = if (timedOut) {
                     UiErrorMapper.runtimeTimeout(requestTimeoutMs)
                 } else {
-                    UiErrorMapper.runtimeCancelled(event.reason)
+                    null
                 }
                 state.copy(
                     terminal = StreamTerminalState(

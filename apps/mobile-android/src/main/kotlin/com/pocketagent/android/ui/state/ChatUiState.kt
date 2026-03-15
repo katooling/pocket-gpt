@@ -93,6 +93,7 @@ data class ComposerUiState(
     val isSending: Boolean = false,
     val editingMessageId: String? = null,
     val attachedImages: List<String> = emptyList(),
+    val isCancelling: Boolean = false,
 )
 
 data class RuntimeUiState(

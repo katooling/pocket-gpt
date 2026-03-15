@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
         ChatViewModelFactory(
             runtimeFacade = runtimeGateway,
             sessionPersistence = AndroidSessionPersistence(applicationContext),
+            provisioningGateway = DefaultProvisioningGateway(applicationContext),
             deviceStateProvider = AndroidTelemetryDeviceStateProvider(applicationContext),
             runtimeTuning = runtimeTuning,
         )
