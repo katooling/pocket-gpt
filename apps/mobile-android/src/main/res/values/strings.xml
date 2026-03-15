@@ -42,6 +42,7 @@
     <string name="ui_composer_label">Message</string>
     <string name="ui_send_button">Send</string>
     <string name="ui_cancel_button">Cancel</string>
+    <string name="ui_cancelling_button">Cancelling...</string>
     <string name="ui_local_tools_title">Local tools</string>
     <string name="ui_tool_prompt_helper">Tool execution now works through natural language prompts.</string>
     <string name="ui_tool_calculator_prompt">calculate 4*9</string>
@@ -115,7 +116,7 @@
     <string name="ui_routing_mode_auto">Auto (recommended)</string>
     <string name="ui_routing_mode_auto_desc">Uses the best available model</string>
     <string name="ui_model_selection_title">Model selection</string>
-    <string name="ui_model_selection_subtitle">Override the default model. Most users should stay on Auto.</string>
+    <string name="ui_model_selection_subtitle">Override the default model for new requests. Use runtime controls to load or offload immediately. Most users should stay on Auto.</string>
     <string name="ui_diagnostics_section_title">Diagnostics</string>
     <string name="ui_export_diagnostics">Export diagnostics</string>
     <string name="ui_open_runtime_controls">Open runtime controls</string>
@@ -213,6 +214,7 @@
     <string name="ui_runtime_model_sheet_title">Runtime model</string>
     <string name="ui_runtime_model_sheet_subtitle">Load or offload installed models without browsing downloads or storage details.</string>
     <string name="ui_model_runtime_lifecycle_status">State: %1$s</string>
+    <string name="ui_model_runtime_routing_preference_label">Routing preference: %1$s</string>
     <string name="ui_model_runtime_state_unloaded">Unloaded</string>
     <string name="ui_model_runtime_state_loading">Loading</string>
     <string name="ui_model_runtime_state_loaded">Loaded</string>
@@ -235,7 +237,11 @@
     <string name="ui_model_runtime_load">Load</string>
     <string name="ui_model_runtime_load_now">Load now</string>
     <string name="ui_model_runtime_loading_action">Loading...</string>
+    <string name="ui_model_runtime_offloading_action">Offloading...</string>
+    <string name="ui_model_runtime_active_section_title">Active model</string>
+    <string name="ui_runtime_model_none_loaded">No model is loaded right now.</string>
     <string name="ui_model_runtime_loaded_message">Loaded %1$s (%2$s) into runtime.</string>
+    <string name="ui_model_runtime_routing_mismatch_hint">Loaded runtime model differs from routing preference. New requests follow routing preference and may trigger a model switch.</string>
     <string name="ui_model_runtime_offloaded_message">Runtime model offloaded.</string>
     <string name="ui_model_runtime_offload_queued">Offload queued and will run after active generation completes.</string>
     <string name="ui_model_runtime_error_model_file_unavailable">Cannot load %1$s (%2$s): model file is unavailable.</string>
@@ -286,6 +292,7 @@
     <string name="a11y_switch_session">Switch to session %1$s</string>
     <string name="a11y_delete_session">Delete session %1$s</string>
     <string name="a11y_send_state_sending">Sending</string>
+    <string name="a11y_send_state_cancelling">Cancelling</string>
     <string name="a11y_send_state_disabled">Disabled</string>
     <string name="a11y_send_state_runtime_not_ready">Runtime not ready</string>
     <string name="a11y_send_state_enabled">Ready to send</string>
