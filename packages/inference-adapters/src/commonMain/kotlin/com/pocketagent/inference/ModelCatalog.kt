@@ -52,6 +52,7 @@ object ModelCatalog {
     const val QWEN_3_5_2B_Q4 = "qwen3.5-2b-q4"
     const val SMOLLM3_3B_Q4_K_M = "smollm3-3b-q4_k_m"
     const val SMOLLM3_3B_UD_IQ2_XXS = "smollm3-3b-ud-iq2_xxs"
+    const val QWEN3_0_6B_Q4_K_M = "qwen3-0.6b-q4_k_m"
     const val PHI_4_MINI_Q4_K_M = "phi-4-mini-instruct-q4_k_m"
 
     private val descriptors: List<ModelDescriptor> = listOf(
@@ -91,6 +92,27 @@ object ModelCatalog {
             envKeyToken = "QWEN_3_5_0_8B_Q4",
             includeAutoRoutingMode = true,
             explicitRoutingModes = setOf(RoutingMode.QWEN_0_8B),
+        ),
+        ModelDescriptor(
+            modelId = QWEN3_0_6B_Q4_K_M,
+            tier = ModelTier.BASELINE,
+            bridgeSupported = true,
+            autoRoutingEnabled = true,
+            capabilities = setOf(
+                ModelCapability.SHORT_TEXT,
+                ModelCapability.LONG_TEXT,
+                ModelCapability.REASONING,
+            ),
+            minRamGb = 4,
+            qualityRank = 1,
+            speedRank = 3,
+            fallbackPriority = 12,
+            startupCandidate = true,
+            startupRequired = false,
+            defaultGetReadyProfiles = emptySet(),
+            envKeyToken = "QWEN3_0_6B_Q4_K_M",
+            includeAutoRoutingMode = true,
+            explicitRoutingModes = setOf(RoutingMode.QWEN3_0_6B),
         ),
         ModelDescriptor(
             modelId = QWEN_3_5_2B_Q4,
