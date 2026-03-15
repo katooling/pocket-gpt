@@ -1,13 +1,13 @@
 package com.pocketagent.android.ui.controllers
 
-import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.ToolExecutionResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible
 
 class ChatSendController(
-    private val runtimeGateway: RuntimeGateway,
+    private val runtimeGateway: ChatRuntimeService,
     private val ioDispatcher: CoroutineDispatcher,
 ) {
     suspend fun runTool(

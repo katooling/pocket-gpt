@@ -1,7 +1,7 @@
 package com.pocketagent.android.ui.controllers
 
 import com.pocketagent.android.runtime.GpuProbeStatus
-import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.ui.addTelemetryEventIfMissing
 import com.pocketagent.android.ui.coerceSupportedRoutingMode
 import com.pocketagent.android.ui.clearError
@@ -32,7 +32,7 @@ data class StartupProbeOutcome(
 )
 
 class ChatStartupFlow(
-    private val runtimeGateway: RuntimeGateway,
+    private val runtimeGateway: ChatRuntimeService,
     private val startupProbeController: StartupProbeController,
     private val startupReadinessCoordinator: StartupReadinessCoordinator,
     private val ioDispatcher: CoroutineDispatcher,
@@ -96,8 +96,10 @@ class ChatStartupFlow(
         }
 
         val restoredSessions = persisted.sessions.map { session ->
-            val turns = timelineProjector.toTurns(session)
-            runtimeGateway.restoreSession(sessionId = SessionId(session.id), turns = turns)
+            if (session.messagesLoaded) {
+                val turns = timelineProjector.toTurns(session)
+                runtimeGateway.restoreSession(sessionId = SessionId(session.id), turns = turns)
+            }
             session
         }
 

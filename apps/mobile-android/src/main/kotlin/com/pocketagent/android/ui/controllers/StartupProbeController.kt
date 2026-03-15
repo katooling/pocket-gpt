@@ -1,6 +1,6 @@
 package com.pocketagent.android.ui.controllers
 
-import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.ChatRuntimeService
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -9,7 +9,7 @@ import kotlinx.coroutines.withTimeout
 
 open class StartupProbeController {
     open suspend fun runStartupChecks(
-        runtimeGateway: RuntimeGateway,
+        runtimeGateway: ChatRuntimeService,
         ioDispatcher: CoroutineDispatcher,
         timeoutMs: Long,
     ): List<String> {

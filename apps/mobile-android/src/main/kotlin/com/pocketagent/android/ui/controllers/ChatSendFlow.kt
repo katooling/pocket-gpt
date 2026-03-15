@@ -7,6 +7,9 @@ import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.core.SessionId
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.runtime.ChatKeepAlivePreference
+import com.pocketagent.runtime.ChatStreamCommand
+import com.pocketagent.runtime.ChatStreamRequestPlanner
 import com.pocketagent.runtime.DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS
 import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.ModelResidencyPolicy
@@ -38,16 +41,24 @@ class ChatSendFlow(
     private val deviceStateProvider: DeviceStateProvider = DeviceStateProvider.DEFAULT,
     private val runtimeTuning: RuntimeTuning = RuntimeTuning.DISABLED,
 ) {
+    private val planner = ChatStreamRequestPlanner(
+        runtimeGenerationTimeoutMs = runtimeGenerationTimeoutMs,
+        recommendedConfig = { modelIdHint, baseConfig, gpuQualifiedLayers ->
+            runtimeTuning.applyRecommendedConfig(
+                modelIdHint = modelIdHint,
+                baseConfig = baseConfig,
+                gpuQualifiedLayers = gpuQualifiedLayers,
+            )
+        },
+    )
+
     fun isRuntimeReadyForSend(runtime: RuntimeUiState): Boolean {
         return runtime.startupProbeState == StartupProbeState.READY &&
             runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
     }
 
     fun resolveRequestTimeoutMs(performanceConfig: PerformanceRuntimeConfig): Long {
-        if (runtimeGenerationTimeoutMs > 0L) {
-            return runtimeGenerationTimeoutMs
-        }
-        return performanceConfig.requestTimeoutMs
+        return planner.resolveRequestTimeoutMs(performanceConfig)
     }
 
     fun resolvePerformancePlan(
@@ -56,25 +67,11 @@ class ChatSendFlow(
         gpuLayers: Int = 32,
         modelIdHint: String? = null,
     ): ResolvedPerformancePlan {
-        val cpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        val safeBaseConfig = enforceGpuSafeBatch(
-            PerformanceRuntimeConfig.forProfile(
-                profile = profile,
-                availableCpuThreads = cpuThreads,
-                gpuEnabled = gpuEnabled,
-                gpuLayers = gpuLayers.coerceAtLeast(0),
-            ),
-        )
-        val tunedConfig = enforceGpuSafeBatch(
-            runtimeTuning.applyRecommendedConfig(
-                modelIdHint = modelIdHint,
-                baseConfig = safeBaseConfig,
-                gpuQualifiedLayers = gpuLayers.coerceAtLeast(0),
-            ),
-        )
-        return ResolvedPerformancePlan(
-            baseConfig = safeBaseConfig,
-            effectiveConfig = tunedConfig,
+        return planner.resolvePerformancePlan(
+            profile = profile,
+            gpuEnabled = gpuEnabled,
+            gpuLayers = gpuLayers,
+            modelIdHint = modelIdHint,
         )
     }
 
@@ -84,21 +81,11 @@ class ChatSendFlow(
         gpuLayers: Int = 32,
         modelIdHint: String? = null,
     ): PerformanceRuntimeConfig {
-        return resolvePerformancePlan(
+        return planner.resolvePerformanceConfig(
             profile = profile,
             gpuEnabled = gpuEnabled,
             gpuLayers = gpuLayers,
             modelIdHint = modelIdHint,
-        ).effectiveConfig
-    }
-
-    private fun enforceGpuSafeBatch(config: PerformanceRuntimeConfig): PerformanceRuntimeConfig {
-        if (!config.gpuEnabled || config.gpuLayers <= 0) {
-            return config
-        }
-        return config.copy(
-            nBatch = minOf(config.nBatch, GPU_SAFE_BATCH),
-            nUbatch = minOf(config.nUbatch, GPU_SAFE_BATCH),
         )
     }
 
@@ -112,65 +99,57 @@ class ChatSendFlow(
         keepAlivePreference: RuntimeKeepAlivePreference,
         previousResponseId: String? = null,
     ): StreamChatRequestV2 {
-        return StreamChatRequestV2(
-            sessionId = SessionId(sessionId),
-            requestId = requestId,
-            messages = messages,
-            taskType = resolveTaskType(taskTypeHint),
-            maxTokens = resolveMaxTokens(taskTypeHint, performanceConfig),
-            deviceState = deviceStateProvider.current(),
-            requestTimeoutMs = requestTimeoutMs,
-            previousResponseId = previousResponseId,
-            performanceConfig = performanceConfig,
-            residencyPolicy = resolveResidencyPolicy(keepAlivePreference),
-        )
+        return planner.prepare(
+            ChatStreamCommand(
+                sessionId = SessionId(sessionId),
+                requestId = requestId,
+                messages = messages,
+                promptHint = taskTypeHint,
+                deviceState = deviceStateProvider.current(),
+                performanceProfile = performanceConfig.profile,
+                gpuEnabled = performanceConfig.gpuEnabled,
+                gpuQualifiedLayers = performanceConfig.gpuLayers,
+                previousResponseId = previousResponseId,
+                keepAlivePreference = keepAlivePreference.toRuntimePreference(),
+                requestTimeoutOverrideMs = requestTimeoutMs,
+            ),
+        ).runtimeRequest
     }
 
-    private fun resolveResidencyPolicy(preference: RuntimeKeepAlivePreference): ModelResidencyPolicy {
-        return when (preference) {
-            RuntimeKeepAlivePreference.AUTO -> ModelResidencyPolicy(
-                keepLoadedWhileAppForeground = true,
-                idleUnloadTtlMs = DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS,
-                warmupOnStartup = true,
-                adaptiveIdleTtl = true,
-            )
-            RuntimeKeepAlivePreference.ALWAYS -> ModelResidencyPolicy(
-                keepLoadedWhileAppForeground = true,
-                idleUnloadTtlMs = ALWAYS_KEEP_ALIVE_TTL_MS,
-                warmupOnStartup = true,
-                adaptiveIdleTtl = false,
-            )
-            RuntimeKeepAlivePreference.ONE_MINUTE -> ModelResidencyPolicy(
-                keepLoadedWhileAppForeground = true,
-                idleUnloadTtlMs = 60_000L,
-                warmupOnStartup = true,
-                adaptiveIdleTtl = false,
-            )
-            RuntimeKeepAlivePreference.FIVE_MINUTES -> ModelResidencyPolicy(
-                keepLoadedWhileAppForeground = true,
-                idleUnloadTtlMs = 5 * 60_000L,
-                warmupOnStartup = true,
-                adaptiveIdleTtl = false,
-            )
-            RuntimeKeepAlivePreference.FIFTEEN_MINUTES -> ModelResidencyPolicy(
-                keepLoadedWhileAppForeground = true,
-                idleUnloadTtlMs = 15 * 60_000L,
-                warmupOnStartup = true,
-                adaptiveIdleTtl = false,
-            )
-            RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY -> ModelResidencyPolicy(
-                keepLoadedWhileAppForeground = false,
-                idleUnloadTtlMs = 1L,
-                warmupOnStartup = true,
-                adaptiveIdleTtl = false,
-            )
+    private fun RuntimeKeepAlivePreference.toRuntimePreference(): ChatKeepAlivePreference {
+        return when (this) {
+            RuntimeKeepAlivePreference.AUTO -> ChatKeepAlivePreference.AUTO
+            RuntimeKeepAlivePreference.ALWAYS -> ChatKeepAlivePreference.ALWAYS
+            RuntimeKeepAlivePreference.ONE_MINUTE -> ChatKeepAlivePreference.ONE_MINUTE
+            RuntimeKeepAlivePreference.FIVE_MINUTES -> ChatKeepAlivePreference.FIVE_MINUTES
+            RuntimeKeepAlivePreference.FIFTEEN_MINUTES -> ChatKeepAlivePreference.FIFTEEN_MINUTES
+            RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY -> ChatKeepAlivePreference.UNLOAD_IMMEDIATELY
         }
     }
 
+    @Deprecated("Moved to ChatStreamRequestPlanner in app-runtime.")
+    private fun resolveResidencyPolicy(preference: RuntimeKeepAlivePreference): ModelResidencyPolicy {
+        return planner.prepare(
+            ChatStreamCommand(
+                sessionId = SessionId("legacy"),
+                requestId = "legacy",
+                messages = emptyList(),
+                promptHint = "",
+                deviceState = deviceStateProvider.current(),
+                performanceProfile = RuntimePerformanceProfile.BALANCED,
+                gpuEnabled = false,
+                gpuQualifiedLayers = 0,
+                keepAlivePreference = preference.toRuntimePreference(),
+            ),
+        ).runtimeRequest.residencyPolicy
+    }
+
+    @Deprecated("Moved to ChatStreamRequestPlanner in app-runtime.")
     private fun resolveTaskType(prompt: String): String {
         return if (prompt.length >= LONG_PROMPT_LENGTH) "long_text" else "short_text"
     }
 
+    @Deprecated("Moved to ChatStreamRequestPlanner in app-runtime.")
     private fun resolveMaxTokens(prompt: String, performanceConfig: PerformanceRuntimeConfig): Int {
         return performanceConfig.maxTokensDefault.coerceAtLeast(MIN_MAX_TOKENS)
     }
@@ -178,7 +157,5 @@ class ChatSendFlow(
     private companion object {
         private const val LONG_PROMPT_LENGTH = 160
         private const val MIN_MAX_TOKENS = 16
-        private const val GPU_SAFE_BATCH = 256
-        private const val ALWAYS_KEEP_ALIVE_TTL_MS = 24 * 60 * 60 * 1000L
     }
 }

@@ -1,6 +1,6 @@
 package com.pocketagent.android.ui.controllers
 
-import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.ui.state.ChatUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 class ChatStartupProbeOrchestrator(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
-    private val runtimeGateway: RuntimeGateway,
+    private val runtimeGateway: ChatRuntimeService,
     private val startupFlow: ChatStartupFlow,
     private val startupReadinessCoordinator: StartupReadinessCoordinator,
     private val updateState: ((ChatUiState) -> ChatUiState) -> Unit,
@@ -99,4 +99,3 @@ class ChatStartupProbeOrchestrator(
         )
     }
 }
-

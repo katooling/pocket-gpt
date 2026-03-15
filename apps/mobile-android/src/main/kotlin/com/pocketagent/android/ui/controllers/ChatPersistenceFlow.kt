@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui.controllers
 
 import com.pocketagent.android.ui.state.ChatUiState
+import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.PersistedChatState
 import com.pocketagent.android.ui.state.SessionStateLoadResult
 import com.pocketagent.android.ui.state.UiError
@@ -15,7 +16,7 @@ class ChatPersistenceFlow(
     private val persistenceCoordinator: ChatPersistenceCoordinator,
 ) {
     fun loadBootstrapState(): PersistenceBootstrapState {
-        val persistedResult = persistenceCoordinator.loadStateResult()
+        val persistedResult = persistenceCoordinator.loadBootstrapStateResult()
         val persisted = when (persistedResult) {
             is SessionStateLoadResult.Success -> persistedResult.state
             is SessionStateLoadResult.RecoverableCorruption -> persistedResult.resetState
@@ -32,8 +33,10 @@ class ChatPersistenceFlow(
     fun toPersistedState(state: ChatUiState): PersistedChatState {
         return PersistedChatState(
             sessions = state.sessions.map { session ->
+                val persistedMessages = session.messages.map { message -> message.copy(isStreaming = false) }
                 session.copy(
-                    messages = session.messages.map { message -> message.copy(isStreaming = false) },
+                    messages = persistedMessages,
+                    messageCount = if (session.messagesLoaded) persistedMessages.size else session.messageCount,
                 )
             },
             activeSessionId = state.activeSessionId,
@@ -56,6 +59,10 @@ class ChatPersistenceFlow(
 
     fun saveState(state: ChatUiState) {
         savePersistedState(toPersistedState(state))
+    }
+
+    fun loadSessionMessages(sessionId: String): List<MessageUiModel>? {
+        return persistenceCoordinator.loadSessionMessages(sessionId)
     }
 
     private fun sessionStateLoadError(loadResult: SessionStateLoadResult): UiError? {

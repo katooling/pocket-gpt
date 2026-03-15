@@ -1,15 +1,12 @@
 package com.pocketagent.android.ui.controllers
 
-import com.pocketagent.android.runtime.RuntimeGateway
+import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.ui.state.StreamReducerState
 import com.pocketagent.android.ui.state.StreamStateReducer
 import com.pocketagent.android.ui.state.StreamTerminalState
 import com.pocketagent.runtime.ChatStreamEvent
-import com.pocketagent.runtime.InteractionContentPart
-import com.pocketagent.runtime.InteractionMessage
-import com.pocketagent.runtime.InteractionRole
+import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.RuntimeGenerationTimeoutException
-import com.pocketagent.runtime.StreamChatRequestV2
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
@@ -25,9 +22,8 @@ class ChatStreamCoordinator(
     private val noFirstTokenStallMs: Long = 600_000L,
 ) {
     suspend fun collectStream(
-        runtimeGateway: RuntimeGateway,
-        request: StreamChatRequestV2,
-        requestTimeoutMs: Long,
+        runtimeService: ChatRuntimeService,
+        preparedStream: PreparedChatStream,
         streamReducer: StreamStateReducer,
         sendStartedAtMs: Long,
         onEvent: (ChatStreamEvent, StreamReducerState) -> Unit,
@@ -35,6 +31,8 @@ class ChatStreamCoordinator(
         onBeforeTerminal: () -> Unit,
         onTerminal: (StreamTerminalState) -> Unit,
     ) = coroutineScope {
+        val request = preparedStream.runtimeRequest
+        val requestTimeoutMs = preparedStream.plan.requestTimeoutMs
         val streamReducerLock = Any()
         var streamState = StreamReducerState.initial(requestId = request.requestId)
 
@@ -77,7 +75,7 @@ class ChatStreamCoordinator(
                 return@launch
             }
             elapsedTicker.cancel()
-            runtimeGateway.cancelGenerationByRequest(request.requestId)
+            runtimeService.cancelGenerationByRequest(request.requestId)
             val terminal = nextState.terminal ?: return@launch
             onBeforeTerminal()
             onTerminal(terminal)
@@ -86,7 +84,7 @@ class ChatStreamCoordinator(
 
         streamCollector = launch {
             runCatching {
-                runtimeGateway.streamChat(request).collect { event ->
+                runtimeService.streamPreparedChat(preparedStream).collect { event ->
                     if (hasTerminal()) {
                         this.cancel()
                         return@collect
@@ -117,7 +115,7 @@ class ChatStreamCoordinator(
                 elapsedTicker.cancel()
                 val generationTimedOut = error is TimeoutCancellationException || error is RuntimeGenerationTimeoutException
                 if (generationTimedOut) {
-                    runtimeGateway.cancelGenerationByRequest(request.requestId)
+                    runtimeService.cancelGenerationByRequest(request.requestId)
                 }
                 val terminal = nextState.terminal ?: return@onFailure
                 onBeforeTerminal()
