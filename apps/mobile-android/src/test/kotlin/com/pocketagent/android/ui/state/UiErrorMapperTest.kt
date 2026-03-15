@@ -1,7 +1,9 @@
 package com.pocketagent.android.ui.state
 
+import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.runtime.ImageAnalysisResult
 import com.pocketagent.runtime.ImageFailure
+import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.runtime.ToolFailure
 import kotlin.test.Test
@@ -136,5 +138,19 @@ class UiErrorMapperTest {
 
         assertNotNull(error)
         assertEquals("UI-IMG-VAL-001", error.code)
+    }
+
+    @Test
+    fun `model lifecycle oom maps to actionable guidance`() {
+        val error = UiErrorMapper.fromModelLifecycleResult(
+            RuntimeModelLifecycleCommandResult.rejected(
+                code = ModelLifecycleErrorCode.OUT_OF_MEMORY,
+                detail = "needs 4096 MB but only 2048 MB available",
+            ),
+        )
+
+        assertNotNull(error)
+        assertTrue(error.userMessage.contains("fit in available memory", ignoreCase = true))
+        assertEquals(RecoveryAction.CHANGE_MODEL, error.recoveryAction)
     }
 }

@@ -37,6 +37,7 @@ class ArchitectureBoundaryTest {
             "com/pocketagent/android/AppDependencies.kt",
             "com/pocketagent/android/runtime/ProvisioningGateway.kt",
             "com/pocketagent/android/runtime/RuntimeBootstrapper.kt",
+            "com/pocketagent/android/runtime/modelmanager/ModelDownloadCancelReceiver.kt",
         )
         val offenders = Files.walk(appDir).use { stream ->
             stream

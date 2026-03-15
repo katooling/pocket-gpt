@@ -40,6 +40,36 @@ class ModelDownloadWorkerMetricsTest {
     }
 
     @Test
+    fun `calculateTransferMetrics applies ema smoothing when previous speed exists`() {
+        val metrics = calculateTransferMetrics(
+            previousBytes = 1_000_000L,
+            previousEpochMs = 1_000L,
+            currentBytes = 2_000_000L,
+            currentEpochMs = 2_000L,
+            totalBytes = 4_000_000L,
+            previousSmoothedSpeedBps = 500_000L,
+        )
+
+        assertEquals(600_000L, metrics.downloadSpeedBps)
+        assertEquals(3L, metrics.etaSeconds)
+    }
+
+    @Test
+    fun `calculateTransferMetrics preserves prior smoothed speed when no new bytes arrive`() {
+        val metrics = calculateTransferMetrics(
+            previousBytes = 2_000_000L,
+            previousEpochMs = 2_000L,
+            currentBytes = 2_000_000L,
+            currentEpochMs = 3_000L,
+            totalBytes = 4_000_000L,
+            previousSmoothedSpeedBps = 400_000L,
+        )
+
+        assertEquals(400_000L, metrics.downloadSpeedBps)
+        assertEquals(5L, metrics.etaSeconds)
+    }
+
+    @Test
     fun `resolveResumeTransferBaseline resets stale partial baseline when server returns full response`() {
         val baseline = resolveResumeTransferBaseline(
             responseCode = HttpURLConnection.HTTP_OK,

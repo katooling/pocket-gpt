@@ -186,6 +186,75 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `switching to unloaded session hydrates messages from persistence`() = runTest(dispatcher) {
+        val unloadedMessages = listOf(
+            MessageUiModel(
+                id = "m-unloaded-1",
+                role = MessageRole.USER,
+                content = "persisted question",
+                timestampEpochMs = 10L,
+                kind = MessageKind.TEXT,
+            ),
+            MessageUiModel(
+                id = "m-unloaded-2",
+                role = MessageRole.ASSISTANT,
+                content = "persisted answer",
+                timestampEpochMs = 20L,
+                kind = MessageKind.TEXT,
+            ),
+        )
+        val persistence = RecordingPersistence(
+            initialState = PersistedChatState(
+                sessions = listOf(
+                    ChatSessionUiModel(
+                        id = "session-1",
+                        title = "Loaded",
+                        createdAtEpochMs = 1L,
+                        updatedAtEpochMs = 2L,
+                        messages = listOf(
+                            MessageUiModel(
+                                id = "m-loaded-1",
+                                role = MessageRole.USER,
+                                content = "hello",
+                                timestampEpochMs = 5L,
+                                kind = MessageKind.TEXT,
+                            ),
+                        ),
+                    ),
+                    ChatSessionUiModel(
+                        id = "session-2",
+                        title = "Unloaded",
+                        createdAtEpochMs = 3L,
+                        updatedAtEpochMs = 4L,
+                        messages = emptyList(),
+                        messagesLoaded = false,
+                        messageCount = unloadedMessages.size,
+                    ),
+                ),
+                activeSessionId = "session-1",
+            ),
+            sessionMessages = mapOf("session-2" to unloadedMessages),
+        )
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = persistence,
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.switchSession("session-2")
+        advanceUntilIdle()
+
+        val activeSession = viewModel.uiState.value.activeSession!!
+        assertEquals("session-2", activeSession.id)
+        assertTrue(activeSession.messagesLoaded)
+        assertEquals(2, activeSession.messages.size)
+        assertEquals("persisted answer", activeSession.messages.last().content)
+        assertTrue(runtime.restoredTurns.any { it.first.value == "session-2" })
+    }
+
+    @Test
     fun `simple-first progress still advances milestones when advanced controls are already available`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade()
         val viewModel = ChatViewModel(
@@ -1105,11 +1174,18 @@ class ChatViewModelTest {
 
 private class RecordingPersistence(
     private val initialState: PersistedChatState = PersistedChatState(),
+    private val sessionMessages: Map<String, List<MessageUiModel>> = emptyMap(),
 ) : SessionPersistence {
     val savedStates = mutableListOf<PersistedChatState>()
     private var current = initialState
 
     override fun loadState(): PersistedChatState = current
+
+    override fun loadBootstrapState(): PersistedChatState = current
+
+    override fun loadSessionMessages(sessionId: String): List<MessageUiModel>? {
+        return sessionMessages[sessionId]
+    }
 
     override fun saveState(state: PersistedChatState) {
         current = state
@@ -1130,6 +1206,8 @@ private class CorruptLoadPersistence : SessionPersistence {
             technicalDetail = "code=CHAT_STATE_CORRUPT_JSON;backup=chat-state-1;error=parse",
         )
     }
+
+    override fun loadBootstrapStateResult(): SessionStateLoadResult = loadStateResult()
 
     override fun saveState(state: PersistedChatState) {
         persisted = state

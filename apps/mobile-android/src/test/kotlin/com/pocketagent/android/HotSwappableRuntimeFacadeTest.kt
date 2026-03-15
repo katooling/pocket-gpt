@@ -9,6 +9,7 @@ import com.pocketagent.runtime.RuntimeResourceControl
 import com.pocketagent.runtime.RuntimeWarmupSupport
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.WarmupResult
+import com.pocketagent.nativebridge.ModelLifecycleEvent
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -120,6 +121,14 @@ private class BlockingFacade(
 
 private class ResourceControlStubFacade : StubFacade(), RuntimeResourceControl {
     override fun evictResidentModel(reason: String): Boolean = true
+
+    override fun exportDiagnosticsJson(): String? = null
+
+    override fun currentModelLifecycleEvent(): ModelLifecycleEvent? = null
+
+    override fun observeModelLifecycleEvents(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        return AutoCloseable { }
+    }
 }
 
 private class WarmupStubFacade : StubFacade(), RuntimeWarmupSupport {

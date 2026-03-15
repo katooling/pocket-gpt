@@ -9,6 +9,8 @@ import com.pocketagent.android.runtime.RuntimeErrorCodes
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
+import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.DownloadVerificationPolicy
@@ -152,6 +154,7 @@ class ModelProvisioningViewModelTest {
 
 private class FakeProvisioningGateway : ProvisioningGateway {
     val downloads = MutableStateFlow<List<DownloadTaskState>>(emptyList())
+    val downloadPreferences = MutableStateFlow(DownloadPreferencesState())
     val lifecycle = MutableStateFlow(RuntimeModelLifecycleSnapshot.initial())
     var snapshotCalls: Int = 0
     var importCalls: Int = 0
@@ -166,6 +169,10 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     }
 
     override fun observeDownloads() = downloads
+
+    override fun observeDownloadPreferences() = downloadPreferences
+
+    override fun currentDownloadPreferences(): DownloadPreferencesState = downloadPreferences.value
 
     override fun observeModelLifecycle() = lifecycle
 
@@ -236,7 +243,19 @@ private class FakeProvisioningGateway : ProvisioningGateway {
         return RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion): String = "task-1"
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String = "task-1"
+
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
+
+    override fun setDownloadWifiOnlyEnabled(enabled: Boolean) {
+        downloadPreferences.value = downloadPreferences.value.copy(wifiOnlyEnabled = enabled)
+    }
+
+    override fun acknowledgeLargeDownloadCellularWarning() {
+        downloadPreferences.value = downloadPreferences.value.copy(
+            largeDownloadCellularWarningAcknowledged = true,
+        )
+    }
 
     override fun pauseDownload(taskId: String) = Unit
 
@@ -247,6 +266,8 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     override fun cancelDownload(taskId: String) {
         cancelCalls += 1
     }
+
+    override fun syncDownloadsFromScheduler() = Unit
 }
 
 private fun sampleSnapshot(): RuntimeProvisioningSnapshot {

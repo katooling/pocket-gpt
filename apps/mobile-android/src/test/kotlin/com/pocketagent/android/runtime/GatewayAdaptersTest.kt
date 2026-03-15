@@ -1,6 +1,8 @@
 package com.pocketagent.android.runtime
 
 import android.net.Uri
+import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.DownloadVerificationPolicy
@@ -412,6 +414,7 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
         ),
     )
     private val lifecycle = MutableStateFlow(RuntimeModelLifecycleSnapshot.initial())
+    private val downloadPreferences = MutableStateFlow(DownloadPreferencesState())
 
     var lastPausedTaskId: String? = null
     var lastResumedTaskId: String? = null
@@ -457,6 +460,10 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
     }
 
     override fun observeDownloads() = downloads
+
+    override fun observeDownloadPreferences() = downloadPreferences
+
+    override fun currentDownloadPreferences(): DownloadPreferencesState = downloadPreferences.value
 
     override fun observeModelLifecycle() = lifecycle
 
@@ -516,7 +523,19 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
         return RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion): String = "task-1"
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String = "task-1"
+
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
+
+    override fun setDownloadWifiOnlyEnabled(enabled: Boolean) {
+        downloadPreferences.value = downloadPreferences.value.copy(wifiOnlyEnabled = enabled)
+    }
+
+    override fun acknowledgeLargeDownloadCellularWarning() {
+        downloadPreferences.value = downloadPreferences.value.copy(
+            largeDownloadCellularWarningAcknowledged = true,
+        )
+    }
 
     override fun pauseDownload(taskId: String) {
         lastPausedTaskId = taskId
@@ -533,4 +552,6 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
     override fun cancelDownload(taskId: String) {
         lastCancelledTaskId = taskId
     }
+
+    override fun syncDownloadsFromScheduler() = Unit
 }

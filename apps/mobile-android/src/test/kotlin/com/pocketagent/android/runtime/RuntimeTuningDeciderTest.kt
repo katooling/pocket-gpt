@@ -30,7 +30,7 @@ class RuntimeTuningDeciderTest {
 
         assertEquals(12, next.gpuLayers)
         assertEquals(384, next.nBatch)
-        assertEquals(192, next.nUbatch)
+        assertEquals(384, next.nUbatch)
         assertEquals(1, next.speculativeDraftGpuLayers)
         assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, next.kvCacheType)
         assertEquals(42L, next.updatedAtEpochMs)
