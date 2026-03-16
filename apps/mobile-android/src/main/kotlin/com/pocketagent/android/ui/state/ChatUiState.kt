@@ -70,7 +70,7 @@ data class CompletionSettings(
     val temperature: Float = 0.6f,
     val topP: Float = 0.95f,
     val topK: Int = 40,
-    val maxTokens: Int = 2048,
+    val maxTokens: Int = 512,
     val repeatPenalty: Float = 1.1f,
     val frequencyPenalty: Float = 0.0f,
     val presencePenalty: Float = 0.0f,

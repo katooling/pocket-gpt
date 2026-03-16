@@ -757,16 +757,17 @@ private object SessionEntityCodec {
 
 private fun parseCompletionSettings(element: JsonElement?): CompletionSettings {
     val obj = element?.asObjectOrNull() ?: return CompletionSettings()
+    val defaults = CompletionSettings()
     return CompletionSettings(
-        temperature = obj.floatOrDefault("temperature", 0.6f),
-        topP = obj.floatOrDefault("topP", 0.95f),
-        topK = obj.intOrDefault("topK", 40),
-        maxTokens = obj.intOrDefault("maxTokens", 2048),
-        repeatPenalty = obj.floatOrDefault("repeatPenalty", 1.1f),
-        frequencyPenalty = obj.floatOrDefault("frequencyPenalty", 0.0f),
-        presencePenalty = obj.floatOrDefault("presencePenalty", 0.0f),
-        systemPrompt = obj.stringOrDefault("systemPrompt", ""),
-        showThinking = obj.booleanOrDefault("showThinking", false),
+        temperature = obj.floatOrDefault("temperature", defaults.temperature),
+        topP = obj.floatOrDefault("topP", defaults.topP),
+        topK = obj.intOrDefault("topK", defaults.topK),
+        maxTokens = obj.intOrDefault("maxTokens", defaults.maxTokens),
+        repeatPenalty = obj.floatOrDefault("repeatPenalty", defaults.repeatPenalty),
+        frequencyPenalty = obj.floatOrDefault("frequencyPenalty", defaults.frequencyPenalty),
+        presencePenalty = obj.floatOrDefault("presencePenalty", defaults.presencePenalty),
+        systemPrompt = obj.stringOrDefault("systemPrompt", defaults.systemPrompt),
+        showThinking = obj.booleanOrDefault("showThinking", defaults.showThinking),
     )
 }
 
