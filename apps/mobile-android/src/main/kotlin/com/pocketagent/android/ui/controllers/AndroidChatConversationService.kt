@@ -157,7 +157,7 @@ class AndroidChatConversationService(
         )
         return ChatStateUpdate(
             state = state.copy(
-                sessions = mutation.toUiSessions().map { session ->
+                sessions = mutation.sessions.map { session ->
                     if (session.id == mutation.activeSessionId) {
                         session.copy(
                             completionSettings = CompletionSettings(
@@ -187,7 +187,7 @@ class AndroidChatConversationService(
         )
         return ChatStateUpdate(
             state = state.copy(
-                sessions = mutation.toUiSessions(),
+                sessions = mutation.sessions,
                 activeSessionId = mutation.activeSessionId,
                 isSessionDrawerOpen = false,
             ),
@@ -210,7 +210,7 @@ class AndroidChatConversationService(
         )
         if (mutation.shouldCreateReplacementSession && replacementSessionId != null) {
             mutation = sessionService.createSession(
-                sessions = mutation.toUiSessions(),
+                sessions = mutation.sessions,
                 sessionId = replacementSessionId,
                 title = replacementTitle,
                 nowEpochMs = nowEpochMs,
@@ -218,7 +218,7 @@ class AndroidChatConversationService(
         }
         return ChatStateUpdate(
             state = state.copy(
-                sessions = mutation.toUiSessions(),
+                sessions = mutation.sessions,
                 activeSessionId = mutation.activeSessionId,
             ),
             shouldPersist = mutation.shouldPersist,
@@ -237,7 +237,7 @@ class AndroidChatConversationService(
             messages = messages,
         )
         return ChatStateUpdate(
-            state = state.copy(sessions = mutation.toUiSessions()),
+            state = state.copy(sessions = mutation.sessions),
             shouldPersist = mutation.shouldPersist,
         )
     }

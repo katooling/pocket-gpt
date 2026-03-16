@@ -118,13 +118,13 @@ class ChatStartupFlow(
                 sessionId = runtimeGateway.createSession().value,
                 title = "New chat",
                 nowEpochMs = now,
-            ).toUiSessions().map { session ->
+                ).sessions.map { session ->
                 session.copy(
                     completionSettings = CompletionSettings(showThinking = persisted.defaultThinkingEnabled),
                 )
             }
         } else {
-            sessionBootstrap.toUiSessions()
+            sessionBootstrap.sessions
         }
         val activeSessionId = when {
             sessionBootstrap.shouldCreateInitialSession -> resolvedSessions.lastOrNull()?.id
