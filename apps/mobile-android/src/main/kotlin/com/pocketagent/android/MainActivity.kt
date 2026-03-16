@@ -77,39 +77,47 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        runtimeGateway.onAppForeground()
-        runtimeGateway.touchKeepAlive()
+        lifecycleScope.launch(Dispatchers.IO) {
+            runtimeGateway.onAppForeground()
+            runtimeGateway.touchKeepAlive()
+        }
     }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        val evicted = when {
-            level >= TRIM_MEMORY_COMPLETE_LEVEL -> runtimeGateway.evictResidentModel("trim_complete")
-            level >= TRIM_MEMORY_BACKGROUND_LEVEL -> runtimeGateway.evictResidentModel("trim_background")
-            level >= TRIM_MEMORY_RUNNING_CRITICAL_LEVEL -> runtimeGateway.evictResidentModel("trim_critical")
-            else -> {
-                when {
-                    level >= TRIM_MEMORY_RUNNING_LOW_LEVEL -> runtimeGateway.shortenKeepAlive(15_000L)
-                    level >= TRIM_MEMORY_RUNNING_MODERATE_LEVEL -> runtimeGateway.shortenKeepAlive(60_000L)
-                    level >= TRIM_MEMORY_UI_HIDDEN_LEVEL -> runtimeGateway.shortenKeepAlive(120_000L)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val evicted = when {
+                level >= TRIM_MEMORY_COMPLETE_LEVEL -> runtimeGateway.evictResidentModel("trim_complete")
+                level >= TRIM_MEMORY_BACKGROUND_LEVEL -> runtimeGateway.evictResidentModel("trim_background")
+                level >= TRIM_MEMORY_RUNNING_CRITICAL_LEVEL -> runtimeGateway.evictResidentModel("trim_critical")
+                else -> {
+                    when {
+                        level >= TRIM_MEMORY_RUNNING_LOW_LEVEL -> runtimeGateway.shortenKeepAlive(15_000L)
+                        level >= TRIM_MEMORY_RUNNING_MODERATE_LEVEL -> runtimeGateway.shortenKeepAlive(60_000L)
+                        level >= TRIM_MEMORY_UI_HIDDEN_LEVEL -> runtimeGateway.shortenKeepAlive(120_000L)
+                    }
+                    false
                 }
-                false
             }
-        }
-        if (evicted) {
-            recordAvailableMemoryBudget()
+            if (evicted) {
+                recordAvailableMemoryBudget()
+            }
         }
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        runtimeGateway.evictResidentModel(reason = "low_memory")
-        recordAvailableMemoryBudget()
+        lifecycleScope.launch(Dispatchers.IO) {
+            runtimeGateway.evictResidentModel(reason = "low_memory")
+            recordAvailableMemoryBudget()
+        }
     }
 
     override fun onStop() {
-        runtimeGateway.onAppBackground()
-        recordAvailableMemoryBudget()
+        lifecycleScope.launch(Dispatchers.IO) {
+            runtimeGateway.onAppBackground()
+            recordAvailableMemoryBudget()
+        }
         super.onStop()
     }
 
