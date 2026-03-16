@@ -1,5 +1,11 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,10 +14,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -102,6 +110,7 @@ internal fun RuntimeModelSheet(
                 loadedDiffersFromRouting = loadedDiffersFromRouting,
                 isImporting = state.isImporting,
                 onLoadLastUsedModel = onLoadLastUsedModel,
+                onLoadVersion = onLoadVersion,
                 onOffloadModel = onOffloadModel,
                 onRefreshRuntime = onRefreshRuntime,
             )
@@ -166,11 +175,6 @@ internal fun RuntimeModelSheet(
                                 modelDisplayName = model.displayName,
                                 modelId = model.modelId,
                                 version = version.version,
-                                addedAt = version.importedAtEpochMs.formatAsTimestamp(),
-                                path = version.absolutePath,
-                                pathOrigin = stringResource(
-                                    id = model.pathOriginForVersion(version.version).pathOriginLabelRes(),
-                                ),
                                 isActive = version.isActive,
                                 isLoaded = isLoadedVersion,
                                 isRequested = isRequestedVersion,
@@ -217,6 +221,7 @@ private fun ActiveRuntimeCard(
     loadedDiffersFromRouting: Boolean,
     isImporting: Boolean,
     onLoadLastUsedModel: () -> Unit,
+    onLoadVersion: (String, String) -> Unit,
     onOffloadModel: () -> Unit,
     onRefreshRuntime: () -> Unit,
 ) {
@@ -227,12 +232,15 @@ private fun ActiveRuntimeCard(
         modelLoadingState !is ModelLoadingState.Offloading
     val canOffload = modelLoadingState.loadedModel != null &&
         modelLoadingState !is ModelLoadingState.Offloading
+    val isError = modelLoadingState is ModelLoadingState.Error
+    val canRetry = isError && (modelLoadingState as ModelLoadingState.Error).requestedModel != null
 
     Card {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(12.dp)
+                .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
@@ -270,7 +278,7 @@ private fun ActiveRuntimeCard(
                     text = buildString {
                         append(currentModel.modelId)
                         currentModel.modelVersion?.takeIf { it.isNotBlank() }?.let { version ->
-                            append(" • ")
+                            append(" \u2022 ")
                             append(version)
                         }
                     },
@@ -285,16 +293,23 @@ private fun ActiveRuntimeCard(
                 )
             }
 
-            modelLoadingState.lastUsedModel?.let { lastUsed ->
-                Text(
-                    text = stringResource(
-                        id = R.string.ui_model_runtime_last_used_label,
-                        lastUsed.modelId,
-                        lastUsed.modelVersion.orEmpty().ifBlank { "-" },
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            AnimatedVisibility(
+                visible = modelLoadingState.lastUsedModel != null &&
+                    modelLoadingState !is ModelLoadingState.Loaded,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                modelLoadingState.lastUsedModel?.let { lastUsed ->
+                    Text(
+                        text = stringResource(
+                            id = R.string.ui_model_runtime_last_used_label,
+                            lastUsed.modelId,
+                            lastUsed.modelVersion.orEmpty().ifBlank { "-" },
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             if (loadedDiffersFromRouting) {
@@ -308,18 +323,22 @@ private fun ActiveRuntimeCard(
             when (modelLoadingState) {
                 is ModelLoadingState.Loading -> {
                     val progress = modelLoadingState.progress?.coerceIn(0f, 1f)
-                    if (progress != null) {
+                    if (progress != null && progress > 0f) {
                         LinearProgressIndicator(
                             progress = { progress },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        LinearProgressIndicator(
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
                     Text(
                         text = buildString {
                             append(modelLoadingState.stage)
-                            progress?.let {
+                            if (progress != null && progress > 0f) {
                                 append(" ")
-                                append((it * 100).toInt())
+                                append((progress * 100).toInt())
                                 append("%")
                             }
                         },
@@ -329,11 +348,14 @@ private fun ActiveRuntimeCard(
                 }
 
                 is ModelLoadingState.Offloading -> {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Text(
                         text = if (modelLoadingState.queued) {
                             stringResource(id = R.string.ui_model_runtime_offload_queued)
                         } else {
-                            "Releasing the current model."
+                            stringResource(id = R.string.ui_model_runtime_offload_releasing)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -343,8 +365,13 @@ private fun ActiveRuntimeCard(
                 is ModelLoadingState.Error -> {
                     Text(
                         text = modelLoadingState.message,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        text = errorSuggestion(modelLoadingState.code),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -355,6 +382,24 @@ private fun ActiveRuntimeCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (canRetry) {
+                    val error = modelLoadingState as ModelLoadingState.Error
+                    val requested = error.requestedModel!!
+                    Button(
+                        onClick = {
+                            onLoadVersion(
+                                requested.modelId,
+                                requested.modelVersion.orEmpty(),
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                        ),
+                        enabled = !isImporting,
+                    ) {
+                        Text(stringResource(id = R.string.ui_model_runtime_retry_load))
+                    }
+                }
                 if (canLoadLastUsed) {
                     OutlinedButton(
                         onClick = onLoadLastUsedModel,
@@ -387,9 +432,6 @@ private fun RuntimeVersionCard(
     modelDisplayName: String,
     modelId: String,
     version: String,
-    addedAt: String,
-    path: String,
-    pathOrigin: String,
     isActive: Boolean,
     isLoaded: Boolean,
     isRequested: Boolean,
@@ -398,12 +440,13 @@ private fun RuntimeVersionCard(
     onLoadVersion: (String, String) -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.widthIn(min = 180.dp, max = 240.dp),
     ) {
         Column(
             modifier = Modifier
                 .padding(12.dp)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
@@ -424,23 +467,9 @@ private fun RuntimeVersionCard(
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
                 )
             }
-            Text(
-                text = stringResource(id = R.string.ui_model_installed_added_at, addedAt),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = stringResource(id = R.string.ui_model_provisioned_path, path),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = stringResource(id = R.string.ui_model_path_origin_label, pathOrigin),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -471,6 +500,7 @@ private fun RuntimeVersionCard(
                 OutlinedButton(
                     onClick = { onLoadVersion(modelId, version) },
                     enabled = !isImporting && !isBusy,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(id = R.string.ui_model_runtime_load_now))
                 }
@@ -490,7 +520,7 @@ private fun ModelStatusDot(color: Color) {
 }
 
 @Composable
-private fun ModelLoadingState.statusHeadline(): String {
+internal fun ModelLoadingState.statusHeadline(): String {
     return when (this) {
         is ModelLoadingState.Idle -> stringResource(id = R.string.ui_model_runtime_state_unloaded)
         is ModelLoadingState.Loading -> stage
@@ -501,12 +531,21 @@ private fun ModelLoadingState.statusHeadline(): String {
 }
 
 @Composable
-private fun ModelLoadingState.statusColor(): Color {
+internal fun ModelLoadingState.statusColor(): Color {
     return when (this) {
         is ModelLoadingState.Idle -> MaterialTheme.colorScheme.outline
         is ModelLoadingState.Loading -> MaterialTheme.colorScheme.tertiary
         is ModelLoadingState.Loaded -> MaterialTheme.colorScheme.primary
         is ModelLoadingState.Offloading -> MaterialTheme.colorScheme.secondary
         is ModelLoadingState.Error -> MaterialTheme.colorScheme.error
+    }
+}
+
+@Composable
+private fun errorSuggestion(errorCode: String?): String {
+    return when (errorCode) {
+        "OUT_OF_MEMORY" -> stringResource(id = R.string.ui_model_runtime_error_suggestion_oom)
+        "MODEL_FILE_UNAVAILABLE" -> stringResource(id = R.string.ui_model_runtime_error_suggestion_file)
+        else -> stringResource(id = R.string.ui_model_runtime_error_suggestion_generic)
     }
 }

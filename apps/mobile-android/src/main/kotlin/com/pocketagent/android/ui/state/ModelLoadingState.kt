@@ -1,8 +1,9 @@
 package com.pocketagent.android.ui.state
 
+import com.pocketagent.android.runtime.RuntimeModelLifecyclePhase
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
+import com.pocketagent.android.runtime.phase
 import com.pocketagent.runtime.RuntimeLoadedModel
-import com.pocketagent.nativebridge.ModelLifecycleState
 
 sealed interface ModelLoadingState {
     val loadedModel: RuntimeLoadedModel?
@@ -51,14 +52,14 @@ sealed interface ModelLoadingState {
 }
 
 internal fun RuntimeModelLifecycleSnapshot.toModelLoadingState(): ModelLoadingState {
-    return when (state) {
-        ModelLifecycleState.UNLOADED -> ModelLoadingState.Idle(
+    return when (phase()) {
+        RuntimeModelLifecyclePhase.UNLOADED -> ModelLoadingState.Idle(
             loadedModel = loadedModel,
             lastUsedModel = lastUsedModel,
             updatedAtEpochMs = updatedAtEpochMs,
         )
 
-        ModelLifecycleState.LOADING -> ModelLoadingState.Loading(
+        RuntimeModelLifecyclePhase.LOADING -> ModelLoadingState.Loading(
             requestedModel = requestedModel,
             loadedModel = loadedModel,
             lastUsedModel = lastUsedModel,
@@ -67,7 +68,7 @@ internal fun RuntimeModelLifecycleSnapshot.toModelLoadingState(): ModelLoadingSt
             timestampMs = updatedAtEpochMs,
         )
 
-        ModelLifecycleState.LOADED -> {
+        RuntimeModelLifecyclePhase.LOADED -> {
             val resolvedModel = loadedModel ?: requestedModel ?: lastUsedModel
                 ?: return ModelLoadingState.Idle(
                     loadedModel = null,
@@ -81,7 +82,7 @@ internal fun RuntimeModelLifecycleSnapshot.toModelLoadingState(): ModelLoadingSt
             )
         }
 
-        ModelLifecycleState.OFFLOADING -> ModelLoadingState.Offloading(
+        RuntimeModelLifecyclePhase.OFFLOADING -> ModelLoadingState.Offloading(
             loadedModel = loadedModel,
             lastUsedModel = lastUsedModel,
             reason = errorDetail,
@@ -89,7 +90,7 @@ internal fun RuntimeModelLifecycleSnapshot.toModelLoadingState(): ModelLoadingSt
             timestampMs = updatedAtEpochMs,
         )
 
-        ModelLifecycleState.FAILED -> ModelLoadingState.Error(
+        RuntimeModelLifecyclePhase.FAILED -> ModelLoadingState.Error(
             requestedModel = requestedModel,
             loadedModel = loadedModel,
             lastUsedModel = lastUsedModel,

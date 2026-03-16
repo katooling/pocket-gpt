@@ -39,9 +39,8 @@ import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeStatus
-import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
-import com.pocketagent.android.runtime.isOffloading
 import com.pocketagent.android.ui.state.ChatUiState
+import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
@@ -73,8 +72,9 @@ internal fun PrivacyInfoSheet(onClose: () -> Unit) {
 @Composable
 internal fun AdvancedSettingsSheet(
     state: ChatUiState,
-    runtimeLifecycle: RuntimeModelLifecycleSnapshot,
+    modelLoadingState: ModelLoadingState,
     wifiOnlyDownloadsEnabled: Boolean,
+    onDefaultThinkingEnabledChanged: (Boolean) -> Unit,
     onRoutingModeSelected: (RoutingMode) -> Unit,
     onPerformanceProfileSelected: (RuntimePerformanceProfile) -> Unit,
     onKeepAlivePreferenceSelected: (RuntimeKeepAlivePreference) -> Unit,
@@ -134,18 +134,18 @@ internal fun AdvancedSettingsSheet(
                 Text(
                     text = stringResource(
                         id = R.string.ui_model_runtime_lifecycle_status,
-                        runtimeLifecycle.readableRuntimeStateLabel(),
+                        modelLoadingState.readableRuntimeStateLabel(),
                     ),
                     style = MaterialTheme.typography.bodySmall,
                 )
-                if (runtimeLifecycle.queuedOffload && runtimeLifecycle.isOffloading()) {
+                if (modelLoadingState is ModelLoadingState.Offloading && modelLoadingState.queued) {
                     Text(
                         text = stringResource(id = R.string.ui_model_runtime_offload_queued),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                runtimeLifecycle.loadedModel?.let { loaded ->
+                modelLoadingState.loadedModel?.let { loaded ->
                     Text(
                         text = stringResource(
                             id = R.string.ui_model_runtime_loaded_version_label,
@@ -156,7 +156,12 @@ internal fun AdvancedSettingsSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                runtimeLifecycle.requestedModel?.let { requested ->
+                val requestedModel = when (modelLoadingState) {
+                    is ModelLoadingState.Loading -> modelLoadingState.requestedModel
+                    is ModelLoadingState.Error -> modelLoadingState.requestedModel
+                    else -> null
+                }
+                requestedModel?.let { requested ->
                     Text(
                         text = stringResource(
                             id = R.string.ui_model_runtime_requested_version_label,
@@ -234,6 +239,34 @@ internal fun AdvancedSettingsSheet(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(stringResource(id = R.string.ui_download_wifi_only_toggle))
+        }
+
+        HorizontalDivider()
+
+        Text("Reasoning", style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = state.defaultThinkingEnabled,
+                    role = Role.Switch,
+                    onValueChange = onDefaultThinkingEnabledChanged,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.Switch(
+                checked = state.defaultThinkingEnabled,
+                onCheckedChange = null,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text("Default thinking enabled")
+                Text(
+                    text = "New chats inherit this. You can still override it per conversation.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         HorizontalDivider()

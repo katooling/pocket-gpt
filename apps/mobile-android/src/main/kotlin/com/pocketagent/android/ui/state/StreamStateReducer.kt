@@ -10,6 +10,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 data class StreamReducerState(
     val requestId: String,
     val accumulatedText: String = "",
+    val isThinking: Boolean = false,
     val firstTokenMs: Long? = null,
     val lastPhase: String? = null,
     val terminal: StreamTerminalState? = null,
@@ -48,6 +49,7 @@ class StreamStateReducer(
         return when (event) {
             is ChatStreamEvent.Started -> state
             is ChatStreamEvent.Phase -> state.copy(lastPhase = event.phase.name.lowercase())
+            is ChatStreamEvent.Thinking -> state.copy(isThinking = event.active)
             is ChatStreamEvent.Delta -> {
                 when (event.delta) {
                     is ChatStreamDelta.TextDelta -> {
@@ -58,6 +60,7 @@ class StreamStateReducer(
                         }
                         state.copy(
                             accumulatedText = event.accumulatedText,
+                            isThinking = state.isThinking,
                             firstTokenMs = firstToken,
                         )
                     }
@@ -66,6 +69,7 @@ class StreamStateReducer(
             is ChatStreamEvent.Completed -> {
                 state.copy(
                     accumulatedText = event.response.text,
+                    isThinking = false,
                     terminal = StreamTerminalState(
                         requestId = event.requestId,
                         finishReason = event.finishReason,
@@ -101,6 +105,7 @@ class StreamStateReducer(
             }
             is ChatStreamEvent.Failed -> {
                 state.copy(
+                    isThinking = false,
                     terminal = StreamTerminalState(
                         requestId = event.requestId,
                         finishReason = "failed:${event.errorCode}",
@@ -113,7 +118,6 @@ class StreamStateReducer(
                     ),
                 )
             }
-            else -> state
         }
     }
 
@@ -132,6 +136,7 @@ class StreamStateReducer(
         }
         val reason = if (timedOut) "timeout" else "runtime_error"
         return state.copy(
+            isThinking = false,
             terminal = StreamTerminalState(
                 requestId = state.requestId,
                 finishReason = reason,
@@ -147,6 +152,7 @@ class StreamStateReducer(
             return state
         }
         return state.copy(
+            isThinking = false,
             terminal = StreamTerminalState(
                 requestId = state.requestId,
                 finishReason = "timeout",

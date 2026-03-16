@@ -11,9 +11,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.ModelPathOrigin
-import com.pocketagent.android.runtime.phase
-import com.pocketagent.android.runtime.RuntimeModelLifecyclePhase
-import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadProcessingStage
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
@@ -158,21 +155,6 @@ internal fun DownloadTaskState.failureReasonMessage(version: ModelDistributionVe
             version.modelId,
             version.version,
         )
-    }
-}
-
-@Composable
-internal fun RuntimeModelLifecycleSnapshot.readableRuntimeStateLabel(): String {
-    return when (phase()) {
-        RuntimeModelLifecyclePhase.UNLOADED -> stringResource(id = R.string.ui_model_runtime_state_unloaded)
-        RuntimeModelLifecyclePhase.LOADING -> stringResource(id = R.string.ui_model_runtime_state_loading)
-        RuntimeModelLifecyclePhase.LOADED -> stringResource(id = R.string.ui_model_runtime_state_loaded)
-        RuntimeModelLifecyclePhase.OFFLOADING -> if (queuedOffload) {
-            stringResource(id = R.string.ui_model_runtime_state_offloading_queued)
-        } else {
-            stringResource(id = R.string.ui_model_runtime_state_offloading)
-        }
-        RuntimeModelLifecyclePhase.FAILED -> stringResource(id = R.string.ui_model_runtime_state_failed)
     }
 }
 
