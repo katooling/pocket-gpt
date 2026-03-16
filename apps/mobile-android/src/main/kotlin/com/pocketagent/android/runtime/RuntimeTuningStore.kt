@@ -343,8 +343,8 @@ class AndroidRuntimeTuningStore(
             } else {
                 0
             },
-            kvCacheTypeK = recommendation.kvCacheType ?: baseConfig.kvCacheTypeK,
-            kvCacheTypeV = recommendation.kvCacheType ?: baseConfig.kvCacheTypeV,
+            kvCacheTypeK = safeKvCacheType(recommendation.kvCacheType ?: baseConfig.kvCacheTypeK),
+            kvCacheTypeV = safeKvCacheType(recommendation.kvCacheType ?: baseConfig.kvCacheTypeV),
             speculativeEnabled = speculativeEnabled,
             speculativeDraftGpuLayers = if (baseConfig.gpuEnabled && speculativeEnabled) {
                 (recommendation.speculativeDraftGpuLayers ?: baseConfig.speculativeDraftGpuLayers)
@@ -705,4 +705,9 @@ private fun JSONObject.optDoubleOrMinusOne(key: String): String {
 
 private fun JSONObject.optStringOr(key: String, fallback: String): String {
     return if (has(key)) sanitizeDiagnosticValue(optString(key, fallback)) else fallback
+}
+
+/** Q4_0 KV cache causes garbled output on small models — clamp to at least Q8_0. */
+private fun safeKvCacheType(type: KvCacheType): KvCacheType {
+    return if (type.code > KvCacheType.Q8_0.code) KvCacheType.Q8_0 else type
 }
