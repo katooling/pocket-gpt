@@ -2,6 +2,8 @@ package com.pocketagent.runtime
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ThinkingBlockFilterTest {
 
@@ -18,110 +20,137 @@ class ThinkingBlockFilterTest {
     }
 
     @Test
-    fun `stripThinkingBlocks passes through text without thinking blocks`() {
-        val input = "No thinking here."
-        assertEquals("No thinking here.", ThinkingBlockFilter.stripThinkingBlocks(input))
-    }
-
-    @Test
-    fun `stripThinkingBlocks handles unclosed thinking block by discarding tail`() {
+    fun `stripThinkingBlocks keeps unclosed thinking tail visible`() {
         val input = "Before<think>unclosed reasoning"
-        assertEquals("Before", ThinkingBlockFilter.stripThinkingBlocks(input))
+        assertEquals("Before<think>unclosed reasoning", ThinkingBlockFilter.stripThinkingBlocks(input))
     }
 
     @Test
-    fun `stripThinkingBlocks handles empty thinking block`() {
-        val input = "<think></think>Result"
-        assertEquals("Result", ThinkingBlockFilter.stripThinkingBlocks(input))
+    fun `stripThinkingBlocks matches closing tags case-insensitively`() {
+        val input = "<think>abc</THINK>Visible"
+        assertEquals("Visible", ThinkingBlockFilter.stripThinkingBlocks(input))
     }
 
     @Test
-    fun `streaming filter suppresses tokens inside think block`() {
-        val filter = ThinkingBlockFilter()
-
-        assertEquals("", filter.filterToken("<think>"))
-        assertEquals("", filter.filterToken("reasoning"))
-        assertEquals("", filter.filterToken("</think>"))
-        assertEquals("Visible", filter.filterToken("Visible"))
+    fun `stripThinkingBlocks trims whitespace after closed thinking block`() {
+        val input = "<think>\n\nreasoning\n</think>\n\nVisible"
+        assertEquals("Visible", ThinkingBlockFilter.stripThinkingBlocks(input))
     }
 
     @Test
-    fun `streaming filter emits text before and after think block`() {
-        val filter = ThinkingBlockFilter()
-        val output = StringBuilder()
+    fun `streaming filter suppresses well formed think blocks and captures reasoning`() {
+        val filter = ThinkingBlockFilter(captureReasoning = true)
+        val output = buildString {
+            append(filter.filterToken("Hello ").visibleText)
+            append(filter.filterToken("<think>").visibleText)
+            append(filter.filterToken("hidden").visibleText)
+            append(filter.filterToken("</think>").visibleText)
+            append(filter.filterToken("world").visibleText)
+            append(filter.flush().visibleText)
+        }
 
-        output.append(filter.filterToken("Hello "))
-        output.append(filter.filterToken("<think>"))
-        output.append(filter.filterToken("hidden"))
-        output.append(filter.filterToken("</think>"))
-        output.append(filter.filterToken("world"))
-        output.append(filter.flush())
-
-        assertEquals("Hello world", output.toString())
+        assertEquals("Hello world", output)
         assertEquals("hidden", filter.capturedThinking())
     }
 
     @Test
-    fun `streaming filter handles tag split across tokens`() {
-        val filter = ThinkingBlockFilter()
-        val output = StringBuilder()
+    fun `streaming filter handles tags split across tokens`() {
+        val filter = ThinkingBlockFilter(captureReasoning = true)
+        val output = buildString {
+            append(filter.filterToken("A").visibleText)
+            append(filter.filterToken("<thi").visibleText)
+            append(filter.filterToken("nk>").visibleText)
+            append(filter.filterToken("hidden").visibleText)
+            append(filter.filterToken("</thi").visibleText)
+            append(filter.filterToken("nk>").visibleText)
+            append(filter.filterToken("B").visibleText)
+            append(filter.flush().visibleText)
+        }
 
-        output.append(filter.filterToken("A"))
-        output.append(filter.filterToken("<thi"))
-        output.append(filter.filterToken("nk>"))
-        output.append(filter.filterToken("hidden"))
-        output.append(filter.filterToken("</thi"))
-        output.append(filter.filterToken("nk>"))
-        output.append(filter.filterToken("B"))
-        output.append(filter.flush())
-
-        assertEquals("AB", output.toString())
+        assertEquals("AB", output)
+        assertEquals("hidden", filter.capturedThinking())
     }
 
     @Test
-    fun `streaming filter is pass-through when disabled`() {
-        val filter = ThinkingBlockFilter(enabled = false)
+    fun `streaming filter flushes natural angle bracket content without indefinite buffering`() {
+        val filter = ThinkingBlockFilter(captureReasoning = false)
+        val first = filter.filterToken("if x <").visibleText
+        val second = filter.filterToken(" 5 then").visibleText
+        val flush = filter.flush().visibleText
 
-        assertEquals("<think>", filter.filterToken("<think>"))
-        assertEquals("visible", filter.filterToken("visible"))
-        assertEquals("</think>", filter.filterToken("</think>"))
-        assertEquals("", filter.flush())
+        assertEquals("if x ", first)
+        assertEquals("< 5 then", second)
+        assertEquals("", flush)
+    }
+
+    @Test
+    fun `streaming filter matches tags case-insensitively`() {
+        val filter = ThinkingBlockFilter(captureReasoning = true)
+        val output = buildString {
+            append(filter.filterToken("<THINK>").visibleText)
+            append(filter.filterToken("reasoning").visibleText)
+            append(filter.filterToken("</Think>").visibleText)
+            append(filter.filterToken("Visible").visibleText)
+            append(filter.flush().visibleText)
+        }
+
+        assertEquals("Visible", output)
+        assertEquals("reasoning", filter.capturedThinking())
+    }
+
+    @Test
+    fun `streaming filter keeps malformed unclosed block visible on flush`() {
+        val filter = ThinkingBlockFilter(captureReasoning = true)
+        val output = buildString {
+            append(filter.filterToken("Answer ").visibleText)
+            append(filter.filterToken("<think>").visibleText)
+            append(filter.filterToken("draft").visibleText)
+            append(filter.flush().visibleText)
+        }
+
+        assertEquals("Answer <think>draft", output)
         assertEquals("", filter.capturedThinking())
     }
 
     @Test
-    fun `flush discards buffered content inside open think block`() {
-        val filter = ThinkingBlockFilter()
+    fun `streaming filter tracks thinking state through tag lifecycle`() {
+        val filter = ThinkingBlockFilter(captureReasoning = false)
 
-        filter.filterToken("<think>")
-        filter.filterToken("unfinished reasoning")
-        val flushed = filter.flush()
+        val opened = filter.filterToken("<think>")
+        val inside = filter.filterToken("reasoning")
+        val closed = filter.filterToken("</think>")
 
-        assertEquals("", flushed)
+        assertTrue(opened.isCurrentlyThinking)
+        assertTrue(inside.isCurrentlyThinking)
+        assertFalse(closed.isCurrentlyThinking)
     }
 
     @Test
-    fun `flush emits buffered content outside think block`() {
-        val filter = ThinkingBlockFilter()
-        val output = StringBuilder()
+    fun `streaming filter normalizes whitespace after close`() {
+        val filter = ThinkingBlockFilter(captureReasoning = false)
+        val output = buildString {
+            append(filter.filterToken("<think>").visibleText)
+            append(filter.filterToken("reasoning").visibleText)
+            append(filter.filterToken("</think>\n\n").visibleText)
+            append(filter.filterToken("Visible").visibleText)
+            append(filter.flush().visibleText)
+        }
 
-        output.append(filter.filterToken("partial"))
-        output.append(filter.filterToken("<thi"))
-        // Buffer holds "<thi" which could be partial tag
-        output.append(filter.flush())
-
-        // The partial "<thi" was not a real tag, so it should be flushed as visible text
-        assertEquals("partial<thi", output.toString())
+        assertEquals("Visible", output)
     }
 
     @Test
-    fun `stripThinkingBlocks supports custom tags`() {
-        val input = "<thinking>reasoning</thinking>visible"
-        val output = ThinkingBlockFilter.stripThinkingBlocks(
-            text = input,
-            openTag = "<thinking>",
-            closeTag = "</thinking>",
-        )
-        assertEquals("visible", output)
+    fun `streaming filter captures multiple thinking blocks`() {
+        val filter = ThinkingBlockFilter(captureReasoning = true)
+        val output = buildString {
+            append(filter.filterToken("<think>a</think>").visibleText)
+            append(filter.filterToken("b").visibleText)
+            append(filter.filterToken("<think>c</think>").visibleText)
+            append(filter.filterToken("d").visibleText)
+            append(filter.flush().visibleText)
+        }
+
+        assertEquals("bd", output)
+        assertEquals("ac", filter.capturedThinking())
     }
 }
