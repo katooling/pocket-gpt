@@ -17,7 +17,6 @@ import com.pocketagent.android.ui.controllers.ChatPersistenceQueue
 import com.pocketagent.android.ui.controllers.DeviceStateProvider
 import com.pocketagent.android.ui.controllers.AndroidChatConversationService
 import com.pocketagent.android.ui.controllers.AndroidChatSessionService
-import com.pocketagent.android.ui.controllers.toUiSessions
 import com.pocketagent.android.ui.controllers.ChatSendFlow
 import com.pocketagent.android.ui.controllers.ChatSendController
 import com.pocketagent.android.ui.controllers.PersistenceQueueMetrics
@@ -53,6 +52,7 @@ import com.pocketagent.android.ui.state.UiError
 import com.pocketagent.android.ui.state.UiErrorMapper
 import com.pocketagent.android.ui.state.toModelLoadingState
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.core.SessionId
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.runtime.RuntimeLoadedModel
@@ -67,6 +67,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ChatViewModel(
     internal val runtimeFacade: ChatRuntimeService,
@@ -354,7 +355,9 @@ class ChatViewModel(
                 timestampMs = System.currentTimeMillis(),
             ),
         )
-        val result = gateway.loadInstalledModel(modelId = modelId, version = version)
+        val result = withContext(ioDispatcher) {
+            gateway.loadInstalledModel(modelId = modelId, version = version)
+        }
         return finalizeModelOperation(
             token = token,
             result = result,
@@ -384,7 +387,9 @@ class ChatViewModel(
                 timestampMs = System.currentTimeMillis(),
             ),
         )
-        val result = gateway.loadLastUsedModel()
+        val result = withContext(ioDispatcher) {
+            gateway.loadLastUsedModel()
+        }
         return finalizeModelOperation(
             token = token,
             result = result,
@@ -413,7 +418,9 @@ class ChatViewModel(
                 timestampMs = System.currentTimeMillis(),
             ),
         )
-        val result = gateway.offloadModel(reason = reason)
+        val result = withContext(ioDispatcher) {
+            gateway.offloadModel(reason = reason)
+        }
         return finalizeModelOperation(
             token = token,
             result = result,
@@ -729,6 +736,7 @@ class ChatViewModel(
             }
 
             is ModelLoadingState.Loaded -> {
+                syncRoutingModeToLoadedModel(nextState.model)
                 _uiState.update { state ->
                     state.copy(
                         runtime = state.runtime.copy(
@@ -783,6 +791,17 @@ class ChatViewModel(
         }
     }
 
+    private fun syncRoutingModeToLoadedModel(model: RuntimeLoadedModel) {
+        // Keep sends pinned to the resident model instead of the last persisted route.
+        val pinnedMode = ModelCatalog.routingModesForModel(model.modelId)
+            .firstOrNull { it != RoutingMode.AUTO }
+            ?: return
+        if (_uiState.value.runtime.routingMode == pinnedMode) {
+            return
+        }
+        setRoutingModeInternal(pinnedMode)
+    }
+
     private fun applyImmediateModelLoadingState(nextState: ModelLoadingState) {
         applyLifecycleSnapshot(nextState)
     }
@@ -799,6 +818,13 @@ class ChatViewModel(
         }
         if (result.success && !result.queued) {
             val loadedModel = result.loadedModel
+            if (loadedModel != null) {
+                val pinned = ModelCatalog.routingModesForModel(loadedModel.modelId)
+                    .firstOrNull { it != RoutingMode.AUTO }
+                if (pinned != null) {
+                    setRoutingModeInternal(pinned)
+                }
+            }
             refreshRuntimeReadiness(
                 statusDetailOverride = when {
                     loadedModel != null -> buildString {

@@ -154,9 +154,13 @@ internal fun ChatViewModel.skipOnboardingInternal() {
 }
 
 internal fun ChatViewModel.refreshRuntimeReadinessInternal(statusDetailOverride: String? = null) {
-    activeSendRequestId?.let(runtimeFacade::cancelGenerationByRequest)
-    _uiState.value.activeSessionId?.let { sessionId ->
-        runtimeFacade.cancelGeneration(SessionId(sessionId))
+    val activeRequestId = activeSendRequestId
+    val activeSessionId = _uiState.value.activeSessionId
+    viewModelScope.launch(ioDispatcher) {
+        activeRequestId?.let(runtimeFacade::cancelGenerationByRequest)
+        activeSessionId?.let { sessionId ->
+            runtimeFacade.cancelGeneration(SessionId(sessionId))
+        }
     }
     launchStartupProbeInternal(statusDetailOverride)
 }
@@ -207,7 +211,9 @@ internal fun ChatViewModel.bootstrapStateInternal() {
     val loadedState = persistenceFlow.loadBootstrapState()
     val bootstrapResult = startupFlow.bootstrap(loadedState)
     _uiState.value = bootstrapResult.state
-    bootstrapResult.hydrateSessionId?.let(::hydrateSessionMessagesIfNeeded)
+    bootstrapResult.hydrateSessionId?.let { sessionId ->
+        hydrateSessionMessagesIfNeeded(sessionId)
+    }
     refreshRuntimeDiagnostics()
     refreshGpuProbeStatusIfPendingInternal()
     ensureSimpleFirstEnteredTelemetryIfNeeded()

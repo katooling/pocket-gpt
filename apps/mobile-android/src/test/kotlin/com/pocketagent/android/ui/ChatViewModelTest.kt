@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui
 
+import android.net.Uri
 import com.pocketagent.android.data.chat.SessionPersistence
 import com.pocketagent.android.data.chat.SessionStateLoadResult
 import com.pocketagent.android.data.chat.StoredChatMessage
@@ -7,6 +8,9 @@ import com.pocketagent.android.data.chat.StoredChatState
 import com.pocketagent.android.data.chat.toStoredMessage
 import com.pocketagent.android.data.chat.toStoredSession
 import com.pocketagent.android.runtime.ChatRuntimeService
+import com.pocketagent.android.runtime.ProvisioningGateway
+import com.pocketagent.android.runtime.RuntimeModelImportResult
+import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
 import com.pocketagent.android.runtime.ProvisioningRecoverySignal
@@ -42,12 +46,19 @@ import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.runtime.ToolFailure
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
+import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
+import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
+import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
+import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
+import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
@@ -1153,6 +1164,41 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `resident lifecycle model pins routing mode during startup`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
+        val residentModel = com.pocketagent.runtime.RuntimeLoadedModel(
+            modelId = com.pocketagent.inference.ModelCatalog.QWEN3_0_6B_Q4_K_M,
+            modelVersion = "1",
+        )
+        val gateway = LifecycleOnlyProvisioningGateway(
+            initialLifecycle = RuntimeModelLifecycleSnapshot(
+                state = com.pocketagent.nativebridge.ModelLifecycleState.LOADED,
+                loadedModel = residentModel,
+                lastUsedModel = residentModel,
+            ),
+        )
+        val persistence = RecordingPersistence(
+            initialState = StoredChatState(
+                routingMode = RoutingMode.QWEN_0_8B.name,
+                onboardingCompleted = true,
+                firstSessionStage = FirstSessionStage.READY_TO_CHAT.name,
+            ),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = persistence,
+            provisioningGateway = gateway,
+            ioDispatcher = dispatcher,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(RoutingMode.QWEN3_0_6B, viewModel.uiState.value.runtime.routingMode)
+        assertEquals(RoutingMode.QWEN3_0_6B, runtime.getRoutingMode())
+        assertEquals(residentModel.modelId, viewModel.uiState.value.runtime.activeModelId)
+    }
+
+    @Test
     fun `gpu probe pending state is refreshed to terminal status`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade(
             runtimeBackend = "NATIVE_JNI",
@@ -1244,6 +1290,83 @@ private class CorruptLoadPersistence : SessionPersistence {
     override fun saveState(state: StoredChatState) {
         persisted = state
     }
+}
+
+private class LifecycleOnlyProvisioningGateway(
+    initialLifecycle: RuntimeModelLifecycleSnapshot,
+) : ProvisioningGateway {
+    private val lifecycle = MutableStateFlow(initialLifecycle)
+
+    override fun currentSnapshot(): RuntimeProvisioningSnapshot = RuntimeProvisioningSnapshot(
+        models = emptyList(),
+        storageSummary = StorageSummary(
+            totalBytes = 0L,
+            freeBytes = 0L,
+            usedByModelsBytes = 0L,
+            tempDownloadBytes = 0L,
+        ),
+        requiredModelIds = emptySet(),
+    )
+
+    override fun observeDownloads(): MutableStateFlow<List<DownloadTaskState>> = MutableStateFlow(emptyList())
+
+    override fun observeDownloadPreferences(): MutableStateFlow<DownloadPreferencesState> =
+        MutableStateFlow(DownloadPreferencesState())
+
+    override fun currentDownloadPreferences(): DownloadPreferencesState = DownloadPreferencesState()
+
+    override fun observeModelLifecycle(): MutableStateFlow<RuntimeModelLifecycleSnapshot> = lifecycle
+
+    override fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot = lifecycle.value
+
+    override suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult {
+        error("not used in ChatViewModelTest")
+    }
+
+    override suspend fun loadModelDistributionManifest(): ModelDistributionManifest {
+        error("not used in ChatViewModelTest")
+    }
+
+    override fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor> = emptyList()
+
+    override fun setActiveVersion(modelId: String, version: String): Boolean = false
+
+    override fun removeVersion(modelId: String, version: String): Boolean = false
+
+    override suspend fun loadInstalledModel(
+        modelId: String,
+        version: String,
+    ): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        error("not used in ChatViewModelTest")
+    }
+
+    override suspend fun loadLastUsedModel(): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        error("not used in ChatViewModelTest")
+    }
+
+    override suspend fun offloadModel(reason: String): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        error("not used in ChatViewModelTest")
+    }
+
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+        error("not used in ChatViewModelTest")
+    }
+
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
+
+    override fun setDownloadWifiOnlyEnabled(enabled: Boolean) = Unit
+
+    override fun acknowledgeLargeDownloadCellularWarning() = Unit
+
+    override fun pauseDownload(taskId: String) = Unit
+
+    override fun resumeDownload(taskId: String) = Unit
+
+    override fun retryDownload(taskId: String) = Unit
+
+    override fun cancelDownload(taskId: String) = Unit
+
+    override fun syncDownloadsFromScheduler() = Unit
 }
 
 private class RecordingRuntimeFacade(
