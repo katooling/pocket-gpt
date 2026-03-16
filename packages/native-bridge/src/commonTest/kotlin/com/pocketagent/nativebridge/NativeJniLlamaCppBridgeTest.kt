@@ -707,6 +707,9 @@ class NativeJniLlamaCppBridgeTest {
 
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
 
+        // Allow dispatcher thread to process events
+        Thread.sleep(100)
+
         subscription.close()
         assertTrue(observedProgress.isNotEmpty())
         assertEquals(observedProgress.sorted(), observedProgress)

@@ -41,7 +41,7 @@ class InteractionPlanner(
             if (memorySnippets.isNotEmpty()) {
                 append('\n')
                 memorySnippets.forEach { snippet ->
-                    append("\nRecall: ")
+                    append("\nmemory: ")
                     append(snippet)
                 }
             }

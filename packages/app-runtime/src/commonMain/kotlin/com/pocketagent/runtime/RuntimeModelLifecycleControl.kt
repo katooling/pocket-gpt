@@ -2,6 +2,10 @@ package com.pocketagent.runtime
 
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 
+// Re-export ModelLifecycleErrorCode for use by UI layer
+@Suppress("unused")
+typealias ModelLifecycleErrorCode = com.pocketagent.nativebridge.ModelLifecycleErrorCode
+
 data class RuntimeLoadedModel(
     val modelId: String,
     val modelVersion: String? = null,

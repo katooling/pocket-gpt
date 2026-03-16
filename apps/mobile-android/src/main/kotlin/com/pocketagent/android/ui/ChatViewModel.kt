@@ -54,7 +54,7 @@ import com.pocketagent.android.ui.state.toModelLoadingState
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.core.SessionId
-import com.pocketagent.nativebridge.ModelLifecycleErrorCode
+import com.pocketagent.runtime.ModelLifecycleErrorCode
 import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
