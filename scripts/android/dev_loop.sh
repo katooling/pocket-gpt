@@ -11,6 +11,7 @@ NO_INSTALL=0
 FULL_LOGCAT=0
 FILTER_PATTERN='AndroidRuntime|FATAL EXCEPTION|ANR in|OutOfMemoryError|PocketAgent|NATIVE_JNI|STAGE2_METRIC|RuntimeGateway|NativeJniLlamaCppBridge|ChatViewModel'
 INSTALL_LOG=""
+MODULE_OUTPUT_REPAIR_SCRIPT="${ROOT_DIR}/scripts/dev/ensure_jvm_module_outputs.sh"
 
 usage() {
   cat <<'EOF'
@@ -66,10 +67,21 @@ run_install_task() {
   local log_file
   log_file="$(mktemp -t pocketgpt-install.XXXXXX.log)"
   INSTALL_LOG="$log_file"
+  bash "${MODULE_OUTPUT_REPAIR_SCRIPT}"
   if ./gradlew --no-daemon "${INSTALL_TASK}" >"$log_file" 2>&1; then
     rm -f "$log_file"
     INSTALL_LOG=""
     return 0
+  fi
+
+  if has_rg && rg -q 'Unresolved reference .*InferenceRequest|Unresolved reference .*InferenceModule|Unresolved reference .*ModelCatalog|Execution failed for task .*(inference-adapters|native-bridge):compileKotlin' "$log_file"; then
+    echo "Detected stale JVM dependency outputs. Rebuilding package jars and retrying once..."
+    bash "${MODULE_OUTPUT_REPAIR_SCRIPT}" --force
+    if ./gradlew --no-daemon "${INSTALL_TASK}" >"$log_file" 2>&1; then
+      rm -f "$log_file"
+      INSTALL_LOG=""
+      return 0
+    fi
   fi
 
   cat "$log_file"
