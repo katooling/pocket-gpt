@@ -210,6 +210,25 @@ class ChatViewModel(
         updateSessionCompletionSettingsInternal(settings)
     }
 
+    fun toggleSessionThinking() {
+        val activeSession = _uiState.value.activeSession ?: return
+        updateSessionCompletionSettingsInternal(
+            activeSession.completionSettings.copy(
+                showThinking = !activeSession.completionSettings.showThinking,
+            ),
+        )
+    }
+
+    fun setDefaultThinkingEnabled(enabled: Boolean) {
+        if (_uiState.value.defaultThinkingEnabled == enabled) {
+            return
+        }
+        _uiState.update { state ->
+            state.copy(defaultThinkingEnabled = enabled)
+        }
+        persistState()
+    }
+
     fun setCompletionSettingsOpen(isOpen: Boolean) {
         _uiState.update { it.copy(isCompletionSettingsOpen = isOpen) }
     }
@@ -419,7 +438,12 @@ class ChatViewModel(
         onAdvancedUnlockedInternal()
     }
 
-    internal fun updateStreamingMessage(sessionId: String, messageId: String, text: String) {
+    internal fun updateStreamingMessage(
+        sessionId: String,
+        messageId: String,
+        text: String,
+        isThinking: Boolean? = null,
+    ) {
         updateActiveSession(sessionId) { session ->
             val updatedMessages = session.messages.map { message ->
                 if (message.id != messageId) {
@@ -428,12 +452,15 @@ class ChatViewModel(
                     message.copy(
                         content = text,
                         isStreaming = true,
+                        isThinking = isThinking ?: message.isThinking,
                         interaction = (message.interaction ?: PersistedInteractionMessage(
                             role = message.role.name,
                             parts = listOf(PersistedInteractionPart(type = "text", text = "")),
                         )).copy(
                             parts = listOf(PersistedInteractionPart(type = "text", text = text)),
-                            metadata = (message.interaction?.metadata ?: emptyMap()) + ("state" to "streaming"),
+                            metadata = (message.interaction?.metadata ?: emptyMap()) + (
+                                "state" to if (isThinking == true) "thinking" else "streaming"
+                            ),
                         ),
                     )
                 }
@@ -468,6 +495,7 @@ class ChatViewModel(
                         role = role,
                         content = finalText,
                         isStreaming = false,
+                        isThinking = false,
                         timestampEpochMs = System.currentTimeMillis(),
                         requestId = requestId ?: message.requestId,
                         finishReason = finishReason,

@@ -119,7 +119,11 @@ internal fun ChatViewModel.sendMessageInternal() {
         val sendStartedAtMs = System.currentTimeMillis()
         val streamReducer = StreamStateReducer(requestTimeoutMs = requestTimeoutMs)
 
-        fun flushPendingStreamingText(force: Boolean = false, triggerToken: String? = null) {
+        fun flushPendingStreamingText(
+            force: Boolean = false,
+            triggerToken: String? = null,
+            isThinking: Boolean = false,
+        ) {
             val text = pendingStreamingText?.trim().orEmpty()
             if (text.isBlank()) {
                 return
@@ -138,6 +142,7 @@ internal fun ChatViewModel.sendMessageInternal() {
                 sessionId = activeSession.id,
                 messageId = assistantMessageId,
                 text = text,
+                isThinking = isThinking,
             )
             lastStreamingUiUpdateAtMs = now
         }
@@ -531,7 +536,11 @@ internal fun ChatViewModel.sendMessageInternal() {
                 }
                 persistState()
 
-                fun flushFollowUpPendingStreamingText(force: Boolean = false, triggerToken: String? = null) {
+                fun flushFollowUpPendingStreamingText(
+                    force: Boolean = false,
+                    triggerToken: String? = null,
+                    isThinking: Boolean = false,
+                ) {
                     val text = followUpPendingStreamingText?.trim().orEmpty()
                     if (text.isBlank()) {
                         return
@@ -550,6 +559,7 @@ internal fun ChatViewModel.sendMessageInternal() {
                         sessionId = activeSession.id,
                         messageId = followUpAssistantMessageId,
                         text = text,
+                        isThinking = isThinking,
                     )
                     followUpLastStreamingUiUpdateAtMs = now
                 }
@@ -564,9 +574,19 @@ internal fun ChatViewModel.sendMessageInternal() {
                             when (val delta = event.delta) {
                                 is ChatStreamDelta.TextDelta -> {
                                     followUpPendingStreamingText = nextState.accumulatedText
-                                    flushFollowUpPendingStreamingText(triggerToken = delta.text)
+                                    flushFollowUpPendingStreamingText(
+                                        triggerToken = delta.text,
+                                        isThinking = nextState.isThinking,
+                                    )
                                 }
                             }
+                        } else if (event is ChatStreamEvent.Thinking) {
+                            updateStreamingMessage(
+                                sessionId = activeSession.id,
+                                messageId = followUpAssistantMessageId,
+                                text = nextState.accumulatedText,
+                                isThinking = nextState.isThinking,
+                            )
                         }
                         val detail = sendReducer.statusDetailForEvent(event)
                         if (!detail.isNullOrBlank() && !isUserCancellationRequested(event.requestId)) {
@@ -590,7 +610,10 @@ internal fun ChatViewModel.sendMessageInternal() {
                         }
                     },
                     onBeforeTerminal = {
-                        flushFollowUpPendingStreamingText(force = true)
+                        flushFollowUpPendingStreamingText(
+                            force = true,
+                            isThinking = false,
+                        )
                     },
                     onTerminal = { terminal ->
                         followUpTerminal = terminal
@@ -630,9 +653,19 @@ internal fun ChatViewModel.sendMessageInternal() {
                     when (val delta = event.delta) {
                         is ChatStreamDelta.TextDelta -> {
                             pendingStreamingText = nextState.accumulatedText
-                            flushPendingStreamingText(triggerToken = delta.text)
+                            flushPendingStreamingText(
+                                triggerToken = delta.text,
+                                isThinking = nextState.isThinking,
+                            )
                         }
                     }
+                } else if (event is ChatStreamEvent.Thinking) {
+                    updateStreamingMessage(
+                        sessionId = activeSession.id,
+                        messageId = assistantMessageId,
+                        text = nextState.accumulatedText,
+                        isThinking = nextState.isThinking,
+                    )
                 }
                 val detail = sendReducer.statusDetailForEvent(event)
                 if (!detail.isNullOrBlank() && !isUserCancellationRequested(event.requestId)) {
@@ -656,7 +689,10 @@ internal fun ChatViewModel.sendMessageInternal() {
                 }
             },
             onBeforeTerminal = {
-                flushPendingStreamingText(force = true)
+                flushPendingStreamingText(
+                    force = true,
+                    isThinking = false,
+                )
             },
             onTerminal = { terminal ->
                 pendingToolCallsFromTurn = finalizeFromTerminal(
