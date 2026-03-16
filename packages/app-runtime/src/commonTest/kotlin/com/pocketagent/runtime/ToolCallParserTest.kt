@@ -51,6 +51,34 @@ class ToolCallParserTest {
     }
 
     @Test
+    fun `parse extracts multiple bare json tool calls when response is only tool payloads`() {
+        val text = """
+{"name":"date_time","arguments":{}}
+{"name":"notes_lookup","arguments":{"query":"how you doin today lad?"}}
+        """.trimIndent()
+
+        val result = ToolCallParser.parse(text)
+
+        assertEquals(2, result.toolCalls.size)
+        assertEquals("date_time", result.toolCalls[0].name)
+        assertEquals("notes_lookup", result.toolCalls[1].name)
+        assertTrue(result.textWithoutToolCalls.isBlank())
+    }
+
+    @Test
+    fun `parse does not treat surrounding prose plus bare json as a tool sequence`() {
+        val text = """
+I'll use a tool now.
+{"name":"date_time","arguments":{}}
+        """.trimIndent()
+
+        val result = ToolCallParser.parse(text)
+
+        assertTrue(result.toolCalls.isEmpty())
+        assertEquals(text, result.textWithoutToolCalls)
+    }
+
+    @Test
     fun `parse returns empty list when no tool calls present`() {
         val text = "Just a normal response."
 

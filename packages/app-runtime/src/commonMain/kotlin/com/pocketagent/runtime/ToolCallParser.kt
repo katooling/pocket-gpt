@@ -43,7 +43,7 @@ internal object ToolCallParser {
         closeTag: String = DEFAULT_CLOSE_TAG,
     ): ParsedToolCalls {
         if (!text.contains(openTag)) {
-            return ParsedToolCalls(toolCalls = emptyList(), textWithoutToolCalls = text)
+            return parseBareToolCallSequence(text) ?: ParsedToolCalls(toolCalls = emptyList(), textWithoutToolCalls = text)
         }
 
         val toolCalls = mutableListOf<InteractionToolCall>()
@@ -76,6 +76,77 @@ internal object ToolCallParser {
             toolCalls = toolCalls,
             textWithoutToolCalls = remaining.toString().trim(),
         )
+    }
+
+    private fun parseBareToolCallSequence(text: String): ParsedToolCalls? {
+        val trimmed = text.trim()
+        if (!trimmed.startsWith("{")) {
+            return null
+        }
+        val jsonObjects = splitTopLevelJsonObjects(trimmed) ?: return null
+        if (jsonObjects.isEmpty()) {
+            return null
+        }
+        val parsedToolCalls = jsonObjects.mapNotNull(::parseToolCallJson)
+        if (parsedToolCalls.size != jsonObjects.size) {
+            return null
+        }
+        return ParsedToolCalls(
+            toolCalls = parsedToolCalls,
+            textWithoutToolCalls = "",
+        )
+    }
+
+    private fun splitTopLevelJsonObjects(text: String): List<String>? {
+        val objects = mutableListOf<String>()
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var objectStart = -1
+
+        text.forEachIndexed { index, char ->
+            if (escaped) {
+                escaped = false
+                return@forEachIndexed
+            }
+            when (char) {
+                '\\' -> if (inString) {
+                    escaped = true
+                }
+
+                '"' -> inString = !inString
+
+                '{' -> if (!inString) {
+                    if (depth == 0) {
+                        objectStart = index
+                    }
+                    depth += 1
+                }
+
+                '}' -> if (!inString) {
+                    if (depth == 0) {
+                        return null
+                    }
+                    depth -= 1
+                    if (depth == 0) {
+                        if (objectStart < 0) {
+                            return null
+                        }
+                        objects += text.substring(objectStart, index + 1)
+                        objectStart = -1
+                    }
+                }
+
+                else -> if (depth == 0 && !char.isWhitespace()) {
+                    return null
+                }
+            }
+        }
+
+        if (depth != 0 || inString) {
+            return null
+        }
+        return objects
     }
 
     private fun parseToolCallJson(jsonText: String): InteractionToolCall? {
