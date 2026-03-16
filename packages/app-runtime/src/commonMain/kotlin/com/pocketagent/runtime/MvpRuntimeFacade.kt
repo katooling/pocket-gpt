@@ -69,6 +69,11 @@ sealed interface ChatStreamEvent {
         val accumulatedText: String,
     ) : ChatStreamEvent
 
+    data class Thinking(
+        override val requestId: String,
+        val active: Boolean,
+    ) : ChatStreamEvent
+
     data class Completed(
         override val requestId: String,
         val response: ChatResponse,
@@ -131,6 +136,7 @@ interface RuntimeContainer {
         taskType: String,
         context: RuntimeRequestContext,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit = {},
     ): ChatResponse {
         return sendChatMessages(
             sessionId = sessionId,
@@ -140,6 +146,7 @@ interface RuntimeContainer {
             maxTokens = context.maxTokens,
             keepModelLoaded = context.keepModelLoaded,
             onToken = onToken,
+            onThinkingStateChanged = onThinkingStateChanged,
             requestTimeoutMs = context.requestTimeoutMs,
             requestId = context.requestId,
             previousResponseId = context.previousResponseId,
@@ -156,6 +163,7 @@ interface RuntimeContainer {
         maxTokens: Int,
         keepModelLoaded: Boolean = false,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit = {},
         requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
         requestId: String = "legacy",
         previousResponseId: String? = null,
@@ -169,6 +177,7 @@ interface RuntimeContainer {
         taskType: String,
         context: RuntimeRequestContext,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit = {},
     ): ChatResponse {
         return sendUserMessage(
             sessionId = sessionId,
@@ -178,6 +187,7 @@ interface RuntimeContainer {
             maxTokens = context.maxTokens,
             keepModelLoaded = context.keepModelLoaded,
             onToken = onToken,
+            onThinkingStateChanged = onThinkingStateChanged,
             requestTimeoutMs = context.requestTimeoutMs,
             requestId = context.requestId,
             performanceConfig = context.performanceConfig,
@@ -193,6 +203,7 @@ interface RuntimeContainer {
         maxTokens: Int,
         keepModelLoaded: Boolean = false,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit = {},
         requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
         requestId: String = "legacy",
         performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
@@ -211,6 +222,7 @@ interface RuntimeContainer {
             maxTokens = maxTokens,
             keepModelLoaded = keepModelLoaded,
             onToken = onToken,
+            onThinkingStateChanged = onThinkingStateChanged,
             requestTimeoutMs = requestTimeoutMs,
             requestId = requestId,
             previousResponseId = null,
@@ -285,6 +297,7 @@ class DefaultMvpRuntimeFacade(
         val textBuilder = StringBuilder()
         var firstTokenMs: Long? = null
         var tokenStreamPhaseEmitted = false
+        var thinkingActive = false
         val finished = AtomicBoolean(false)
         val producer = launch(Dispatchers.IO) {
             runCatching {
@@ -343,7 +356,20 @@ class DefaultMvpRuntimeFacade(
                             ),
                         )
                     },
+                    onThinkingStateChanged = { active ->
+                        thinkingActive = active
+                        trySend(
+                            ChatStreamEvent.Thinking(
+                                requestId = request.requestId,
+                                active = active,
+                            ),
+                        )
+                    },
                 )
+                if (thinkingActive) {
+                    thinkingActive = false
+                    trySend(ChatStreamEvent.Thinking(requestId = request.requestId, active = false))
+                }
                 finished.set(true)
                 terminalSent.set(true)
                 trySend(
@@ -367,6 +393,10 @@ class DefaultMvpRuntimeFacade(
                 close()
             }.onFailure { error ->
                 finished.set(true)
+                if (thinkingActive) {
+                    thinkingActive = false
+                    trySend(ChatStreamEvent.Thinking(requestId = request.requestId, active = false))
+                }
                 if (!streamContractV2Enabled) {
                     close(error)
                     return@onFailure
@@ -530,6 +560,7 @@ class DefaultRuntimeContainer(
         maxTokens: Int,
         keepModelLoaded: Boolean,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
         previousResponseId: String?,
@@ -546,11 +577,12 @@ class DefaultRuntimeContainer(
                 keepModelLoaded = keepModelLoaded,
                 requestTimeoutMs = requestTimeoutMs,
                 requestId = requestId,
-                previousResponseId = previousResponseId,
-                performanceConfig = performanceConfig,
-                residencyPolicy = residencyPolicy,
+            previousResponseId = previousResponseId,
+            performanceConfig = performanceConfig,
+            residencyPolicy = residencyPolicy,
             ),
             onToken = onToken,
+            onThinkingStateChanged = onThinkingStateChanged,
         )
     }
 
@@ -562,6 +594,7 @@ class DefaultRuntimeContainer(
         maxTokens: Int,
         keepModelLoaded: Boolean,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
         performanceConfig: PerformanceRuntimeConfig,
@@ -581,6 +614,7 @@ class DefaultRuntimeContainer(
                 residencyPolicy = residencyPolicy,
             ),
             onToken = onToken,
+            onThinkingStateChanged = onThinkingStateChanged,
         )
     }
 
