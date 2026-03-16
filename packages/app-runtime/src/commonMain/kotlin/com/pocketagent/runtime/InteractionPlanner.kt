@@ -22,17 +22,12 @@ class InteractionPlanner(
         val templateProfile = interactionProfile.templateProfile
         val enrichedMessages = mutableListOf<InteractionMessage>()
         val systemText = buildString {
-            append("task=$taskType battery=${deviceState.batteryPercent} thermal=${deviceState.thermalLevel} ram_gb=${deviceState.ramClassGb}")
-            if (interactionProfile.thinkingSupport != ThinkingSupport.NONE) {
-                showThinking?.let { enabled ->
-                    append('\n')
-                    append(if (enabled) "/think" else "/no_think")
-                }
-            }
+            append("You are a helpful assistant. Respond in the same language as the user.")
             if (enabledToolNames.isNotEmpty() && interactionProfile.toolCallSupport != ToolCallSupport.NONE) {
                 when (val toolSupport = interactionProfile.toolCallSupport) {
                     ToolCallSupport.NONE -> Unit
                     is ToolCallSupport.XmlTagFormat -> {
+                        append('\n')
                         append(
                             ToolCallParser.renderToolDefinitionsXml(
                                 toolNames = enabledToolNames,
@@ -43,27 +38,28 @@ class InteractionPlanner(
                     }
                 }
             }
+            if (memorySnippets.isNotEmpty()) {
+                append('\n')
+                memorySnippets.forEach { snippet ->
+                    append("\nRecall: ")
+                    append(snippet)
+                }
+            }
         }
         enrichedMessages += InteractionMessage(
-            id = "system-task-${System.currentTimeMillis()}",
+            id = "system-${System.currentTimeMillis()}",
             role = InteractionRole.SYSTEM,
             parts = listOf(InteractionContentPart.Text(systemText)),
         )
-        if (memorySnippets.isNotEmpty()) {
-            enrichedMessages += InteractionMessage(
-                id = "system-memory-${System.currentTimeMillis()}",
-                role = InteractionRole.SYSTEM,
-                parts = listOf(
-                    InteractionContentPart.Text(
-                        memorySnippets.joinToString(separator = "\n") { snippet -> "memory: $snippet" },
-                    ),
-                ),
-            )
-        }
+        val messagesWithThinkingDirective = applyThinkingDirectiveToLatestUser(
+            messages = messages,
+            thinkingSupport = interactionProfile.thinkingSupport,
+            showThinking = showThinking,
+        )
         val promptTokenBudget = (promptCharBudget.coerceAtLeast(MIN_PROMPT_CHARS) / APPROX_CHARS_PER_TOKEN)
             .coerceAtLeast(MIN_PROMPT_TOKENS)
         enrichedMessages += pruneForBudget(
-            messages = messages
+            messages = messagesWithThinkingDirective
                 .takeLast(MAX_CONTEXT_MESSAGES)
                 .map { message -> message.removeThinkingFromContext(interactionProfile.thinkingSupport) },
             promptTokenBudget = promptTokenBudget,
@@ -202,6 +198,51 @@ private fun InteractionMessage.removeThinkingFromContext(thinkingSupport: Thinki
             }
         },
     )
+}
+
+private fun applyThinkingDirectiveToLatestUser(
+    messages: List<InteractionMessage>,
+    thinkingSupport: ThinkingSupport,
+    showThinking: Boolean?,
+): List<InteractionMessage> {
+    if (thinkingSupport != ThinkingSupport.THINK_TAGS || showThinking == null) {
+        return messages
+    }
+    val directive = if (showThinking) "/think" else "/no_think"
+    val latestUserIndex = messages.indexOfLast { message -> message.role == InteractionRole.USER }
+    if (latestUserIndex < 0) {
+        return messages
+    }
+    return messages.mapIndexed { index, message ->
+        if (index != latestUserIndex) {
+            message
+        } else {
+            message.withDirectivePrefix(directive)
+        }
+    }
+}
+
+private fun InteractionMessage.withDirectivePrefix(directive: String): InteractionMessage {
+    if (parts.isEmpty()) {
+        return this
+    }
+    val firstTextIndex = parts.indexOfFirst { part -> part is InteractionContentPart.Text }
+    if (firstTextIndex < 0) {
+        return this
+    }
+    val firstText = parts[firstTextIndex] as InteractionContentPart.Text
+    val existing = firstText.text.trimStart()
+    if (existing.startsWith("/think") || existing.startsWith("/no_think")) {
+        return this
+    }
+    val updatedParts = parts.toMutableList()
+    val prefixed = if (firstText.text.isBlank()) {
+        directive
+    } else {
+        "$directive\n${firstText.text}"
+    }
+    updatedParts[firstTextIndex] = firstText.copy(text = prefixed)
+    return copy(parts = updatedParts)
 }
 
 private fun Turn.toInteractionMessage(): InteractionMessage {

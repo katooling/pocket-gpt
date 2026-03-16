@@ -240,7 +240,8 @@ class ChatStreamRequestPlanner(
     }
 
     private fun resolveMaxTokens(prompt: String, performanceConfig: PerformanceRuntimeConfig): Int {
-        return performanceConfig.maxTokensDefault.coerceAtLeast(MIN_MAX_TOKENS)
+        val maxAllowed = (performanceConfig.nCtx / 2).coerceAtLeast(MIN_MAX_TOKENS)
+        return performanceConfig.maxTokensDefault.coerceIn(MIN_MAX_TOKENS, maxAllowed)
     }
 
     private companion object {

@@ -63,11 +63,11 @@ class DefaultChatTemplateRenderer : ChatTemplateRenderer {
             messages.forEach { message ->
                 append("<|")
                 append(message.role.toTemplateRole())
-                append("|>")
+                append("|>\n")
                 append(message.renderedText())
-                append("<|end|>")
+                append("<|end|>\n")
             }
-            append("<|assistant|>")
+            append("<|assistant|>\n")
         }
         return RenderedPrompt(
             prompt = prompt,

@@ -159,6 +159,39 @@ class InteractionPlannerTest {
         assertFalse(rendered.prompt.contains("private"))
         assertTrue(rendered.prompt.contains("Visible answer"))
     }
+
+    @Test
+    fun `planner injects think directive into latest user turn only`() {
+        val planner = InteractionPlanner(
+            interactionRegistry = ModelInteractionRegistry(
+                profileByModelId = mapOf(
+                    "chatml-model" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.CHATML,
+                        thinkingSupport = ThinkingSupport.THINK_TAGS,
+                        toolCallSupport = ToolCallSupport.NONE,
+                    ),
+                ),
+            ),
+            templateRenderer = EchoTemplateRenderer(),
+        )
+
+        val rendered = planner.buildRenderedPrompt(
+            modelId = "chatml-model",
+            messages = listOf(
+                message(InteractionRole.USER, "older question"),
+                message(InteractionRole.ASSISTANT, "older answer"),
+                message(InteractionRole.USER, "latest question"),
+            ),
+            memorySnippets = emptyList(),
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            promptCharBudget = 256,
+            showThinking = false,
+        )
+
+        assertTrue(rendered.prompt.contains("/no_think\nlatest question"))
+        assertFalse(rendered.prompt.contains("/no_think\nolder question"))
+    }
 }
 
 private class EchoTemplateRenderer : ChatTemplateRenderer {
