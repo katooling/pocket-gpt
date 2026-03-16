@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Tune
@@ -51,6 +52,9 @@ internal fun ComposerBar(
     onCancelEdit: () -> Unit = {},
     onAttachImage: () -> Unit,
     onRemoveImage: (Int) -> Unit = {},
+    showThinkingToggle: Boolean = false,
+    thinkingEnabled: Boolean = false,
+    onToggleThinking: () -> Unit = {},
     onOpenCompletionSettings: () -> Unit = {},
     onBlockedAction: (ChatGatePrimaryAction) -> Unit,
 ) {
@@ -153,6 +157,23 @@ internal fun ComposerBar(
                 enabled = !isSending,
                 maxLines = 4,
             )
+            if (showThinkingToggle) {
+                IconButton(
+                    onClick = onToggleThinking,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = if (thinkingEnabled) "Disable thinking" else "Enable thinking",
+                        tint = if (thinkingEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             IconButton(onClick = onOpenCompletionSettings, modifier = Modifier.size(36.dp)) {
                 Icon(
                     imageVector = Icons.Default.Tune,

@@ -283,7 +283,11 @@ private fun MessageBubble(
 
                     val content = if (message.content.isBlank() && message.isStreaming) "..." else message.content
                     if (shouldRenderInThreadLoadingPlaceholder(message)) {
-                        LoadingDotsAnimation()
+                        if (message.isThinking) {
+                            ThinkingInProgressIndicator()
+                        } else {
+                            LoadingDotsAnimation()
+                        }
                         runtimeStatusDetail?.takeIf { it.isNotBlank() }?.let { detail ->
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
@@ -445,6 +449,18 @@ private fun LoadingDotsAnimation() {
         Text("●", color = dotColor.copy(alpha = alpha1), style = MaterialTheme.typography.bodyLarge)
         Text("●", color = dotColor.copy(alpha = alpha2), style = MaterialTheme.typography.bodyLarge)
         Text("●", color = dotColor.copy(alpha = alpha3), style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun ThinkingInProgressIndicator() {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        LoadingDotsAnimation()
+        Text(
+            text = "Thinking...",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
