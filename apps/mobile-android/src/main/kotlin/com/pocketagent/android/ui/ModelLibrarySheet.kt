@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -38,11 +40,13 @@ import com.pocketagent.android.R
 import com.pocketagent.android.runtime.ProvisioningReadiness
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import com.pocketagent.android.ui.state.ModelLoadingState
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ModelLibrarySheet(
     state: ModelLibraryUiState,
+    modelLoadingState: ModelLoadingState,
     onImportModel: (String) -> Unit,
     onDownloadVersion: (ModelDistributionVersion) -> Unit,
     onPauseDownload: (String) -> Unit,
@@ -516,6 +520,16 @@ internal fun ModelLibrarySheet(
                     installedVersionItemKey(modelId = model.modelId, version = version.version)
                 },
             ) { version ->
+                val isLoadedVersion = modelLoadingState.loadedModel?.modelId == model.modelId &&
+                    modelLoadingState.loadedModel?.modelVersion == version.version
+                val isLoadingVersion = modelLoadingState is ModelLoadingState.Loading &&
+                    (modelLoadingState as ModelLoadingState.Loading).requestedModel?.modelId == model.modelId &&
+                    (modelLoadingState as ModelLoadingState.Loading).requestedModel?.modelVersion == version.version
+                val dotColor = when {
+                    isLoadedVersion -> MaterialTheme.colorScheme.primary
+                    isLoadingVersion -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.outline
+                }
                 Card {
                     Column(
                         modifier = Modifier
@@ -523,13 +537,24 @@ internal fun ModelLibrarySheet(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text(
-                            text = stringResource(id = R.string.ui_model_installed_version_row, model.displayName, version.version),
-                            modifier = Modifier.semantics {
-                                contentDescription = modelInstalledVersionLabel(model.modelId, version.version)
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(MaterialTheme.shapes.small)
+                                    .background(dotColor),
+                            )
+                            Text(
+                                text = stringResource(id = R.string.ui_model_installed_version_row, model.displayName, version.version),
+                                modifier = Modifier.semantics {
+                                    contentDescription = modelInstalledVersionLabel(model.modelId, version.version)
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                         Text(
                             text = stringResource(
                                 id = if (version.isActive) {
