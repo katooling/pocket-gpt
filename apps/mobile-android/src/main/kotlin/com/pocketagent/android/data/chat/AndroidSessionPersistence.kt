@@ -156,6 +156,7 @@ private class SQLiteChatSessionRepository(
                 performance_profile TEXT NOT NULL,
                 keep_alive_preference TEXT NOT NULL,
                 gpu_acceleration_enabled INTEGER NOT NULL,
+                default_thinking_enabled INTEGER NOT NULL DEFAULT 0,
                 onboarding_completed INTEGER NOT NULL,
                 first_session_stage TEXT NOT NULL,
                 advanced_unlocked INTEGER NOT NULL,
@@ -194,7 +195,13 @@ private class SQLiteChatSessionRepository(
         )
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL(
+                "ALTER TABLE $TABLE_APP_STATE ADD COLUMN default_thinking_enabled INTEGER NOT NULL DEFAULT 0",
+            )
+        }
+    }
 
     override fun hasAnyPersistedState(): Boolean {
         val db = readableDatabase
@@ -229,6 +236,7 @@ private class SQLiteChatSessionRepository(
             performanceProfile = stateRow.performanceProfile,
             keepAlivePreference = stateRow.keepAlivePreference,
             gpuAccelerationEnabled = stateRow.gpuAccelerationEnabled,
+            defaultThinkingEnabled = stateRow.defaultThinkingEnabled,
             onboardingCompleted = stateRow.onboardingCompleted,
             firstSessionStage = stateRow.firstSessionStage,
             advancedUnlocked = stateRow.advancedUnlocked,
@@ -319,6 +327,7 @@ private class SQLiteChatSessionRepository(
                 "performance_profile",
                 "keep_alive_preference",
                 "gpu_acceleration_enabled",
+                "default_thinking_enabled",
                 "onboarding_completed",
                 "first_session_stage",
                 "advanced_unlocked",
@@ -341,12 +350,13 @@ private class SQLiteChatSessionRepository(
                 performanceProfile = cursor.getStringOrNull(2) ?: RuntimePerformanceProfile.BALANCED.name,
                 keepAlivePreference = cursor.getStringOrNull(3) ?: RuntimeKeepAlivePreference.AUTO.name,
                 gpuAccelerationEnabled = cursor.getInt(4) != 0,
-                onboardingCompleted = cursor.getInt(5) != 0,
-                firstSessionStage = cursor.getStringOrNull(6) ?: FirstSessionStage.ONBOARDING.name,
-                advancedUnlocked = cursor.getInt(7) != 0,
-                firstAnswerCompleted = cursor.getInt(8) != 0,
-                followUpCompleted = cursor.getInt(9) != 0,
-                firstSessionTelemetryEvents = SessionEntityCodec.decodeTelemetryEvents(cursor.getStringOrNull(10)),
+                defaultThinkingEnabled = cursor.getInt(5) != 0,
+                onboardingCompleted = cursor.getInt(6) != 0,
+                firstSessionStage = cursor.getStringOrNull(7) ?: FirstSessionStage.ONBOARDING.name,
+                advancedUnlocked = cursor.getInt(8) != 0,
+                firstAnswerCompleted = cursor.getInt(9) != 0,
+                followUpCompleted = cursor.getInt(10) != 0,
+                firstSessionTelemetryEvents = SessionEntityCodec.decodeTelemetryEvents(cursor.getStringOrNull(11)),
             )
         }
     }
@@ -433,6 +443,7 @@ private class SQLiteChatSessionRepository(
                 put("performance_profile", state.performanceProfile)
                 put("keep_alive_preference", state.keepAlivePreference)
                 put("gpu_acceleration_enabled", if (state.gpuAccelerationEnabled) 1 else 0)
+                put("default_thinking_enabled", if (state.defaultThinkingEnabled) 1 else 0)
                 put("onboarding_completed", if (state.onboardingCompleted) 1 else 0)
                 put("first_session_stage", state.firstSessionStage)
                 put("advanced_unlocked", if (state.advancedUnlocked) 1 else 0)
@@ -510,7 +521,7 @@ private class SQLiteChatSessionRepository(
 
     private companion object {
         const val DATABASE_NAME = "pocketagent_chat_state.db"
-        const val DATABASE_VERSION = 1
+        const val DATABASE_VERSION = 2
         const val TABLE_APP_STATE = "app_state"
         const val TABLE_SESSIONS = "chat_sessions"
         const val TABLE_MESSAGES = "chat_messages"
@@ -523,6 +534,7 @@ private data class StoredAppState(
     val performanceProfile: String = RuntimePerformanceProfile.BALANCED.name,
     val keepAlivePreference: String = RuntimeKeepAlivePreference.AUTO.name,
     val gpuAccelerationEnabled: Boolean = false,
+    val defaultThinkingEnabled: Boolean = false,
     val onboardingCompleted: Boolean = false,
     val firstSessionStage: String = FirstSessionStage.ONBOARDING.name,
     val advancedUnlocked: Boolean = true,
@@ -553,6 +565,7 @@ internal object PersistedChatStateCodec {
                 root.stringOrDefault("keepAlivePreference", RuntimeKeepAlivePreference.AUTO.name),
             ),
             gpuAccelerationEnabled = root.booleanOrDefault("gpuAccelerationEnabled", false),
+            defaultThinkingEnabled = root.booleanOrDefault("defaultThinkingEnabled", false),
             onboardingCompleted = root.booleanOrDefault("onboardingCompleted", false),
             firstSessionStage = parseFirstSessionStageName(
                 root.stringOrDefault("firstSessionStage", FirstSessionStage.ONBOARDING.name),
@@ -571,6 +584,7 @@ internal object PersistedChatStateCodec {
             put("performanceProfile", JsonPrimitive(state.performanceProfile))
             put("keepAlivePreference", JsonPrimitive(state.keepAlivePreference))
             put("gpuAccelerationEnabled", JsonPrimitive(state.gpuAccelerationEnabled))
+            put("defaultThinkingEnabled", JsonPrimitive(state.defaultThinkingEnabled))
             put("onboardingCompleted", JsonPrimitive(state.onboardingCompleted))
             put("firstSessionStage", JsonPrimitive(state.firstSessionStage))
             put("advancedUnlocked", JsonPrimitive(state.advancedUnlocked))
@@ -728,6 +742,7 @@ private object SessionEntityCodec {
             }
             message.toolName?.let { put("toolName", JsonPrimitive(it)) }
             put("isStreaming", JsonPrimitive(message.isStreaming))
+            put("isThinking", JsonPrimitive(message.isThinking))
             message.requestId?.let { put("requestId", JsonPrimitive(it)) }
             message.finishReason?.let { put("finishReason", JsonPrimitive(it)) }
             put("terminalEventSeen", JsonPrimitive(message.terminalEventSeen))
@@ -779,6 +794,7 @@ private fun parseMessage(obj: JsonObject?): StoredChatMessage? {
         imagePaths = normalizedImagePaths,
         toolName = obj.stringOrNull("toolName"),
         isStreaming = obj.booleanOrDefault("isStreaming", false),
+        isThinking = obj.booleanOrDefault("isThinking", false),
         requestId = obj.stringOrNull("requestId"),
         finishReason = obj.stringOrNull("finishReason"),
         terminalEventSeen = obj.booleanOrDefault("terminalEventSeen", false),
