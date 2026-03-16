@@ -176,6 +176,53 @@ class ChatStreamCoordinatorTest {
     }
 
     @Test
+    fun `collect stream does not timeout while model is in thinking state`() = runTest {
+        val runtime = FlowRuntimeGateway(
+            flowFactory = { request ->
+                flow {
+                    emit(ChatStreamEvent.Started(request.requestId, startedAtEpochMs = 1L))
+                    emit(ChatStreamEvent.Thinking(requestId = request.requestId, active = true))
+                    delay(80L)
+                    emit(
+                        ChatStreamEvent.Completed(
+                            requestId = request.requestId,
+                            response = ChatResponse(
+                                sessionId = request.sessionId,
+                                modelId = "auto",
+                                text = "final answer",
+                                firstTokenLatencyMs = 1L,
+                                totalLatencyMs = 90L,
+                            ),
+                            finishReason = "completed",
+                        ),
+                    )
+                }
+            },
+        )
+        val coordinator = ChatStreamCoordinator(
+            terminalWatchdogGraceMs = 10L,
+            sendElapsedUpdateIntervalMs = 5L,
+        )
+        val reducer = StreamStateReducer(requestTimeoutMs = 30L)
+        var terminalState: StreamTerminalState? = null
+
+        coordinator.collectStream(
+            runtimeService = runtime,
+            preparedStream = preparedRequest("req-thinking", 30L),
+            streamReducer = reducer,
+            sendStartedAtMs = System.currentTimeMillis(),
+            onEvent = { _, _ -> },
+            onElapsed = { _, _ -> },
+            onBeforeTerminal = { },
+            onTerminal = { terminal -> terminalState = terminal },
+        )
+
+        assertEquals(0, runtime.cancelByRequestCalls)
+        assertNotNull(terminalState)
+        assertEquals("completed", terminalState?.finishReason)
+    }
+
+    @Test
     fun `collect stream accepts legacy blank request ids`() = runTest {
         val runtime = FlowRuntimeGateway(
             flowFactory = { request ->

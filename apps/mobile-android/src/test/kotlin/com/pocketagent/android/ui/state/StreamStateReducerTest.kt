@@ -95,4 +95,21 @@ class StreamStateReducerTest {
         assertEquals("prompt_processing", afterPhase.lastPhase)
         assertEquals(null, afterPhase.terminal)
     }
+
+    @Test
+    fun `thinking event records first token progress for hidden reasoning streams`() {
+        val initial = StreamReducerState.initial(requestId = "req-1")
+        val afterThinking = reducer.onEvent(
+            state = initial,
+            event = ChatStreamEvent.Thinking(
+                requestId = "req-1",
+                active = true,
+            ),
+            elapsedMs = 150L,
+        )
+
+        assertEquals(true, afterThinking.isThinking)
+        assertEquals(150L, afterThinking.firstTokenMs)
+        assertEquals(null, afterThinking.terminal)
+    }
 }

@@ -190,18 +190,24 @@ internal class SendMessageUseCase(
                     if (timeoutGuard.timedOut()) {
                         return@execute
                     }
+                    if (firstTokenLatencyMs < 0 && token.isNotEmpty()) {
+                        // Timeout guard protects "no token ever arrived". Hidden thinking tokens
+                        // still count as generation progress and should clear the prefill timeout.
+                        firstTokenLatencyMs = System.currentTimeMillis() - startedMs
+                        timeoutGuard.finish()
+                    }
                     val filterResult = streamFilters.thinkingFilter?.filterToken(token)
                     val visibleText = filterResult?.visibleText ?: token
                     val currentThinkingState = filterResult?.isCurrentlyThinking ?: false
                     if (currentThinkingState != lastThinkingState) {
                         lastThinkingState = currentThinkingState
-                        request.onThinkingStateChanged(currentThinkingState)
-                    }
-                    if (visibleText.isNotEmpty()) {
-                        if (firstTokenLatencyMs < 0) {
+                        if (currentThinkingState && firstTokenLatencyMs < 0) {
                             firstTokenLatencyMs = System.currentTimeMillis() - startedMs
                             timeoutGuard.finish()
                         }
+                        request.onThinkingStateChanged(currentThinkingState)
+                    }
+                    if (visibleText.isNotEmpty()) {
                         request.onToken(visibleText)
                     }
                 },
