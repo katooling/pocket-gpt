@@ -25,6 +25,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -61,6 +63,9 @@ import com.pocketagent.android.ui.state.ChatGatePrimaryAction
 import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.activeOrRequestedModel
 import com.pocketagent.android.ui.state.resolveChatGateState
+import com.pocketagent.core.RoutingMode
+import com.pocketagent.runtime.ModelInteractionRegistry
+import com.pocketagent.runtime.ThinkingSupport
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.launch
 
@@ -92,6 +97,13 @@ fun PocketAgentApp(
     val drawerState = rememberDrawerState(
         initialValue = if (state.isSessionDrawerOpen) DrawerValue.Open else DrawerValue.Closed,
     )
+    val interactionRegistry = remember { ModelInteractionRegistry() }
+    val thinkingToggleModelId = modelLoadingState.loadedModel?.modelId ?: state.runtime.activeModelId
+    val showThinkingToggle = thinkingToggleModelId?.let { modelId ->
+        runCatching {
+            interactionRegistry.interactionProfileForModel(modelId).thinkingSupport == ThinkingSupport.THINK_TAGS
+        }.getOrDefault(false)
+    } == true
     val canLoadLastUsedModel = modelLoadingState.loadedModel == null &&
         modelLoadingState.lastUsedModel != null &&
         modelLoadingState !is ModelLoadingState.Loading &&
@@ -100,11 +112,13 @@ fun PocketAgentApp(
         "${model.modelId} ${model.modelVersion.orEmpty()}".trim()
     }
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     var modelManagementSurface by remember { mutableStateOf<ModelManagementSurface?>(null) }
     var selectedModelIdForImport by remember { mutableStateOf<String?>(null) }
     var pendingGetReadyActivation by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingMeteredWarningVersion by remember { mutableStateOf<ModelDistributionVersion?>(null) }
     var pendingNotificationPermissionVersion by remember { mutableStateOf<ModelDistributionVersion?>(null) }
+    var pendingRoutingModeSwitch by remember { mutableStateOf<Pair<String, String>?>(null) }
     var lastDownloadTransitionRefreshKey by remember { mutableStateOf<String?>(null) }
     var readinessRefreshSequence by remember { mutableStateOf(0L) }
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
@@ -155,7 +169,72 @@ fun PocketAgentApp(
     }
     val openRuntimeControlsAction: () -> Unit = {
         provisioningViewModel.refreshSnapshot()
-        modelManagementSurface = ModelManagementSurface.RUNTIME
+        modelManagementSurface = ModelManagementSurface.LIBRARY
+    }
+    val showBusyModelOperationFeedback: () -> Unit = {
+        scope.launch {
+            snackbarHostState.showSnackbar("Model operation already in progress")
+        }
+    }
+    val loadModelVersionAction: (String, String, Boolean) -> Unit = { modelId, version, closeOnSuccess ->
+        scope.launch {
+            val result = viewModel.loadModel(modelId = modelId, version = version)
+            if (result == null) {
+                showBusyModelOperationFeedback()
+                return@launch
+            }
+            provisioningViewModel.setStatusMessage(
+                lifecycleStatusMessage(
+                    context = context,
+                    result = result,
+                    fallbackModelId = modelId,
+                    fallbackVersion = version,
+                ),
+            )
+            if (result.success && closeOnSuccess) {
+                modelManagementSurface = null
+            }
+        }
+    }
+    val loadLastUsedModelAction: (Boolean) -> Unit = { closeOnSuccess ->
+        scope.launch {
+            val result = viewModel.loadLastUsedModel()
+            if (result == null) {
+                showBusyModelOperationFeedback()
+                return@launch
+            }
+            provisioningViewModel.setStatusMessage(
+                lifecycleStatusMessage(
+                    context = context,
+                    result = result,
+                    fallbackModelId = modelLoadingState.lastUsedModel?.modelId,
+                    fallbackVersion = modelLoadingState.lastUsedModel?.modelVersion,
+                ),
+            )
+            if (result.success && closeOnSuccess) {
+                modelManagementSurface = null
+            }
+        }
+    }
+    val offloadModelAction: (Boolean) -> Unit = { closeOnSuccess ->
+        scope.launch {
+            val result = viewModel.offloadModel(reason = MODEL_OFFLOAD_REASON_MANUAL)
+            if (result == null) {
+                showBusyModelOperationFeedback()
+                return@launch
+            }
+            provisioningViewModel.setStatusMessage(
+                lifecycleStatusMessage(
+                    context = context,
+                    result = result,
+                    fallbackModelId = modelLoadingState.activeOrRequestedModel()?.modelId,
+                    fallbackVersion = modelLoadingState.activeOrRequestedModel()?.modelVersion,
+                ),
+            )
+            if (result.success && closeOnSuccess) {
+                modelManagementSurface = null
+            }
+        }
     }
     val refreshRuntimeChecksAction: () -> Unit = {
         viewModel.refreshRuntimeReadiness()
@@ -204,7 +283,7 @@ fun PocketAgentApp(
                             fallbackVersion = defaultVersion.version,
                         ),
                     )
-                }
+                } ?: showBusyModelOperationFeedback()
                 return@launch
             }
 
@@ -314,7 +393,7 @@ fun PocketAgentApp(
                                 fallbackVersion = transitioned.version,
                             ),
                         )
-                    }
+                    } ?: showBusyModelOperationFeedback()
                     logProvisioningTransition(
                         phase = "download_activation",
                         eventId = transitioned.taskId,
@@ -386,6 +465,7 @@ fun PocketAgentApp(
         },
     ) {
         Scaffold(
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = {
@@ -456,6 +536,9 @@ fun PocketAgentApp(
                         imagePicker.launch("image/*")
                     },
                     onRemoveImage = viewModel::removeAttachedImage,
+                    showThinkingToggle = showThinkingToggle,
+                    thinkingEnabled = state.activeSession?.completionSettings?.showThinking == true,
+                    onToggleThinking = viewModel::toggleSessionThinking,
                     onOpenCompletionSettings = { viewModel.setCompletionSettingsOpen(true) },
                     onBlockedAction = onBlockedAction,
                 )
@@ -469,19 +552,7 @@ fun PocketAgentApp(
                 onOpenModelLibrary = openModelLibraryAction,
                 canLoadLastUsedModel = canLoadLastUsedModel,
                 lastUsedModelLabel = lastUsedModelLabel,
-                onLoadLastUsedModel = {
-                    scope.launch {
-                        val result = viewModel.loadLastUsedModel() ?: return@launch
-                        provisioningViewModel.setStatusMessage(
-                            lifecycleStatusMessage(
-                                context = context,
-                                result = result,
-                                fallbackModelId = modelLoadingState.lastUsedModel?.modelId,
-                                fallbackVersion = modelLoadingState.lastUsedModel?.modelVersion,
-                            ),
-                        )
-                    }
-                },
+                onLoadLastUsedModel = { loadLastUsedModelAction(false) },
                 activeRuntimeModelLabel = activeRuntimeModelLabel,
                 onOpenRuntimeControls = openRuntimeControlsAction,
                 onOpenAdvanced = { viewModel.setAdvancedSheetOpen(true) },
@@ -520,9 +591,31 @@ fun PocketAgentApp(
         ) {
             AdvancedSettingsSheet(
                 state = state,
-                runtimeLifecycle = provisioningState.lifecycle,
+                modelLoadingState = modelLoadingState,
                 wifiOnlyDownloadsEnabled = provisioningState.downloadPreferences.wifiOnlyEnabled,
-                onRoutingModeSelected = viewModel::setRoutingMode,
+                onDefaultThinkingEnabledChanged = viewModel::setDefaultThinkingEnabled,
+                onRoutingModeSelected = { mode ->
+                    viewModel.setRoutingMode(mode)
+                    val targetModelId = com.pocketagent.inference.ModelCatalog.modelIdForRoutingMode(mode)
+                    val targetVersion = modelLibraryState.snapshot.models
+                        .firstOrNull { model -> model.modelId == targetModelId }
+                        ?.installedVersions
+                        ?.firstOrNull { version -> version.isActive }
+                        ?.version
+                        ?: modelLibraryState.snapshot.models
+                            .firstOrNull { model -> model.modelId == targetModelId }
+                            ?.installedVersions
+                            ?.firstOrNull()
+                            ?.version
+                    if (
+                        mode != RoutingMode.AUTO &&
+                        targetModelId != null &&
+                        !targetVersion.isNullOrBlank() &&
+                        modelLoadingState.loadedModel?.modelId != targetModelId
+                    ) {
+                        pendingRoutingModeSwitch = targetModelId to targetVersion
+                    }
+                },
                 onPerformanceProfileSelected = viewModel::setPerformanceProfile,
                 onKeepAlivePreferenceSelected = viewModel::setKeepAlivePreference,
                 onWifiOnlyDownloadsChanged = provisioningViewModel::setDownloadWifiOnlyEnabled,
@@ -548,21 +641,22 @@ fun PocketAgentApp(
         }
     }
 
-    if (modelManagementSurface == ModelManagementSurface.LIBRARY) {
-        val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    if (modelManagementSurface != null) {
+        val runtimeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = { modelManagementSurface = null },
-            sheetState = modelSheetState,
+            sheetState = runtimeSheetState,
         ) {
-            ModelLibrarySheet(
-                state = modelLibraryState,
+            ModelSheet(
+                libraryState = modelLibraryState,
+                runtimeState = runtimeModelState,
+                modelLoadingState = modelLoadingState,
+                routingMode = state.runtime.routingMode,
                 onImportModel = { modelId ->
                     selectedModelIdForImport = modelId
                     modelPicker.launch(arrayOf("*/*"))
                 },
-                onDownloadVersion = { version ->
-                    launchDownloadFlow(version)
-                },
+                onDownloadVersion = launchDownloadFlow,
                 onPauseDownload = { taskId ->
                     provisioningViewModel.pauseDownload(taskId)
                     provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_download_paused))
@@ -579,7 +673,7 @@ fun PocketAgentApp(
                     provisioningViewModel.cancelDownload(taskId)
                     provisioningViewModel.setStatusMessage(context.getString(R.string.ui_model_download_cancelled))
                 },
-                onActivateVersion = { modelId, version ->
+                onSetDefaultVersion = { modelId, version ->
                     scope.launch {
                         val activated = provisioningViewModel.setActiveVersionAsync(modelId, version)
                         if (activated) {
@@ -605,13 +699,14 @@ fun PocketAgentApp(
                             )
                         } else {
                             provisioningViewModel.setStatusMessage(
-                                context.getString(
-                                    R.string.ui_model_version_activation_failed,
-                                ),
+                                context.getString(R.string.ui_model_version_activation_failed),
                             )
                         }
                     }
                 },
+                onLoadVersion = { modelId, version -> loadModelVersionAction(modelId, version, true) },
+                onLoadLastUsedModel = { loadLastUsedModelAction(true) },
+                onOffloadModel = { offloadModelAction(false) },
                 onRemoveVersion = { modelId, version ->
                     scope.launch {
                         val removed = provisioningViewModel.removeVersionAsync(modelId, version)
@@ -624,26 +719,6 @@ fun PocketAgentApp(
                         )
                     }
                 },
-                onRefreshManifest = {
-                    scope.launch {
-                        provisioningViewModel.refreshManifest()
-                        val manifest = provisioningViewModel.uiState.value.manifest
-                        provisioningViewModel.setStatusMessage(
-                            if (manifest.models.isEmpty()) {
-                                context.getString(R.string.ui_model_downloads_manifest_empty)
-                            } else {
-                                context.getString(R.string.ui_model_refresh_manifest_success)
-                            },
-                        )
-                    }
-                },
-                onRefreshRuntime = {
-                    viewModel.refreshRuntimeReadiness()
-                    provisioningViewModel.refreshSnapshot()
-                    provisioningViewModel.setStatusMessage(
-                        context.getString(R.string.ui_model_refresh_runtime_feedback),
-                    )
-                },
                 onRefreshAll = {
                     scope.launch {
                         provisioningViewModel.refreshManifest()
@@ -655,66 +730,32 @@ fun PocketAgentApp(
                         )
                     }
                 },
-                onOpenRuntimeControls = openRuntimeControlsAction,
                 onClose = { modelManagementSurface = null },
             )
         }
     }
 
-    if (modelManagementSurface == ModelManagementSurface.RUNTIME) {
-        val runtimeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { modelManagementSurface = null },
-            sheetState = runtimeSheetState,
-        ) {
-            RuntimeModelSheet(
-                state = runtimeModelState,
-                modelLoadingState = modelLoadingState,
-                routingMode = state.runtime.routingMode,
-                onLoadVersion = { modelId, version ->
-                    scope.launch {
-                        val result = viewModel.loadModel(modelId = modelId, version = version) ?: return@launch
-                        provisioningViewModel.setStatusMessage(
-                            lifecycleStatusMessage(
-                                context = context,
-                                result = result,
-                                fallbackModelId = modelId,
-                                fallbackVersion = version,
-                            ),
-                        )
-                    }
-                },
-                onLoadLastUsedModel = {
-                    scope.launch {
-                        val result = viewModel.loadLastUsedModel() ?: return@launch
-                        provisioningViewModel.setStatusMessage(
-                            lifecycleStatusMessage(
-                                context = context,
-                                result = result,
-                                fallbackModelId = modelLoadingState.lastUsedModel?.modelId,
-                                fallbackVersion = modelLoadingState.lastUsedModel?.modelVersion,
-                            ),
-                        )
-                    }
-                },
-                onOffloadModel = {
-                    scope.launch {
-                        val result = viewModel.offloadModel(reason = MODEL_OFFLOAD_REASON_MANUAL) ?: return@launch
-                        provisioningViewModel.setStatusMessage(
-                            lifecycleStatusMessage(
-                                context = context,
-                                result = result,
-                                fallbackModelId = modelLoadingState.activeOrRequestedModel()?.modelId,
-                                fallbackVersion = modelLoadingState.activeOrRequestedModel()?.modelVersion,
-                            ),
-                        )
-                    }
-                },
-                onRefreshRuntime = refreshRuntimeChecksAction,
-                onOpenModelLibrary = openModelLibraryAction,
-                onClose = { modelManagementSurface = null },
-            )
-        }
+    pendingRoutingModeSwitch?.let { (modelId, version) ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingRoutingModeSwitch = null },
+            title = { Text("Switch model now?") },
+            text = { Text("Routing now prefers $modelId. Load $version into memory now?") },
+            dismissButton = {
+                TextButton(onClick = { pendingRoutingModeSwitch = null }) {
+                    Text("Later")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRoutingModeSwitch = null
+                        loadModelVersionAction(modelId, version, false)
+                    },
+                ) {
+                    Text("Load")
+                }
+            },
+        )
     }
 
     pendingMeteredWarningVersion?.let { version ->
