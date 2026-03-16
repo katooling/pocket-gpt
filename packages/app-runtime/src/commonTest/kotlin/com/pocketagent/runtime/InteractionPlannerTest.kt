@@ -127,6 +127,38 @@ class InteractionPlannerTest {
         assertFalse(gemmaPrompt.prompt.contains("/think"))
         assertFalse(gemmaPrompt.prompt.contains("<tools>"))
     }
+
+    @Test
+    fun `planner strips prior assistant thinking blocks from context`() {
+        val planner = InteractionPlanner(
+            interactionRegistry = ModelInteractionRegistry(
+                profileByModelId = mapOf(
+                    "chatml-model" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.CHATML,
+                        thinkingSupport = ThinkingSupport.THINK_TAGS,
+                        toolCallSupport = ToolCallSupport.NONE,
+                    ),
+                ),
+            ),
+            templateRenderer = EchoTemplateRenderer(),
+        )
+
+        val rendered = planner.buildRenderedPrompt(
+            modelId = "chatml-model",
+            messages = listOf(
+                message(InteractionRole.USER, "question"),
+                message(InteractionRole.ASSISTANT, "<think>private</think>Visible answer"),
+            ),
+            memorySnippets = emptyList(),
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            promptCharBudget = 256,
+            showThinking = false,
+        )
+
+        assertFalse(rendered.prompt.contains("private"))
+        assertTrue(rendered.prompt.contains("Visible answer"))
+    }
 }
 
 private class EchoTemplateRenderer : ChatTemplateRenderer {

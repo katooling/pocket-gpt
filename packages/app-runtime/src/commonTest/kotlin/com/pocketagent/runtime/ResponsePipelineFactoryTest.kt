@@ -15,8 +15,7 @@ class ResponsePipelineFactoryTest {
         )
 
         val filters = ResponsePipelineFactory.createStreamFilters(profile = profile, showThinking = true)
-        assertNull(filters.visibleThinkingFilter)
-        assertNull(filters.reasoningCaptureFilter)
+        assertNull(filters.thinkingFilter)
 
         val stripped = ResponsePipelineFactory.stripThinking("<think>hidden</think>visible", profile)
         assertEquals("<think>hidden</think>visible", stripped)
@@ -41,8 +40,9 @@ class ResponsePipelineFactoryTest {
         )
 
         val filters = ResponsePipelineFactory.createStreamFilters(profile = profile, showThinking = false)
-        assertTrue(filters.visibleThinkingFilter != null)
-        assertTrue(filters.reasoningCaptureFilter != null)
+        assertTrue(filters.thinkingFilter != null)
+        assertEquals("", filters.thinkingFilter?.filterToken("<think>hidden</think>")?.visibleText.orEmpty())
+        assertEquals("", filters.thinkingFilter?.capturedThinking().orEmpty())
 
         val stripped = ResponsePipelineFactory.stripThinking("<think>hidden</think>visible", profile)
         assertEquals("visible", stripped)

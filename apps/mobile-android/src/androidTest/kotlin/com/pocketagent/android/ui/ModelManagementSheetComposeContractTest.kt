@@ -46,6 +46,7 @@ class ModelManagementSheetComposeContractTest {
             MaterialTheme {
                 ModelLibrarySheet(
                     state = sampleLibraryState(),
+                    modelLoadingState = ModelLoadingState.Idle(),
                     onImportModel = {},
                     onDownloadVersion = {},
                     onPauseDownload = {},
@@ -97,7 +98,7 @@ class ModelManagementSheetComposeContractTest {
         }
 
         composeRule.onNodeWithText("Runtime model").assertIsDisplayed()
-        composeRule.onNodeWithText("Runtime load state").assertIsDisplayed()
+        composeRule.onNodeWithText("Active model").assertIsDisplayed()
         composeRule.onNodeWithText("Offload").assertIsDisplayed()
         composeRule.onNodeWithText("Open model library").performClick()
         composeRule.runOnIdle {
