@@ -37,10 +37,10 @@ class SendReducer {
             is ChatStreamEvent.Delta -> when (event.delta) {
                 is ChatStreamDelta.TextDelta -> "Generating..."
             }
+            is ChatStreamEvent.Thinking -> if (event.active) "Thinking..." else "Generating..."
             is ChatStreamEvent.Completed -> "Completed"
             is ChatStreamEvent.Cancelled -> "Cancelled"
             is ChatStreamEvent.Failed -> "Runtime error"
-            else -> "Generating..."
         }
     }
 }

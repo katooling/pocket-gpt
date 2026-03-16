@@ -9,6 +9,7 @@ import com.pocketagent.android.ui.clearError
 import com.pocketagent.android.ui.withUiError
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
+import com.pocketagent.android.ui.state.CompletionSettings
 import com.pocketagent.android.ui.state.FirstSessionStage
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
@@ -117,7 +118,11 @@ class ChatStartupFlow(
                 sessionId = runtimeGateway.createSession().value,
                 title = "New chat",
                 nowEpochMs = now,
-            ).toUiSessions()
+            ).toUiSessions().map { session ->
+                session.copy(
+                    completionSettings = CompletionSettings(showThinking = persisted.defaultThinkingEnabled),
+                )
+            }
         } else {
             sessionBootstrap.toUiSessions()
         }
@@ -130,6 +135,7 @@ class ChatStartupFlow(
                 sessions = resolvedSessions,
                 activeSessionId = activeSessionId,
                 runtime = bootstrapRuntimeState,
+                defaultThinkingEnabled = persisted.defaultThinkingEnabled,
                 showOnboarding = !persisted.onboardingCompleted,
                 firstSessionStage = initialFirstSessionStage,
                 advancedUnlocked = restoredAdvancedUnlocked,

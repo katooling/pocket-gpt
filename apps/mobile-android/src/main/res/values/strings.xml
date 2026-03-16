@@ -244,6 +244,11 @@
     <string name="ui_model_runtime_routing_mismatch_hint">Loaded runtime model differs from routing preference. New requests follow routing preference and may trigger a model switch.</string>
     <string name="ui_model_runtime_offloaded_message">Runtime model offloaded.</string>
     <string name="ui_model_runtime_offload_queued">Offload queued and will run after active generation completes.</string>
+    <string name="ui_model_runtime_offload_releasing">Releasing the current model…</string>
+    <string name="ui_model_runtime_retry_load">Retry</string>
+    <string name="ui_model_runtime_error_suggestion_oom">Try closing other apps or loading a smaller model.</string>
+    <string name="ui_model_runtime_error_suggestion_file">Check the model file exists and is not corrupted.</string>
+    <string name="ui_model_runtime_error_suggestion_generic">Try refreshing runtime checks or loading a different model.</string>
     <string name="ui_model_runtime_error_model_file_unavailable">Cannot load %1$s (%2$s): model file is unavailable.</string>
     <string name="ui_model_runtime_error_incompatible">Cannot load %1$s (%2$s): runtime compatibility check failed.</string>
     <string name="ui_model_runtime_error_backend_init">Runtime backend failed to initialize: %1$s</string>

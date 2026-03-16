@@ -157,7 +157,17 @@ class AndroidChatConversationService(
         )
         return ChatStateUpdate(
             state = state.copy(
-                sessions = mutation.toUiSessions(),
+                sessions = mutation.toUiSessions().map { session ->
+                    if (session.id == mutation.activeSessionId) {
+                        session.copy(
+                            completionSettings = CompletionSettings(
+                                showThinking = state.defaultThinkingEnabled,
+                            ),
+                        )
+                    } else {
+                        session
+                    }
+                },
                 activeSessionId = mutation.activeSessionId,
                 isSessionDrawerOpen = false,
             ),
