@@ -1,6 +1,7 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.inference.ModelCapability
 import com.pocketagent.inference.ModelDescriptor
 
 class ModelInteractionRegistry(
@@ -41,11 +42,7 @@ class ModelInteractionRegistry(
             } else {
                 ToolCallSupport.NONE
             }
-            val thinkingSupport = if (features.contains(FEATURE_THINKING_TAGS)) {
-                ThinkingSupport.THINK_TAGS
-            } else {
-                ThinkingSupport.NONE
-            }
+            val thinkingSupport = resolveThinkingSupport(descriptor)
             val systemPromptStrategy = if (templateProfile == ModelTemplateProfile.GEMMA) {
                 SystemPromptStrategy.PREPEND_TO_USER
             } else {
@@ -63,6 +60,27 @@ class ModelInteractionRegistry(
                 systemPromptStrategy = systemPromptStrategy,
                 roleNameOverrides = roleNameOverrides,
             )
+        }
+
+        private fun resolveThinkingSupport(descriptor: ModelDescriptor): ThinkingSupport {
+            if (descriptor.interactionFeatures.contains(FEATURE_THINKING_TAGS)) {
+                return ThinkingSupport.THINK_TAGS
+            }
+            val normalizedModelId = descriptor.modelId.lowercase()
+            val knownThinkingModel = normalizedModelId.contains("deepseek-r1") ||
+                normalizedModelId.contains("qwen3") ||
+                normalizedModelId.contains("qwen3.5") ||
+                normalizedModelId.contains("smollm3") ||
+                normalizedModelId.contains("phi-4")
+            if (knownThinkingModel) {
+                return ThinkingSupport.THINK_TAGS
+            }
+            if (descriptor.capabilities.contains(ModelCapability.REASONING) &&
+                descriptor.chatTemplateId != ModelTemplateProfile.GEMMA.name
+            ) {
+                return ThinkingSupport.THINK_TAGS
+            }
+            return ThinkingSupport.NONE
         }
     }
 }

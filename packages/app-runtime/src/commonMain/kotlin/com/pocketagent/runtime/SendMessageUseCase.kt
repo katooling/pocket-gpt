@@ -41,6 +41,7 @@ internal class SendMessageUseCase(
         val taskType: String,
         val executionContext: RuntimeRequestContext,
         val onToken: (String) -> Unit,
+        val onThinkingStateChanged: (Boolean) -> Unit = {},
         val routingMode: RoutingMode,
     )
 
@@ -175,6 +176,7 @@ internal class SendMessageUseCase(
                 }
             },
         )
+        var lastThinkingState = false
         runtimeResidencyManager.onGenerationStarted()
         try {
             executionResult = inferenceExecutor.execute(
@@ -188,8 +190,13 @@ internal class SendMessageUseCase(
                     if (timeoutGuard.timedOut()) {
                         return@execute
                     }
-                    val visibleText = streamFilters.visibleThinkingFilter?.filterToken(token) ?: token
-                    streamFilters.reasoningCaptureFilter?.filterToken(token)
+                    val filterResult = streamFilters.thinkingFilter?.filterToken(token)
+                    val visibleText = filterResult?.visibleText ?: token
+                    val currentThinkingState = filterResult?.isCurrentlyThinking ?: false
+                    if (currentThinkingState != lastThinkingState) {
+                        lastThinkingState = currentThinkingState
+                        request.onThinkingStateChanged(currentThinkingState)
+                    }
                     if (visibleText.isNotEmpty()) {
                         if (firstTokenLatencyMs < 0) {
                             firstTokenLatencyMs = System.currentTimeMillis() - startedMs
@@ -200,16 +207,19 @@ internal class SendMessageUseCase(
                 },
             )
             finishReason = executionResult.finishReason
-            val flushed = streamFilters.visibleThinkingFilter?.flush().orEmpty()
-            streamFilters.reasoningCaptureFilter?.flush()
-            if (flushed.isNotEmpty()) {
+            val flushResult = streamFilters.thinkingFilter?.flush()
+            if (lastThinkingState) {
+                lastThinkingState = false
+                request.onThinkingStateChanged(false)
+            }
+            flushResult?.visibleText?.takeIf { it.isNotEmpty() }?.let { flushed ->
                 request.onToken(flushed)
             }
             val cleanedText = ResponsePipelineFactory.stripThinking(
                 text = executionResult.text,
                 profile = interactionProfile,
             )
-            reasoningContent = streamFilters.reasoningCaptureFilter?.capturedThinking()?.ifBlank { null }
+            reasoningContent = streamFilters.thinkingFilter?.capturedThinking()?.ifBlank { null }
             val toolCallResult = ResponsePipelineFactory.parseToolCalls(
                 text = cleanedText,
                 profile = interactionProfile,
@@ -229,6 +239,9 @@ internal class SendMessageUseCase(
             throw error
         } finally {
             timeoutGuard.finish()
+            if (lastThinkingState) {
+                request.onThinkingStateChanged(false)
+            }
             if (!executionContext.keepModelLoaded || !executionContext.residencyPolicy.keepLoadedWhileAppForeground) {
                 runtimeResidencyManager.unload(reason = "request_policy")
                 runtimeResidencyManager.onGenerationFinished(slotId = null, keepAliveMs = null)

@@ -2,8 +2,7 @@ package com.pocketagent.runtime
 
 internal object ResponsePipelineFactory {
     data class StreamFilters(
-        val visibleThinkingFilter: ThinkingBlockFilter?,
-        val reasoningCaptureFilter: ThinkingBlockFilter?,
+        val thinkingFilter: ThinkingBlockFilter?,
     )
 
     fun createStreamFilters(
@@ -11,13 +10,9 @@ internal object ResponsePipelineFactory {
         showThinking: Boolean,
     ): StreamFilters {
         return when (profile.thinkingSupport) {
-            ThinkingSupport.NONE -> StreamFilters(
-                visibleThinkingFilter = null,
-                reasoningCaptureFilter = null,
-            )
+            ThinkingSupport.NONE -> StreamFilters(thinkingFilter = null)
             ThinkingSupport.THINK_TAGS -> StreamFilters(
-                visibleThinkingFilter = ThinkingBlockFilter(enabled = true),
-                reasoningCaptureFilter = ThinkingBlockFilter(enabled = showThinking),
+                thinkingFilter = ThinkingBlockFilter(captureReasoning = showThinking),
             )
         }
     }

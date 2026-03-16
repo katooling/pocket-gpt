@@ -181,6 +181,7 @@ class RuntimeOrchestrator(
         taskType: String,
         context: RuntimeRequestContext,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit,
     ): ChatResponse {
         val latestUserText = messages
             .asReversed()
@@ -201,6 +202,7 @@ class RuntimeOrchestrator(
                 taskType = taskType,
                 executionContext = context,
                 onToken = onToken,
+                onThinkingStateChanged = onThinkingStateChanged,
                 routingMode = routingMode,
             ),
         )
@@ -214,6 +216,7 @@ class RuntimeOrchestrator(
         maxTokens: Int,
         keepModelLoaded: Boolean,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
         previousResponseId: String?,
@@ -235,6 +238,7 @@ class RuntimeOrchestrator(
                 residencyPolicy = residencyPolicy,
             ),
             onToken = onToken,
+            onThinkingStateChanged = onThinkingStateChanged,
         )
     }
 
@@ -244,6 +248,7 @@ class RuntimeOrchestrator(
         taskType: String,
         context: RuntimeRequestContext,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit,
     ): ChatResponse {
         return sendMessageUseCase.execute(
             SendMessageUseCase.Request(
@@ -253,6 +258,7 @@ class RuntimeOrchestrator(
                 taskType = taskType,
                 executionContext = context.copy(previousResponseId = null),
                 onToken = onToken,
+                onThinkingStateChanged = onThinkingStateChanged,
                 routingMode = routingMode,
             ),
         )
@@ -266,6 +272,7 @@ class RuntimeOrchestrator(
         maxTokens: Int,
         keepModelLoaded: Boolean,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
         performanceConfig: PerformanceRuntimeConfig,
@@ -285,6 +292,7 @@ class RuntimeOrchestrator(
                 residencyPolicy = residencyPolicy,
             ),
             onToken = onToken,
+            onThinkingStateChanged = onThinkingStateChanged,
         )
     }
 

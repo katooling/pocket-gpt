@@ -63,7 +63,9 @@ class InteractionPlanner(
         val promptTokenBudget = (promptCharBudget.coerceAtLeast(MIN_PROMPT_CHARS) / APPROX_CHARS_PER_TOKEN)
             .coerceAtLeast(MIN_PROMPT_TOKENS)
         enrichedMessages += pruneForBudget(
-            messages = messages.takeLast(MAX_CONTEXT_MESSAGES),
+            messages = messages
+                .takeLast(MAX_CONTEXT_MESSAGES)
+                .map { message -> message.removeThinkingFromContext(interactionProfile.thinkingSupport) },
             promptTokenBudget = promptTokenBudget,
         )
         return templateRenderer.render(messages = enrichedMessages, modelProfile = templateProfile)
@@ -185,6 +187,21 @@ class InteractionPlanner(
         const val MIN_PROMPT_CHARS: Int = 128
         const val MIN_PROMPT_TOKENS: Int = 64
     }
+}
+
+private fun InteractionMessage.removeThinkingFromContext(thinkingSupport: ThinkingSupport): InteractionMessage {
+    if (role != InteractionRole.ASSISTANT || thinkingSupport == ThinkingSupport.NONE) {
+        return this
+    }
+    return copy(
+        parts = parts.map { part ->
+            when (part) {
+                is InteractionContentPart.Text -> part.copy(
+                    text = ThinkingBlockFilter.stripThinkingBlocks(part.text),
+                )
+            }
+        },
+    )
 }
 
 private fun Turn.toInteractionMessage(): InteractionMessage {
