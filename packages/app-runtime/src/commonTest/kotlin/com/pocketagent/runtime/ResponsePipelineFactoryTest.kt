@@ -55,4 +55,26 @@ class ResponsePipelineFactoryTest {
         assertEquals("calculator", parsed.toolCalls.first().name)
         assertEquals("beforeafter", parsed.textWithoutToolCalls)
     }
+
+    @Test
+    fun `factory accepts bare json tool payloads for xml tool-call profiles`() {
+        val profile = ModelInteractionProfile(
+            templateProfile = ModelTemplateProfile.CHATML,
+            thinkingSupport = ThinkingSupport.THINK_TAGS,
+            toolCallSupport = ToolCallSupport.XmlTagFormat(),
+        )
+
+        val parsed = ResponsePipelineFactory.parseToolCalls(
+            text = """
+{"name":"date_time","arguments":{}}
+{"name":"notes_lookup","arguments":{"query":"how you doin today lad?"}}
+            """.trimIndent(),
+            profile = profile,
+        )
+
+        assertEquals(2, parsed.toolCalls.size)
+        assertEquals("date_time", parsed.toolCalls[0].name)
+        assertEquals("notes_lookup", parsed.toolCalls[1].name)
+        assertTrue(parsed.textWithoutToolCalls.isBlank())
+    }
 }

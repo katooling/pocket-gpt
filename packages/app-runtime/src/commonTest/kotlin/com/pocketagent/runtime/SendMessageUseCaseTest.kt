@@ -128,6 +128,29 @@ class SendMessageUseCaseTest {
     }
 
     @Test
+    fun `generation does not timeout when first token is hidden think tag`() {
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(
+                generatedTokens = listOf("<think>", "reasoning...", "</think>", "final answer"),
+                busyWaitMsAfterFirstToken = 30L,
+            ),
+        )
+
+        val response = fixture.useCase.execute(
+            fixture.request(
+                requestTimeoutMs = 5L,
+            ),
+        )
+
+        assertEquals("final answer", response.text)
+        assertEquals("completed", response.finishReason)
+        assertEquals(0, fixture.cancelByRequestCalls)
+        assertEquals(0, fixture.cancelBySessionCalls)
+    }
+
+    @Test
     fun `residency policy controls unload now vs idle schedule`() {
         val unloadNowFixture = createFixture(
             runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
@@ -218,6 +241,30 @@ class SendMessageUseCaseTest {
             ),
             streamedTokens,
         )
+    }
+
+    @Test
+    fun `chatml profile parses bare json tool payloads into tool calls`() {
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(
+                generatedTokens = listOf(
+                    """{"name":"date_time","arguments":{}}""",
+                    "\n",
+                    """{"name":"notes_lookup","arguments":{"query":"how you doin today lad?"}}""",
+                ),
+            ),
+            routingModule = SendStaticRoutingModule(modelId = ModelCatalog.QWEN3_0_6B_Q4_K_M),
+        )
+
+        val response = fixture.useCase.execute(fixture.request())
+
+        assertTrue(response.text.isBlank())
+        assertEquals("tool_calls", response.finishReason)
+        assertEquals(2, response.toolCalls.size)
+        assertEquals("date_time", response.toolCalls[0].name)
+        assertEquals("notes_lookup", response.toolCalls[1].name)
     }
 }
 

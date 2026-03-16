@@ -112,12 +112,13 @@ class ChatStreamRequestPlannerTest {
     }
 
     @Test
-    fun `sampling overrides maxTokens replaces profile default`() {
+    fun `sampling overrides maxTokens is clamped to half context window`() {
         val planner = ChatStreamRequestPlanner(runtimeGenerationTimeoutMs = 0L)
         val overrides = SamplingOverrides(maxTokens = 4096)
         val prepared = planner.prepare(command(samplingOverrides = overrides))
 
-        assertEquals(4096, prepared.runtimeRequest.maxTokens)
+        // nCtx defaults to 2048 for BALANCED, so max allowed = 2048/2 = 1024
+        assertEquals(1024, prepared.runtimeRequest.maxTokens)
     }
 
     @Test

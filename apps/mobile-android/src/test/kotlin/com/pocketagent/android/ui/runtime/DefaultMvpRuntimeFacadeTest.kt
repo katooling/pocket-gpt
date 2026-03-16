@@ -158,6 +158,7 @@ private class FakeRuntimeContainer : RuntimeContainer {
         maxTokens: Int,
         keepModelLoaded: Boolean,
         onToken: (String) -> Unit,
+        onThinkingStateChanged: (Boolean) -> Unit,
         requestTimeoutMs: Long,
         requestId: String,
         previousResponseId: String?,
