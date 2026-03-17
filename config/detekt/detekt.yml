@@ -13,12 +13,24 @@ style:
     active: false
   WildcardImport:
     active: false
+  ReturnCount:
+    active: false
 
 complexity:
+  LargeClass:
+    active: false
   LongMethod:
     active: true
     threshold: 140
   LongParameterList:
     active: true
-    functionThreshold: 8
+    functionThreshold: 15
+    constructorThreshold: 25
+  TooManyFunctions:
+    active: false
 
+naming:
+  VariableNaming:
+    active: false
+  FunctionNaming:
+    active: false

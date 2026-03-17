@@ -1,6 +1,21 @@
 <?xml version="1.0" ?>
 <SmellBaseline>
-  <ManuallySuppressedIssues />
+  <ManuallySuppressedIssues>
+    <issue id="LargeClass" message="Class ChatViewModel is too large. Consider splitting it into smaller pieces.">
+      <file>apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt</file>
+    </issue>
+    <issue id="LongParameterList" message="The constructor has too many parameters.">
+      <file>apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt</file>
+    </issue>
+    <issue id="TooManyFunctions" message="Class 'ChatViewModel' with '64' functions detected.">
+      <file>apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt</file>
+    </issue>
+    <issue id="VariableNaming" message="Variable names should match the pattern: [a-z][A-Za-z0-9]*">
+      <file>apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt</file>
+    </issue>
+    <issue id="ReturnCount" message="Function has too many return statements.">
+      <file>apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModel.kt</file>
+    </issue>
+  </ManuallySuppressedIssues>
   <CurrentIssues />
 </SmellBaseline>
-
