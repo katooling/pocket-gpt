@@ -24,11 +24,6 @@ import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.core.RoutingMode
 
-internal enum class ModelManagementSurface {
-    LIBRARY,
-    RUNTIME,
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ModelManagementScreen(
@@ -104,7 +99,6 @@ internal fun ModelManagementScreen(
                     onRefreshAll = onRefreshAll,
                     onOpenRuntimeControls = { onSurfaceChange(ModelManagementSurface.RUNTIME) },
                     onClose = onClose,
-                    showCloseButton = false,
                 )
 
                 ModelManagementSurface.RUNTIME -> RuntimeModelSheet(
@@ -117,7 +111,6 @@ internal fun ModelManagementScreen(
                     onRefreshRuntime = onRefreshAll,
                     onOpenModelLibrary = { onSurfaceChange(ModelManagementSurface.LIBRARY) },
                     onClose = onClose,
-                    showCloseButton = false,
                 )
             }
         }

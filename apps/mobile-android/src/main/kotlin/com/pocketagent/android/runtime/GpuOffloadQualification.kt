@@ -202,7 +202,8 @@ class AndroidGpuOffloadQualifier(
     private val appContext = context.applicationContext
     private val appBuildSignature: String = runCatching {
         val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
-        "${packageInfo.longVersionCode}:${packageInfo.lastUpdateTime}"
+        val versionCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(packageInfo)
+        "${versionCode}:${packageInfo.lastUpdateTime}"
     }.getOrDefault("${BuildConfig.VERSION_CODE}:${BuildConfig.VERSION_NAME}")
 
     private val delegate = InternalAndroidGpuOffloadQualifier(

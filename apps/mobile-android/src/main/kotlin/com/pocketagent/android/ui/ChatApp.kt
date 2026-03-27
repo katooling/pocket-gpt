@@ -69,7 +69,7 @@ import com.pocketagent.runtime.ThinkingSupport
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.launch
 
-private enum class ModelManagementSurface {
+internal enum class ModelManagementSurface {
     LIBRARY,
     RUNTIME,
 }

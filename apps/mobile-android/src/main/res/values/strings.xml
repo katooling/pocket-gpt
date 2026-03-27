@@ -124,6 +124,9 @@
     <string name="ui_advanced_unlocked_title">Advanced controls unlocked</string>
     <string name="ui_advanced_unlocked_body">You completed the first value flow. Advanced controls and tools are now available.</string>
     <string name="ui_model_provisioning_title">Model provisioning</string>
+    <string name="ui_models_title">Models</string>
+    <string name="ui_models_library_tab">Library</string>
+    <string name="ui_models_runtime_tab">Runtime</string>
     <string name="ui_model_library_title">Model library</string>
     <string name="ui_model_library_subtitle">Import, download, activate, and remove verified model versions. Use runtime controls separately for load and offload actions.</string>
     <string name="ui_model_provisioning_subtitle">Import verified GGUF files for both required runtime models.</string>

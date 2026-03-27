@@ -1,6 +1,7 @@
 package com.pocketagent.android.runtime.modelmanager
 
 import android.app.job.JobInfo
+import android.os.Build
 import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
@@ -52,7 +53,9 @@ internal class UidtDownloadScheduler(
                     JobInfo.NETWORK_TYPE_ANY
                 },
             )
-        builder.setUserInitiated(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            builder.setUserInitiated(true)
+        }
         jobScheduler.schedule(builder.build())
         refresh()
     }

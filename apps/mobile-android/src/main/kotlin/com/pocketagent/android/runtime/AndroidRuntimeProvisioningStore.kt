@@ -981,6 +981,7 @@ class AndroidRuntimeProvisioningStore(
         return mirrorToLegacyDownloadsPath(fileName = fileName, sourceFile = sourceFile)
     }
 
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
     private fun mirrorToPublicDownloadsViaMediaStore(fileName: String, sourceFile: File): Boolean {
         val resolver = context.contentResolver
         val relativePath = "$DOWNLOADS_ROOT_DIR/${context.packageName}/models/"
@@ -1033,6 +1034,7 @@ class AndroidRuntimeProvisioningStore(
         }
     }
 
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
     private fun findDownloadsMediaStoreUri(fileName: String, relativePath: String): Uri? {
         val resolver = context.contentResolver
         val projection = arrayOf(MediaStore.Downloads._ID)
