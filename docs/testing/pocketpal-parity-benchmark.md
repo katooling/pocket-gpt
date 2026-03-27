@@ -1,6 +1,6 @@
 # Pocket-GPT vs PocketPal Parity Benchmark Checklist
 
-Use this runbook when validating the OpenCL/Hexagon migration against PocketPal on the same Android device.
+Use this runbook when validating PocketGPT runtime tuning against PocketPal on the same Android device.
 
 ## Goal
 
@@ -24,7 +24,7 @@ Produce a reproducible comparison for:
 
 ## Step 1: Capture Pocket-GPT Metrics
 
-Run a stage-2 benchmark slice and keep the generated `scenario-*.csv`:
+Run a stage-2 benchmark slice and keep the generated `scenario-*.csv`, or use the curated CPU sweep wrapper if you are tuning the CPU path:
 
 ```bash
 bash scripts/dev/bench.sh stage2 \
@@ -34,9 +34,16 @@ bash scripts/dev/bench.sh stage2 \
   --scenarios a
 ```
 
+Or:
+
+```bash
+bash scripts/dev/cpu-sweep.sh --device <adb-serial> --install-mode skip
+```
+
 Primary artifact:
 
 1. `scripts/benchmarks/runs/YYYY-MM-DD/<serial>/scenario-a.csv`
+2. or `tmp/cpu-sweep-.../cpu-sweep-summary.{md,json,csv}`
 
 ## Step 2: Capture PocketPal Benchmark Output
 
@@ -66,6 +73,8 @@ Default checks:
 
 1. `decode_tps` ratio (`Pocket-GPT / PocketPal`) must be `>= 0.80`
 2. `first_token_ms` ratio (`Pocket-GPT / PocketPal`) must be `<= 1.25` when PocketPal exposes first-token latency
+
+If you ran the CPU sweep wrapper, pass the scenario CSV for the specific variant you want to compare, or use the sweep summary to identify the best candidate first.
 
 Tune thresholds for stricter gate:
 

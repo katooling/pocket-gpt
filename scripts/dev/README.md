@@ -98,6 +98,8 @@ export POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-0.
 export POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-2b-q4.gguf
 ```
 
+Only the paths for the selected `--models` are required now. A `0.8b` quick run does not require the 2B path.
+
 Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
 
 1. `scenario-a.csv`
@@ -146,6 +148,39 @@ Optional cache controls (env):
 2. `POCKETGPT_PREFIX_CACHE_STRICT=0|1` (default `0`)
 3. `POCKETGPT_RESPONSE_CACHE_TTL_SEC=<seconds>` (default `0`, disabled)
 4. `POCKETGPT_RESPONSE_CACHE_MAX_ENTRIES=<count>` (default `0`, disabled)
+5. `POCKETGPT_STAGE2_REQUIRE_PREFIX_CACHE_HIT=0|1` (default `0`; use `1` for shared-session regression gates)
+
+Focused shared-session prefix-cache regression:
+
+```bash
+bash scripts/dev/prefix-cache-regression.sh --device <device-id> --install-mode skip
+```
+
+This wraps the smallest stage-2 run that must prove:
+
+1. shared-session prefix reuse still hits;
+2. reused token count stays above zero;
+3. the 0.8B runtime path remains healthy on a real device.
+
+Curated CPU tuning sweep:
+
+```bash
+bash scripts/dev/cpu-sweep.sh --device <device-id> --install-mode skip
+```
+
+This runs the shared-session 0.8B stage-2 path across a small CPU-focused preset set, then writes:
+
+1. `cpu-sweep-summary.json`
+2. `cpu-sweep-summary.csv`
+3. `cpu-sweep-summary.md`
+
+Optional parity input:
+
+```bash
+bash scripts/dev/cpu-sweep.sh --device <device-id> --install-mode skip --pocketpal tmp/pocketpal-benchmark.json
+```
+
+Use `--preset full` when you want the larger batch/context sweep instead of the compact default.
 
 ## Framework Lanes (Direct)
 

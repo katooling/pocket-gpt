@@ -18,6 +18,7 @@ Canonical ownership by concern:
 14. Companion CLI setup and Pocket-GPT integration: `docs/testing/maestro-android-companion-cli.md`
 15. Repo-local skill for agent/test context: `.claude/skills/maestro-android-cli/SKILL.md`
 16. Repo-local testing ladder: `.claude/skills/maestro-android-cli/references/testing-map.md`
+17. Runtime performance E2E playbook and time-saver commands: `docs/testing/runtime-performance-e2e-playbook.md`
 
 Consolidation rule:
 

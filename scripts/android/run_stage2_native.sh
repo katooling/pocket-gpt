@@ -9,7 +9,9 @@ Usage:
     [--install-mode auto|force|skip] [--logcat filtered|full] [--runs <n>] \
     [--max-tokens-a <n>] [--max-tokens-b <n>] [--model-0-8b-path <device-abs-path>] [--model-2b-path <device-abs-path>] \
     [--runtime-profile battery|balanced|fast] [--gpu-enabled 0|1] [--n-ctx <n>] [--n-batch <n>] [--n-ubatch <n>] \
-    [--n-threads <n>] [--n-threads-batch <n>] [--flash-attn auto|on|off] [--disable-tools 0|1]
+    [--n-threads <n>] [--n-threads-batch <n>] [--flash-attn auto|on|off] [--disable-tools 0|1] \
+    [--require-prefix-cache-hit 0|1] \
+    [--session-mode isolated|shared]
 USAGE
 }
 
@@ -45,6 +47,8 @@ N_THREADS_OVERRIDE="${POCKETGPT_STAGE2_N_THREADS:-}"
 N_THREADS_BATCH_OVERRIDE="${POCKETGPT_STAGE2_N_THREADS_BATCH:-}"
 FLASH_ATTN_MODE="${POCKETGPT_STAGE2_FLASH_ATTN_MODE:-}"
 DISABLE_TOOLS="${POCKETGPT_STAGE2_DISABLE_TOOLS:-}"
+SESSION_MODE="${POCKETGPT_STAGE2_SESSION_MODE:-isolated}"
+REQUIRE_PREFIX_CACHE_HIT="${POCKETGPT_STAGE2_REQUIRE_PREFIX_CACHE_HIT:-0}"
 
 TOTAL_PREFIX_CACHE_HITS=0
 TOTAL_PREFIX_CACHE_MISSES=0
@@ -146,6 +150,14 @@ while [[ $# -gt 0 ]]; do
       DISABLE_TOOLS="${2:-}"
       shift 2
       ;;
+    --require-prefix-cache-hit)
+      REQUIRE_PREFIX_CACHE_HIT="${2:-}"
+      shift 2
+      ;;
+    --session-mode)
+      SESSION_MODE="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -192,6 +204,12 @@ fi
 INSTALL_MODE="$(echo "${INSTALL_MODE}" | tr '[:upper:]' '[:lower:]')"
 if [[ "${INSTALL_MODE}" != "auto" && "${INSTALL_MODE}" != "force" && "${INSTALL_MODE}" != "skip" ]]; then
   echo "--install-mode must be auto, force, or skip" >&2
+  exit 1
+fi
+
+SESSION_MODE="$(echo "${SESSION_MODE}" | tr '[:upper:]' '[:lower:]')"
+if [[ "${SESSION_MODE}" != "isolated" && "${SESSION_MODE}" != "shared" ]]; then
+  echo "--session-mode must be isolated or shared" >&2
   exit 1
 fi
 
@@ -270,6 +288,10 @@ if [[ "${PREFIX_CACHE_STRICT}" != "0" && "${PREFIX_CACHE_STRICT}" != "1" ]]; the
   echo "POCKETGPT_PREFIX_CACHE_STRICT must be 0 or 1" >&2
   exit 1
 fi
+if [[ "${REQUIRE_PREFIX_CACHE_HIT}" != "0" && "${REQUIRE_PREFIX_CACHE_HIT}" != "1" ]]; then
+  echo "POCKETGPT_STAGE2_REQUIRE_PREFIX_CACHE_HIT must be 0 or 1" >&2
+  exit 1
+fi
 
 enforce_minimum_if_needed() {
   local name="$1"
@@ -291,22 +313,12 @@ if [[ "${PROFILE}" == "closure" ]]; then
   WARMUP_MAX_TOKENS="$(enforce_minimum_if_needed "warmup-max-tokens" "${WARMUP_MAX_TOKENS}" 8)"
 fi
 
-if [[ -z "${MODEL_0_8B_PATH}" || -z "${MODEL_2B_PATH}" ]]; then
-  cat <<'MSG' >&2
-Missing model path(s).
-Set both env vars or pass explicit flags:
-  POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH
-  POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH
-MSG
-  exit 1
-fi
-
 MODEL_0_8B_ID="qwen3.5-0.8b-q4"
 MODEL_2B_ID="qwen3.5-2b-q4"
 PACKAGE_NAME="com.pocketagent.android"
 TEST_RUNNER="com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner"
 TEST_CLASS_SWEEP="com.pocketagent.android.NativeStage2BenchmarkInstrumentationTest#runConfiguredModelSweep"
-CSV_HEADER="date,platform,device_class,device_name,backend,runtime,model,scenario,first_token_ms,model_load_ms,prefill_ms,decode_ms,decode_tps,resident_hit,resident_hit_count,reload_reason,prefix_cache_hit,prefix_cache_reused_tokens,prefix_cache_hit_rate,mmap_readahead_ms,mmap_readahead_bytes,active_backend,backend_profile,qualification_state,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom,tokens,runs"
+CSV_HEADER="date,platform,device_class,device_name,backend,runtime,model,scenario,session_mode,first_token_ms,model_load_ms,prefill_ms,decode_ms,decode_tps,resident_hit,resident_hit_count,reload_reason,prefix_cache_hit,prefix_cache_reused_tokens,prefix_cache_hit_rate,mmap_readahead_ms,mmap_readahead_bytes,active_backend,backend_profile,qualification_state,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom,tokens,runs"
 
 SCENARIO_A_CSV="${RUN_DIR}/scenario-a.csv"
 SCENARIO_B_CSV="${RUN_DIR}/scenario-b.csv"
@@ -314,6 +326,31 @@ MODEL_2B_CSV="${RUN_DIR}/model-2b-metrics.csv"
 THRESHOLD_INPUT_CSV="${RUN_DIR}/stage-2-threshold-input.csv"
 NOTES_PATH="${RUN_DIR}/notes.md"
 LOGCAT_PATH="${RUN_DIR}/logcat.txt"
+
+require_model_path_if_selected() {
+  local model_label="$1"
+  local model_path="$2"
+  if [[ -n "${model_path}" ]]; then
+    return
+  fi
+  echo "Missing model path for ${model_label}." >&2
+  case "${model_label}" in
+    0.8b)
+      echo "Set POCKETGPT_QWEN_3_5_0_8B_Q4_SIDELOAD_PATH or pass --model-0-8b-path." >&2
+      ;;
+    2b)
+      echo "Set POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH or pass --model-2b-path." >&2
+      ;;
+  esac
+  exit 1
+}
+
+if [[ "${MODELS}" == "0.8b" || "${MODELS}" == "both" ]]; then
+  require_model_path_if_selected "0.8b" "${MODEL_0_8B_PATH}"
+fi
+if [[ "${MODELS}" == "2b" || "${MODELS}" == "both" ]]; then
+  require_model_path_if_selected "2b" "${MODEL_2B_PATH}"
+fi
 
 metric_value() {
   local metric_line="$1"
@@ -558,11 +595,12 @@ append_metric_row() {
   local meminfo_case="$5"
   local logcat_case="$6"
 
-  local backend first_token_ms model_load_ms prefill_ms decode_ms decode_tps resident_hit resident_hit_count reload_reason
+  local backend session_mode first_token_ms model_load_ms prefill_ms decode_ms decode_tps resident_hit resident_hit_count reload_reason
   local prefix_cache_hit prefix_cache_reused_tokens prefix_cache_hit_rate mmap_readahead_ms mmap_readahead_bytes
   local active_backend backend_profile qualification_state
   local pss_kb peak_rss_mb crash_or_oom tokens runs_reported
   backend="$(metric_value "${metric_line}" "backend")"
+  session_mode="$(metric_value "${metric_line}" "session_mode")"
   first_token_ms="$(metric_value "${metric_line}" "first_token_ms")"
   model_load_ms="$(metric_value "${metric_line}" "model_load_ms")"
   prefill_ms="$(metric_value "${metric_line}" "prefill_ms")"
@@ -596,6 +634,9 @@ append_metric_row() {
     echo "Missing metric values for ${model_id}/${scenario}: ${metric_line}" >&2
     exit 1
   fi
+  if [[ -z "${session_mode}" ]]; then
+    session_mode="${SESSION_MODE}"
+  fi
   if ! awk -v ft="${first_token_ms}" -v tps="${decode_tps}" 'BEGIN { exit !(ft > 0 && tps > 0) }'; then
     echo "Invalid metric values for ${model_id}/${scenario}: first_token_ms=${first_token_ms}, decode_tps=${decode_tps}" >&2
     exit 1
@@ -625,7 +666,7 @@ append_metric_row() {
   fi
 
   printf '%s\n' \
-"${DATE_VALUE},android,mid,${DEVICE},${backend},llama.cpp-native-jni,${model_id},${scenario},${first_token_ms},${model_load_ms},${prefill_ms},${decode_ms},${decode_tps},${resident_hit},${resident_hit_count},${reload_reason},${prefix_cache_hit},${prefix_cache_reused_tokens},${prefix_cache_hit_rate},${mmap_readahead_ms},${mmap_readahead_bytes},${active_backend},${backend_profile},${qualification_state},${peak_rss_mb},0,captured,${crash_or_oom},${tokens},${runs_reported}" \
+"${DATE_VALUE},android,mid,${DEVICE},${backend},llama.cpp-native-jni,${model_id},${scenario},${session_mode},${first_token_ms},${model_load_ms},${prefill_ms},${decode_ms},${decode_tps},${resident_hit},${resident_hit_count},${reload_reason},${prefix_cache_hit},${prefix_cache_reused_tokens},${prefix_cache_hit_rate},${mmap_readahead_ms},${mmap_readahead_bytes},${active_backend},${backend_profile},${qualification_state},${peak_rss_mb},0,captured,${crash_or_oom},${tokens},${runs_reported}" \
     >> "${target_csv}"
 }
 
@@ -703,8 +744,6 @@ run_model_sweep() {
     -e stage2_enable_benchmark true \
     -e stage2_model_id "${model_id}" \
     -e stage2_scenarios "${scenarios_csv}" \
-    -e stage2_model_0_8b_path "${MODEL_0_8B_PATH}" \
-    -e stage2_model_2b_path "${MODEL_2B_PATH}" \
     -e stage2_runs "${RUNS}" \
     -e stage2_max_tokens_a "${MAX_TOKENS_A}" \
     -e stage2_max_tokens_b "${MAX_TOKENS_B}" \
@@ -712,6 +751,10 @@ run_model_sweep() {
     -e stage2_warmup_max_tokens "${WARMUP_MAX_TOKENS}" \
     -e stage2_prefix_cache_enabled "${PREFIX_CACHE_ENABLED}" \
     -e stage2_prefix_cache_strict "${PREFIX_CACHE_STRICT}" \
+    -e stage2_require_prefix_cache_hit "${REQUIRE_PREFIX_CACHE_HIT}" \
+    -e stage2_session_mode "${SESSION_MODE}" \
+    ${MODEL_0_8B_PATH:+-e stage2_model_0_8b_path "${MODEL_0_8B_PATH}"} \
+    ${MODEL_2B_PATH:+-e stage2_model_2b_path "${MODEL_2B_PATH}"} \
     ${RUNTIME_PROFILE:+-e stage2_profile "${RUNTIME_PROFILE}"} \
     ${GPU_ENABLED:+-e stage2_gpu_enabled "${GPU_ENABLED}"} \
     ${N_CTX_OVERRIDE:+-e stage2_n_ctx "${N_CTX_OVERRIDE}"} \
@@ -881,8 +924,12 @@ STATE
   echo "${apk_install_skipped}"
 }
 
-verify_model_path_on_device "${MODEL_0_8B_PATH}"
-verify_model_path_on_device "${MODEL_2B_PATH}"
+if [[ "${MODELS}" == "0.8b" || "${MODELS}" == "both" ]]; then
+  verify_model_path_on_device "${MODEL_0_8B_PATH}"
+fi
+if [[ "${MODELS}" == "2b" || "${MODELS}" == "both" ]]; then
+  verify_model_path_on_device "${MODEL_2B_PATH}"
+fi
 
 adb_retry get-state >/dev/null
 
@@ -972,10 +1019,15 @@ GIT_SHA="$(git rev-parse --short HEAD)"
   echo "- Prefix cache misses: ${TOTAL_PREFIX_CACHE_MISSES}"
   echo "- Prefill tokens reused: ${TOTAL_PREFILL_REUSED_TOKENS}"
   echo "- Prefix cache logs missing: ${PREFIX_CACHE_LOGS_MISSING}"
+  echo "- Require prefix cache hit: ${REQUIRE_PREFIX_CACHE_HIT}"
   echo "- Warm-vs-cold first token delta ms: ${WARM_VS_COLD_FIRST_TOKEN_DELTA_MS:-n/a}"
   echo "- Logcat mode: ${LOGCAT_MODE}"
-  echo "- 0.8B model path: ${MODEL_0_8B_PATH}"
-  echo "- 2B model path: ${MODEL_2B_PATH}"
+  if [[ "${MODELS}" == "0.8b" || "${MODELS}" == "both" ]]; then
+    echo "- 0.8B model path: ${MODEL_0_8B_PATH}"
+  fi
+  if [[ "${MODELS}" == "2b" || "${MODELS}" == "both" ]]; then
+    echo "- 2B model path: ${MODEL_2B_PATH}"
+  fi
   echo "- Runs per scenario: ${RUNS}"
   echo "- Max tokens A/B: ${MAX_TOKENS_A}/${MAX_TOKENS_B}"
   echo "- Min tokens override: ${MIN_TOKENS}"
@@ -1005,6 +1057,7 @@ STAGE2_PREFIX_CACHE_HITS=${TOTAL_PREFIX_CACHE_HITS}
 STAGE2_PREFIX_CACHE_MISSES=${TOTAL_PREFIX_CACHE_MISSES}
 STAGE2_PREFILL_TOKENS_REUSED=${TOTAL_PREFILL_REUSED_TOKENS}
 STAGE2_PREFIX_CACHE_LOGS_MISSING=${PREFIX_CACHE_LOGS_MISSING}
+STAGE2_REQUIRE_PREFIX_CACHE_HIT=${REQUIRE_PREFIX_CACHE_HIT}
 STAGE2_WARM_VS_COLD_FIRST_TOKEN_DELTA_MS=${WARM_VS_COLD_FIRST_TOKEN_DELTA_MS:-}
 META
 
