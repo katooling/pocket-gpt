@@ -119,13 +119,13 @@ internal fun ModelSheet(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = "Load, set defaults, import local files, and manage downloads from one place.",
+                        text = stringResource(id = R.string.ui_model_sheet_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 OutlinedButton(onClick = onRefreshAll) {
-                    Text("Refresh")
+                    Text(stringResource(id = R.string.ui_refresh))
                 }
             }
         }
@@ -135,7 +135,7 @@ internal fun ModelSheet(
                 onValueChange = { searchQuery = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                placeholder = { Text("Search models") },
+                placeholder = { Text(stringResource(id = R.string.ui_search_models)) },
             )
         }
         item {
@@ -149,15 +149,15 @@ internal fun ModelSheet(
         item { HorizontalDivider() }
         item {
             SectionTitle(
-                title = "Downloaded models",
-                subtitle = "One tap to switch. \"Set as default\" controls app startup and routing follow-through.",
+                title = stringResource(id = R.string.ui_downloaded_models),
+                subtitle = stringResource(id = R.string.ui_downloaded_models_subtitle),
             )
         }
         if (installedVersions.isEmpty()) {
             item {
                 EmptyStateCard(
-                    title = "No downloaded models yet",
-                    body = "Import a local GGUF or download one from the catalog below.",
+                    title = stringResource(id = R.string.ui_no_downloaded_models_title),
+                    body = stringResource(id = R.string.ui_no_downloaded_models_body),
                 )
             }
         } else {
@@ -178,15 +178,15 @@ internal fun ModelSheet(
         item { HorizontalDivider() }
         item {
             SectionTitle(
-                title = "Available models",
-                subtitle = "Downloads stream progress inline and switch to loadable cards as soon as the model is installed.",
+                title = stringResource(id = R.string.ui_available_models),
+                subtitle = stringResource(id = R.string.ui_available_models_subtitle),
             )
         }
         if (availableVersions.isEmpty()) {
             item {
                 EmptyStateCard(
-                    title = "Catalog is up to date",
-                    body = "Everything in the current manifest is already installed or filtered out.",
+                    title = stringResource(id = R.string.ui_catalog_up_to_date_title),
+                    body = stringResource(id = R.string.ui_catalog_up_to_date_body),
                 )
             }
         } else {
@@ -220,7 +220,7 @@ internal fun ModelSheet(
                 horizontalArrangement = Arrangement.End,
             ) {
                 Button(onClick = onClose) {
-                    Text("Close")
+                    Text(stringResource(id = R.string.ui_close))
                 }
             }
         }
@@ -228,19 +228,19 @@ internal fun ModelSheet(
     pendingRemoveVersion?.let { (modelId, version) ->
         AlertDialog(
             onDismissRequest = { pendingRemoveVersion = null },
-            title = { Text("Remove model?") },
-            text = { Text("Remove $version? You will need to re-download it to use it again.") },
+            title = { Text(stringResource(id = R.string.ui_remove_model_title)) },
+            text = { Text(stringResource(id = R.string.ui_remove_model_body, version)) },
             confirmButton = {
                 TextButton(onClick = {
                     onRemoveVersion(modelId, version)
                     pendingRemoveVersion = null
                 }) {
-                    Text("Remove")
+                    Text(stringResource(id = R.string.ui_remove))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingRemoveVersion = null }) {
-                    Text("Cancel")
+                    Text(stringResource(id = R.string.ui_cancel_button))
                 }
             },
         )
@@ -264,7 +264,7 @@ private fun ActiveModelSection(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Active model", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(id = R.string.ui_active_model), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             StatusRow(
                 color = modelLoadingState.statusColor(),
                 label = modelLoadingState.statusHeadline(),
@@ -278,11 +278,11 @@ private fun ActiveModelSection(
                             append(version)
                         }
                     }
-                } ?: "Nothing is loaded",
+                } ?: stringResource(id = R.string.ui_nothing_loaded),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "Routing mode: $routingMode",
+                text = stringResource(id = R.string.ui_routing_mode_label, routingMode.name),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -307,7 +307,7 @@ private fun ActiveModelSection(
                 is ModelLoadingState.Offloading -> {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Text(
-                        text = if (modelLoadingState.queued) "Unload queued..." else "Releasing runtime memory...",
+                        text = stringResource(id = if (modelLoadingState.queued) R.string.ui_unload_queued else R.string.ui_releasing_runtime_memory),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -329,12 +329,12 @@ private fun ActiveModelSection(
             ) {
                 if (canLoadLastUsed) {
                     OutlinedButton(onClick = onLoadLastUsedModel) {
-                        Text("Load last used")
+                        Text(stringResource(id = R.string.ui_load_last_used))
                     }
                 }
                 if (modelLoadingState.loadedModel != null) {
                     OutlinedButton(onClick = onOffloadModel) {
-                        Text("Unload")
+                        Text(stringResource(id = R.string.ui_unload))
                     }
                 }
             }
@@ -383,10 +383,10 @@ private fun DownloadedModelCard(
                 StatusRow(
                     color = statusColor,
                     label = when {
-                        isLoaded -> "Loaded"
-                        isRequested -> "Switching"
-                        version.isActive -> "Default"
-                        else -> "Ready"
+                        isLoaded -> stringResource(id = R.string.ui_loaded)
+                        isRequested -> stringResource(id = R.string.ui_switching)
+                        version.isActive -> stringResource(id = R.string.ui_default)
+                        else -> stringResource(id = R.string.ui_ready)
                     },
                 )
             }
@@ -398,19 +398,19 @@ private fun DownloadedModelCard(
                     onClick = { onLoadVersion(model.modelId, version.version) },
                     enabled = !busy && !isLoaded,
                 ) {
-                    Text(if (isLoaded) "Loaded" else "Load")
+                    Text(stringResource(id = if (isLoaded) R.string.ui_loaded else R.string.ui_load))
                 }
                 OutlinedButton(
                     onClick = { onSetDefaultVersion(model.modelId, version.version) },
                     enabled = !version.isActive,
                 ) {
-                    Text(if (version.isActive) "Default" else "Set as default")
+                    Text(stringResource(id = if (version.isActive) R.string.ui_default else R.string.ui_set_as_default))
                 }
                 OutlinedButton(onClick = { onImportModel(model.modelId) }) {
-                    Text(if (model.isProvisioned) "Replace file" else "Import")
+                    Text(stringResource(id = if (model.isProvisioned) R.string.ui_replace_file else R.string.ui_import))
                 }
                 OutlinedButton(onClick = { onRemoveVersion(model.modelId, version.version) }) {
-                    Text("Remove")
+                    Text(stringResource(id = R.string.ui_remove))
                 }
             }
         }
@@ -468,19 +468,19 @@ private fun AvailableModelCard(
                     DownloadTaskStatus.VERIFYING,
                     -> {
                         OutlinedButton(onClick = { onPauseDownload(task.taskId) }) {
-                            Text("Pause")
+                            Text(stringResource(id = R.string.ui_pause))
                         }
                         OutlinedButton(onClick = { onCancelDownload(task.taskId) }) {
-                            Text("Cancel")
+                            Text(stringResource(id = R.string.ui_cancel_button))
                         }
                     }
 
                     DownloadTaskStatus.PAUSED -> {
                         Button(onClick = { onResumeDownload(task.taskId) }) {
-                            Text("Resume")
+                            Text(stringResource(id = R.string.ui_resume))
                         }
                         OutlinedButton(onClick = { onCancelDownload(task.taskId) }) {
-                            Text("Cancel")
+                            Text(stringResource(id = R.string.ui_cancel_button))
                         }
                     }
 
@@ -488,13 +488,13 @@ private fun AvailableModelCard(
                     DownloadTaskStatus.CANCELLED,
                     -> {
                         Button(onClick = { onRetryDownload(task.taskId) }) {
-                            Text("Retry")
+                            Text(stringResource(id = R.string.ui_retry))
                         }
                     }
 
                     else -> {
                         Button(onClick = { onDownloadVersion(version) }) {
-                            Text("Download")
+                            Text(stringResource(id = R.string.ui_download))
                         }
                     }
                 }
@@ -502,7 +502,7 @@ private fun AvailableModelCard(
                     onClick = { onImportModel(version.modelId) },
                     enabled = !isImporting,
                 ) {
-                    Text("Import")
+                    Text(stringResource(id = R.string.ui_import))
                 }
             }
         }

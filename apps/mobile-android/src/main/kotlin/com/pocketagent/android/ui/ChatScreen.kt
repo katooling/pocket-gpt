@@ -353,7 +353,7 @@ private fun MessageList(
             ) {
                 Icon(
                     imageVector = Icons.Default.ExpandMore,
-                    contentDescription = "Scroll to latest message",
+                    contentDescription = stringResource(id = R.string.a11y_scroll_to_latest),
                 )
             }
         }
@@ -422,7 +422,7 @@ private fun MessageBubble(
                     when {
                         attachmentPaths.isNotEmpty() -> {
                             Text(
-                                text = "${attachmentPaths.size} image(s) attached",
+                                text = stringResource(id = R.string.ui_images_attached, attachmentPaths.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -469,127 +469,175 @@ private fun MessageBubble(
                         MarkdownMessageContent(content = content, clipboardManager = clipboardManager)
                     }
 
-                    if (message.role == MessageRole.ASSISTANT && !message.isStreaming && message.content.isNotBlank()) {
-                        val hasMetadata = message.tokensPerSec != null || message.firstTokenMs != null || message.totalLatencyMs != null
-                        if (hasMetadata) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                message.tokensPerSec?.let { Text("${"%.1f".format(it)} tok/s", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                                message.firstTokenMs?.let { Text("TTFT: ${it}ms", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                                message.totalLatencyMs?.let { Text("Total: ${it}ms", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            }
-                        }
-                    }
-
-                    // M12: Inline retry for failed messages
-                    val isFailed = message.role == MessageRole.ASSISTANT &&
-                        !message.isStreaming &&
-                        message.finishReason?.let {
-                            it.startsWith("failed") || it == "timeout" || it == "cancelled"
-                        } == true
-                    if (isFailed) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Surface(
-                            onClick = { onRegenerateMessage(message.id) },
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            shape = MaterialTheme.shapes.small,
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Icon(
-                                    Icons.Default.Refresh,
-                                    contentDescription = "Retry",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                                Text(
-                                    text = "Retry",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                            }
-                        }
-                    }
-
-                    if (message.content.isNotBlank() && !message.isStreaming) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    clipboardManager.setText(AnnotatedString(message.content))
-                                    onCopiedToClipboard()
-                                },
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = stringResource(id = R.string.a11y_copy_message), modifier = Modifier.size(18.dp))
-                            }
-                            if (message.role == MessageRole.USER) {
-                                IconButton(
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onEditMessage(message.id)
-                                    },
-                                ) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Edit message", modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            if (message.role == MessageRole.ASSISTANT) {
-                                IconButton(
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onRegenerateMessage(message.id)
-                                    },
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate response", modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                androidx.compose.material3.DropdownMenu(
-                    expanded = showContextMenu,
-                    onDismissRequest = { showContextMenu = false },
-                ) {
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { Text("Copy") },
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            clipboardManager.setText(AnnotatedString(message.content))
-                            onCopiedToClipboard()
-                            showContextMenu = false
-                        },
+                    MessageMetrics(message)
+                    FailedMessageRetry(message, onRegenerateMessage)
+                    MessageActions(
+                        message = message,
+                        onEditMessage = onEditMessage,
+                        onRegenerateMessage = onRegenerateMessage,
+                        onCopiedToClipboard = onCopiedToClipboard,
+                        clipboardManager = clipboardManager,
                     )
-                    if (message.role == MessageRole.USER) {
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("Edit") },
-                            onClick = {
-                                onEditMessage(message.id)
-                                showContextMenu = false
-                            },
-                        )
-                    }
-                    if (message.role == MessageRole.ASSISTANT) {
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("Regenerate") },
-                            onClick = {
-                                onRegenerateMessage(message.id)
-                                showContextMenu = false
-                            },
-                        )
-                    }
                 }
+
+                MessageContextMenu(
+                    message = message,
+                    expanded = showContextMenu,
+                    onDismiss = { showContextMenu = false },
+                    onEditMessage = onEditMessage,
+                    onRegenerateMessage = onRegenerateMessage,
+                    onCopiedToClipboard = onCopiedToClipboard,
+                    clipboardManager = clipboardManager,
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun MessageMetrics(message: MessageUiModel) {
+    if (message.role != MessageRole.ASSISTANT || message.isStreaming || message.content.isBlank()) return
+    val hasMetadata = message.tokensPerSec != null || message.firstTokenMs != null || message.totalLatencyMs != null
+    if (!hasMetadata) return
+    Spacer(modifier = Modifier.height(4.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val style = MaterialTheme.typography.labelSmall
+        val color = MaterialTheme.colorScheme.onSurfaceVariant
+        message.tokensPerSec?.let { Text(stringResource(id = R.string.ui_metric_tokens_per_sec, it), style = style, color = color) }
+        message.firstTokenMs?.let { Text(stringResource(id = R.string.ui_metric_ttft, it), style = style, color = color) }
+        message.totalLatencyMs?.let { Text(stringResource(id = R.string.ui_metric_total_latency, it), style = style, color = color) }
+    }
+}
+
+@Composable
+private fun FailedMessageRetry(
+    message: MessageUiModel,
+    onRegenerateMessage: (String) -> Unit,
+) {
+    val isFailed = message.role == MessageRole.ASSISTANT &&
+        !message.isStreaming &&
+        message.finishReason?.let {
+            it.startsWith("failed") || it == "timeout" || it == "cancelled"
+        } == true
+    if (!isFailed) return
+    Spacer(modifier = Modifier.height(4.dp))
+    Surface(
+        onClick = { onRegenerateMessage(message.id) },
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = stringResource(id = R.string.a11y_retry),
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Text(
+                text = stringResource(id = R.string.ui_retry),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageActions(
+    message: MessageUiModel,
+    onEditMessage: (String) -> Unit,
+    onRegenerateMessage: (String) -> Unit,
+    onCopiedToClipboard: () -> Unit,
+    clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+) {
+    if (message.content.isBlank() || message.isStreaming) return
+    val haptic = LocalHapticFeedback.current
+    Spacer(modifier = Modifier.height(4.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                clipboardManager.setText(AnnotatedString(message.content))
+                onCopiedToClipboard()
+            },
+        ) {
+            Icon(Icons.Default.ContentCopy, contentDescription = stringResource(id = R.string.a11y_copy_message), modifier = Modifier.size(18.dp))
+        }
+        if (message.role == MessageRole.USER) {
+            IconButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onEditMessage(message.id)
+                },
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = stringResource(id = R.string.a11y_edit_message), modifier = Modifier.size(18.dp))
+            }
+        }
+        if (message.role == MessageRole.ASSISTANT) {
+            IconButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onRegenerateMessage(message.id)
+                },
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = stringResource(id = R.string.a11y_regenerate_response), modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageContextMenu(
+    message: MessageUiModel,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onEditMessage: (String) -> Unit,
+    onRegenerateMessage: (String) -> Unit,
+    onCopiedToClipboard: () -> Unit,
+    clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+) {
+    val haptic = LocalHapticFeedback.current
+    androidx.compose.material3.DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+    ) {
+        androidx.compose.material3.DropdownMenuItem(
+            text = { Text(stringResource(id = R.string.ui_copy)) },
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                clipboardManager.setText(AnnotatedString(message.content))
+                onCopiedToClipboard()
+                onDismiss()
+            },
+        )
+        if (message.role == MessageRole.USER) {
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text(stringResource(id = R.string.ui_edit)) },
+                onClick = {
+                    onEditMessage(message.id)
+                    onDismiss()
+                },
+            )
+        }
+        if (message.role == MessageRole.ASSISTANT) {
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text(stringResource(id = R.string.ui_regenerate)) },
+                onClick = {
+                    onRegenerateMessage(message.id)
+                    onDismiss()
+                },
+            )
         }
     }
 }
@@ -609,13 +657,13 @@ private fun ThinkingBubble(reasoningContent: String) {
             ) {
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "Collapse thinking" else "Expand thinking",
+                    contentDescription = stringResource(id = if (expanded) R.string.a11y_collapse_thinking else R.string.a11y_expand_thinking),
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.size(4.dp))
                 Text(
-                    text = "Thinking",
+                    text = stringResource(id = R.string.ui_thinking),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -674,7 +722,7 @@ private fun ThinkingInProgressIndicator() {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         LoadingDotsAnimation()
         Text(
-            text = "Thinking...",
+            text = stringResource(id = R.string.ui_thinking_in_progress),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

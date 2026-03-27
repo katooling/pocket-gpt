@@ -515,7 +515,6 @@ fun PocketAgentApp(
                     thinkingEnabled = state.activeSession?.completionSettings?.showThinking == true,
                     onToggleThinking = viewModel::toggleSessionThinking,
                     onOpenCompletionSettings = { viewModel.setCompletionSettingsOpen(true) },
-                    onOpenToolDialog = { viewModel.setToolDialogOpen(true) },
                     onBlockedAction = onBlockedAction,
                 )
             },
@@ -700,32 +699,69 @@ fun PocketAgentApp(
         }
     }
 
-    pendingRoutingModeSwitch?.let { (modelId, version) ->
+    RoutingModeSwitchDialog(
+        pending = pendingRoutingModeSwitch,
+        onDismiss = { pendingRoutingModeSwitch = null },
+        onConfirm = { modelId, version ->
+            pendingRoutingModeSwitch = null
+            loadModelVersionAction(modelId, version, false)
+        },
+    )
+
+    MeteredDownloadWarningDialog(
+        pending = pendingMeteredWarningVersion,
+        onDismiss = { pendingMeteredWarningVersion = null },
+        onConfirm = { version ->
+            provisioningViewModel.acknowledgeLargeDownloadCellularWarning()
+            pendingMeteredWarningVersion = null
+            launchDownloadFlow(version)
+        },
+    )
+
+    if (state.showOnboarding) {
+        OnboardingOverlay(
+            page = state.onboardingPage,
+            onNext = viewModel::nextOnboardingPage,
+            onSkip = viewModel::skipOnboarding,
+            onFinish = viewModel::completeOnboarding,
+        )
+    }
+}
+
+@Composable
+private fun RoutingModeSwitchDialog(
+    pending: Pair<String, String>?,
+    onDismiss: () -> Unit,
+    onConfirm: (modelId: String, version: String) -> Unit,
+) {
+    pending?.let { (modelId, version) ->
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { pendingRoutingModeSwitch = null },
-            title = { Text("Switch model now?") },
-            text = { Text("Routing now prefers $modelId. Load $version into memory now?") },
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(id = R.string.ui_switch_model_title)) },
+            text = { Text(stringResource(id = R.string.ui_switch_model_body, modelId, version)) },
             dismissButton = {
-                TextButton(onClick = { pendingRoutingModeSwitch = null }) {
-                    Text("Later")
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(id = R.string.ui_later))
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingRoutingModeSwitch = null
-                        loadModelVersionAction(modelId, version, false)
-                    },
-                ) {
-                    Text("Load")
+                TextButton(onClick = { onConfirm(modelId, version) }) {
+                    Text(stringResource(id = R.string.ui_load))
                 }
             },
         )
     }
+}
 
-    pendingMeteredWarningVersion?.let { version ->
+@Composable
+private fun MeteredDownloadWarningDialog(
+    pending: ModelDistributionVersion?,
+    onDismiss: () -> Unit,
+    onConfirm: (ModelDistributionVersion) -> Unit,
+) {
+    pending?.let { version ->
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { pendingMeteredWarningVersion = null },
+            onDismissRequest = onDismiss,
             title = { Text(stringResource(id = R.string.ui_large_download_metered_title)) },
             text = {
                 Text(
@@ -737,30 +773,15 @@ fun PocketAgentApp(
                 )
             },
             dismissButton = {
-                TextButton(onClick = { pendingMeteredWarningVersion = null }) {
+                TextButton(onClick = onDismiss) {
                     Text(stringResource(id = R.string.ui_cancel_button))
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        provisioningViewModel.acknowledgeLargeDownloadCellularWarning()
-                        pendingMeteredWarningVersion = null
-                        launchDownloadFlow(version)
-                    },
-                ) {
+                TextButton(onClick = { onConfirm(version) }) {
                     Text(stringResource(id = R.string.ui_large_download_metered_continue))
                 }
             },
-        )
-    }
-
-    if (state.showOnboarding) {
-        OnboardingOverlay(
-            page = state.onboardingPage,
-            onNext = viewModel::nextOnboardingPage,
-            onSkip = viewModel::skipOnboarding,
-            onFinish = viewModel::completeOnboarding,
         )
     }
 }

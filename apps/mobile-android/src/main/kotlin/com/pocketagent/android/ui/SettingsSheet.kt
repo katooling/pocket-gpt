@@ -144,7 +144,7 @@ internal fun AdvancedSettingsSheet(
 
         HorizontalDivider()
 
-        Text("Reasoning", style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(id = R.string.ui_reasoning_title), style = MaterialTheme.typography.labelLarge)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -164,9 +164,9 @@ internal fun AdvancedSettingsSheet(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Column {
-                Text("Enable thinking by default for new chats")
+                Text(stringResource(id = R.string.ui_default_thinking_toggle))
                 Text(
-                    text = "You can still toggle it per conversation from the composer.",
+                    text = stringResource(id = R.string.ui_default_thinking_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -328,7 +328,7 @@ private fun DiagnosticsSection(
             style = MaterialTheme.typography.labelLarge,
         )
         Text(
-            text = if (expanded) "Hide" else "Show",
+            text = stringResource(id = if (expanded) R.string.ui_hide else R.string.ui_show),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -343,7 +343,7 @@ private fun DiagnosticsSection(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 DiagnosticLine(
-                    label = "Runtime",
+                    label = stringResource(id = R.string.ui_diag_runtime),
                     value = when (runtime.modelRuntimeStatus) {
                         ModelRuntimeStatus.NOT_READY -> stringResource(id = R.string.ui_model_status_not_ready)
                         ModelRuntimeStatus.LOADING -> stringResource(id = R.string.ui_model_status_loading)
@@ -351,22 +351,22 @@ private fun DiagnosticsSection(
                         ModelRuntimeStatus.ERROR -> stringResource(id = R.string.ui_model_status_error)
                     },
                 )
-                runtime.runtimeBackend?.let { DiagnosticLine("Backend", it) }
-                runtime.modelStatusDetail?.let { DiagnosticLine("Detail", it) }
-                runtime.activeModelId?.let { DiagnosticLine("Active model", it) }
-                runtime.lastFirstTokenLatencyMs?.let { DiagnosticLine("First token", "${it}ms") }
-                runtime.lastTotalLatencyMs?.let { DiagnosticLine("Total latency", "${it}ms") }
-                runtime.lastPrefillMs?.let { DiagnosticLine("Prefill", "${it}ms") }
-                runtime.lastDecodeMs?.let { DiagnosticLine("Decode", "${it}ms") }
-                runtime.lastTokensPerSec?.let { DiagnosticLine("Decode rate", "${"%.2f".format(it)} tok/s") }
-                runtime.lastPeakRssMb?.let { DiagnosticLine("Peak RSS", "${"%.0f".format(it)} MB") }
+                runtime.runtimeBackend?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_backend), it) }
+                runtime.modelStatusDetail?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_detail), it) }
+                runtime.activeModelId?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_active_model), it) }
+                runtime.lastFirstTokenLatencyMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_first_token), stringResource(id = R.string.ui_diag_ms_format, it)) }
+                runtime.lastTotalLatencyMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_total_latency), stringResource(id = R.string.ui_diag_ms_format, it)) }
+                runtime.lastPrefillMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_prefill), stringResource(id = R.string.ui_diag_ms_format, it)) }
+                runtime.lastDecodeMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_decode), stringResource(id = R.string.ui_diag_ms_format, it)) }
+                runtime.lastTokensPerSec?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_decode_rate), stringResource(id = R.string.ui_diag_tok_s_format, it)) }
+                runtime.lastPeakRssMb?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_peak_rss), stringResource(id = R.string.ui_diag_mb_format, it)) }
             }
         }
         TextButton(onClick = onExportDiagnostics) {
             Text(stringResource(id = R.string.ui_export_diagnostics))
         }
         Text(
-            text = "Diagnostics export includes runtime tuning recommendations and recent benchmark samples.",
+            text = stringResource(id = R.string.ui_diagnostics_export_hint),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -388,7 +388,7 @@ private fun PrivacySection() {
             style = MaterialTheme.typography.labelLarge,
         )
         Text(
-            text = if (expanded) "Hide" else "Show",
+            text = stringResource(id = if (expanded) R.string.ui_hide else R.string.ui_show),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )

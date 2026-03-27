@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Tune
@@ -73,7 +72,6 @@ internal fun ComposerBar(
     thinkingEnabled: Boolean = false,
     onToggleThinking: () -> Unit = {},
     onOpenCompletionSettings: () -> Unit = {},
-    onOpenToolDialog: () -> Unit = {},
     onBlockedAction: (ChatGatePrimaryAction) -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -113,14 +111,14 @@ internal fun ComposerBar(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = "Editing message",
+                    text = stringResource(id = R.string.ui_editing_message),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 IconButton(onClick = onCancelEdit) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Cancel edit",
+                        contentDescription = stringResource(id = R.string.a11y_cancel_edit),
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -156,7 +154,7 @@ internal fun ComposerBar(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove image",
+                                    contentDescription = stringResource(id = R.string.a11y_remove_image),
                                     modifier = Modifier.size(14.dp),
                                 )
                             }
@@ -201,7 +199,7 @@ internal fun ComposerBar(
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = if (thinkingEnabled) "Disable thinking" else "Enable thinking",
+                        contentDescription = stringResource(id = if (thinkingEnabled) R.string.a11y_disable_thinking else R.string.a11y_enable_thinking),
                         tint = if (thinkingEnabled) {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -211,17 +209,10 @@ internal fun ComposerBar(
                     )
                 }
             }
-            IconButton(onClick = onOpenToolDialog) {
-                Icon(
-                    imageVector = Icons.Default.Build,
-                    contentDescription = "Local tools",
-                    modifier = Modifier.size(20.dp),
-                )
-            }
             IconButton(onClick = onOpenCompletionSettings) {
                 Icon(
                     imageVector = Icons.Default.Tune,
-                    contentDescription = "Chat settings",
+                    contentDescription = stringResource(id = R.string.a11y_chat_settings),
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -258,7 +249,7 @@ internal fun ComposerBar(
                     when {
                         isSending && isCancelling -> stringResource(id = R.string.ui_cancelling_button)
                         isSending -> stringResource(id = R.string.ui_cancel_button)
-                        isEditing -> "Update"
+                        isEditing -> stringResource(id = R.string.ui_update_button)
                         else -> stringResource(id = R.string.ui_send_button)
                     },
                 )

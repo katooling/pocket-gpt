@@ -202,7 +202,6 @@ data class ChatUiState(
     val isSessionDrawerOpen: Boolean = false,
     val isAdvancedSheetOpen: Boolean = false,
     val isToolDialogOpen: Boolean = false,
-    val isPrivacySheetOpen: Boolean = false,
     val isCompletionSettingsOpen: Boolean = false,
     val showOnboarding: Boolean = false,
     val onboardingPage: Int = 0,
@@ -210,7 +209,6 @@ data class ChatUiState(
     val advancedUnlocked: Boolean = true,
     val firstAnswerCompleted: Boolean = false,
     val followUpCompleted: Boolean = false,
-    val showAdvancedUnlockCue: Boolean = false,
     val firstSessionTelemetryEvents: List<FirstSessionTelemetryEvent> = emptyList(),
 ) {
     val activeSession: ChatSessionUiModel?

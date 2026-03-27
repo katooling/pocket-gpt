@@ -102,20 +102,12 @@ internal fun ChatViewModel.setAdvancedSheetOpenInternal(isOpen: Boolean) {
         return
     }
     _uiState.update {
-        it.copy(
-            isAdvancedSheetOpen = isOpen,
-            showAdvancedUnlockCue = if (isOpen) false else it.showAdvancedUnlockCue,
-        )
+        it.copy(isAdvancedSheetOpen = isOpen)
     }
-    persistState()
 }
 
 internal fun ChatViewModel.setToolDialogOpenInternal(isOpen: Boolean) {
     _uiState.update { it.copy(isToolDialogOpen = isOpen) }
-}
-
-internal fun ChatViewModel.setPrivacySheetOpenInternal(isOpen: Boolean) {
-    _uiState.update { it.copy(isPrivacySheetOpen = isOpen) }
 }
 
 internal fun ChatViewModel.prefillComposerInternal(text: String) {
@@ -199,7 +191,6 @@ internal fun ChatViewModel.onAdvancedUnlockedInternal() {
     _uiState.update { state ->
         state.copy(
             advancedUnlocked = true,
-            showAdvancedUnlockCue = true,
             firstSessionStage = FirstSessionStage.ADVANCED_UNLOCKED,
         )
     }

@@ -308,10 +308,6 @@ class ChatViewModel(
         setToolDialogOpenInternal(isOpen)
     }
 
-    fun setPrivacySheetOpen(isOpen: Boolean) {
-        setPrivacySheetOpenInternal(isOpen)
-    }
-
     fun prefillComposer(text: String) {
         prefillComposerInternal(text)
     }

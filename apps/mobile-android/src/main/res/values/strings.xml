@@ -324,4 +324,99 @@
     <string name="ui_privacy_item_1">Chats and memory are stored locally on this device.</string>
     <string name="ui_privacy_item_2">Offline-only policy blocks network activity in runtime flows.</string>
     <string name="ui_privacy_item_3">Diagnostics export redacts sensitive keys before sharing.</string>
+
+    <!-- Chat message actions -->
+    <string name="ui_copy">Copy</string>
+    <string name="ui_edit">Edit</string>
+    <string name="ui_regenerate">Regenerate</string>
+    <string name="ui_retry">Retry</string>
+    <string name="ui_remove">Remove</string>
+    <string name="ui_load">Load</string>
+    <string name="ui_later">Later</string>
+    <string name="ui_refresh">Refresh</string>
+    <string name="ui_download">Download</string>
+    <string name="ui_import">Import</string>
+    <string name="ui_pause">Pause</string>
+    <string name="ui_resume">Resume</string>
+    <string name="ui_unload">Unload</string>
+    <string name="ui_show">Show</string>
+    <string name="ui_hide">Hide</string>
+    <string name="ui_thinking">Thinking</string>
+    <string name="ui_thinking_in_progress">Thinking…</string>
+
+    <!-- Message metrics -->
+    <string name="ui_metric_tokens_per_sec">%.1f tok/s</string>
+    <string name="ui_metric_ttft">TTFT: %1$dms</string>
+    <string name="ui_metric_total_latency">Total: %1$dms</string>
+    <string name="ui_images_attached">%1$d image(s) attached</string>
+
+    <!-- Composer bar -->
+    <string name="ui_editing_message">Editing message</string>
+    <string name="ui_update_button">Update</string>
+
+    <!-- Model sheet -->
+    <string name="ui_model_sheet_subtitle">Load, set defaults, import local files, and manage downloads from one place.</string>
+    <string name="ui_search_models">Search models</string>
+    <string name="ui_active_model">Active model</string>
+    <string name="ui_nothing_loaded">Nothing is loaded</string>
+    <string name="ui_routing_mode_label">Routing mode: %1$s</string>
+    <string name="ui_unload_queued">Unload queued…</string>
+    <string name="ui_releasing_runtime_memory">Releasing runtime memory…</string>
+    <string name="ui_load_last_used">Load last used</string>
+    <string name="ui_loaded">Loaded</string>
+    <string name="ui_switching">Switching</string>
+    <string name="ui_default">Default</string>
+    <string name="ui_ready">Ready</string>
+    <string name="ui_set_as_default">Set as default</string>
+    <string name="ui_replace_file">Replace file</string>
+    <string name="ui_downloaded_models">Downloaded models</string>
+    <string name="ui_downloaded_models_subtitle">One tap to switch. \"Set as default\" controls app startup and routing follow-through.</string>
+    <string name="ui_no_downloaded_models_title">No downloaded models yet</string>
+    <string name="ui_no_downloaded_models_body">Import a local GGUF or download one from the catalog below.</string>
+    <string name="ui_available_models">Available models</string>
+    <string name="ui_available_models_subtitle">Downloads stream progress inline and switch to loadable cards as soon as the model is installed.</string>
+    <string name="ui_catalog_up_to_date_title">Catalog is up to date</string>
+    <string name="ui_catalog_up_to_date_body">Everything in the current manifest is already installed or filtered out.</string>
+    <string name="ui_remove_model_title">Remove model?</string>
+    <string name="ui_remove_model_body">Remove %1$s? You will need to re-download it to use it again.</string>
+
+    <!-- Routing mode switch dialog -->
+    <string name="ui_switch_model_title">Switch model now?</string>
+    <string name="ui_switch_model_body">Routing now prefers %1$s. Load %2$s into memory now?</string>
+
+    <!-- Settings sheet -->
+    <string name="ui_reasoning_title">Reasoning</string>
+    <string name="ui_default_thinking_toggle">Enable thinking by default for new chats</string>
+    <string name="ui_default_thinking_hint">You can still toggle it per conversation from the composer.</string>
+    <string name="ui_diagnostics_export_hint">Diagnostics export includes runtime tuning recommendations and recent benchmark samples.</string>
+
+    <!-- Diagnostics labels -->
+    <string name="ui_diag_runtime">Runtime</string>
+    <string name="ui_diag_backend">Backend</string>
+    <string name="ui_diag_detail">Detail</string>
+    <string name="ui_diag_active_model">Active model</string>
+    <string name="ui_diag_first_token">First token</string>
+    <string name="ui_diag_total_latency">Total latency</string>
+    <string name="ui_diag_prefill">Prefill</string>
+    <string name="ui_diag_decode">Decode</string>
+    <string name="ui_diag_decode_rate">Decode rate</string>
+    <string name="ui_diag_peak_rss">Peak RSS</string>
+    <string name="ui_diag_ms_format">%1$dms</string>
+    <string name="ui_diag_tok_s_format">%.2f tok/s</string>
+    <string name="ui_diag_mb_format">%.0f MB</string>
+
+    <!-- Accessibility content descriptions -->
+    <string name="a11y_scroll_to_latest">Scroll to latest message</string>
+    <string name="a11y_retry">Retry</string>
+    <string name="a11y_edit_message">Edit message</string>
+    <string name="a11y_regenerate_response">Regenerate response</string>
+    <string name="a11y_collapse_thinking">Collapse thinking</string>
+    <string name="a11y_expand_thinking">Expand thinking</string>
+    <string name="a11y_cancel_edit">Cancel edit</string>
+    <string name="a11y_remove_image">Remove image</string>
+    <string name="a11y_disable_thinking">Disable thinking</string>
+    <string name="a11y_enable_thinking">Enable thinking</string>
+    <string name="a11y_local_tools">Local tools</string>
+    <string name="a11y_chat_settings">Chat settings</string>
+    <string name="a11y_copy_code">Copy code</string>
 </resources>

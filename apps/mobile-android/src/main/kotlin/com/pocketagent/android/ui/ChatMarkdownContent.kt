@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.res.stringResource
+import com.pocketagent.android.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.HorizontalDivider
@@ -82,7 +84,7 @@ internal fun MarkdownMessageContent(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy code",
+                                        contentDescription = stringResource(id = R.string.a11y_copy_code),
                                         modifier = Modifier.size(16.dp),
                                     )
                                 }
