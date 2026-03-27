@@ -25,7 +25,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -102,7 +101,7 @@ internal fun ComposerBar(
             .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
         if (shouldShowChatGateInlineCard(chatGateState)) {
-            ChatGateInlineCard(chatGateState = chatGateState, onPrimaryAction = onBlockedAction)
+            ChatGateInlineCard(chatGateState = chatGateState)
             Spacer(modifier = Modifier.size(8.dp))
         }
         if (isEditing) {
@@ -264,24 +263,14 @@ internal fun ComposerBar(
 @Composable
 internal fun ChatGateInlineCard(
     chatGateState: ChatGateState,
-    onPrimaryAction: (ChatGatePrimaryAction) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth().testTag("chat_gate_inline_card")) {
-        Column(
+        Text(
+            text = chatGateInlineMessage(chatGateState),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = chatGateInlineMessage(chatGateState),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            chatGatePrimaryActionLabelResId(chatGateState.primaryAction)?.let { labelId ->
-                OutlinedButton(onClick = { onPrimaryAction(chatGateState.primaryAction) }) {
-                    Text(stringResource(id = labelId))
-                }
-            }
-        }
+        )
     }
 }
 
@@ -306,11 +295,3 @@ internal fun hasChatGatePrimaryAction(chatGateState: ChatGateState): Boolean {
     return chatGateState.primaryAction != ChatGatePrimaryAction.NONE
 }
 
-internal fun chatGatePrimaryActionLabelResId(action: ChatGatePrimaryAction): Int? {
-    return when (action) {
-        ChatGatePrimaryAction.NONE -> null
-        ChatGatePrimaryAction.GET_READY -> R.string.ui_get_ready
-        ChatGatePrimaryAction.OPEN_MODEL_SETUP -> R.string.ui_open_model_setup
-        ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS -> R.string.ui_refresh_runtime_checks
-    }
-}

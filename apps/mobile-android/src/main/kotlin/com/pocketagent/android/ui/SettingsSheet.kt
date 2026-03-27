@@ -17,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -43,7 +41,6 @@ import com.pocketagent.android.R
 import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.ui.state.ChatUiState
-import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
@@ -75,7 +72,6 @@ internal fun PrivacyInfoSheet(onClose: () -> Unit) {
 @Composable
 internal fun AdvancedSettingsSheet(
     state: ChatUiState,
-    modelLoadingState: ModelLoadingState,
     wifiOnlyDownloadsEnabled: Boolean,
     onDefaultThinkingEnabledChanged: (Boolean) -> Unit,
     onRoutingModeSelected: (RoutingMode) -> Unit,
@@ -84,8 +80,6 @@ internal fun AdvancedSettingsSheet(
     onWifiOnlyDownloadsChanged: (Boolean) -> Unit,
     onGpuAccelerationEnabledChanged: (Boolean) -> Unit,
     onExportDiagnostics: () -> Unit,
-    onOpenModelLibrary: () -> Unit,
-    onOpenRuntimeControls: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
     Column(
@@ -103,84 +97,6 @@ internal fun AdvancedSettingsSheet(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.semantics { heading() },
         )
-
-        // --- Quick actions (most used) ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedButton(
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("open_model_library_button"),
-                onClick = onOpenModelLibrary,
-            ) {
-                Text(stringResource(id = R.string.ui_open_model_library))
-            }
-            OutlinedButton(
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("open_runtime_controls_button"),
-                onClick = onOpenRuntimeControls,
-            ) {
-                Text(stringResource(id = R.string.ui_open_runtime_controls))
-            }
-        }
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = MaterialTheme.shapes.medium,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = stringResource(
-                        id = R.string.ui_model_runtime_lifecycle_status,
-                        modelLoadingState.readableRuntimeStateLabel(),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (modelLoadingState is ModelLoadingState.Offloading && modelLoadingState.queued) {
-                    Text(
-                        text = stringResource(id = R.string.ui_model_runtime_offload_queued),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                modelLoadingState.loadedModel?.let { loaded ->
-                    Text(
-                        text = stringResource(
-                            id = R.string.ui_model_runtime_loaded_version_label,
-                            loaded.modelId,
-                            loaded.modelVersion.orEmpty().ifBlank { "-" },
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                val requestedModel = when (modelLoadingState) {
-                    is ModelLoadingState.Loading -> modelLoadingState.requestedModel
-                    is ModelLoadingState.Error -> modelLoadingState.requestedModel
-                    else -> null
-                }
-                requestedModel?.let { requested ->
-                    Text(
-                        text = stringResource(
-                            id = R.string.ui_model_runtime_requested_version_label,
-                            requested.modelId,
-                            requested.modelVersion.orEmpty().ifBlank { "-" },
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        HorizontalDivider()
 
         // --- Speed & Battery ---
         Text(stringResource(id = R.string.ui_speed_battery_title), style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
@@ -271,9 +187,9 @@ internal fun AdvancedSettingsSheet(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Column {
-                Text("Default thinking enabled")
+                Text("Enable thinking by default for new chats")
                 Text(
-                    text = "New chats inherit this. You can still override it per conversation.",
+                    text = "You can still toggle it per conversation from the composer.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -409,6 +325,11 @@ internal fun AdvancedSettingsSheet(
             runtime = state.runtime,
             onExportDiagnostics = onExportDiagnostics,
         )
+
+        HorizontalDivider()
+
+        // --- Privacy (collapsible) ---
+        PrivacySection()
     }
 }
 
@@ -472,6 +393,35 @@ private fun DiagnosticsSection(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun PrivacySection() {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = stringResource(id = R.string.ui_privacy_title),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Text(
+            text = if (expanded) "Hide" else "Show",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    if (expanded) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(stringResource(id = R.string.ui_privacy_item_1), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(id = R.string.ui_privacy_item_2), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(id = R.string.ui_privacy_item_3), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

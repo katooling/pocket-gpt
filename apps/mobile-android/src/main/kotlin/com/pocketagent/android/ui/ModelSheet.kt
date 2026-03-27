@@ -3,6 +3,8 @@
 package com.pocketagent.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.stringResource
+import com.pocketagent.android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -562,3 +564,25 @@ private fun matchesModelSearch(
 }
 
 private fun versionKey(modelId: String, version: String): String = "$modelId::$version"
+
+@Composable
+internal fun ModelLoadingState.statusHeadline(): String {
+    return when (this) {
+        is ModelLoadingState.Idle -> stringResource(id = R.string.ui_model_runtime_state_unloaded)
+        is ModelLoadingState.Loading -> stage
+        is ModelLoadingState.Loaded -> stringResource(id = R.string.ui_model_runtime_state_loaded)
+        is ModelLoadingState.Offloading -> stringResource(id = R.string.ui_model_runtime_state_offloading)
+        is ModelLoadingState.Error -> stringResource(id = R.string.ui_model_runtime_state_failed)
+    }
+}
+
+@Composable
+internal fun ModelLoadingState.statusColor(): Color {
+    return when (this) {
+        is ModelLoadingState.Idle -> MaterialTheme.colorScheme.outline
+        is ModelLoadingState.Loading -> MaterialTheme.colorScheme.tertiary
+        is ModelLoadingState.Loaded -> MaterialTheme.colorScheme.primary
+        is ModelLoadingState.Offloading -> MaterialTheme.colorScheme.secondary
+        is ModelLoadingState.Error -> MaterialTheme.colorScheme.error
+    }
+}

@@ -12,9 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -69,10 +67,6 @@ import com.pocketagent.runtime.ThinkingSupport
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.launch
 
-internal enum class ModelManagementSurface {
-    LIBRARY,
-    RUNTIME,
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -113,7 +107,7 @@ fun PocketAgentApp(
     }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    var modelManagementSurface by remember { mutableStateOf<ModelManagementSurface?>(null) }
+    var modelManagementSurface by remember { mutableStateOf(false) }
     var selectedModelIdForImport by remember { mutableStateOf<String?>(null) }
     var pendingGetReadyActivation by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingMeteredWarningVersion by remember { mutableStateOf<ModelDistributionVersion?>(null) }
@@ -163,13 +157,10 @@ fun PocketAgentApp(
             else -> beginDownload(version)
         }
     }
-    val openModelLibraryAction: () -> Unit = {
+    val openModelSheet: () -> Unit = {
         provisioningViewModel.refreshSnapshot()
-        modelManagementSurface = ModelManagementSurface.LIBRARY
-    }
-    val openRuntimeControlsAction: () -> Unit = {
-        provisioningViewModel.refreshSnapshot()
-        modelManagementSurface = ModelManagementSurface.LIBRARY
+        scope.launch { provisioningViewModel.refreshManifest() }
+        modelManagementSurface = true
     }
     val showBusyModelOperationFeedback: () -> Unit = {
         scope.launch {
@@ -192,7 +183,7 @@ fun PocketAgentApp(
                 ),
             )
             if (result.success && closeOnSuccess) {
-                modelManagementSurface = null
+                modelManagementSurface = false
             }
         }
     }
@@ -212,7 +203,7 @@ fun PocketAgentApp(
                 ),
             )
             if (result.success && closeOnSuccess) {
-                modelManagementSurface = null
+                modelManagementSurface = false
             }
         }
     }
@@ -232,13 +223,14 @@ fun PocketAgentApp(
                 ),
             )
             if (result.success && closeOnSuccess) {
-                modelManagementSurface = null
+                modelManagementSurface = false
             }
         }
     }
-    val refreshRuntimeChecksAction: () -> Unit = {
+    val refreshAction: () -> Unit = {
         viewModel.refreshRuntimeReadiness()
         provisioningViewModel.refreshSnapshot()
+        scope.launch { provisioningViewModel.refreshManifest() }
         provisioningViewModel.setStatusMessage(
             context.getString(R.string.ui_model_refresh_runtime_feedback),
         )
@@ -257,7 +249,7 @@ fun PocketAgentApp(
                 provisioningViewModel.setStatusMessage(
                     context.getString(R.string.ui_model_downloads_manifest_empty),
                 )
-                openModelLibraryAction()
+                openModelSheet()
                 return@launch
             }
 
@@ -289,14 +281,14 @@ fun PocketAgentApp(
 
             pendingGetReadyActivation = defaultVersion.modelId to defaultVersion.version
             launchDownloadFlow(defaultVersion)
-            openModelLibraryAction()
+            openModelSheet()
         }
     }
     val onBlockedAction: (ChatGatePrimaryAction) -> Unit = { action ->
         when (action) {
             ChatGatePrimaryAction.GET_READY -> runGetReadyFlow()
-            ChatGatePrimaryAction.OPEN_MODEL_SETUP -> openModelLibraryAction()
-            ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS -> refreshRuntimeChecksAction()
+            ChatGatePrimaryAction.OPEN_MODEL_SETUP -> openModelSheet()
+            ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS -> refreshAction()
             ChatGatePrimaryAction.NONE -> Unit
         }
     }
@@ -423,7 +415,7 @@ fun PocketAgentApp(
         }
         if (transitioned?.status == DownloadTaskStatus.FAILED && pendingGetReadyActivation != null) {
             pendingGetReadyActivation = null
-            openModelLibraryAction()
+            openModelSheet()
         }
         previousDownloadStatuses.clear()
         downloads.forEach { task ->
@@ -432,11 +424,8 @@ fun PocketAgentApp(
     }
 
     LaunchedEffect(modelManagementSurface) {
-        val surface = modelManagementSurface ?: return@LaunchedEffect
+        if (!modelManagementSurface) return@LaunchedEffect
         provisioningViewModel.refreshSnapshot()
-        if (surface != ModelManagementSurface.LIBRARY) {
-            return@LaunchedEffect
-        }
         provisioningViewModel.refreshManifest()
     }
 
@@ -490,30 +479,12 @@ fun PocketAgentApp(
                     },
                     actions = {
                         IconButton(
-                            modifier = Modifier.testTag("tool_dialog_button"),
-                            onClick = { viewModel.setToolDialogOpen(true) },
-                        ) {
-                            Icon(
-                                Icons.Default.Build,
-                                contentDescription = stringResource(id = R.string.a11y_tool_actions_open),
-                            )
-                        }
-                        IconButton(
                             modifier = Modifier.testTag("advanced_sheet_button"),
                             onClick = { viewModel.setAdvancedSheetOpen(true) },
                         ) {
                             Icon(
                                 Icons.Default.Settings,
                                 contentDescription = stringResource(id = R.string.a11y_advanced_controls_open),
-                            )
-                        }
-                        IconButton(
-                            modifier = Modifier.testTag("privacy_sheet_button"),
-                            onClick = { viewModel.setPrivacySheetOpen(true) },
-                        ) {
-                            Icon(
-                                Icons.Default.PrivacyTip,
-                                contentDescription = stringResource(id = R.string.a11y_privacy_controls_open),
                             )
                         }
                     },
@@ -550,14 +521,15 @@ fun PocketAgentApp(
                 modelLoadingState = modelLoadingState,
                 onSuggestedPrompt = viewModel::prefillComposer,
                 onGetReadyTapped = runGetReadyFlow,
-                onOpenModelLibrary = openModelLibraryAction,
+                onOpenModelLibrary = openModelSheet,
                 canLoadLastUsedModel = canLoadLastUsedModel,
                 lastUsedModelLabel = lastUsedModelLabel,
                 onLoadLastUsedModel = { loadLastUsedModelAction(false) },
                 activeRuntimeModelLabel = activeRuntimeModelLabel,
-                onOpenRuntimeControls = openRuntimeControlsAction,
+                onOpenRuntimeControls = openModelSheet,
                 onOpenAdvanced = { viewModel.setAdvancedSheetOpen(true) },
-                onRefreshRuntimeChecks = refreshRuntimeChecksAction,
+                onRefreshRuntimeChecks = refreshAction,
+                onOpenToolDialog = { viewModel.setToolDialogOpen(true) },
                 onEditMessage = viewModel::editMessage,
                 onRegenerateMessage = viewModel::regenerateResponse,
                 onCopiedToClipboard = {
@@ -577,16 +549,6 @@ fun PocketAgentApp(
         )
     }
 
-    if (state.isPrivacySheetOpen) {
-        val privacySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { viewModel.setPrivacySheetOpen(false) },
-            sheetState = privacySheetState,
-        ) {
-            PrivacyInfoSheet(onClose = { viewModel.setPrivacySheetOpen(false) })
-        }
-    }
-
     if (state.isAdvancedSheetOpen) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
@@ -595,7 +557,6 @@ fun PocketAgentApp(
         ) {
             AdvancedSettingsSheet(
                 state = state,
-                modelLoadingState = modelLoadingState,
                 wifiOnlyDownloadsEnabled = provisioningState.downloadPreferences.wifiOnlyEnabled,
                 onDefaultThinkingEnabledChanged = viewModel::setDefaultThinkingEnabled,
                 onRoutingModeSelected = { mode ->
@@ -625,8 +586,6 @@ fun PocketAgentApp(
                 onWifiOnlyDownloadsChanged = provisioningViewModel::setDownloadWifiOnlyEnabled,
                 onGpuAccelerationEnabledChanged = viewModel::setGpuAccelerationEnabled,
                 onExportDiagnostics = viewModel::exportDiagnostics,
-                onOpenModelLibrary = openModelLibraryAction,
-                onOpenRuntimeControls = openRuntimeControlsAction,
             )
         }
     }
@@ -645,10 +604,10 @@ fun PocketAgentApp(
         }
     }
 
-    if (modelManagementSurface != null) {
+    if (modelManagementSurface) {
         val runtimeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { modelManagementSurface = null },
+            onDismissRequest = { modelManagementSurface = false },
             sheetState = runtimeSheetState,
         ) {
             ModelSheet(
@@ -734,7 +693,7 @@ fun PocketAgentApp(
                         )
                     }
                 },
-                onClose = { modelManagementSurface = null },
+                onClose = { modelManagementSurface = false },
             )
         }
     }

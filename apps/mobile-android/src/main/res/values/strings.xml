@@ -277,7 +277,7 @@
     <string name="ui_large_download_metered_title">Large download on metered network</string>
     <string name="ui_large_download_metered_body">%1$s is %2$s. Continue on the current metered connection?</string>
     <string name="ui_large_download_metered_continue">Continue download</string>
-    <string name="ui_refresh_runtime_checks">Refresh runtime checks</string>
+    <string name="ui_refresh_runtime_checks">Refresh</string>
     <string name="ui_runtime_model_empty_title">No installed models yet</string>
     <string name="ui_runtime_model_empty_body">Install or import a model from the model library before using runtime load controls.</string>
     <string name="ui_runtime_model_installed_section">Installed models ready to load</string>

@@ -17,7 +17,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,8 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.CompletionSettings
@@ -54,7 +51,6 @@ internal fun CompletionSettingsSheet(
     var systemPrompt by remember(settings) { mutableStateOf(settings.systemPrompt) }
     var showThinking by remember(settings) { mutableStateOf(settings.showThinking) }
     var showAdvanced by remember { mutableStateOf(false) }
-    val haptic = LocalHapticFeedback.current
 
     fun emitUpdate() {
         onSettingsChanged(
@@ -137,32 +133,6 @@ internal fun CompletionSettingsSheet(
             onValueChange = { maxTokens = it.roundToInt() },
             onValueChangeFinished = { emitUpdate() },
         )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(id = R.string.ui_completion_show_thinking_label),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = stringResource(id = R.string.ui_completion_show_thinking_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = showThinking,
-                onCheckedChange = { checked ->
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    showThinking = checked
-                    emitUpdate()
-                },
-            )
-        }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
