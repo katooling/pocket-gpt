@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 from typing import Sequence
 
 from tools.devctl.doctor import print_doctor_report, run_doctor
@@ -19,6 +20,7 @@ from tools.devctl.governance import (
     stage_close_gate,
     validate_pr_body,
 )
+from tools.devctl import reporting
 from tools.devctl.lanes import build_runtime_context, dispatch_lane
 from tools.devctl.subprocess_utils import DevctlError
 
@@ -57,6 +59,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     gov_sub.add_parser("model-audit", help="cross-reference model catalog, distribution, routing, and scripts")
     gov_sub.add_parser("self-test", help="run governance self-tests")
+
+    report = subparsers.add_parser("report", help="inspect the latest Maestro/devctl report artifacts")
+    report.add_argument("kind", choices=["journey", "screenshot-pack"], help="report family to inspect")
+    report.add_argument("--root", type=str, default=None, help="override repository root")
+    report.add_argument("--open", action="store_true", dest="open_files", help="open matched report files")
 
     doctor = subparsers.add_parser("doctor", help="run environment diagnostics")
     doctor.add_argument("--json", action="store_true", dest="as_json", help="emit machine-readable JSON")
@@ -120,6 +127,11 @@ def _handle_doctor(as_json: bool) -> int:
     return 0 if report.ok else 1
 
 
+def _handle_report(parsed: argparse.Namespace) -> None:
+    root = None if parsed.root is None else Path(parsed.root)
+    reporting.show_report(parsed.kind, repo_root=root, open_files=parsed.open_files)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     parsed = parser.parse_args(list(argv) if argv is not None else None)
@@ -139,6 +151,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if parsed.command == "doctor":
             return _handle_doctor(parsed.as_json)
+
+        if parsed.command == "report":
+            _handle_report(parsed)
+            return 0
 
         raise DevctlError("CONFIG_ERROR", f"Unknown command '{parsed.command}'")
     except DevctlError as exc:

@@ -1,0 +1,72 @@
+project:
+  apk_glob: apps/mobile-android/build/outputs/apk/debug/*.apk
+  build_command:
+    - ./gradlew
+    - --no-daemon
+    - :apps:mobile-android:assembleDebug
+  install_command:
+    - ./gradlew
+    - --no-daemon
+    - :apps:mobile-android:installDebug
+  app_id: com.pocketagent.android
+  test_app_id: com.pocketagent.android.test
+
+doctor:
+  delegate_command:
+    - python3
+    - tools/devctl/main.py
+    - doctor
+
+artifacts:
+  scratch_root: .maestro-android/runs
+  report_roots:
+    - .maestro-android/runs
+    - scripts/benchmarks/runs
+    - tmp/devctl-artifacts
+  lifecycle_root: tmp/lifecycle-e2e-first-run
+  clean_roots:
+    - .maestro-android
+    - tmp/lifecycle-e2e-first-run
+
+flows:
+  roots:
+    - tests/maestro
+    - tests/maestro-cloud
+
+scoped:
+  command_prefix:
+    - bash
+    - scripts/dev/scoped-repro.sh
+  require_tmp_flow: true
+  require_title_description_comments: true
+
+lanes:
+  smoke:
+    kind: devctl-lane
+    name: maestro
+  journey:
+    kind: devctl-lane
+    name: journey
+  screenshot-pack:
+    kind: devctl-lane
+    name: screenshot-pack
+  lifecycle:
+    kind: command
+    argv:
+      - bash
+      - scripts/ci/run_lifecycle_e2e.sh
+      - local-manual
+  cloud-smoke:
+    kind: command
+    argv:
+      - bash
+      - scripts/dev/maestro-cloud-smoke.sh
+  fast-smoke:
+    kind: devctl-lane
+    name: fast-smoke
+  valid-output:
+    kind: devctl-lane
+    name: valid-output
+  strict-journey:
+    kind: devctl-lane
+    name: strict-journey

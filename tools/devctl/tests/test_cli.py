@@ -31,6 +31,20 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(1, exit_code)
 
+    def test_main_dispatches_report_command(self) -> None:
+        captured: list[tuple[str, object | None, bool]] = []
+        original = cli.reporting.show_report
+        try:
+            cli.reporting.show_report = (  # type: ignore[assignment]
+                lambda kind, repo_root=None, open_files=False: captured.append((kind, repo_root, open_files))
+            )
+            exit_code = cli.main(["report", "journey", "--open"])
+        finally:
+            cli.reporting.show_report = original  # type: ignore[assignment]
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual([("journey", None, True)], captured)
+
 
 if __name__ == "__main__":
     unittest.main()
