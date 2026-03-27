@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +32,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatGatePrimaryAction
@@ -58,6 +61,7 @@ internal fun ComposerBar(
     onOpenCompletionSettings: () -> Unit = {},
     onBlockedAction: (ChatGatePrimaryAction) -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val isEditing = editingMessageId != null
     val canTriggerBlockedAction = hasChatGatePrimaryAction(chatGateState)
     val canTriggerUserAction = chatGateState.isReady || canTriggerBlockedAction
@@ -70,7 +74,10 @@ internal fun ComposerBar(
         else -> stringResource(id = R.string.a11y_send_state_enabled)
     }
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .imePadding()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
         if (shouldShowChatGateInlineCard(chatGateState)) {
             ChatGateInlineCard(chatGateState = chatGateState, onPrimaryAction = onBlockedAction)
@@ -159,7 +166,10 @@ internal fun ComposerBar(
             )
             if (showThinkingToggle) {
                 IconButton(
-                    onClick = onToggleThinking,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onToggleThinking()
+                    },
                     modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
@@ -189,6 +199,7 @@ internal fun ComposerBar(
                         stateDescription = sendStateDescription
                     },
                 onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     when {
                         isSending && !isCancelling -> onCancelSend()
                         isEditing -> onSubmitEdit()

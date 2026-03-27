@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui.state
 
+import androidx.compose.runtime.Immutable
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.runtime.RuntimePerformanceProfile
@@ -18,6 +19,7 @@ enum class MessageKind {
     DIAGNOSTIC,
 }
 
+@Immutable
 data class MessageUiModel(
     val id: String,
     val role: MessageRole,
@@ -66,6 +68,7 @@ enum class PersistedToolCallStatus {
     FAILED,
 }
 
+@Immutable
 data class CompletionSettings(
     val temperature: Float = 0.6f,
     val topP: Float = 0.95f,
@@ -78,6 +81,7 @@ data class CompletionSettings(
     val showThinking: Boolean = false,
 )
 
+@Immutable
 data class ChatSessionUiModel(
     val id: String,
     val title: String,

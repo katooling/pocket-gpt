@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.CompletionSettings
@@ -52,6 +54,7 @@ internal fun CompletionSettingsSheet(
     var systemPrompt by remember(settings) { mutableStateOf(settings.systemPrompt) }
     var showThinking by remember(settings) { mutableStateOf(settings.showThinking) }
     var showAdvanced by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
 
     fun emitUpdate() {
         onSettingsChanged(
@@ -154,6 +157,7 @@ internal fun CompletionSettingsSheet(
             Switch(
                 checked = showThinking,
                 onCheckedChange = { checked ->
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     showThinking = checked
                     emitUpdate()
                 },

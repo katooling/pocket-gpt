@@ -33,8 +33,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.GpuProbeFailureReason
@@ -84,6 +87,7 @@ internal fun AdvancedSettingsSheet(
     onOpenModelLibrary: () -> Unit,
     onOpenRuntimeControls: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -97,6 +101,7 @@ internal fun AdvancedSettingsSheet(
             text = stringResource(id = R.string.ui_advanced_controls_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { heading() },
         )
 
         // --- Quick actions (most used) ---
@@ -178,7 +183,7 @@ internal fun AdvancedSettingsSheet(
         HorizontalDivider()
 
         // --- Speed & Battery ---
-        Text(stringResource(id = R.string.ui_speed_battery_title), style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(id = R.string.ui_speed_battery_title), style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
         Text(
             text = stringResource(id = R.string.ui_speed_battery_subtitle),
             style = MaterialTheme.typography.bodySmall,
@@ -217,7 +222,7 @@ internal fun AdvancedSettingsSheet(
         HorizontalDivider()
 
         // --- Downloads ---
-        Text(stringResource(id = R.string.ui_download_controls_title), style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(id = R.string.ui_download_controls_title), style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
         Text(
             text = stringResource(id = R.string.ui_download_controls_subtitle),
             style = MaterialTheme.typography.bodySmall,
@@ -229,7 +234,10 @@ internal fun AdvancedSettingsSheet(
                 .toggleable(
                     value = wifiOnlyDownloadsEnabled,
                     role = Role.Switch,
-                    onValueChange = onWifiOnlyDownloadsChanged,
+                    onValueChange = { checked ->
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onWifiOnlyDownloadsChanged(checked)
+                    },
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -250,7 +258,10 @@ internal fun AdvancedSettingsSheet(
                 .toggleable(
                     value = state.defaultThinkingEnabled,
                     role = Role.Switch,
-                    onValueChange = onDefaultThinkingEnabledChanged,
+                    onValueChange = { checked ->
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onDefaultThinkingEnabledChanged(checked)
+                    },
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -309,7 +320,10 @@ internal fun AdvancedSettingsSheet(
                     value = state.runtime.gpuAccelerationEnabled,
                     enabled = state.runtime.gpuAccelerationSupported,
                     role = Role.Switch,
-                    onValueChange = { checked -> onGpuAccelerationEnabledChanged(checked) },
+                    onValueChange = { checked ->
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onGpuAccelerationEnabledChanged(checked)
+                    },
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
