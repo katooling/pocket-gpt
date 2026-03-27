@@ -57,14 +57,12 @@ internal fun OfflineAndStatusHeader(
     state: ChatUiState,
     modelLoadingState: ModelLoadingState,
     onGetReadyTapped: () -> Unit,
-    onOpenModelLibrary: () -> Unit,
+    onOpenModels: () -> Unit,
     canLoadLastUsedModel: Boolean,
     lastUsedModelLabel: String?,
     onLoadLastUsedModel: () -> Unit,
     activeRuntimeModelLabel: String?,
-    onOpenRuntimeControls: () -> Unit,
-    onOpenAdvanced: () -> Unit,
-    onRefreshRuntimeChecks: () -> Unit,
+    onRefresh: () -> Unit,
 ) {
     var showTechnicalDetails by remember(state.runtime.lastErrorTechnicalDetail) {
         mutableStateOf(false)
@@ -114,7 +112,7 @@ internal fun OfflineAndStatusHeader(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 AssistChip(
-                    onClick = onOpenRuntimeControls,
+                    onClick = onOpenModels,
                     colors = lifecycleChipColors,
                     leadingIcon = {
                         Icon(
@@ -126,7 +124,7 @@ internal fun OfflineAndStatusHeader(
                 )
                 if (!activeRuntimeModelLabel.isNullOrBlank()) {
                     AssistChip(
-                        onClick = onOpenRuntimeControls,
+                        onClick = onOpenModels,
                         label = { StatusChipLabel(activeRuntimeModelLabel) },
                     )
                 }
@@ -187,8 +185,8 @@ internal fun OfflineAndStatusHeader(
 
             if (modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onOpenRuntimeControls) {
-                        Text(stringResource(id = R.string.ui_open_runtime_controls))
+                    TextButton(onClick = onOpenModels) {
+                        Text(stringResource(id = R.string.ui_open_models))
                     }
                 }
             } else if (state.runtime.modelRuntimeStatus != ModelRuntimeStatus.READY) {
@@ -196,20 +194,20 @@ internal fun OfflineAndStatusHeader(
                     TextButton(onClick = onGetReadyTapped) {
                         Text(stringResource(id = R.string.ui_get_ready))
                     }
-                    TextButton(onClick = onOpenModelLibrary) {
-                        Text(stringResource(id = R.string.ui_open_model_setup))
+                    TextButton(onClick = onOpenModels) {
+                        Text(stringResource(id = R.string.ui_open_models))
                     }
-                    TextButton(onClick = onOpenRuntimeControls) {
-                        Text(stringResource(id = R.string.ui_open_runtime_controls))
+                    TextButton(
+                        onClick = onRefresh,
+                        enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
+                    ) {
+                        Text(stringResource(id = R.string.ui_refresh_runtime_checks))
                     }
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onOpenAdvanced) {
-                        Text(stringResource(id = R.string.ui_open_advanced_controls))
-                    }
                     TextButton(
-                        onClick = onRefreshRuntimeChecks,
+                        onClick = onRefresh,
                         enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
                     ) {
                         Text(stringResource(id = R.string.ui_refresh_runtime_checks))

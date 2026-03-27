@@ -447,7 +447,10 @@ fun PocketAgentApp(
                 SessionDrawer(
                     state = state,
                     onCreateSession = viewModel::createSession,
-                    onSwitchSession = viewModel::switchSession,
+                    onSwitchSession = { id ->
+                        viewModel.switchSession(id)
+                        viewModel.setSessionDrawerOpen(false)
+                    },
                     onDeleteSession = viewModel::deleteSession,
                 )
             }
@@ -512,6 +515,7 @@ fun PocketAgentApp(
                     thinkingEnabled = state.activeSession?.completionSettings?.showThinking == true,
                     onToggleThinking = viewModel::toggleSessionThinking,
                     onOpenCompletionSettings = { viewModel.setCompletionSettingsOpen(true) },
+                    onOpenToolDialog = { viewModel.setToolDialogOpen(true) },
                     onBlockedAction = onBlockedAction,
                 )
             },
@@ -521,14 +525,12 @@ fun PocketAgentApp(
                 modelLoadingState = modelLoadingState,
                 onSuggestedPrompt = viewModel::prefillComposer,
                 onGetReadyTapped = runGetReadyFlow,
-                onOpenModelLibrary = openModelSheet,
+                onOpenModels = openModelSheet,
                 canLoadLastUsedModel = canLoadLastUsedModel,
                 lastUsedModelLabel = lastUsedModelLabel,
                 onLoadLastUsedModel = { loadLastUsedModelAction(false) },
                 activeRuntimeModelLabel = activeRuntimeModelLabel,
-                onOpenRuntimeControls = openModelSheet,
-                onOpenAdvanced = { viewModel.setAdvancedSheetOpen(true) },
-                onRefreshRuntimeChecks = refreshAction,
+                onRefresh = refreshAction,
                 onOpenToolDialog = { viewModel.setToolDialogOpen(true) },
                 onEditMessage = viewModel::editMessage,
                 onRegenerateMessage = viewModel::regenerateResponse,

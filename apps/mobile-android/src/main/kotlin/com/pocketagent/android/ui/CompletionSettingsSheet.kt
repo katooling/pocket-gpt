@@ -69,7 +69,7 @@ internal fun CompletionSettingsSheet(
     }
 
     fun resetDefaults() {
-        val defaults = CompletionSettings()
+        val defaults = CompletionSettings(showThinking = showThinking)
         temperature = defaults.temperature
         topP = defaults.topP
         topK = defaults.topK
@@ -78,7 +78,6 @@ internal fun CompletionSettingsSheet(
         frequencyPenalty = defaults.frequencyPenalty
         presencePenalty = defaults.presencePenalty
         systemPrompt = defaults.systemPrompt
-        showThinking = defaults.showThinking
         onSettingsChanged(defaults)
     }
 

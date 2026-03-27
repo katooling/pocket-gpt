@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Tune
@@ -72,6 +73,7 @@ internal fun ComposerBar(
     thinkingEnabled: Boolean = false,
     onToggleThinking: () -> Unit = {},
     onOpenCompletionSettings: () -> Unit = {},
+    onOpenToolDialog: () -> Unit = {},
     onBlockedAction: (ChatGatePrimaryAction) -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -169,10 +171,8 @@ internal fun ComposerBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             IconButton(
-                onClick = {
-                    if (chatGateState.isReady) onAttachImage() else onBlockedAction(chatGateState.primaryAction)
-                },
-                enabled = !isSending && canTriggerUserAction,
+                onClick = onAttachImage,
+                enabled = !isSending,
             ) {
                 Icon(Icons.Default.Image, contentDescription = stringResource(id = R.string.a11y_attach_image))
             }
@@ -210,6 +210,13 @@ internal fun ComposerBar(
                         modifier = Modifier.size(20.dp),
                     )
                 }
+            }
+            IconButton(onClick = onOpenToolDialog) {
+                Icon(
+                    imageVector = Icons.Default.Build,
+                    contentDescription = "Local tools",
+                    modifier = Modifier.size(20.dp),
+                )
             }
             IconButton(onClick = onOpenCompletionSettings) {
                 Icon(

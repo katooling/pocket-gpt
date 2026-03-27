@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -24,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +68,7 @@ internal fun ModelSheet(
     onClose: () -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var pendingRemoveVersion by remember { mutableStateOf<Pair<String, String>?>(null) }
     val activeModel = modelLoadingState.activeOrRequestedModel()
     val busy = modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading
     val installedVersions = libraryState.snapshot.models.flatMap { model ->
@@ -168,7 +171,7 @@ internal fun ModelSheet(
                     onImportModel = onImportModel,
                     onSetDefaultVersion = onSetDefaultVersion,
                     onLoadVersion = onLoadVersion,
-                    onRemoveVersion = onRemoveVersion,
+                    onRemoveVersion = { modelId, version -> pendingRemoveVersion = modelId to version },
                 )
             }
         }
@@ -221,6 +224,26 @@ internal fun ModelSheet(
                 }
             }
         }
+    }
+    pendingRemoveVersion?.let { (modelId, version) ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoveVersion = null },
+            title = { Text("Remove model?") },
+            text = { Text("Remove $version? You will need to re-download it to use it again.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRemoveVersion(modelId, version)
+                    pendingRemoveVersion = null
+                }) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoveVersion = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
