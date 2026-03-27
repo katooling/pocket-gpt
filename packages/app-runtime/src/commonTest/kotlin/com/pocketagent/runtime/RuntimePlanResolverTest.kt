@@ -85,6 +85,46 @@ class RuntimePlanResolverTest {
     }
 
     @Test
+    fun `different model versions resolve different session cache identities`() {
+        val runtimeInferencePorts = buildRuntimeInferencePorts()
+        val resolver = RuntimePlanResolver(availableCpuThreads = { 8 })
+        val deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8)
+        val baseConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.BALANCED,
+            availableCpuThreads = 8,
+            gpuEnabled = true,
+        )
+
+        val first = resolver.resolve(
+            sessionId = "session-1",
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            modelVersion = "q4_0",
+            taskType = "short_text",
+            stopSequences = emptyList(),
+            requestConfig = baseConfig,
+            residencyPolicy = ModelResidencyPolicy(idleUnloadTtlMs = 600_000L),
+            deviceState = deviceState,
+            runtimeInferencePorts = runtimeInferencePorts,
+        )
+        val second = resolver.resolve(
+            sessionId = "session-1",
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            modelVersion = "ud_iq2_xxs",
+            taskType = "short_text",
+            stopSequences = emptyList(),
+            requestConfig = baseConfig,
+            residencyPolicy = ModelResidencyPolicy(idleUnloadTtlMs = 600_000L),
+            deviceState = deviceState,
+            runtimeInferencePorts = runtimeInferencePorts,
+        )
+
+        assertNotEquals(first.prefixCacheSlotId, second.prefixCacheSlotId)
+        assertNotEquals(first.sessionCacheKey, second.sessionCacheKey)
+        assertEquals("q4_0", first.sessionCacheIdentity.modelVersion)
+        assertEquals("ud_iq2_xxs", second.sessionCacheIdentity.modelVersion)
+    }
+
+    @Test
     fun `load-affecting overrides change prefix cache slot`() {
         val runtimeInferencePorts = buildRuntimeInferencePorts()
         val resolver = RuntimePlanResolver(availableCpuThreads = { 8 })
@@ -144,6 +184,56 @@ class RuntimePlanResolverTest {
         assertFalse(plan.effectiveConfig.speculativeEnabled)
         assertEquals(1024, plan.effectiveConfig.nCtx)
         assertEquals(60_000L, plan.keepAliveMs)
+    }
+
+    @Test
+    fun `resolve keeps speculative decoding enabled for compatible target and draft families`() {
+        val runtimeInferencePorts = buildRuntimeInferencePorts()
+        val resolver = RuntimePlanResolver(availableCpuThreads = { 8 })
+
+        val plan = resolver.resolve(
+            sessionId = "session-1",
+            modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
+            taskType = "short_text",
+            stopSequences = emptyList(),
+            requestConfig = PerformanceRuntimeConfig.forProfile(
+                profile = RuntimePerformanceProfile.BALANCED,
+                availableCpuThreads = 8,
+                gpuEnabled = true,
+            ),
+            residencyPolicy = ModelResidencyPolicy(idleUnloadTtlMs = 600_000L),
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 12),
+            runtimeInferencePorts = runtimeInferencePorts,
+        )
+
+        assertTrue(plan.effectiveConfig.speculativeEnabled)
+        assertEquals(ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS, plan.effectiveConfig.speculativeDraftModelId)
+    }
+
+    @Test
+    fun `resolve disables speculative decoding when draft and target families are incompatible`() {
+        val runtimeInferencePorts = buildRuntimeInferencePorts()
+        val resolver = RuntimePlanResolver(availableCpuThreads = { 8 })
+
+        val plan = resolver.resolve(
+            sessionId = "session-1",
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            taskType = "short_text",
+            stopSequences = emptyList(),
+            requestConfig = PerformanceRuntimeConfig.forProfile(
+                profile = RuntimePerformanceProfile.BALANCED,
+                availableCpuThreads = 8,
+                gpuEnabled = true,
+            ),
+            residencyPolicy = ModelResidencyPolicy(idleUnloadTtlMs = 600_000L),
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 12),
+            runtimeInferencePorts = runtimeInferencePorts,
+        )
+
+        assertFalse(plan.effectiveConfig.speculativeEnabled)
+        assertNull(plan.effectiveConfig.speculativeDraftModelId)
+        assertEquals(0, plan.effectiveConfig.speculativeDraftGpuLayers)
+        assertTrue(plan.diagnostics.contains("layer=speculative_gate"))
     }
 
     @Test

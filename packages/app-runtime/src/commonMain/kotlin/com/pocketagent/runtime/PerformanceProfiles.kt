@@ -11,6 +11,8 @@ enum class RuntimePerformanceProfile {
     FAST,
 }
 
+internal const val GPU_SAFE_BATCH_CAP: Int = 256
+
 data class PerformanceRuntimeConfig(
     val profile: RuntimePerformanceProfile = RuntimePerformanceProfile.BALANCED,
     val requestTimeoutMs: Long,
@@ -75,6 +77,7 @@ data class PerformanceRuntimeConfig(
             val profileAllowsGpu = profile != RuntimePerformanceProfile.BATTERY
             val effectiveGpuEnabled = gpuEnabled && profileAllowsGpu
             val effectiveGpuLayers = if (effectiveGpuEnabled) gpuLayers.coerceAtLeast(0) else 0
+            val batchCap = if (effectiveGpuEnabled && effectiveGpuLayers > 0) GPU_SAFE_BATCH_CAP else MAX_BATCH
             val profilePreset = when (profile) {
                 RuntimePerformanceProfile.BATTERY -> Preset(
                     timeoutMs = 900_000L,
@@ -114,8 +117,8 @@ data class PerformanceRuntimeConfig(
                 // than steady-state generation.  Use 1.5x the generation thread count
                 // so prompt processing saturates the available performance cores.
                 nThreadsBatch = (profilePreset.threads * 3 / 2).coerceIn(MIN_THREADS, MAX_THREADS),
-                nBatch = profilePreset.batch.coerceIn(MIN_BATCH, MAX_BATCH),
-                nUbatch = profilePreset.ubatch.coerceIn(MIN_BATCH, MAX_BATCH),
+                nBatch = profilePreset.batch.coerceIn(MIN_BATCH, batchCap),
+                nUbatch = profilePreset.ubatch.coerceIn(MIN_BATCH, batchCap),
                 nCtx = profilePreset.nCtx,
                 gpuEnabled = effectiveGpuEnabled,
                 gpuLayers = effectiveGpuLayers,
@@ -188,12 +191,13 @@ data class PerformanceRuntimeConfig(
     fun withThermalAdaptiveOverrides(deviceState: DeviceState): PerformanceRuntimeConfig {
         val severePressure = deviceState.thermalLevel >= 7 || deviceState.batteryPercent < 20
         val moderatePressure = deviceState.thermalLevel >= 5 || deviceState.batteryPercent < 35
+        val batchCap = if (gpuEnabled && gpuLayers > 0) GPU_SAFE_BATCH_CAP else MAX_BATCH
         return when {
             severePressure -> copy(
                 nThreads = (nThreads / 2).coerceAtLeast(2),
                 nThreadsBatch = (nThreadsBatch / 2).coerceAtLeast(2),
-                nBatch = (nBatch / 2).coerceAtLeast(256),
-                nUbatch = (nUbatch / 2).coerceAtLeast(256),
+                nBatch = (nBatch / 2).coerceAtLeast(256).coerceAtMost(batchCap),
+                nUbatch = (nUbatch / 2).coerceAtLeast(256).coerceAtMost(batchCap),
                 nCtx = nCtx.coerceAtMost(1024),
                 gpuLayers = (gpuLayers / 2).coerceAtLeast(0),
                 speculativeEnabled = false,
@@ -202,8 +206,8 @@ data class PerformanceRuntimeConfig(
             moderatePressure -> copy(
                 nThreads = (nThreads * 3 / 4).coerceAtLeast(2),
                 nThreadsBatch = (nThreadsBatch * 3 / 4).coerceAtLeast(2),
-                nBatch = (nBatch * 3 / 4).coerceAtLeast(384),
-                nUbatch = (nUbatch * 3 / 4).coerceAtLeast(384),
+                nBatch = (nBatch * 3 / 4).coerceAtLeast(384).coerceAtMost(batchCap),
+                nUbatch = (nUbatch * 3 / 4).coerceAtLeast(384).coerceAtMost(batchCap),
                 nCtx = nCtx.coerceAtMost(1536),
                 gpuLayers = (gpuLayers * 3 / 4).coerceAtLeast(0),
                 speculativeEnabled = speculativeEnabled && deviceState.thermalLevel <= 5,

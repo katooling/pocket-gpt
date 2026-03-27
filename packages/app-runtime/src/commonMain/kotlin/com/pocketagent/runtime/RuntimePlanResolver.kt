@@ -1,6 +1,7 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.nativebridge.ModelRuntimeMetadata
 import com.pocketagent.nativebridge.RuntimeInferencePorts
 import com.pocketagent.nativebridge.RuntimeModelRegistryPort
@@ -16,6 +17,7 @@ data class ResolvedRuntimePlan(
     val generationConfig: RuntimeGenerationConfig,
     val prefixCacheSlotId: String,
     val sessionCacheKey: String,
+    val sessionCacheIdentity: SessionCacheIdentity,
     val keepAliveMs: Long,
     val diagnostics: List<String>,
     val estimatedMemoryMb: Double? = null,
@@ -39,6 +41,7 @@ internal class RuntimePlanResolver(
     fun resolve(
         sessionId: String,
         modelId: String,
+        modelVersion: String? = null,
         taskType: String,
         stopSequences: List<String>,
         requestConfig: PerformanceRuntimeConfig,
@@ -127,6 +130,7 @@ internal class RuntimePlanResolver(
         val loadFingerprint = sha256Hex(
             listOf(
                 modelId,
+                modelVersion.orEmpty(),
                 generationConfig.toLoadConfig().toString(),
             ).joinToString("|"),
         )
@@ -138,7 +142,14 @@ internal class RuntimePlanResolver(
             listOf("slot", sessionId, templateFingerprint, loadFingerprint).joinToString("|"),
         )
         val sessionCacheKey = sha256Hex(
-            listOf("session", modelId, resolvedModelPathHash, loadFingerprint).joinToString("|"),
+            listOf("session", modelId, modelVersion.orEmpty(), resolvedModelPathHash, loadFingerprint).joinToString("|"),
+        )
+        val sessionCacheIdentity = SessionCacheIdentity(
+            cacheKey = sessionCacheKey,
+            modelId = modelId,
+            modelVersion = modelVersion,
+            modelPathHash = resolvedModelPathHash,
+            loadFingerprint = loadFingerprint,
         )
         val keepAliveMs = residencyPolicy.resolveKeepAliveMs(
             deviceState = deviceState,
@@ -152,6 +163,7 @@ internal class RuntimePlanResolver(
             generationConfig = generationConfig,
             prefixCacheSlotId = prefixCacheSlotId,
             sessionCacheKey = sessionCacheKey,
+            sessionCacheIdentity = sessionCacheIdentity,
             keepAliveMs = keepAliveMs,
             diagnostics = diagnostics,
             estimatedMemoryMb = memoryAdjustment.estimate?.estimatedMb,
@@ -371,6 +383,9 @@ private fun PerformanceRuntimeConfig.gateSpeculative(
     val draftPath = modelRegistry?.registeredModelPath(draftModelId)
     val targetPath = modelRegistry?.registeredModelPath(modelId)
     if (draftPath.isNullOrBlank() || draftPath == targetPath) {
+        return copy(speculativeEnabled = false, speculativeDraftModelId = null, speculativeDraftGpuLayers = 0)
+    }
+    if (!ModelCatalog.isSpeculativeDraftCompatible(targetModelId = modelId, draftModelId = draftModelId)) {
         return copy(speculativeEnabled = false, speculativeDraftModelId = null, speculativeDraftGpuLayers = 0)
     }
     return this

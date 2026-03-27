@@ -189,8 +189,8 @@ class ChatStreamRequestPlanner(
             return config
         }
         return config.copy(
-            nBatch = minOf(config.nBatch, GPU_SAFE_BATCH),
-            nUbatch = minOf(config.nUbatch, GPU_SAFE_BATCH),
+            nBatch = minOf(config.nBatch, GPU_SAFE_BATCH_CAP),
+            nUbatch = minOf(config.nUbatch, GPU_SAFE_BATCH_CAP),
         )
     }
 
@@ -247,7 +247,6 @@ class ChatStreamRequestPlanner(
     private companion object {
         private const val LONG_PROMPT_LENGTH = 160
         private const val MIN_MAX_TOKENS = 16
-        private const val GPU_SAFE_BATCH = 256
         private const val ALWAYS_KEEP_ALIVE_TTL_MS = 24 * 60 * 60 * 1000L
     }
 }

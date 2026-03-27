@@ -2,6 +2,12 @@ package com.pocketagent.runtime
 
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
+import com.pocketagent.nativebridge.BridgeError
+import com.pocketagent.nativebridge.ManagedRuntimePort
+import com.pocketagent.nativebridge.ModelLifecycleEvent
+import com.pocketagent.nativebridge.ModelLifecycleState
+import com.pocketagent.nativebridge.RuntimeBackend
+import com.pocketagent.nativebridge.RuntimeInferencePorts
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -82,6 +88,41 @@ class RuntimeResidencyManagerTest {
         assertTrue(manager.listResident().isEmpty())
         assertEquals(0, manager.queueDepth())
     }
+
+    @Test
+    fun `ensureLoaded forwards model version to managed runtime when available`() {
+        val inferenceModule = RecordingInferenceModule()
+        val managedRuntime = RecordingManagedRuntime()
+        val manager = RuntimeResidencyManager(
+            inferenceModule = inferenceModule,
+            runtimeInferencePorts = RuntimeInferencePorts(managedRuntime = managedRuntime),
+            nowMs = advancingClock(),
+        )
+        val identity = SessionCacheIdentity(
+            cacheKey = "cache-1",
+            modelId = "model-a",
+            modelVersion = "ud_iq2_xxs",
+            modelPathHash = "path-hash",
+            loadFingerprint = "load-fingerprint",
+        )
+
+        assertTrue(
+            manager.ensureLoaded(
+                modelId = "model-a",
+                slotId = "slot-1",
+                keepAliveMs = 1_000L,
+                sessionCacheIdentity = identity,
+                strictGpuOffload = true,
+            ),
+        )
+
+        assertEquals(0, inferenceModule.loadCalls)
+        assertEquals(1, managedRuntime.loadCalls)
+        assertEquals("model-a", managedRuntime.lastModelId)
+        assertEquals("ud_iq2_xxs", managedRuntime.lastModelVersion)
+        assertEquals(true, managedRuntime.lastStrictGpuOffload)
+        assertEquals(identity, manager.listResident().single().sessionCacheIdentity)
+    }
 }
 
 private class RecordingInferenceModule : InferenceModule {
@@ -100,6 +141,42 @@ private class RecordingInferenceModule : InferenceModule {
     override fun unloadModel() {
         unloadCalls += 1
     }
+}
+
+private class RecordingManagedRuntime : ManagedRuntimePort {
+    var loadCalls: Int = 0
+    var lastModelId: String? = null
+    var lastModelVersion: String? = null
+    var lastStrictGpuOffload: Boolean = false
+
+    override fun loadModel(modelId: String, modelVersion: String?, strictGpuOffload: Boolean): Boolean {
+        loadCalls += 1
+        lastModelId = modelId
+        lastModelVersion = modelVersion
+        lastStrictGpuOffload = strictGpuOffload
+        return true
+    }
+
+    override fun setRuntimeGenerationConfig(config: com.pocketagent.nativebridge.RuntimeGenerationConfig) = Unit
+
+    override fun supportsGpuOffload(): Boolean = true
+
+    override fun runtimeBackend(): RuntimeBackend = RuntimeBackend.NATIVE_JNI
+
+    override fun lastBridgeError(): BridgeError? = null
+
+    override fun currentModelLifecycleState(): ModelLifecycleEvent {
+        return ModelLifecycleEvent(state = ModelLifecycleState.UNLOADED)
+    }
+
+    override fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable {
+        listener(currentModelLifecycleState())
+        return AutoCloseable { }
+    }
+
+    override fun currentRssMb(): Double? = null
+
+    override fun isRuntimeReleased(): Boolean = true
 }
 
 private fun advancingClock(): () -> Long {

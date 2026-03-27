@@ -60,6 +60,7 @@ internal class SendMessageUseCase(
         check(artifactVerifier.manager().setActiveModel(modelId)) {
             "Model artifact not registered for runtime model: $modelId"
         }
+        val modelVersion = artifactVerifier.manager().getActiveModelVersion()
         artifactVerifier.verifyArtifactOrThrow(modelId)
         interactionPlanner.ensureTemplateAvailable(modelId)?.let { message ->
             throw RuntimeTemplateUnavailableException(message)
@@ -107,6 +108,7 @@ internal class SendMessageUseCase(
         val runtimePlan = runtimePlanResolver.resolve(
             sessionId = request.sessionId.value,
             modelId = modelId,
+            modelVersion = modelVersion,
             taskType = request.taskType,
             stopSequences = renderedPrompt.stopSequences,
             requestConfig = executionContext.performanceConfig,
@@ -145,7 +147,8 @@ internal class SendMessageUseCase(
                 modelId = modelId,
                 slotId = runtimePlan.prefixCacheSlotId,
                 keepAliveMs = runtimePlan.keepAliveMs,
-                sessionCacheKey = runtimePlan.sessionCacheKey,
+                sessionCacheIdentity = runtimePlan.sessionCacheIdentity,
+                strictGpuOffload = runtimePlan.generationConfig.strictGpuOffload,
             ),
         ) {
             "Failed to load runtime model: $modelId"
@@ -323,6 +326,7 @@ internal class SendMessageUseCase(
                 decodeMs = decodeMs,
                 tokensPerSec = tokensPerSec,
                 peakRssMb = peakRssMb,
+                backendIdentity = cacheAwareGeneration?.activeBackendIdentity(),
                 appliedGpuLayers = actualGpuLayers,
                 appliedDraftGpuLayers = actualDraftGpuLayers,
                 gpuLoadRetryCount = cacheAwareGeneration?.lastGpuLoadRetryCount(),

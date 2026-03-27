@@ -9,6 +9,30 @@ import kotlin.test.assertTrue
 
 class ChatStreamRequestPlannerTest {
     @Test
+    fun `resolve performance plan keeps gpu defaults aligned with gpu-safe batch cap`() {
+        val planner = ChatStreamRequestPlanner(
+            runtimeGenerationTimeoutMs = 0L,
+            availableCpuThreadsProvider = { 8 },
+        )
+
+        val gpuPlan = planner.resolvePerformancePlan(
+            profile = RuntimePerformanceProfile.FAST,
+            gpuEnabled = true,
+            gpuLayers = 24,
+        )
+        val cpuPlan = planner.resolvePerformancePlan(
+            profile = RuntimePerformanceProfile.FAST,
+            gpuEnabled = false,
+            gpuLayers = 0,
+        )
+
+        assertEquals(256, gpuPlan.baseConfig.nBatch)
+        assertEquals(256, gpuPlan.baseConfig.nUbatch)
+        assertEquals(768, cpuPlan.baseConfig.nBatch)
+        assertEquals(768, cpuPlan.baseConfig.nUbatch)
+    }
+
+    @Test
     fun `resolve performance config applies recommended tuning and gpu safe batch caps`() {
         val planner = ChatStreamRequestPlanner(
             runtimeGenerationTimeoutMs = 0L,

@@ -30,6 +30,7 @@ class RuntimeWarmupCoordinatorTest {
         )
         val runtimeConfig = warmupRuntimeConfig()
         val artifactVerifier = ArtifactVerifier(runtimeConfig)
+        val expectedModelVersion = artifactVerifier.manager().getActiveModelVersion()
         val observability = WarmupObservabilityModule()
         val residencyManager = RuntimeResidencyManager(
             inferenceModule,
@@ -58,7 +59,9 @@ class RuntimeWarmupCoordinatorTest {
         assertTrue(second.attempted)
         assertTrue(second.warmed)
         assertTrue(second.residentHit)
-        assertEquals(1, inferenceModule.loadCalls)
+        assertEquals(0, inferenceModule.loadCalls)
+        assertEquals(1, warmupPorts.loadCalls)
+        assertEquals(expectedModelVersion, warmupPorts.lastModelVersion)
         assertEquals(2, warmupPorts.generateCalls)
         assertEquals(8, warmupPorts.lastMaxTokens)
         assertTrue(warmupPorts.lastPrompt.contains("shader") || warmupPorts.lastPrompt.contains("warmup"))
@@ -93,13 +96,23 @@ private class WarmupInferenceModule : InferenceModule {
 }
 
 private class WarmupRuntimePorts : ManagedRuntimePort, CacheAwareGenerationPort, RuntimeResidencyPort {
+    var loadCalls: Int = 0
     var generateCalls: Int = 0
     var lastMaxTokens: Int = 0
     var lastPrompt: String = ""
+    var lastModelVersion: String? = null
     private var config: RuntimeGenerationConfig = RuntimeGenerationConfig.default()
     private var residencyState = RuntimeResidencyState()
+    private var loadedModelId: String? = null
 
-    override fun loadModel(modelId: String, modelVersion: String?, strictGpuOffload: Boolean): Boolean = true
+    override fun loadModel(modelId: String, modelVersion: String?, strictGpuOffload: Boolean): Boolean {
+        if (loadedModelId != modelId || lastModelVersion != modelVersion) {
+            loadCalls += 1
+            loadedModelId = modelId
+            lastModelVersion = modelVersion
+        }
+        return true
+    }
 
     override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
         this.config = config
@@ -151,6 +164,8 @@ private class WarmupRuntimePorts : ManagedRuntimePort, CacheAwareGenerationPort,
     override fun actualDraftGpuLayers(): Int? = config.speculativeDraftGpuLayers
 
     override fun lastGpuLoadRetryCount(): Int? = 0
+
+    override fun activeBackendIdentity(): String? = null
 
     override fun updateResidencySlot(slotId: String?, expiresAtEpochMs: Long?) {
         val wasResident = residencyState.resident

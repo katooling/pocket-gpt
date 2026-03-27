@@ -209,6 +209,8 @@ private class RecordingLifecycleInferenceModule(
 
     override fun lastGpuLoadRetryCount(): Int? = null
 
+    override fun activeBackendIdentity(): String? = null
+
     override fun registerModelPath(modelId: String, absolutePath: String) {
         modelPathById[modelId] = absolutePath
     }

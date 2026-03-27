@@ -1,9 +1,11 @@
 package com.pocketagent.runtime
 
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.inference.DeviceState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class PerformanceProfilesTest {
     @Test
@@ -21,41 +23,76 @@ class PerformanceProfilesTest {
     }
 
     @Test
-    fun `balanced and fast presets match ubatch to batch and fast expands context`() {
-        val balanced = PerformanceRuntimeConfig.forProfile(
+    fun `gpu presets use gpu-safe batch cap while cpu-only behavior remains unchanged`() {
+        val balancedGpu = PerformanceRuntimeConfig.forProfile(
             profile = RuntimePerformanceProfile.BALANCED,
             availableCpuThreads = 8,
             gpuEnabled = true,
         )
-        val fast = PerformanceRuntimeConfig.forProfile(
+        val fastGpu = PerformanceRuntimeConfig.forProfile(
             profile = RuntimePerformanceProfile.FAST,
             availableCpuThreads = 8,
             gpuEnabled = true,
         )
+        val balancedCpu = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.BALANCED,
+            availableCpuThreads = 8,
+            gpuEnabled = false,
+        )
+        val fastCpu = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.FAST,
+            availableCpuThreads = 8,
+            gpuEnabled = false,
+        )
 
-        assertEquals(512, balanced.nBatch)
-        assertEquals(512, balanced.nUbatch)
-        assertEquals(1, balanced.speculativeDraftGpuLayers)
-        assertEquals(0.05f, balanced.minP)
-        assertEquals(64, balanced.repeatLastN)
-        assertEquals(1.05f, balanced.repeatPenalty)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, balanced.kvCacheTypeK)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, balanced.kvCacheTypeV)
-        assertEquals(true, balanced.useMmap)
-        assertEquals(false, balanced.useMlock)
-        assertEquals(128, balanced.nKeep)
-        assertEquals(768, fast.nBatch)
-        assertEquals(768, fast.nUbatch)
-        assertEquals(2, fast.speculativeDraftGpuLayers)
-        assertEquals(0.05f, fast.minP)
-        assertEquals(64, fast.repeatLastN)
-        assertEquals(1.05f, fast.repeatPenalty)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, fast.kvCacheTypeK)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, fast.kvCacheTypeV)
-        assertEquals(true, fast.useMmap)
-        assertEquals(false, fast.useMlock)
-        assertEquals(256, fast.nKeep)
-        assertEquals(8192, fast.nCtx)
+        assertEquals(256, balancedGpu.nBatch)
+        assertEquals(256, balancedGpu.nUbatch)
+        assertEquals(1, balancedGpu.speculativeDraftGpuLayers)
+        assertEquals(0.05f, balancedGpu.minP)
+        assertEquals(64, balancedGpu.repeatLastN)
+        assertEquals(1.05f, balancedGpu.repeatPenalty)
+        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, balancedGpu.kvCacheTypeK)
+        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, balancedGpu.kvCacheTypeV)
+        assertEquals(true, balancedGpu.useMmap)
+        assertEquals(false, balancedGpu.useMlock)
+        assertEquals(128, balancedGpu.nKeep)
+        assertEquals(256, fastGpu.nBatch)
+        assertEquals(256, fastGpu.nUbatch)
+        assertEquals(2, fastGpu.speculativeDraftGpuLayers)
+        assertEquals(0.05f, fastGpu.minP)
+        assertEquals(64, fastGpu.repeatLastN)
+        assertEquals(1.05f, fastGpu.repeatPenalty)
+        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, fastGpu.kvCacheTypeK)
+        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, fastGpu.kvCacheTypeV)
+        assertEquals(true, fastGpu.useMmap)
+        assertEquals(false, fastGpu.useMlock)
+        assertEquals(256, fastGpu.nKeep)
+        assertEquals(8192, fastGpu.nCtx)
+        assertEquals(512, balancedCpu.nBatch)
+        assertEquals(512, balancedCpu.nUbatch)
+        assertEquals(768, fastCpu.nBatch)
+        assertEquals(768, fastCpu.nUbatch)
+    }
+
+    @Test
+    fun `thermal overrides keep gpu batches within safe cap`() {
+        val fastGpu = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.FAST,
+            availableCpuThreads = 8,
+            gpuEnabled = true,
+            gpuLayers = 24,
+        )
+        val moderate = fastGpu.withThermalAdaptiveOverrides(
+            DeviceState(batteryPercent = 30, thermalLevel = 5, ramClassGb = 8),
+        )
+        val severe = fastGpu.withThermalAdaptiveOverrides(
+            DeviceState(batteryPercent = 15, thermalLevel = 7, ramClassGb = 8),
+        )
+
+        assertTrue(moderate.nBatch <= GPU_SAFE_BATCH_CAP)
+        assertTrue(moderate.nUbatch <= GPU_SAFE_BATCH_CAP)
+        assertTrue(severe.nBatch <= GPU_SAFE_BATCH_CAP)
+        assertTrue(severe.nUbatch <= GPU_SAFE_BATCH_CAP)
     }
 
     @Test

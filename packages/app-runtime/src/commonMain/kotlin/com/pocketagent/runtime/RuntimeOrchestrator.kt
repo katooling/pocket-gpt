@@ -575,6 +575,7 @@ class RuntimeOrchestrator(
             val runtimePlan = runtimePlanResolver.resolve(
                 sessionId = "manual-load",
                 modelId = modelId,
+                modelVersion = modelVersion,
                 taskType = "manual_load",
                 stopSequences = emptyList(),
                 requestConfig = performanceConfig,
@@ -608,7 +609,7 @@ class RuntimeOrchestrator(
                 modelId = modelId,
                 slotId = runtimePlan.prefixCacheSlotId,
                 keepAliveMs = runtimePlan.keepAliveMs,
-                sessionCacheKey = runtimePlan.sessionCacheKey,
+                sessionCacheIdentity = runtimePlan.sessionCacheIdentity,
             )
             return RuntimeModelLifecycleCommandResult.applied(
                 loadedModel = RuntimeLoadedModel(
@@ -710,24 +711,24 @@ class RuntimeOrchestrator(
     }
 
     private fun saveSessionCache(slot: ResidentRuntimeSlot, reason: String) {
-        val cacheKey = slot.sessionCacheKey?.takeIf { it.isNotBlank() } ?: return
+        val identity = slot.sessionCacheIdentity ?: return
         val sessionCache = runtimeInferencePorts.sessionCache ?: return
         if (reason == "reconcile_missing_file" || reason == "reconcile_missing_version") {
-            sessionCacheManager.evict(cacheKey)
+            sessionCacheManager.evict(identity.cacheKey)
             return
         }
         sessionCacheManager.save(
             serializer = object : SessionCacheSerializer {
                 override fun saveSessionCache(filePath: String): Boolean = sessionCache.saveSessionCache(filePath)
             },
-            cacheKey = cacheKey,
+            identity = identity,
         )
     }
 
     private fun restoreSessionCache(slot: ResidentRuntimeSlot) {
-        val cacheKey = slot.sessionCacheKey?.takeIf { it.isNotBlank() } ?: return
+        val identity = slot.sessionCacheIdentity ?: return
         val sessionCache = runtimeInferencePorts.sessionCache ?: return
-        if (!sessionCacheManager.hasCacheFor(cacheKey)) {
+        if (!sessionCacheManager.hasCacheFor(identity)) {
             return
         }
         emitLoadingStage(
@@ -741,7 +742,7 @@ class RuntimeOrchestrator(
                 override fun saveSessionCache(filePath: String): Boolean = sessionCache.saveSessionCache(filePath)
                 override fun loadSessionCache(filePath: String): Boolean = sessionCache.loadSessionCache(filePath)
             },
-            cacheKey = cacheKey,
+            identity = identity,
         )
         emitCompletedLifecycleEvent(
             modelId = slot.modelId,
@@ -759,6 +760,11 @@ class RuntimeOrchestrator(
     }
 
     private fun resolveResidentModelVersion(modelId: String): String? {
+        runtimeResidencyManager.listResident()
+            .firstOrNull { slot -> slot.modelId == modelId }
+            ?.sessionCacheIdentity
+            ?.modelVersion
+            ?.let { return it }
         val currentEvent = currentRuntimeLifecycleEvent
         if (currentEvent.state == ModelLifecycleState.LOADED && currentEvent.modelId == modelId) {
             return currentEvent.modelVersion

@@ -14,11 +14,13 @@ import kotlinx.coroutines.launch
 internal data class ResidentRuntimeSlot(
     val modelId: String,
     val slotId: String,
-    val sessionCacheKey: String? = null,
+    val sessionCacheIdentity: SessionCacheIdentity? = null,
     val keepAliveMs: Long,
     val expiresAtEpochMs: Long,
     val lastTouchedAtEpochMs: Long,
-)
+) {
+    val sessionCacheKey: String? get() = sessionCacheIdentity?.cacheKey
+}
 
 internal class RuntimeResidencyManager(
     private val inferenceModule: InferenceModule,
@@ -46,17 +48,22 @@ internal class RuntimeResidencyManager(
         modelId: String,
         slotId: String,
         keepAliveMs: Long,
-        sessionCacheKey: String? = null,
+        sessionCacheIdentity: SessionCacheIdentity? = null,
+        strictGpuOffload: Boolean = false,
     ): Boolean {
         val safeKeepAliveMs = keepAliveMs.coerceAtLeast(1L)
-        val loaded = inferenceModule.loadModel(modelId)
+        val loaded = runtimeInferencePorts.managedRuntime?.loadModel(
+            modelId = modelId,
+            modelVersion = sessionCacheIdentity?.modelVersion,
+            strictGpuOffload = strictGpuOffload,
+        ) ?: inferenceModule.loadModel(modelId)
         var slot: ResidentRuntimeSlot? = null
         synchronized(lock) {
             if (loaded) {
                 slot = attachResidentSlotLocked(
                     modelId = modelId,
                     slotId = slotId,
-                    sessionCacheKey = sessionCacheKey,
+                    sessionCacheIdentity = sessionCacheIdentity,
                     keepAliveMs = safeKeepAliveMs,
                 )
             }
@@ -69,7 +76,7 @@ internal class RuntimeResidencyManager(
         modelId: String,
         slotId: String,
         keepAliveMs: Long,
-        sessionCacheKey: String? = null,
+        sessionCacheIdentity: SessionCacheIdentity? = null,
     ): Boolean {
         val safeKeepAliveMs = keepAliveMs.coerceAtLeast(1L)
         var slot: ResidentRuntimeSlot? = null
@@ -77,7 +84,7 @@ internal class RuntimeResidencyManager(
             slot = attachResidentSlotLocked(
                 modelId = modelId,
                 slotId = slotId,
-                sessionCacheKey = sessionCacheKey,
+                sessionCacheIdentity = sessionCacheIdentity,
                 keepAliveMs = safeKeepAliveMs,
             )
         }
@@ -298,13 +305,13 @@ internal class RuntimeResidencyManager(
     private fun attachResidentSlotLocked(
         modelId: String,
         slotId: String,
-        sessionCacheKey: String?,
+        sessionCacheIdentity: SessionCacheIdentity?,
         keepAliveMs: Long,
     ): ResidentRuntimeSlot {
         val slot = ResidentRuntimeSlot(
             modelId = modelId,
             slotId = slotId,
-            sessionCacheKey = sessionCacheKey,
+            sessionCacheIdentity = sessionCacheIdentity,
             keepAliveMs = keepAliveMs,
             expiresAtEpochMs = nowMs() + keepAliveMs,
             lastTouchedAtEpochMs = nowMs(),

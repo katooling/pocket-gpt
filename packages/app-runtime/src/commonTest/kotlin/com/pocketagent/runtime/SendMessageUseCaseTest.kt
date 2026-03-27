@@ -11,6 +11,10 @@ import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.InMemoryMemoryModule
+import com.pocketagent.nativebridge.CacheAwareGenerationPort
+import com.pocketagent.nativebridge.CachePolicy
+import com.pocketagent.nativebridge.GenerationFinishReason
+import com.pocketagent.nativebridge.GenerationResult
 import com.pocketagent.nativebridge.ModelRuntimeMetadata
 import com.pocketagent.nativebridge.RuntimeInferencePorts
 import com.pocketagent.nativebridge.RuntimeModelRegistryPort
@@ -266,6 +270,23 @@ class SendMessageUseCaseTest {
         assertEquals("date_time", response.toolCalls[0].name)
         assertEquals("notes_lookup", response.toolCalls[1].name)
     }
+
+    @Test
+    fun `runtime stats carry active backend identity from cache aware runtime port`() {
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(),
+            runtimeInferencePorts = RuntimeInferencePorts(
+                cacheAwareGeneration = SendCacheAwareGenerationPort(backendIdentity = "opencl"),
+                modelRegistry = SendModelRegistryPort(),
+            ),
+        )
+
+        val response = fixture.useCase.execute(fixture.request())
+
+        assertEquals("opencl", response.runtimeStats?.backendIdentity)
+    }
 }
 
 private class SendMessageFixture(
@@ -401,6 +422,42 @@ private class SendRecordingInferenceModule(
             Thread.onSpinWait()
         }
     }
+}
+
+private class SendCacheAwareGenerationPort(
+    private val backendIdentity: String,
+) : CacheAwareGenerationPort {
+    override fun generateStreamWithCache(
+        requestId: String,
+        request: InferenceRequest,
+        cacheKey: String?,
+        cachePolicy: CachePolicy,
+        onToken: (String) -> Unit,
+    ): GenerationResult {
+        onToken("hello ")
+        onToken("world ")
+        return GenerationResult(
+            finishReason = GenerationFinishReason.COMPLETED,
+            tokenCount = 2,
+            firstTokenMs = 1L,
+            totalMs = 2L,
+            cancelled = false,
+            prefillMs = 1L,
+            decodeMs = 1L,
+            tokensPerSec = 2_000.0,
+            peakRssMb = 512.0,
+        )
+    }
+
+    override fun cancelGeneration(requestId: String): Boolean = true
+
+    override fun actualGpuLayers(): Int? = 4
+
+    override fun actualDraftGpuLayers(): Int? = 0
+
+    override fun lastGpuLoadRetryCount(): Int? = 0
+
+    override fun activeBackendIdentity(): String? = backendIdentity
 }
 
 private class SendModelRegistryPort : RuntimeModelRegistryPort {

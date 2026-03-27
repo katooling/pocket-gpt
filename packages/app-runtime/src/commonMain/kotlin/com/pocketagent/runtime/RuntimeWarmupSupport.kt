@@ -64,6 +64,7 @@ internal class RuntimeWarmupCoordinator(
         if (!artifactVerifier.manager().setActiveModel(modelId)) {
             return WarmupResult.skipped("warmup_model_unregistered")
         }
+        val modelVersion = artifactVerifier.manager().getActiveModelVersion()
         val verification = artifactVerifier.verifyArtifactForModel(modelId)
         if (!verification.passed) {
             return WarmupResult.skipped("warmup_artifact_unverified")
@@ -80,6 +81,7 @@ internal class RuntimeWarmupCoordinator(
         val runtimePlan = runtimePlanResolver.resolve(
             sessionId = "warmup",
             modelId = modelId,
+            modelVersion = modelVersion,
             taskType = "warmup",
             stopSequences = emptyList(),
             requestConfig = performanceConfig,
@@ -99,7 +101,8 @@ internal class RuntimeWarmupCoordinator(
             modelId = modelId,
             slotId = runtimePlan.prefixCacheSlotId,
             keepAliveMs = runtimePlan.keepAliveMs,
-            sessionCacheKey = runtimePlan.sessionCacheKey,
+            sessionCacheIdentity = runtimePlan.sessionCacheIdentity,
+            strictGpuOffload = runtimePlan.generationConfig.strictGpuOffload,
         )
         val loadDurationMs = (nowMs() - loadStartedAtMs).coerceAtLeast(0L)
         if (!loaded) {
