@@ -53,7 +53,7 @@ Reference pack (in-repo):
 ## Manual Review Procedure
 
 1. Run `lane screenshot-pack`.
-2. Open latest `inventory-report.md` and confirm zero missing IDs.
+2. Run `python3 tools/devctl/main.py report screenshot-pack` or open the latest `inventory-report.md` and confirm zero missing IDs.
 3. Compare `combined/` against reference pack screenshots in `tests/ui-screenshots/reference/sm-a515f-android13/`.
 4. Record obvious regressions and disposition in PR notes/evidence note.
 5. If new UI is intentional and approved, run `--update-reference` and include that change in the same PR.

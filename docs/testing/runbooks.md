@@ -181,11 +181,23 @@ python3 tools/devctl/main.py lane journey --repeats 1 --mode strict --reply-time
 
 Use `--mode valid-output` for slower devices where terminal output validation is required over SLA-oriented strictness.
 
+If you only need to inspect the latest output, use the report helper:
+
+```bash
+python3 tools/devctl/main.py report journey
+```
+
 ## Runbook: Screenshot Contract Validation
 
 ```bash
 python3 tools/devctl/main.py lane screenshot-pack
 python3 tools/devctl/main.py governance screenshot-inventory-check
+```
+
+For the latest screenshot inventory bundle:
+
+```bash
+python3 tools/devctl/main.py report screenshot-pack
 ```
 
 If the goal is promotion triage and known harness-noise signatures should be treated as non-blocking caveats:
