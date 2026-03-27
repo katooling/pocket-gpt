@@ -250,10 +250,15 @@ class RuntimeTuningDecider(
                         (observation.tokensPerSec ?: 0.0) < SLOW_TOKENS_PER_SEC
                     )
             )
+        val cpuOnlyMmapRegression = useMmap &&
+            appliedConfig.gpuLayers <= 0 &&
+            observation.success &&
+            observation.firstTokenMs != null &&
+            observation.firstTokenMs >= SLOW_CPU_ONLY_MMAP_FIRST_TOKEN_MS
         val mmapRegression = useMmap && (
             normalizedError.contains("mmap") ||
                 normalizedError.contains("readahead")
-            )
+            ) || cpuOnlyMmapRegression
         val benchmarkQualityWin = observation.success &&
             !observation.thermalThrottled &&
             (observation.peakRssMb == null || observation.peakRssMb <= PROMOTION_SAFE_PEAK_RSS_MB) &&
@@ -414,6 +419,7 @@ class RuntimeTuningDecider(
         private const val HIGH_PEAK_RSS_MB = 2800.0
         private const val PROMOTION_SAFE_PEAK_RSS_MB = 2200.0
         private const val SLOW_FIRST_TOKEN_MS = 3500L
+        private const val SLOW_CPU_ONLY_MMAP_FIRST_TOKEN_MS = 8000L
         private const val SLOW_TOKENS_PER_SEC = 8.0
         private const val PROMOTION_FIRST_TOKEN_MS = 2200L
         private const val PROMOTION_TOKENS_PER_SEC = 12.0

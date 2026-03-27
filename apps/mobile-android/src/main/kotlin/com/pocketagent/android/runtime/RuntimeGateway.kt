@@ -13,8 +13,10 @@ import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.RuntimeResourceControl
+import com.pocketagent.runtime.RuntimeWarmupSupport
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
+import com.pocketagent.runtime.WarmupResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onEach
@@ -47,6 +49,7 @@ interface ChatRuntimeService {
     fun runtimeBackend(): String?
     fun runtimeDiagnosticsSnapshot(): RuntimeDiagnosticsSnapshot = RuntimeDiagnosticsSnapshot()
     fun supportsGpuOffload(): Boolean
+    fun warmupActiveModel(): WarmupResult = WarmupResult.skipped("warmup_unsupported")
     fun loadModel(modelId: String, modelVersion: String? = null): RuntimeModelLifecycleCommandResult =
         RuntimeModelLifecycleCommandResult.rejected(
             code = com.pocketagent.nativebridge.ModelLifecycleErrorCode.UNKNOWN,
@@ -240,6 +243,11 @@ class MvpRuntimeGateway(
     override fun supportsGpuOffload(): Boolean {
         val status = gpuOffloadStatus()
         return status.status == GpuProbeStatus.QUALIFIED && status.maxStableGpuLayers > 0
+    }
+
+    override fun warmupActiveModel(): WarmupResult {
+        return (facade as? RuntimeWarmupSupport)?.warmupActiveModel()
+            ?: WarmupResult.skipped("warmup_unsupported")
     }
 
     override fun reportGpuRuntimeFailure(reason: GpuProbeFailureReason, detail: String?) {

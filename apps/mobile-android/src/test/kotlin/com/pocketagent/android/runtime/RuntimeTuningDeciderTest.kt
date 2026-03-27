@@ -30,8 +30,8 @@ class RuntimeTuningDeciderTest {
         )
 
         assertEquals(12, next.gpuLayers)
-        assertEquals(384, next.nBatch)
-        assertEquals(384, next.nUbatch)
+        assertEquals(128, next.nBatch)
+        assertEquals(128, next.nUbatch)
         assertEquals(1, next.speculativeDraftGpuLayers)
         assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, next.kvCacheType)
         assertEquals(42L, next.updatedAtEpochMs)
@@ -103,6 +103,34 @@ class RuntimeTuningDeciderTest {
             observation = RuntimeTuningObservation(
                 success = false,
                 errorCode = "mmap_readahead_failed",
+            ),
+        )
+
+        assertFalse(next.useMmap ?: true)
+        assertEquals("demote_use_mmap", next.lastDecision)
+    }
+
+    @Test
+    fun `slow cpu only mmap success demotes mmap usage`() {
+        val decider = RuntimeTuningDecider()
+        val targetConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.BALANCED,
+            availableCpuThreads = 6,
+            gpuEnabled = false,
+        ).copy(
+            speculativeEnabled = false,
+            speculativeDraftGpuLayers = 0,
+            useMmap = true,
+        )
+
+        val next = decider.nextRecommendation(
+            current = null,
+            appliedConfig = targetConfig,
+            targetConfig = targetConfig,
+            observation = RuntimeTuningObservation(
+                success = true,
+                firstTokenMs = 12_000L,
+                tokensPerSec = 6.0,
             ),
         )
 
@@ -194,7 +222,7 @@ class RuntimeTuningDeciderTest {
     @Test
     fun `quant class inference prefers model version then path then model id`() {
         assertEquals(
-            "q6_k",
+            "q6_k_v2",
             runtimeTuningQuantClass(
                 modelVersion = "manual-q6_k-v2",
                 modelPath = "/models/llama-q4_k_m.gguf",

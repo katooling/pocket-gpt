@@ -1302,6 +1302,10 @@ void release_runtime_locked() {
 
 bool ensure_backend_initialized_locked(bool require_gpu_backend) {
     apply_android_backend_profile_env();
+    const BackendInitMode previous_mode = g_backend_init_mode;
+    const bool needs_backend_discovery =
+        previous_mode == BackendInitMode::NONE ||
+        (require_gpu_backend && previous_mode != BackendInitMode::GPU_ENABLED);
     if (g_backend_init_mode == BackendInitMode::NONE) {
         llama_backend_init();
     }
@@ -1309,14 +1313,25 @@ bool ensure_backend_initialized_locked(bool require_gpu_backend) {
         llama_log_set(llama_android_log_callback, nullptr);
         g_llama_logging_installed = true;
     }
-    // Always load available backends so runtime support and backend selection are deterministic.
-    ggml_backend_load_all();
-    g_backend_init_mode = require_gpu_backend ? BackendInitMode::GPU_ENABLED : BackendInitMode::CPU_ONLY;
+    // Backend discovery is expensive and runs under the global runtime lock.
+    // Avoid reloading every backend on repeated support/diagnostics checks once
+    // GPU-capable discovery has already completed for this process.
+    if (needs_backend_discovery) {
+        ggml_backend_load_all();
+    }
+    const BackendInitMode next_mode =
+        (require_gpu_backend || previous_mode == BackendInitMode::GPU_ENABLED)
+            ? BackendInitMode::GPU_ENABLED
+            : BackendInitMode::CPU_ONLY;
+    if (!needs_backend_discovery && next_mode == previous_mode) {
+        return true;
+    }
+    g_backend_init_mode = next_mode;
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
         "GPU_OFFLOAD|backend_init_mode=%s|profile=%s",
-        require_gpu_backend ? "gpu-enabled" : "cpu-only",
+        next_mode == BackendInitMode::GPU_ENABLED ? "gpu-enabled" : "cpu-only",
         g_backend_profile.c_str());
     return true;
 }

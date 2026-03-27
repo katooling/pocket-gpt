@@ -31,8 +31,10 @@ import com.pocketagent.runtime.PreparedChatStream
 import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import com.pocketagent.runtime.RuntimePerformanceProfile
+import com.pocketagent.runtime.RuntimeWarmupSupport
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
+import com.pocketagent.runtime.WarmupResult
 import com.pocketagent.android.testutil.fakeUri
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import kotlinx.coroutines.flow.Flow
@@ -218,6 +220,25 @@ class GatewayAdaptersTest {
     }
 
     @Test
+    fun `mvp runtime gateway delegates warmup to facade when supported`() {
+        val facade = RecordingMvpRuntimeFacade(
+            warmupResult = WarmupResult(
+                attempted = true,
+                warmed = true,
+                residentHit = false,
+                warmupDurationMs = 12L,
+            ),
+        )
+        val gateway = MvpRuntimeGateway(facade = facade)
+
+        val result = gateway.warmupActiveModel()
+
+        assertTrue(result.attempted)
+        assertTrue(result.warmed)
+        assertEquals(1, facade.warmupCalls)
+    }
+
+    @Test
     fun `mvp runtime gateway demotes qualified gpu after remote process death`() = runTest {
         val qualifier = FakeGpuQualifier(
             resultWhenRuntimeSupported = GpuProbeResult(
@@ -358,10 +379,12 @@ private fun preparedRequest(request: StreamChatRequestV2): PreparedChatStream {
 private class RecordingMvpRuntimeFacade(
     private val gpuSupported: Boolean = true,
     private val streamChatEvents: Flow<ChatStreamEvent>? = null,
-) : MvpRuntimeFacade {
+    private val warmupResult: WarmupResult = WarmupResult.skipped("warmup_unsupported"),
+) : MvpRuntimeFacade, RuntimeWarmupSupport {
     private var currentRoutingMode: RoutingMode = RoutingMode.AUTO
     var lastToolName: String? = null
     var lastImagePath: String? = null
+    var warmupCalls: Int = 0
 
     override fun createSession(): SessionId = SessionId("session-1")
 
@@ -423,6 +446,11 @@ private class RecordingMvpRuntimeFacade(
     override fun runtimeBackend(): String = "NATIVE_JNI"
 
     override fun supportsGpuOffload(): Boolean = gpuSupported
+
+    override fun warmupActiveModel(): WarmupResult {
+        warmupCalls += 1
+        return warmupResult
+    }
 }
 
 private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAccess {
