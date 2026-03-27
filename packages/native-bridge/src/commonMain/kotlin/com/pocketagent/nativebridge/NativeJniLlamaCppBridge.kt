@@ -386,11 +386,13 @@ class NativeJniLlamaCppBridge(
             return loaded
         }
         val normalizedModelPath = validation.normalizedModelPath.orEmpty()
-        val config = runtimeGenerationConfig
-        applyPreferredBackend(config.gpuBackend)
-        val cpuOnlyBackend = config.gpuBackend == GpuExecutionBackend.CPU
+        val baseConfig = runtimeGenerationConfig
+        val preferredBackend = resolvePreferredBackend(baseConfig)
+        applyPreferredBackend(preferredBackend)
+        val config = sanitizeRuntimeConfigForBackend(baseConfig, preferredBackend)
+        val cpuOnlyBackend = baseConfig.gpuBackend == GpuExecutionBackend.CPU
         val gpuEnabledRequested = config.gpuEnabled && !cpuOnlyBackend
-        val preferredBackendAvailable = preferredBackendAvailable(config.gpuBackend)
+        val preferredBackendAvailable = preferredBackendAvailable(preferredBackend)
         val runtimeGpuSupported = gpuOffloadAllowed && gpuEnabledRequested && supportsGpuOffload()
         val gpuEnabledAndSupported = runtimeGpuSupported && preferredBackendAvailable
         val requestedGpuLayers = if (gpuEnabledAndSupported) config.gpuLayers else 0
@@ -399,12 +401,9 @@ class NativeJniLlamaCppBridge(
         } else {
             0
         }
-        // Demote GPU layers to 0 if the model quantization is unsupported by OpenCL.
-        // In this llama.cpp tree, OpenCL supports Q4_0 / Q6_K / Q8_0 / F16 / F32 / MXFP4,
-        // while K- and I-quants (for example Q4_K_M and IQ variants) can fall back to CPU.
         val openclQuantDemoted = gpuEnabledAndSupported &&
-            isOpenClBackendActive() &&
-            !isOpenClCompatibleQuantization(
+            isOpenClBackendActive(preferredBackend) &&
+            !OpenClRuntimePolicy.isReleaseSafeQuantization(
                 modelPath = normalizedModelPath,
                 modelId = modelId,
                 modelVersion = options.modelVersion,
@@ -414,7 +413,7 @@ class NativeJniLlamaCppBridge(
         if (openclQuantDemoted) {
             logBridge(
                 "OPENCL_QUANT_DEMOTE",
-                "model=$normalizedModelPath|model_id=$modelId|demoted_to_cpu=true|reason=unsupported_quantization_for_opencl",
+                "model=$normalizedModelPath|model_id=$modelId|demoted_to_cpu=true|reason=quant_not_in_release_opencl_allowlist",
             )
         }
 
@@ -525,7 +524,7 @@ class NativeJniLlamaCppBridge(
             finalBridgeError = resolveLoadAttemptError(
                 throwable = finalThrowable,
                 modelId = modelId,
-                backend = config.gpuBackend,
+                backend = preferredBackend,
                 gpuLayers = attempt.targetGpuLayers,
                 draftGpuLayers = attempt.draftGpuLayers,
             )
@@ -989,6 +988,27 @@ class NativeJniLlamaCppBridge(
         runCatching { nativeApi.setBackendProfile(profile) }
     }
 
+    private fun resolvePreferredBackend(config: RuntimeGenerationConfig): GpuExecutionBackend {
+        return when {
+            config.gpuEnabled && config.gpuBackend == GpuExecutionBackend.AUTO -> GpuExecutionBackend.OPENCL
+            else -> config.gpuBackend
+        }
+    }
+
+    private fun sanitizeRuntimeConfigForBackend(
+        config: RuntimeGenerationConfig,
+        preferredBackend: GpuExecutionBackend,
+    ): RuntimeGenerationConfig {
+        if (!config.gpuEnabled || preferredBackend != GpuExecutionBackend.OPENCL) {
+            return config
+        }
+        return config.copy(
+            flashAttnMode = FlashAttnMode.OFF,
+            kvCacheTypeK = KvCacheType.F16,
+            kvCacheTypeV = KvCacheType.F16,
+        )
+    }
+
     private fun preferredBackendAvailable(backend: GpuExecutionBackend): Boolean {
         if (backend == GpuExecutionBackend.AUTO || backend == GpuExecutionBackend.CPU) {
             return true
@@ -1154,60 +1174,15 @@ class NativeJniLlamaCppBridge(
         return scaled.coerceAtLeast(0).coerceAtMost(candidateTargetGpuLayers)
     }
 
-    private fun isOpenClBackendActive(): Boolean {
+    private fun isOpenClBackendActive(preferredBackend: GpuExecutionBackend): Boolean {
         val diagnostics = backendDiagnosticsJson().orEmpty()
         if (diagnostics.isBlank()) return false
         val openclCount = parseBackendDeviceCount(diagnostics, OPENCL_DEVICE_COUNT_REGEX) ?: 0
         val hexagonCount = parseBackendDeviceCount(diagnostics, HEXAGON_DEVICE_COUNT_REGEX) ?: 0
-        // If the profile is explicitly opencl, or auto with opencl devices available
-        val profile = runtimeGenerationConfig.gpuBackend
-        return when (profile) {
+        return when (preferredBackend) {
             GpuExecutionBackend.OPENCL -> openclCount > 0
-            // In AUTO mode native backend selection prefers Hexagon over OpenCL.
-            // Apply OpenCL quantization gating only when OpenCL is the only
-            // accelerator option to avoid unnecessary CPU demotion.
             GpuExecutionBackend.AUTO -> openclCount > 0 && hexagonCount == 0
             else -> false
-        }
-    }
-
-    private enum class OpenClQuantCompatibility {
-        SAFE,
-        UNSUPPORTED,
-        UNKNOWN,
-    }
-
-    private fun isOpenClCompatibleQuantization(modelPath: String, modelId: String, modelVersion: String?): Boolean {
-        val versionCompatibility = resolveOpenClQuantCompatibility(modelVersion.orEmpty().trim().lowercase())
-        if (versionCompatibility != OpenClQuantCompatibility.UNKNOWN) {
-            return versionCompatibility == OpenClQuantCompatibility.SAFE
-        }
-        val filenameStem = modelPath
-            .substringAfterLast('/')
-            .substringBeforeLast('.')
-            .lowercase()
-        val normalizedModelId = modelId.trim().lowercase()
-        val candidates = buildList {
-            if (filenameStem.isNotBlank()) add(filenameStem)
-            if (normalizedModelId.isNotBlank()) add(normalizedModelId)
-        }
-        val heuristicCompatibility = candidates
-            .asSequence()
-            .map(::resolveOpenClQuantCompatibility)
-            .firstOrNull { compatibility -> compatibility != OpenClQuantCompatibility.UNKNOWN }
-            ?: OpenClQuantCompatibility.UNKNOWN
-        // If we can't determine quantization from filename/model id, allow it (don't block).
-        return heuristicCompatibility != OpenClQuantCompatibility.UNSUPPORTED
-    }
-
-    private fun resolveOpenClQuantCompatibility(rawHint: String): OpenClQuantCompatibility {
-        if (rawHint.isBlank()) {
-            return OpenClQuantCompatibility.UNKNOWN
-        }
-        return when {
-            OPENCL_SAFE_QUANT_REGEX.containsMatchIn(rawHint) -> OpenClQuantCompatibility.SAFE
-            KNOWN_QUANT_REGEX.containsMatchIn(rawHint) -> OpenClQuantCompatibility.UNSUPPORTED
-            else -> OpenClQuantCompatibility.UNKNOWN
         }
     }
 
@@ -1625,18 +1600,6 @@ class NativeJniLlamaCppBridge(
             "context_init",
             "load_failed",
         )
-        // OpenCL-safe quantizations (supported in current upstream docs/backend):
-        // Q4_0, Q6_K, Q8_0, F16/F32, and MXFP4.
-        private val OPENCL_SAFE_QUANT_REGEX = Regex(
-            """(?:^|[._-])(q4[._-]?0|q6[._-]?k|q8[._-]?0|f16|f32|fp16|fp32|mxfp4(?:[._-]moe)?)(?:[._-]|$)""",
-            RegexOption.IGNORE_CASE,
-        )
-        // Any recognizable quantization tag in a GGUF filename
-        private val KNOWN_QUANT_REGEX = Regex(
-            """(?:^|[._-])(q[2-8](?:[._-][0-9a-z_]+)|iq[1-4](?:[._-][a-z]+)?|f16|f32|fp16|fp32)(?:[._-]|$)""",
-            RegexOption.IGNORE_CASE,
-        )
-
         private fun defaultFallbackEnabled(): Boolean {
             val raw = System.getenv(ENABLE_ADB_FALLBACK_ENV)
                 ?.trim()

@@ -114,6 +114,7 @@ class InteractionPlannerTest {
         )
         assertTrue(chatmlPrompt.prompt.contains("/think"))
         assertTrue(chatmlPrompt.prompt.contains("<tools>"))
+        assertTrue(chatmlPrompt.prompt.contains(""""args":["expression"]"""))
 
         val gemmaPrompt = planner.buildRenderedPrompt(
             modelId = "gemma-model",

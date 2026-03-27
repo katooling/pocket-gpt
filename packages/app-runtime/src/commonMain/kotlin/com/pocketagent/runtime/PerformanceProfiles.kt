@@ -113,17 +113,25 @@ data class PerformanceRuntimeConfig(
                 requestTimeoutMs = profilePreset.timeoutMs,
                 maxTokensDefault = profilePreset.maxTokensDefault,
                 nThreads = profilePreset.threads.coerceIn(MIN_THREADS, MAX_THREADS),
-                // Prefill is a burst operation that benefits from more parallelism
-                // than steady-state generation.  Use 1.5x the generation thread count
-                // so prompt processing saturates the available performance cores.
-                nThreadsBatch = (profilePreset.threads * 3 / 2).coerceIn(MIN_THREADS, MAX_THREADS),
+                // CPU fallback is often bandwidth bound on phones, so avoid
+                // oversubscribing prompt-eval threads there. GPU-backed runs
+                // still benefit from a slightly wider prefill worker pool.
+                nThreadsBatch = if (effectiveGpuEnabled) {
+                    (profilePreset.threads * 3 / 2).coerceIn(MIN_THREADS, MAX_THREADS)
+                } else {
+                    profilePreset.threads.coerceIn(MIN_THREADS, MAX_THREADS)
+                },
                 nBatch = profilePreset.batch.coerceIn(MIN_BATCH, batchCap),
                 nUbatch = profilePreset.ubatch.coerceIn(MIN_BATCH, batchCap),
                 nCtx = profilePreset.nCtx,
                 gpuEnabled = effectiveGpuEnabled,
                 gpuLayers = effectiveGpuLayers,
                 kvCacheType = KvCacheType.Q8_0,
-                flashAttnMode = if (effectiveGpuEnabled) FlashAttnMode.AUTO else FlashAttnMode.OFF,
+                flashAttnMode = if (profile == RuntimePerformanceProfile.BATTERY) {
+                    FlashAttnMode.OFF
+                } else {
+                    FlashAttnMode.AUTO
+                },
                 kvUnified = true,
                 kvCacheTypeK = KvCacheType.Q8_0,
                 kvCacheTypeV = KvCacheType.Q8_0,
@@ -151,7 +159,7 @@ data class PerformanceRuntimeConfig(
                     gpuEnabled = effectiveGpuEnabled,
                     gpuLayers = effectiveGpuLayers,
                 ),
-                useMmap = true,
+                useMmap = effectiveGpuEnabled,
                 useMlock = false,
                 nKeep = if (profile == RuntimePerformanceProfile.FAST) 256 else 128,
             )

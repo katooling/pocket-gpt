@@ -178,7 +178,7 @@ internal object ToolCallParser {
         if (toolNames.isEmpty()) return ""
         return buildString {
             appendLine()
-            appendLine("You have access to the following tools:")
+            appendLine("Available tools:")
             appendLine("<tools>")
             toolNames.forEach { name ->
                 val schema = TOOL_SCHEMAS[name]
@@ -188,25 +188,15 @@ internal object ToolCallParser {
             }
             appendLine("</tools>")
             appendLine()
-            append("When you need to use a tool, output a $openTag ... $closeTag block with JSON containing \"name\" and \"arguments\" keys.")
+            append("Call tools only when needed. Emit $openTag{\"name\":\"tool\",\"arguments\":{...}}$closeTag.")
         }
     }
 
     private val TOOL_SCHEMAS = mapOf(
-        "calculator" to """<tool>
-{"name": "calculator", "description": "Evaluate a simple arithmetic expression.", "parameters": {"expression": {"type": "string", "required": true, "description": "Arithmetic expression (e.g. '4+5')"}}}
-</tool>""",
-        "date_time" to """<tool>
-{"name": "date_time", "description": "Get the current date and time.", "parameters": {}}
-</tool>""",
-        "notes_lookup" to """<tool>
-{"name": "notes_lookup", "description": "Search local notes by query.", "parameters": {"query": {"type": "string", "required": true, "description": "Search query"}}}
-</tool>""",
-        "local_search" to """<tool>
-{"name": "local_search", "description": "Search local documents.", "parameters": {"query": {"type": "string", "required": true, "description": "Search query"}}}
-</tool>""",
-        "reminder_create" to """<tool>
-{"name": "reminder_create", "description": "Create a new reminder.", "parameters": {"title": {"type": "string", "required": true, "description": "Reminder title"}}}
-</tool>""",
+        "calculator" to """<tool>{"name":"calculator","args":["expression"]}</tool>""",
+        "date_time" to """<tool>{"name":"date_time","args":[]}</tool>""",
+        "notes_lookup" to """<tool>{"name":"notes_lookup","args":["query"]}</tool>""",
+        "local_search" to """<tool>{"name":"local_search","args":["query"]}</tool>""",
+        "reminder_create" to """<tool>{"name":"reminder_create","args":["title"]}</tool>""",
     )
 }

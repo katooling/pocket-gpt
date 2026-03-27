@@ -2,6 +2,7 @@ package com.pocketagent.runtime
 
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.DeviceState
+import com.pocketagent.nativebridge.FlashAttnMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -56,6 +57,8 @@ class PerformanceProfilesTest {
         assertEquals(true, balancedGpu.useMmap)
         assertEquals(false, balancedGpu.useMlock)
         assertEquals(128, balancedGpu.nKeep)
+        assertEquals(9, balancedGpu.nThreadsBatch)
+        assertEquals(FlashAttnMode.AUTO, balancedGpu.flashAttnMode)
         assertEquals(256, fastGpu.nBatch)
         assertEquals(256, fastGpu.nUbatch)
         assertEquals(2, fastGpu.speculativeDraftGpuLayers)
@@ -68,10 +71,18 @@ class PerformanceProfilesTest {
         assertEquals(false, fastGpu.useMlock)
         assertEquals(256, fastGpu.nKeep)
         assertEquals(8192, fastGpu.nCtx)
+        assertEquals(12, fastGpu.nThreadsBatch)
+        assertEquals(FlashAttnMode.AUTO, fastGpu.flashAttnMode)
         assertEquals(512, balancedCpu.nBatch)
         assertEquals(512, balancedCpu.nUbatch)
+        assertEquals(6, balancedCpu.nThreadsBatch)
+        assertFalse(balancedCpu.useMmap)
+        assertEquals(FlashAttnMode.AUTO, balancedCpu.flashAttnMode)
         assertEquals(768, fastCpu.nBatch)
         assertEquals(768, fastCpu.nUbatch)
+        assertEquals(8, fastCpu.nThreadsBatch)
+        assertFalse(fastCpu.useMmap)
+        assertEquals(FlashAttnMode.AUTO, fastCpu.flashAttnMode)
     }
 
     @Test

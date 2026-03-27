@@ -307,6 +307,20 @@ internal class SendMessageUseCase(
         cacheAwareGeneration?.lastGpuLoadRetryCount()?.let {
             observabilityModule.recordLatencyMetric("inference.gpu_load_retry_count", it.toDouble())
         }
+        val residencyState = residencyPort?.residencyState()
+        val prefixCacheDiagnostics = parsePrefixCacheDiagnostics(residencyPort?.prefixCacheDiagnosticsLine())
+        residencyState?.residentHitCount?.let {
+            observabilityModule.recordLatencyMetric("inference.resident_hit_count", it.toDouble())
+        }
+        prefixCacheDiagnostics?.lastReusedTokens?.let {
+            observabilityModule.recordLatencyMetric("inference.prefix_cache_reused_tokens", it.toDouble())
+        }
+        prefixCacheDiagnostics?.hitRate?.let {
+            observabilityModule.recordLatencyMetric("inference.prefix_cache_hit_rate", it)
+        }
+        prefixCacheDiagnostics?.lastCacheHit?.let {
+            observabilityModule.recordLatencyMetric("inference.prefix_cache_hit", if (it) 1.0 else 0.0)
+        }
         observabilityModule.recordThermalSnapshot(executionContext.deviceState.thermalLevel)
         conversationModule.appendAssistantTurn(request.sessionId, responseText)
 
@@ -322,11 +336,22 @@ internal class SendMessageUseCase(
             requestId = executionContext.requestId,
             finishReason = finishReason,
             runtimeStats = RuntimeExecutionStats(
+                modelLoadMs = residencyState?.lastLoadDurationMs,
                 prefillMs = prefillMs,
                 decodeMs = decodeMs,
                 tokensPerSec = tokensPerSec,
                 peakRssMb = peakRssMb,
                 backendIdentity = cacheAwareGeneration?.activeBackendIdentity(),
+                residentHit = residencyState?.residentHit,
+                residentHitCount = residencyState?.residentHitCount,
+                reloadReason = residencyState?.reloadReason?.name?.lowercase(),
+                prefixCacheHitRate = prefixCacheDiagnostics?.hitRate,
+                prefixCacheLastHit = prefixCacheDiagnostics?.lastCacheHit,
+                prefixCacheLastReusedTokens = prefixCacheDiagnostics?.lastReusedTokens,
+                prefixCacheStoreSuccessCount = prefixCacheDiagnostics?.storeStateSuccessCount,
+                prefixCacheStoreFailureCount = prefixCacheDiagnostics?.storeStateFailureCount,
+                prefixCacheRestoreSuccessCount = prefixCacheDiagnostics?.restoreStateSuccessCount,
+                prefixCacheRestoreFailureCount = prefixCacheDiagnostics?.restoreStateFailureCount,
                 appliedGpuLayers = actualGpuLayers,
                 appliedDraftGpuLayers = actualDraftGpuLayers,
                 gpuLoadRetryCount = cacheAwareGeneration?.lastGpuLoadRetryCount(),

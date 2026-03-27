@@ -1,11 +1,22 @@
 package com.pocketagent.core
 
 data class RuntimeExecutionStats(
+    val modelLoadMs: Long? = null,
     val prefillMs: Long? = null,
     val decodeMs: Long? = null,
     val tokensPerSec: Double? = null,
     val peakRssMb: Double? = null,
     val backendIdentity: String? = null,
+    val residentHit: Boolean? = null,
+    val residentHitCount: Long? = null,
+    val reloadReason: String? = null,
+    val prefixCacheHitRate: Double? = null,
+    val prefixCacheLastHit: Boolean? = null,
+    val prefixCacheLastReusedTokens: Int? = null,
+    val prefixCacheStoreSuccessCount: Int? = null,
+    val prefixCacheStoreFailureCount: Int? = null,
+    val prefixCacheRestoreSuccessCount: Int? = null,
+    val prefixCacheRestoreFailureCount: Int? = null,
     val appliedGpuLayers: Int? = null,
     val appliedDraftGpuLayers: Int? = null,
     val gpuLoadRetryCount: Int? = null,

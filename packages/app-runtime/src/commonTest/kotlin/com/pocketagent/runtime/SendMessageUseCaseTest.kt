@@ -18,6 +18,9 @@ import com.pocketagent.nativebridge.GenerationResult
 import com.pocketagent.nativebridge.ModelRuntimeMetadata
 import com.pocketagent.nativebridge.RuntimeInferencePorts
 import com.pocketagent.nativebridge.RuntimeModelRegistryPort
+import com.pocketagent.nativebridge.RuntimeReloadReason
+import com.pocketagent.nativebridge.RuntimeResidencyPort
+import com.pocketagent.nativebridge.RuntimeResidencyState
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -313,6 +316,43 @@ class SendMessageUseCaseTest {
 
         assertEquals("opencl", response.runtimeStats?.backendIdentity)
     }
+
+    @Test
+    fun `runtime stats include residency and prefix cache diagnostics`() {
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(),
+            runtimeInferencePorts = RuntimeInferencePorts(
+                cacheAwareGeneration = SendCacheAwareGenerationPort(backendIdentity = "cpu"),
+                modelRegistry = SendModelRegistryPort(),
+                residency = SendResidencyPort(
+                    state = RuntimeResidencyState(
+                        resident = true,
+                        residentHit = true,
+                        residentHitCount = 3L,
+                        reloadReason = RuntimeReloadReason.GENERATION_CONFIG_CHANGED,
+                        lastLoadDurationMs = 420L,
+                    ),
+                    prefixCacheDiagnosticsLine = "PREFIX_CACHE_DIAG|last_cache_hit=true|last_reused_tokens=128|prefix_cache_hit_rate=0.75|store_state_success=2|store_state_failure=1|restore_state_success=4|restore_state_failure=0",
+                ),
+            ),
+        )
+
+        val response = fixture.useCase.execute(fixture.request())
+
+        assertEquals(420L, response.runtimeStats?.modelLoadMs)
+        assertEquals(true, response.runtimeStats?.residentHit)
+        assertEquals(3L, response.runtimeStats?.residentHitCount)
+        assertEquals("generation_config_changed", response.runtimeStats?.reloadReason)
+        assertEquals(true, response.runtimeStats?.prefixCacheLastHit)
+        assertEquals(128, response.runtimeStats?.prefixCacheLastReusedTokens)
+        assertEquals(0.75, response.runtimeStats?.prefixCacheHitRate)
+        assertEquals(2, response.runtimeStats?.prefixCacheStoreSuccessCount)
+        assertEquals(1, response.runtimeStats?.prefixCacheStoreFailureCount)
+        assertEquals(4, response.runtimeStats?.prefixCacheRestoreSuccessCount)
+        assertEquals(0, response.runtimeStats?.prefixCacheRestoreFailureCount)
+    }
 }
 
 private class SendMessageFixture(
@@ -520,6 +560,19 @@ private class SendModelRegistryPort : RuntimeModelRegistryPort {
     override fun cachedModelSizeBytes(modelId: String): Long? = cachedModelMetadata(modelId)?.sizeBytes
 
     override fun cachedEstimatedMaxGpuLayers(modelId: String, nCtx: Int): Int? = 4
+}
+
+private class SendResidencyPort(
+    private val state: RuntimeResidencyState,
+    private val prefixCacheDiagnosticsLine: String? = null,
+) : RuntimeResidencyPort {
+    override fun updateResidencySlot(slotId: String?, expiresAtEpochMs: Long?) = Unit
+
+    override fun residencyState(): RuntimeResidencyState = state
+
+    override fun prefixCacheDiagnosticsLine(): String? = prefixCacheDiagnosticsLine
+
+    override fun recordWarmup(durationMs: Long) = Unit
 }
 
 private class SendStaticRoutingModule(

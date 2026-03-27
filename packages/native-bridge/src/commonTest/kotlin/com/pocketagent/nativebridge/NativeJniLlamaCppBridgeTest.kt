@@ -117,12 +117,13 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `forwards flash attention mode kv unified and split kv cache types to native load`() {
+    fun `opencl policy forces flash attention off and f16 kv cache types on native load`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
             loadOk = true,
             generatedText = "native hello",
             supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1}""",
         )
         val bridge = NativeJniLlamaCppBridge(
             nativeApi = nativeApi,
@@ -146,9 +147,9 @@ class NativeJniLlamaCppBridgeTest {
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         assertEquals(listOf(FlashAttnMode.OFF.code), nativeApi.loadFlashAttnCodes)
         assertEquals(listOf(false), nativeApi.loadKvUnified)
-        assertEquals(listOf(KvCacheType.Q4_0.code), nativeApi.loadKvCacheTypeCodes)
-        assertEquals(listOf(KvCacheType.Q8_0.code), nativeApi.loadKvCacheTypeKCodes)
-        assertEquals(listOf(KvCacheType.Q4_0.code), nativeApi.loadKvCacheTypeVCodes)
+        assertEquals(listOf(KvCacheType.F16.code), nativeApi.loadKvCacheTypeCodes)
+        assertEquals(listOf(KvCacheType.F16.code), nativeApi.loadKvCacheTypeKCodes)
+        assertEquals(listOf(KvCacheType.F16.code), nativeApi.loadKvCacheTypeVCodes)
     }
 
     @Test
@@ -338,6 +339,7 @@ class NativeJniLlamaCppBridgeTest {
             loadOk = true,
             generatedText = "native hello",
             supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1}""",
         )
         val bridge = NativeJniLlamaCppBridge(
             nativeApi = nativeApi,
@@ -357,7 +359,7 @@ class NativeJniLlamaCppBridgeTest {
         )
 
         assertTrue(bridge.isReady())
-        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b-q4_0.gguf"))
         assertEquals(listOf(24), nativeApi.loadGpuLayers)
         assertEquals(listOf(3), nativeApi.loadDraftGpuLayers)
         assertEquals(listOf(false), nativeApi.loadUseMmap)
@@ -460,7 +462,7 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `opencl heuristic fallback keeps gpu layers when quantization cannot be inferred and model version is absent`() {
+    fun `opencl heuristic fallback demotes gpu layers when quantization cannot be inferred`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
             loadOk = true,
@@ -490,7 +492,7 @@ class NativeJniLlamaCppBridgeTest {
                 modelPath = "/tmp/model.gguf",
             ),
         )
-        assertEquals(listOf(20), nativeApi.loadGpuLayers)
+        assertEquals(listOf(0), nativeApi.loadGpuLayers)
     }
 
     @Test
@@ -528,7 +530,7 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `opencl keeps gpu layers when quantization is explicitly q8_0`() {
+    fun `opencl demotes gpu layers when quantization is explicitly q8_0`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
             loadOk = true,
@@ -558,7 +560,7 @@ class NativeJniLlamaCppBridgeTest {
                 modelPath = "/tmp/qwen-model-q8_0.gguf",
             ),
         )
-        assertEquals(listOf(20), nativeApi.loadGpuLayers)
+        assertEquals(listOf(0), nativeApi.loadGpuLayers)
     }
 
     @Test
@@ -632,7 +634,7 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `auto backend does not apply opencl quant demotion when hexagon is available`() {
+    fun `auto backend still applies opencl quant demotion when release policy forces opencl`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
             loadOk = true,
@@ -662,7 +664,7 @@ class NativeJniLlamaCppBridgeTest {
                 modelPath = "/tmp/model.gguf",
             ),
         )
-        assertEquals(listOf(20), nativeApi.loadGpuLayers)
+        assertEquals(listOf(0), nativeApi.loadGpuLayers)
     }
 
     @Test
