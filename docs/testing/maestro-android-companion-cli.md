@@ -37,6 +37,8 @@ maestro-android doctor
 
 That example config preserves the repo’s current operating model:
 
+- Tests preserve app sandbox state by default. Only use `--clear-state` for flows that specifically need a fresh app-private sandbox.
+- Treat shared/external storage as the canonical model cache location. Do not rely on app-private storage for the only copy of a model if you want it to survive resets.
 - `lane smoke|journey|screenshot-pack|fast-smoke|valid-output|strict-journey` delegate to `devctl`
 - `lane lifecycle` delegates to `scripts/ci/run_lifecycle_e2e.sh`
 - `lane cloud-smoke` delegates to `scripts/dev/maestro-cloud-smoke.sh`

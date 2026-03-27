@@ -13,7 +13,7 @@ Options:
   --serial <id>                  Device serial (default: first attached device)
   --flow <path>                  Maestro flow path (default: tests/maestro/scenario-gpu-probe-status.yaml)
   --expect <REASON[,REASON...]>  Accepted probe_reason values
-  --clear-state                  Clear app state before run (pm clear)
+  --clear-state                  Clear app-private state before run (pm clear); shared model storage is preserved
   --strict-maestro-exit          Fail when scoped-repro exits nonzero/non-86
   --no-build                     Skip Gradle assemble
   --no-install                   Skip adb install

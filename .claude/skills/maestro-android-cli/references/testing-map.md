@@ -40,3 +40,4 @@ Use the smallest standard command that proves the change.
 - Prefer stable selectors (`id:`/resource-id) over fragile text when the app exposes them.
 - Treat cloud coverage as supplemental. Do not use it as the only merge gate.
 - Preserve first-failure artifacts when a bounded retry is part of the gate.
+- Treat `--clear-state` as an opt-in reset for app-private data only; keep large model downloads in shared/external storage so normal runs do not re-download them.

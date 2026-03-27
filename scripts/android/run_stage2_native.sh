@@ -7,7 +7,9 @@ Usage:
   bash scripts/android/run_stage2_native.sh --device <serial> [--date YYYY-MM-DD] [--run-dir <path>] \
     [--profile quick|closure] [--models 0.8b|2b|both] [--scenarios a|b|both] [--resume] \
     [--install-mode auto|force|skip] [--logcat filtered|full] [--runs <n>] \
-    [--max-tokens-a <n>] [--max-tokens-b <n>] [--model-0-8b-path <device-abs-path>] [--model-2b-path <device-abs-path>]
+    [--max-tokens-a <n>] [--max-tokens-b <n>] [--model-0-8b-path <device-abs-path>] [--model-2b-path <device-abs-path>] \
+    [--runtime-profile battery|balanced|fast] [--gpu-enabled 0|1] [--n-ctx <n>] [--n-batch <n>] [--n-ubatch <n>] \
+    [--n-threads <n>] [--n-threads-batch <n>] [--flash-attn auto|on|off] [--disable-tools 0|1]
 USAGE
 }
 
@@ -34,6 +36,15 @@ MODEL_2B_PATH="${POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH:-}"
 MODEL_PROVISION_SKIPPED="${POCKETGPT_STAGE2_MODEL_PROVISION_SKIPPED:-unknown}"
 PREFIX_CACHE_ENABLED="${POCKETGPT_PREFIX_CACHE_ENABLED:-1}"
 PREFIX_CACHE_STRICT="${POCKETGPT_PREFIX_CACHE_STRICT:-0}"
+RUNTIME_PROFILE="${POCKETGPT_STAGE2_RUNTIME_PROFILE:-}"
+GPU_ENABLED="${POCKETGPT_STAGE2_GPU_ENABLED:-}"
+N_CTX_OVERRIDE="${POCKETGPT_STAGE2_N_CTX:-}"
+N_BATCH_OVERRIDE="${POCKETGPT_STAGE2_N_BATCH:-}"
+N_UBATCH_OVERRIDE="${POCKETGPT_STAGE2_N_UBATCH:-}"
+N_THREADS_OVERRIDE="${POCKETGPT_STAGE2_N_THREADS:-}"
+N_THREADS_BATCH_OVERRIDE="${POCKETGPT_STAGE2_N_THREADS_BATCH:-}"
+FLASH_ATTN_MODE="${POCKETGPT_STAGE2_FLASH_ATTN_MODE:-}"
+DISABLE_TOOLS="${POCKETGPT_STAGE2_DISABLE_TOOLS:-}"
 
 TOTAL_PREFIX_CACHE_HITS=0
 TOTAL_PREFIX_CACHE_MISSES=0
@@ -97,6 +108,42 @@ while [[ $# -gt 0 ]]; do
       ;;
     --model-2b-path)
       MODEL_2B_PATH="${2:-}"
+      shift 2
+      ;;
+    --runtime-profile)
+      RUNTIME_PROFILE="${2:-}"
+      shift 2
+      ;;
+    --gpu-enabled)
+      GPU_ENABLED="${2:-}"
+      shift 2
+      ;;
+    --n-ctx)
+      N_CTX_OVERRIDE="${2:-}"
+      shift 2
+      ;;
+    --n-batch)
+      N_BATCH_OVERRIDE="${2:-}"
+      shift 2
+      ;;
+    --n-ubatch)
+      N_UBATCH_OVERRIDE="${2:-}"
+      shift 2
+      ;;
+    --n-threads)
+      N_THREADS_OVERRIDE="${2:-}"
+      shift 2
+      ;;
+    --n-threads-batch)
+      N_THREADS_BATCH_OVERRIDE="${2:-}"
+      shift 2
+      ;;
+    --flash-attn)
+      FLASH_ATTN_MODE="${2:-}"
+      shift 2
+      ;;
+    --disable-tools)
+      DISABLE_TOOLS="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -259,7 +306,7 @@ MODEL_2B_ID="qwen3.5-2b-q4"
 PACKAGE_NAME="com.pocketagent.android"
 TEST_RUNNER="com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner"
 TEST_CLASS_SWEEP="com.pocketagent.android.NativeStage2BenchmarkInstrumentationTest#runConfiguredModelSweep"
-CSV_HEADER="date,platform,device_class,device_name,backend,runtime,model,scenario,first_token_ms,decode_tps,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom,tokens,runs"
+CSV_HEADER="date,platform,device_class,device_name,backend,runtime,model,scenario,first_token_ms,model_load_ms,prefill_ms,decode_ms,decode_tps,resident_hit,resident_hit_count,reload_reason,prefix_cache_hit,prefix_cache_reused_tokens,prefix_cache_hit_rate,mmap_readahead_ms,mmap_readahead_bytes,active_backend,backend_profile,qualification_state,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom,tokens,runs"
 
 SCENARIO_A_CSV="${RUN_DIR}/scenario-a.csv"
 SCENARIO_B_CSV="${RUN_DIR}/scenario-b.csv"
@@ -511,10 +558,27 @@ append_metric_row() {
   local meminfo_case="$5"
   local logcat_case="$6"
 
-  local backend first_token_ms decode_tps pss_kb peak_rss_mb crash_or_oom tokens runs_reported
+  local backend first_token_ms model_load_ms prefill_ms decode_ms decode_tps resident_hit resident_hit_count reload_reason
+  local prefix_cache_hit prefix_cache_reused_tokens prefix_cache_hit_rate mmap_readahead_ms mmap_readahead_bytes
+  local active_backend backend_profile qualification_state
+  local pss_kb peak_rss_mb crash_or_oom tokens runs_reported
   backend="$(metric_value "${metric_line}" "backend")"
   first_token_ms="$(metric_value "${metric_line}" "first_token_ms")"
+  model_load_ms="$(metric_value "${metric_line}" "model_load_ms")"
+  prefill_ms="$(metric_value "${metric_line}" "prefill_ms")"
+  decode_ms="$(metric_value "${metric_line}" "decode_ms")"
   decode_tps="$(metric_value "${metric_line}" "decode_tps")"
+  resident_hit="$(metric_value "${metric_line}" "resident_hit")"
+  resident_hit_count="$(metric_value "${metric_line}" "resident_hit_count")"
+  reload_reason="$(metric_value "${metric_line}" "reload_reason")"
+  prefix_cache_hit="$(metric_value "${metric_line}" "prefix_cache_hit")"
+  prefix_cache_reused_tokens="$(metric_value "${metric_line}" "prefix_cache_reused_tokens")"
+  prefix_cache_hit_rate="$(metric_value "${metric_line}" "prefix_cache_hit_rate")"
+  mmap_readahead_ms="$(metric_value "${metric_line}" "mmap_readahead_ms")"
+  mmap_readahead_bytes="$(metric_value "${metric_line}" "mmap_readahead_bytes")"
+  active_backend="$(metric_value "${metric_line}" "active_backend")"
+  backend_profile="$(metric_value "${metric_line}" "backend_profile")"
+  qualification_state="$(metric_value "${metric_line}" "qualification_state")"
   tokens="$(metric_value "${metric_line}" "tokens")"
   runs_reported="$(metric_value "${metric_line}" "runs")"
   pss_kb="$(metric_value "${metric_line}" "pss_kb")"
@@ -561,7 +625,7 @@ append_metric_row() {
   fi
 
   printf '%s\n' \
-"${DATE_VALUE},android,mid,${DEVICE},${backend},llama.cpp-native-jni,${model_id},${scenario},${first_token_ms},${decode_tps},${peak_rss_mb},0,captured,${crash_or_oom},${tokens},${runs_reported}" \
+"${DATE_VALUE},android,mid,${DEVICE},${backend},llama.cpp-native-jni,${model_id},${scenario},${first_token_ms},${model_load_ms},${prefill_ms},${decode_ms},${decode_tps},${resident_hit},${resident_hit_count},${reload_reason},${prefix_cache_hit},${prefix_cache_reused_tokens},${prefix_cache_hit_rate},${mmap_readahead_ms},${mmap_readahead_bytes},${active_backend},${backend_profile},${qualification_state},${peak_rss_mb},0,captured,${crash_or_oom},${tokens},${runs_reported}" \
     >> "${target_csv}"
 }
 
@@ -648,6 +712,15 @@ run_model_sweep() {
     -e stage2_warmup_max_tokens "${WARMUP_MAX_TOKENS}" \
     -e stage2_prefix_cache_enabled "${PREFIX_CACHE_ENABLED}" \
     -e stage2_prefix_cache_strict "${PREFIX_CACHE_STRICT}" \
+    ${RUNTIME_PROFILE:+-e stage2_profile "${RUNTIME_PROFILE}"} \
+    ${GPU_ENABLED:+-e stage2_gpu_enabled "${GPU_ENABLED}"} \
+    ${N_CTX_OVERRIDE:+-e stage2_n_ctx "${N_CTX_OVERRIDE}"} \
+    ${N_BATCH_OVERRIDE:+-e stage2_n_batch "${N_BATCH_OVERRIDE}"} \
+    ${N_UBATCH_OVERRIDE:+-e stage2_n_ubatch "${N_UBATCH_OVERRIDE}"} \
+    ${N_THREADS_OVERRIDE:+-e stage2_n_threads "${N_THREADS_OVERRIDE}"} \
+    ${N_THREADS_BATCH_OVERRIDE:+-e stage2_n_threads_batch "${N_THREADS_BATCH_OVERRIDE}"} \
+    ${FLASH_ATTN_MODE:+-e stage2_flash_attn_mode "${FLASH_ATTN_MODE}"} \
+    ${DISABLE_TOOLS:+-e stage2_disable_tools "${DISABLE_TOOLS}"} \
     "${TEST_RUNNER}" | tee "${instrument_output}"
 
   adb_retry logcat -d > "${logcat_case}"

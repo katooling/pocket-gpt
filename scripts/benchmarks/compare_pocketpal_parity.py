@@ -37,6 +37,8 @@ def normalize_pocket_gpt_rows(rows, scenario):
             {
                 "decode_tps": parse_float(row.get("decode_tps")),
                 "first_token_ms": parse_float(row.get("first_token_ms")),
+                "prefill_ms": parse_float(row.get("prefill_ms")),
+                "model_load_ms": parse_float(row.get("model_load_ms")),
                 "scenario": row_scenario or None,
                 "source": "pocket-gpt",
             },
@@ -87,6 +89,28 @@ def normalize_pocketpal_records(records, scenario):
                         ),
                     ),
                 ),
+                "prefill_ms": parse_float(
+                    _candidate_value(
+                        benchmark,
+                        (
+                            "prefill_ms",
+                            "prefillMs",
+                            "prompt_eval_ms",
+                            "promptEvalMs",
+                        ),
+                    ),
+                ),
+                "model_load_ms": parse_float(
+                    _candidate_value(
+                        benchmark,
+                        (
+                            "model_load_ms",
+                            "modelLoadMs",
+                            "load_ms",
+                            "loadMs",
+                        ),
+                    ),
+                ),
                 "scenario": row_scenario or None,
                 "source": "pocketpal",
             },
@@ -117,6 +141,10 @@ def build_report(gpt_rows, pal_rows, min_tps_ratio, max_first_token_ratio):
     pal_decode = median([r["decode_tps"] for r in pal_rows])
     gpt_first = median([r["first_token_ms"] for r in gpt_rows])
     pal_first = median([r["first_token_ms"] for r in pal_rows])
+    gpt_prefill = median([r["prefill_ms"] for r in gpt_rows])
+    pal_prefill = median([r["prefill_ms"] for r in pal_rows])
+    gpt_load = median([r["model_load_ms"] for r in gpt_rows])
+    pal_load = median([r["model_load_ms"] for r in pal_rows])
 
     decode_ratio = None
     if gpt_decode is not None and pal_decode not in (None, 0):
@@ -125,6 +153,14 @@ def build_report(gpt_rows, pal_rows, min_tps_ratio, max_first_token_ratio):
     first_token_ratio = None
     if gpt_first is not None and pal_first not in (None, 0):
         first_token_ratio = gpt_first / pal_first
+
+    prefill_ratio = None
+    if gpt_prefill is not None and pal_prefill not in (None, 0):
+        prefill_ratio = gpt_prefill / pal_prefill
+
+    model_load_ratio = None
+    if gpt_load is not None and pal_load not in (None, 0):
+        model_load_ratio = gpt_load / pal_load
 
     checks = []
     if decode_ratio is None:
@@ -173,15 +209,21 @@ def build_report(gpt_rows, pal_rows, min_tps_ratio, max_first_token_ratio):
             "rows": len(gpt_rows),
             "median_decode_tps": gpt_decode,
             "median_first_token_ms": gpt_first,
+            "median_prefill_ms": gpt_prefill,
+            "median_model_load_ms": gpt_load,
         },
         "pocketpal": {
             "rows": len(pal_rows),
             "median_decode_tps": pal_decode,
             "median_first_token_ms": pal_first,
+            "median_prefill_ms": pal_prefill,
+            "median_model_load_ms": pal_load,
         },
         "ratios": {
             "decode_tps_ratio_gpt_over_pal": decode_ratio,
             "first_token_ratio_gpt_over_pal": first_token_ratio,
+            "prefill_ratio_gpt_over_pal": prefill_ratio,
+            "model_load_ratio_gpt_over_pal": model_load_ratio,
         },
         "checks": checks,
     }
@@ -196,11 +238,15 @@ def print_report(report):
     print(f"- rows: {report['pocket_gpt']['rows']}")
     print(f"- median decode_tps: {report['pocket_gpt']['median_decode_tps']}")
     print(f"- median first_token_ms: {report['pocket_gpt']['median_first_token_ms']}")
+    print(f"- median prefill_ms: {report['pocket_gpt']['median_prefill_ms']}")
+    print(f"- median model_load_ms: {report['pocket_gpt']['median_model_load_ms']}")
     print("")
     print("PocketPal")
     print(f"- rows: {report['pocketpal']['rows']}")
     print(f"- median decode_tps: {report['pocketpal']['median_decode_tps']}")
     print(f"- median first_token_ms: {report['pocketpal']['median_first_token_ms']}")
+    print(f"- median prefill_ms: {report['pocketpal']['median_prefill_ms']}")
+    print(f"- median model_load_ms: {report['pocketpal']['median_model_load_ms']}")
     print("")
     print("Checks")
     for check in report["checks"]:
