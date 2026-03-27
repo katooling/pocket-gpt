@@ -3,6 +3,7 @@ package com.pocketagent.inference
 import com.pocketagent.core.RoutingMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -111,5 +112,33 @@ class ModelCatalogTest {
                 "env key token lookup failed for ${descriptor.envKeyToken}",
             )
         }
+    }
+
+    @Test
+    fun `speculative draft compatibility is descriptor family driven`() {
+        assertTrue(
+            ModelCatalog.isSpeculativeDraftCompatible(
+                targetModelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
+                draftModelId = ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS,
+            ),
+        )
+        assertTrue(
+            ModelCatalog.isSpeculativeDraftCompatible(
+                targetModelId = ModelCatalog.QWEN_3_5_2B_Q4,
+                draftModelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            ),
+        )
+        assertFalse(
+            ModelCatalog.isSpeculativeDraftCompatible(
+                targetModelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                draftModelId = ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS,
+            ),
+        )
+        assertFalse(
+            ModelCatalog.isSpeculativeDraftCompatible(
+                targetModelId = "missing-target",
+                draftModelId = ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS,
+            ),
+        )
     }
 }

@@ -278,6 +278,29 @@ data class GenerationResult(
         get() = finishReason == GenerationFinishReason.COMPLETED || finishReason == GenerationFinishReason.MAX_TOKENS
 }
 
+internal fun resolveActiveBackendIdentity(diagnosticsPayload: String?): String? {
+    val payload = diagnosticsPayload?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val activeBackend = ACTIVE_BACKEND_PATTERN.find(payload)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotEmpty() && it != "auto" }
+    if (activeBackend != null) {
+        return activeBackend
+    }
+    val compiledBackends = COMPILED_BACKEND_PATTERN.find(payload)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.split(',')
+        ?.map { token -> token.trim().lowercase() }
+        ?.filter { token -> token.isNotEmpty() }
+        .orEmpty()
+        .distinct()
+    return compiledBackends.singleOrNull()
+        ?.takeIf { backend -> backend != "auto" }
+}
+
 interface LlamaCppRuntimeBridge {
     fun isReady(): Boolean
     fun listAvailableModels(): List<String>
@@ -340,11 +363,15 @@ interface LlamaCppRuntimeBridge {
     fun runtimeBackend(): RuntimeBackend
     fun lastError(): BridgeError? = null
     fun backendDiagnosticsJson(): String? = null
+    fun activeBackendIdentity(): String? = resolveActiveBackendIdentity(backendDiagnosticsJson())
     fun setBackendProfile(profile: String) {}
     fun prefixCacheDiagnosticsLine(): String? = null
     fun saveSessionCache(filePath: String): Boolean = false
     fun loadSessionCache(filePath: String): Boolean = false
 }
+
+private val ACTIVE_BACKEND_PATTERN = Regex(""""active_backend"\s*:\s*"([^"]+)"""")
+private val COMPILED_BACKEND_PATTERN = Regex(""""compiled_backend"\s*:\s*"([^"]+)"""")
 
 data class CommandResult(
     val exitCode: Int,

@@ -28,6 +28,7 @@ interface CacheAwareGenerationPort {
     fun actualGpuLayers(): Int?
     fun actualDraftGpuLayers(): Int?
     fun lastGpuLoadRetryCount(): Int?
+    fun activeBackendIdentity(): String? = null
 }
 
 interface RuntimeModelRegistryPort {

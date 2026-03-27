@@ -250,6 +250,8 @@ class LlamaCppInferenceModule(
 
     override fun lastGpuLoadRetryCount(): Int? = runtimeBridge.lastGpuLoadRetryCount()
 
+    override fun activeBackendIdentity(): String? = runtimeBridge.activeBackendIdentity()
+
     override fun currentRssMb(): Double? = runtimeBridge.currentRssMb()
 
     override fun isRuntimeReleased(): Boolean = runtimeBridge.isRuntimeReleased()

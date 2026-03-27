@@ -8,6 +8,14 @@ enum class ModelTier {
     DEBUG,
 }
 
+enum class ModelFamily {
+    SMOKE_ECHO,
+    QWEN,
+    SMOLLM3,
+    PHI,
+    GEMMA,
+}
+
 enum class ModelCapability {
     SHORT_TEXT,
     LONG_TEXT,
@@ -23,8 +31,10 @@ enum class ModelRuntimeProfile {
 data class ModelDescriptor(
     val modelId: String,
     val tier: ModelTier,
+    val family: ModelFamily,
     val bridgeSupported: Boolean,
     val autoRoutingEnabled: Boolean,
+    val speculativeDraftTargetFamilies: Set<ModelFamily> = setOf(family),
     val capabilities: Set<ModelCapability>,
     val minRamGb: Int,
     val qualityRank: Int,
@@ -61,6 +71,7 @@ object ModelCatalog {
         ModelDescriptor(
             modelId = SMOKE_ECHO_120M,
             tier = ModelTier.DEBUG,
+            family = ModelFamily.SMOKE_ECHO,
             bridgeSupported = false,
             autoRoutingEnabled = false,
             capabilities = setOf(ModelCapability.SHORT_TEXT),
@@ -76,6 +87,7 @@ object ModelCatalog {
         ModelDescriptor(
             modelId = QWEN_3_5_0_8B_Q4,
             tier = ModelTier.BASELINE,
+            family = ModelFamily.QWEN,
             bridgeSupported = true,
             autoRoutingEnabled = true,
             capabilities = setOf(
@@ -99,6 +111,7 @@ object ModelCatalog {
         ModelDescriptor(
             modelId = QWEN3_0_6B_Q4_K_M,
             tier = ModelTier.BASELINE,
+            family = ModelFamily.QWEN,
             bridgeSupported = true,
             autoRoutingEnabled = true,
             capabilities = setOf(
@@ -121,6 +134,7 @@ object ModelCatalog {
         ModelDescriptor(
             modelId = QWEN_3_5_2B_Q4,
             tier = ModelTier.BASELINE,
+            family = ModelFamily.QWEN,
             bridgeSupported = true,
             autoRoutingEnabled = true,
             capabilities = setOf(
@@ -144,6 +158,7 @@ object ModelCatalog {
         ModelDescriptor(
             modelId = SMOLLM3_3B_Q4_K_M,
             tier = ModelTier.BASELINE,
+            family = ModelFamily.SMOLLM3,
             bridgeSupported = true,
             autoRoutingEnabled = true,
             capabilities = setOf(
@@ -166,6 +181,7 @@ object ModelCatalog {
         ModelDescriptor(
             modelId = SMOLLM3_3B_UD_IQ2_XXS,
             tier = ModelTier.DEBUG,
+            family = ModelFamily.SMOLLM3,
             bridgeSupported = true,
             autoRoutingEnabled = false,
             capabilities = setOf(ModelCapability.SHORT_TEXT),
@@ -181,6 +197,7 @@ object ModelCatalog {
         ModelDescriptor(
             modelId = PHI_4_MINI_Q4_K_M,
             tier = ModelTier.BASELINE,
+            family = ModelFamily.PHI,
             bridgeSupported = true,
             autoRoutingEnabled = true,
             capabilities = setOf(
@@ -204,6 +221,7 @@ object ModelCatalog {
         ModelDescriptor(
             modelId = GEMMA_2_2B_Q4_K_M,
             tier = ModelTier.BASELINE,
+            family = ModelFamily.GEMMA,
             bridgeSupported = true,
             autoRoutingEnabled = false,
             capabilities = setOf(
@@ -308,6 +326,12 @@ object ModelCatalog {
         val descriptor = descriptorFor(modelId) ?: return false
         val capability = capabilityForTask(taskType)
         return descriptor.capabilities.contains(capability)
+    }
+
+    fun isSpeculativeDraftCompatible(targetModelId: String, draftModelId: String): Boolean {
+        val targetDescriptor = descriptorFor(targetModelId) ?: return false
+        val draftDescriptor = descriptorFor(draftModelId) ?: return false
+        return draftDescriptor.speculativeDraftTargetFamilies.contains(targetDescriptor.family)
     }
 
     fun autoRoutingCandidates(taskType: String): List<ModelDescriptor> {

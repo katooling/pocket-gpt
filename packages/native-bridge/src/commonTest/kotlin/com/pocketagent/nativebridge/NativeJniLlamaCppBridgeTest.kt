@@ -426,7 +426,7 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `opencl demotes gpu layers when model id quantization is unsupported`() {
+    fun `opencl falls back to model id heuristics and demotes unsupported quantization when model version is absent`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
             loadOk = true,
@@ -457,6 +457,40 @@ class NativeJniLlamaCppBridgeTest {
             ),
         )
         assertEquals(listOf(0), nativeApi.loadGpuLayers)
+    }
+
+    @Test
+    fun `opencl heuristic fallback keeps gpu layers when quantization cannot be inferred and model version is absent`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.OPENCL,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                modelPath = "/tmp/model.gguf",
+            ),
+        )
+        assertEquals(listOf(20), nativeApi.loadGpuLayers)
     }
 
     @Test
@@ -525,6 +559,76 @@ class NativeJniLlamaCppBridgeTest {
             ),
         )
         assertEquals(listOf(20), nativeApi.loadGpuLayers)
+    }
+
+    @Test
+    fun `opencl uses model version quantization when path is generic and model id is coarse`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.OPENCL,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.SMOLLM3_3B_Q4_K_M,
+                modelPath = "/tmp/model.gguf",
+                options = ModelLoadOptions(modelVersion = "q4_0"),
+            ),
+        )
+        assertEquals(listOf(20), nativeApi.loadGpuLayers)
+    }
+
+    @Test
+    fun `opencl demotes gpu layers when model version quantization is unsupported`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.OPENCL,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+                modelPath = "/tmp/model.gguf",
+                options = ModelLoadOptions(modelVersion = "ud_iq2_xxs"),
+            ),
+        )
+        assertEquals(listOf(0), nativeApi.loadGpuLayers)
     }
 
     @Test

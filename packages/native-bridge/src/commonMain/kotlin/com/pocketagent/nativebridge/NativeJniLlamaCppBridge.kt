@@ -407,6 +407,7 @@ class NativeJniLlamaCppBridge(
             !isOpenClCompatibleQuantization(
                 modelPath = normalizedModelPath,
                 modelId = modelId,
+                modelVersion = options.modelVersion,
             )
         val effectiveGpuLayers = if (openclQuantDemoted) 0 else requestedGpuLayers
         val effectiveDraftGpuLayers = if (openclQuantDemoted) 0 else requestedDraftGpuLayers
@@ -1170,7 +1171,17 @@ class NativeJniLlamaCppBridge(
         }
     }
 
-    private fun isOpenClCompatibleQuantization(modelPath: String, modelId: String): Boolean {
+    private enum class OpenClQuantCompatibility {
+        SAFE,
+        UNSUPPORTED,
+        UNKNOWN,
+    }
+
+    private fun isOpenClCompatibleQuantization(modelPath: String, modelId: String, modelVersion: String?): Boolean {
+        val versionCompatibility = resolveOpenClQuantCompatibility(modelVersion.orEmpty().trim().lowercase())
+        if (versionCompatibility != OpenClQuantCompatibility.UNKNOWN) {
+            return versionCompatibility == OpenClQuantCompatibility.SAFE
+        }
         val filenameStem = modelPath
             .substringAfterLast('/')
             .substringBeforeLast('.')
@@ -1180,11 +1191,24 @@ class NativeJniLlamaCppBridge(
             if (filenameStem.isNotBlank()) add(filenameStem)
             if (normalizedModelId.isNotBlank()) add(normalizedModelId)
         }
-        if (candidates.any { candidate -> OPENCL_SAFE_QUANT_REGEX.containsMatchIn(candidate) }) {
-            return true
-        }
+        val heuristicCompatibility = candidates
+            .asSequence()
+            .map(::resolveOpenClQuantCompatibility)
+            .firstOrNull { compatibility -> compatibility != OpenClQuantCompatibility.UNKNOWN }
+            ?: OpenClQuantCompatibility.UNKNOWN
         // If we can't determine quantization from filename/model id, allow it (don't block).
-        return !candidates.any { candidate -> KNOWN_QUANT_REGEX.containsMatchIn(candidate) }
+        return heuristicCompatibility != OpenClQuantCompatibility.UNSUPPORTED
+    }
+
+    private fun resolveOpenClQuantCompatibility(rawHint: String): OpenClQuantCompatibility {
+        if (rawHint.isBlank()) {
+            return OpenClQuantCompatibility.UNKNOWN
+        }
+        return when {
+            OPENCL_SAFE_QUANT_REGEX.containsMatchIn(rawHint) -> OpenClQuantCompatibility.SAFE
+            KNOWN_QUANT_REGEX.containsMatchIn(rawHint) -> OpenClQuantCompatibility.UNSUPPORTED
+            else -> OpenClQuantCompatibility.UNKNOWN
+        }
     }
 
     private fun logBridge(tag: String, message: String) {

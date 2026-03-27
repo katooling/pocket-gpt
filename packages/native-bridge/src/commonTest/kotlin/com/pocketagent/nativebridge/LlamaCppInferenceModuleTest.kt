@@ -154,6 +154,16 @@ class LlamaCppInferenceModuleTest {
     }
 
     @Test
+    fun `active backend identity resolves from bridge diagnostics`() {
+        val module = LlamaCppInferenceModule(
+            FakeBridge(backendDiagnosticsJson = """{"compiled_backend":"hexagon,opencl","active_backend":"opencl"}"""),
+        )
+
+        assertEquals("opencl", module.activeBackendIdentity())
+        assertEquals("opencl", module.runtimeInferencePorts().cacheAwareGeneration?.activeBackendIdentity())
+    }
+
+    @Test
     fun `load caches estimated gpu layers for the active model context`() {
         val bridge = FakeBridge(estimateMaxGpuLayers = 12)
         val module = LlamaCppInferenceModule(bridge)
@@ -241,6 +251,7 @@ private class FakeBridge(
     private val generateOk: Boolean = true,
     private val backend: RuntimeBackend = RuntimeBackend.NATIVE_JNI,
     private val lastError: BridgeError? = null,
+    private val backendDiagnosticsJson: String? = null,
     private val prefixCacheDiagnosticsLine: String? = null,
     private val estimateMaxGpuLayers: Int? = null,
     private val modelLayerCount: Int? = null,
@@ -307,6 +318,8 @@ private class FakeBridge(
     override fun runtimeBackend(): RuntimeBackend = backend
 
     override fun lastError(): BridgeError? = lastError
+
+    override fun backendDiagnosticsJson(): String? = backendDiagnosticsJson
 
     override fun estimateMaxGpuLayers(nCtx: Int): Int? = estimateMaxGpuLayers
 
