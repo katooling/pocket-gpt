@@ -802,7 +802,7 @@ class ChatViewModel(
         applyLifecycleSnapshot(nextState)
     }
 
-    private fun finalizeModelOperation(
+    private suspend fun finalizeModelOperation(
         token: Long,
         result: RuntimeModelLifecycleCommandResult,
         fallbackModelId: String?,
@@ -820,22 +820,16 @@ class ChatViewModel(
                 if (pinned != null) {
                     setRoutingModeInternal(pinned)
                 }
+                withContext(ioDispatcher) {
+                    runtimeFacade.warmupActiveModel()
+                }
             }
-            refreshRuntimeReadiness(
-                statusDetailOverride = when {
-                    loadedModel != null -> buildString {
-                        append("Runtime model loaded (")
-                        append(loadedModel.modelId)
-                        loadedModel.modelVersion?.takeIf { it.isNotBlank() }?.let { version ->
-                            append("@")
-                            append(version)
-                        }
-                        append(")")
-                    }
-
-                    else -> "Runtime model offloaded"
-                },
-            )
+            runCatching { runtimeFacade.gpuOffloadStatus() }
+                .getOrNull()
+                ?.let(::updateRuntimeGpuProbeStateInternal)
+            refreshGpuProbeStatusIfPendingInternal()
+            refreshRuntimeDiagnostics()
+            persistState()
         } else if (!result.success) {
             applyLifecycleSnapshot(
                 ModelLoadingState.Error(

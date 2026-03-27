@@ -41,10 +41,12 @@ import com.pocketagent.runtime.InteractionContentPart
 import com.pocketagent.runtime.InteractionMessage
 import com.pocketagent.runtime.InteractionRole
 import com.pocketagent.runtime.PreparedChatStream
+import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import com.pocketagent.runtime.StreamChatRequestV2
 import com.pocketagent.runtime.ToolExecutionResult
 import com.pocketagent.runtime.ToolFailure
+import com.pocketagent.runtime.WarmupResult
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
 import com.pocketagent.android.runtime.modelmanager.DownloadPreferencesState
 import com.pocketagent.android.runtime.modelmanager.DownloadRequestOptions
@@ -52,6 +54,7 @@ import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
+import com.pocketagent.nativebridge.ModelLifecycleState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineDispatcher
@@ -1131,6 +1134,39 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `successful explicit load warms model and skips redundant startup probe rerun`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(
+            startupChecks = emptyList(),
+            warmupResult = WarmupResult(
+                attempted = true,
+                warmed = true,
+                residentHit = false,
+                warmupDurationMs = 25L,
+            ),
+        )
+        val startupProbeController = CountingStartupProbeController()
+        val provisioningGateway = LoadingProvisioningGateway()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            provisioningGateway = provisioningGateway,
+            ioDispatcher = dispatcher,
+            startupProbeController = startupProbeController,
+        )
+        advanceUntilIdle()
+        val baselineCalls = startupProbeController.callCount
+
+        val result = viewModel.loadModel("qwen3.5-0.8b-q4", "1")
+        advanceUntilIdle()
+
+        assertTrue(result?.success == true)
+        assertEquals(1, runtime.warmupCalls)
+        assertEquals(baselineCalls, startupProbeController.callCount)
+        assertEquals("qwen3.5-0.8b-q4", viewModel.uiState.value.runtime.activeModelId)
+        assertEquals(ModelLifecycleState.LOADED, provisioningGateway.lifecycle.value.state)
+    }
+
+    @Test
     fun `duplicate settings updates do not persist or re-dispatch runtime calls`() = runTest(dispatcher) {
         val persistence = RecordingPersistence()
         val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
@@ -1379,6 +1415,7 @@ private class RecordingRuntimeFacade(
     private val runtimeBackend: String? = null,
     private val runtimeDiagnostics: RuntimeDiagnosticsSnapshot = RuntimeDiagnosticsSnapshot(),
     private val gpuStatusSequence: MutableList<com.pocketagent.android.runtime.GpuProbeResult> = mutableListOf(),
+    private val warmupResult: WarmupResult = WarmupResult.skipped("warmup_unsupported"),
 ) : ChatRuntimeService {
     private var sessionCounter = 0
     private var routingMode: RoutingMode = RoutingMode.AUTO
@@ -1389,6 +1426,7 @@ private class RecordingRuntimeFacade(
     val cancelledSessions = mutableListOf<SessionId>()
     val cancelledRequestIds = mutableListOf<String>()
     var lastStreamRequest: StreamChatRequestV2? = null
+    var warmupCalls: Int = 0
 
     override fun createSession(): SessionId {
         sessionCounter += 1
@@ -1547,6 +1585,11 @@ private class RecordingRuntimeFacade(
             current.maxStableGpuLayers > 0
     }
 
+    override fun warmupActiveModel(): WarmupResult {
+        warmupCalls += 1
+        return warmupResult
+    }
+
     override fun gpuOffloadStatus(): com.pocketagent.android.runtime.GpuProbeResult {
         if (gpuStatusSequence.isEmpty()) {
             return com.pocketagent.android.runtime.GpuProbeResult(
@@ -1556,6 +1599,87 @@ private class RecordingRuntimeFacade(
         }
         return gpuStatusSequence.removeAt(0)
     }
+}
+
+private class LoadingProvisioningGateway : ProvisioningGateway {
+    val lifecycle = MutableStateFlow(RuntimeModelLifecycleSnapshot.initial())
+
+    override fun currentSnapshot(): RuntimeProvisioningSnapshot = RuntimeProvisioningSnapshot(
+        models = emptyList(),
+        storageSummary = StorageSummary(
+            totalBytes = 0L,
+            freeBytes = 0L,
+            usedByModelsBytes = 0L,
+            tempDownloadBytes = 0L,
+        ),
+        requiredModelIds = emptySet(),
+    )
+
+    override fun observeDownloads(): MutableStateFlow<List<DownloadTaskState>> = MutableStateFlow(emptyList())
+
+    override fun observeDownloadPreferences(): MutableStateFlow<DownloadPreferencesState> =
+        MutableStateFlow(DownloadPreferencesState())
+
+    override fun currentDownloadPreferences(): DownloadPreferencesState = DownloadPreferencesState()
+
+    override fun observeModelLifecycle(): MutableStateFlow<RuntimeModelLifecycleSnapshot> = lifecycle
+
+    override fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot = lifecycle.value
+
+    override suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult {
+        error("not used in ChatViewModelTest")
+    }
+
+    override suspend fun loadModelDistributionManifest(): ModelDistributionManifest {
+        error("not used in ChatViewModelTest")
+    }
+
+    override fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor> = emptyList()
+
+    override fun setActiveVersion(modelId: String, version: String): Boolean = false
+
+    override fun removeVersion(modelId: String, version: String): Boolean = false
+
+    override suspend fun loadInstalledModel(
+        modelId: String,
+        version: String,
+    ): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        val loadedModel = RuntimeLoadedModel(modelId = modelId, modelVersion = version)
+        lifecycle.value = RuntimeModelLifecycleSnapshot(
+            state = ModelLifecycleState.LOADED,
+            loadedModel = loadedModel,
+            lastUsedModel = loadedModel,
+        )
+        return com.pocketagent.runtime.RuntimeModelLifecycleCommandResult.applied(loadedModel = loadedModel)
+    }
+
+    override suspend fun loadLastUsedModel(): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        error("not used in ChatViewModelTest")
+    }
+
+    override suspend fun offloadModel(reason: String): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        error("not used in ChatViewModelTest")
+    }
+
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+        error("not used in ChatViewModelTest")
+    }
+
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
+
+    override fun setDownloadWifiOnlyEnabled(enabled: Boolean) = Unit
+
+    override fun acknowledgeLargeDownloadCellularWarning() = Unit
+
+    override fun pauseDownload(taskId: String) = Unit
+
+    override fun resumeDownload(taskId: String) = Unit
+
+    override fun retryDownload(taskId: String) = Unit
+
+    override fun cancelDownload(taskId: String) = Unit
+
+    override fun syncDownloadsFromScheduler() = Unit
 }
 
 private enum class StreamTerminal {
