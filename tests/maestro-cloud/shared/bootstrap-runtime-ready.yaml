@@ -22,19 +22,9 @@ appId: com.pocketagent.android
       - tapOn: "Skip"
 - runFlow:
     when:
-      visible: "Open advanced controls"
+      visible: "Refresh"
     commands:
-      - tapOn: "Open advanced controls"
-- runFlow:
-    when:
-      visible: "Advanced controls"
-    commands:
-      - back
-- runFlow:
-    when:
-      visible: "Refresh runtime checks"
-    commands:
-      - tapOn: "Refresh runtime checks"
+      - tapOn: "Refresh"
 - extendedWaitUntil:
     visible: "Runtime: Ready"
     timeout: 180000

@@ -42,9 +42,11 @@ tags:
           commands:
             - runFlow:
                 when:
-                  visible: "Open advanced controls"
+                  visible:
+                    id: "advanced_sheet_button"
                 commands:
-                  - tapOn: "Open advanced controls"
+                  - tapOn:
+                      id: "advanced_sheet_button"
             - runFlow:
                 when:
                   visible: "Advanced"
@@ -85,7 +87,7 @@ tags:
           when:
             visible: "Runtime: Error"
           commands:
-            - tapOn: "Refresh runtime checks"
+            - tapOn: "Refresh"
       - extendedWaitUntil:
           visible: "Runtime: Ready"
           timeout: 900000

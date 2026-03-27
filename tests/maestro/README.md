@@ -31,6 +31,7 @@ Source of truth for execution commands and cloud guidance:
 6. Prefer the most stable selector that Maestro can actually see. The current Pocket GPT Android build exposes selected Compose `testTag` values as Android resource IDs, so stable controls such as `session_drawer_button`, `composer_input`, and `send_button` should use `id:` selectors. Use visible text when there is no durable resource-id surface.
 7. Keep split-surface validation concentrated in dedicated model-management flows and focused Compose/instrumentation tests; do not re-assert the same library/runtime separation in unrelated long journeys.
 8. Tag every stable flow. `devctl lane maestro` now supports `--include-tags`, `--exclude-tags`, and `--flows` so you can run one risk slice without cloning/renaming files.
+9. Use `python3 tools/devctl/main.py report journey` or `python3 tools/devctl/main.py report screenshot-pack` to inspect the latest structured artifacts without hunting through `tmp/` or `scripts/benchmarks/runs/`.
 
 ## Selection Examples
 
