@@ -8,6 +8,7 @@
 python3 -m pip install --user pipx
 pipx ensurepath
 pipx install -e /path/to/maestro-android
+maestro-android init
 ```
 
 For a released tag from GitHub:
@@ -39,16 +40,20 @@ That example config preserves the repo’s current operating model:
 - `lane smoke|journey|screenshot-pack|fast-smoke|valid-output|strict-journey` delegate to `devctl`
 - `lane lifecycle` delegates to `scripts/ci/run_lifecycle_e2e.sh`
 - `lane cloud-smoke` delegates to `scripts/dev/maestro-cloud-smoke.sh`
+- `maestro-android init` writes a starter `.maestro-android.yaml` if you want to bootstrap the generic tool first
 - `cloud smoke` runs the repo’s hosted smoke loop directly from the standalone CLI
 - `cloud benchmark` runs the hosted GPU-vs-CPU benchmark loop directly
 - `cloud status` replaces the upload-status polling shell helper
 - `scoped` remains the fast one-flow repro path, but now runs through the external CLI with the same `tmp/` and title/description flow convention
+
+See `.claude/skills/maestro-android-cli/references/testing-map.md` for the canonical testing ladder.
 
 ## Example usage
 
 ```bash
 maestro-android lane smoke
 maestro-android lane journey -- --repeats 2
+maestro-android lane screenshot-pack
 maestro-android scoped --flow tmp/maestro-repro.yaml
 maestro-android report latest
 maestro-android trace latest

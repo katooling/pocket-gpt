@@ -174,11 +174,18 @@ Use these when you want the nearest Playwright-style "show report" path for Maes
 
 ```bash
 pipx install -e /path/to/maestro-android
-cp /path/to/maestro-android/examples/pocket-gpt/maestro-android.pocket-gpt.yaml .maestro-android.yaml
+maestro-android init
 maestro-android doctor
 maestro-android lane smoke
+maestro-android lane journey
+maestro-android lane screenshot-pack
+maestro-android lane lifecycle
 maestro-android scoped --flow tmp/maestro-repro.yaml
 maestro-android report latest
+maestro-android trace latest
+maestro-android cloud smoke
+maestro-android cloud benchmark
+maestro-android cloud status label:upload-id
 ```
 
 This wraps the repo's existing Maestro/devctl/scoped-repro patterns behind a single Android-focused external CLI. See `docs/testing/maestro-android-companion-cli.md`.
