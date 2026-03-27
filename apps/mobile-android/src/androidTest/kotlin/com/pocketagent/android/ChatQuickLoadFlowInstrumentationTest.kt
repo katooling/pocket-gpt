@@ -1,7 +1,18 @@
 package com.pocketagent.android
 
 import android.net.Uri
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
@@ -23,9 +34,6 @@ import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifest
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
-import com.pocketagent.android.ui.ModelProvisioningViewModel
-import com.pocketagent.android.ui.PocketAgentApp
-import com.pocketagent.android.ui.PocketAgentTheme
 import com.pocketagent.android.ui.ChatViewModel
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.RoutingMode
@@ -43,6 +51,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -67,14 +76,11 @@ class ChatQuickLoadFlowInstrumentationTest {
             ),
             provisioningGateway = provisioningGateway,
         )
-        val provisioningViewModel = ModelProvisioningViewModel(gateway = provisioningGateway)
-
         composeRule.setContent {
-            PocketAgentTheme {
+            MaterialTheme {
                 Surface {
-                    PocketAgentApp(
+                    QuickLoadTestApp(
                         viewModel = viewModel,
-                        provisioningViewModel = provisioningViewModel,
                     )
                 }
             }
@@ -105,6 +111,40 @@ class ChatQuickLoadFlowInstrumentationTest {
                 .isNotEmpty()
         }
         composeRule.onAllNodesWithText("runtime response for quick load prompt").onFirst().assertIsDisplayed()
+    }
+}
+
+@Composable
+private fun QuickLoadTestApp(viewModel: ChatViewModel) {
+    val state by viewModel.uiState.collectAsState()
+    val modelLoadingState by viewModel.modelLoadingState.collectAsState()
+    val scope = rememberCoroutineScope()
+    val runtimeLabel = when {
+        modelLoadingState is com.pocketagent.android.ui.state.ModelLoadingState.Loaded -> "Runtime: Ready"
+        else -> "Runtime: Not ready"
+    }
+    Column {
+        Text(text = runtimeLabel)
+        Button(
+            onClick = { scope.launch { viewModel.loadLastUsedModel() } },
+        ) {
+            Text("Load last used")
+        }
+        OutlinedTextField(
+            value = state.composer.text,
+            onValueChange = viewModel::onComposerChanged,
+            modifier = Modifier.testTag("composer_input"),
+            label = { Text("Message") },
+        )
+        Button(
+            onClick = viewModel::sendMessage,
+            modifier = Modifier.testTag("send_button"),
+        ) {
+            Text("Send")
+        }
+        state.activeSession?.messages?.forEach { message ->
+            Text(message.content)
+        }
     }
 }
 

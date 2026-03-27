@@ -61,22 +61,26 @@ internal fun ChatViewModel.setKeepAlivePreferenceInternal(preference: RuntimeKee
 
 internal fun ChatViewModel.setGpuAccelerationEnabledInternal(enabled: Boolean) {
     val snapshot = _uiState.value.runtime
-    val supported = snapshot.gpuAccelerationSupported
+    val supported = snapshot.gpuAccelerationSupported || snapshot.gpuManualOverrideAllowed
     val effective = enabled && supported
-    val detail = if (enabled && !supported) {
-        when (snapshot.gpuProbeStatus) {
-            GpuProbeStatus.PENDING ->
-                "Validating GPU support... keeping CPU until probe is qualified."
-            GpuProbeStatus.FAILED ->
-                "GPU acceleration unavailable (${snapshot.gpuProbeFailureReason ?: "probe_failed"}). Using CPU."
-            else ->
-                "GPU acceleration is unavailable on this build/device. Using CPU."
+    val detail = if (enabled && !snapshot.gpuAccelerationSupported) {
+        if (snapshot.gpuManualOverrideAllowed) {
+            "Debug override enabled. Runtime may still fall back to CPU. ${snapshot.gpuProbeDetail.orEmpty()}".trim()
+        } else {
+            when (snapshot.gpuProbeStatus) {
+                GpuProbeStatus.PENDING ->
+                    "Validating GPU support... keeping CPU until probe is qualified."
+                GpuProbeStatus.FAILED ->
+                    "GPU acceleration unavailable (${snapshot.gpuProbeFailureReason ?: "probe_failed"}). ${snapshot.gpuProbeDetail.orEmpty()}".trim()
+                else ->
+                    "GPU acceleration is unavailable on this build/device. Using CPU."
+            }
         }
     } else {
         performanceProfileStatusDetail(
             profile = snapshot.performanceProfile,
             gpuEnabled = effective,
-            gpuSupported = supported,
+            gpuSupported = snapshot.gpuAccelerationSupported,
         )
     }
     if (snapshot.gpuAccelerationEnabled == effective && snapshot.modelStatusDetail == detail) {
@@ -257,9 +261,10 @@ internal fun ChatViewModel.updateRuntimeGpuProbeStateInternal(probe: GpuProbeRes
         val runtime = state.runtime
         val nextRuntime = runtime.copy(
             gpuAccelerationSupported = gpuSupported,
-            gpuAccelerationEnabled = runtime.gpuAccelerationEnabled && gpuSupported,
+            gpuAccelerationEnabled = runtime.gpuAccelerationEnabled && (gpuSupported || runtime.gpuManualOverrideAllowed),
             gpuProbeStatus = probe.status,
             gpuProbeFailureReason = probe.failureReason?.name,
+            gpuProbeDetail = probe.detail,
             gpuMaxQualifiedLayers = probe.maxStableGpuLayers,
         )
         changed = runtime != nextRuntime

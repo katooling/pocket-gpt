@@ -117,6 +117,7 @@ class AndroidMvpContainer(
         keepModelLoaded: Boolean = false,
         requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
         requestId: String = "legacy",
+        performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
     ): ChatResponse {
         return sendUserMessage(
             sessionId = sessionId,
@@ -127,6 +128,7 @@ class AndroidMvpContainer(
             keepModelLoaded = keepModelLoaded,
             requestTimeoutMs = requestTimeoutMs,
             requestId = requestId,
+            performanceConfig = performanceConfig,
             onToken = {},
         )
     }
@@ -140,6 +142,7 @@ class AndroidMvpContainer(
         keepModelLoaded: Boolean = false,
         requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
         requestId: String = "legacy",
+        performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
         onToken: (String) -> Unit,
     ): ChatResponse {
         return orchestrator.sendUserMessage(
@@ -152,7 +155,7 @@ class AndroidMvpContainer(
             keepModelLoaded = keepModelLoaded,
             requestTimeoutMs = requestTimeoutMs,
             requestId = requestId,
-            performanceConfig = PerformanceRuntimeConfig.default(),
+            performanceConfig = performanceConfig,
             residencyPolicy = ModelResidencyPolicy(),
         )
     }

@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cerrno>
 #include <cmath>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -32,6 +33,7 @@ constexpr const char * TAG = "PocketLlamaJNI";
 constexpr int DEFAULT_CONTEXT_SIZE = 2048;
 constexpr int DEFAULT_BATCH_SIZE = 512;
 constexpr int DEFAULT_PROMPT_DECODE_BATCH_SIZE = 512;
+constexpr int CPU_PROMPT_DECODE_BATCH_CAP = 128;
 constexpr int CACHE_POLICY_OFF = 0;
 constexpr int CACHE_POLICY_PREFIX_REUSE = 1;
 constexpr int CACHE_POLICY_PREFIX_REUSE_STRICT = 2;
@@ -88,10 +90,19 @@ struct PrefixCacheTelemetry {
     std::string last_restore_reason;
 };
 
+struct MmapTelemetry {
+    std::string last_label;
+    long long last_bytes = 0;
+    int last_result = 0;
+    long long last_duration_ms = 0;
+    uint64_t readahead_count = 0;
+};
+
 std::array<PrefixCacheSlot, 2> g_prefix_cache_slots;
 int32_t g_active_prefix_cache_slot = -1;
 uint64_t g_prefix_cache_epoch = 0;
 PrefixCacheTelemetry g_prefix_cache_telemetry;
+MmapTelemetry g_mmap_telemetry;
 int32_t g_prompt_decode_batch_size = DEFAULT_PROMPT_DECODE_BATCH_SIZE;
 int32_t g_runtime_context_size = DEFAULT_CONTEXT_SIZE;
 float g_sampling_temperature = 0.7f;
@@ -124,6 +135,8 @@ std::string g_last_model_quantization = "unknown";
 std::string g_backend_profile = "auto";
 std::string g_active_backend = "cpu";
 uint64_t g_active_backend_memory_bytes = 0;
+std::string g_opencl_icd_filenames;
+std::string g_opencl_icd_source = "unset";
 std::string g_last_backend_error_code;
 std::string g_last_backend_error_detail;
 bool g_llama_logging_installed = false;
@@ -149,6 +162,7 @@ int32_t clamp_i32(int32_t value, int32_t min_value, int32_t max_value) {
 }
 
 const char * compiled_gpu_backends();
+const char * backend_init_mode_label(BackendInitMode mode);
 
 int32_t resolve_threads(jint requested_threads) {
     const auto hardware_threads = std::thread::hardware_concurrency();
@@ -210,18 +224,26 @@ void log_speculative_metrics(size_t accepted_drafts, size_t drafted_tokens, int 
 }
 
 bool madvise_model_readahead(const std::string & path, const char * label) {
+    const auto started_at = std::chrono::steady_clock::now();
     if (path.empty()) {
         return false;
     }
     const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd < 0) {
+        const auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started_at).count();
+        g_mmap_telemetry.last_label = label != nullptr ? label : "";
+        g_mmap_telemetry.last_bytes = 0;
+        g_mmap_telemetry.last_result = -1;
+        g_mmap_telemetry.last_duration_ms = duration_ms;
         __android_log_print(
             ANDROID_LOG_WARN,
             TAG,
-            "MMAP|stage=readahead_open_failed|label=%s|errno=%d|detail=%s",
+            "MMAP|stage=readahead_open_failed|label=%s|errno=%d|detail=%s|duration_ms=%lld",
             label,
             errno,
-            std::strerror(errno));
+            std::strerror(errno),
+            duration_ms);
         return false;
     }
 
@@ -229,13 +251,20 @@ bool madvise_model_readahead(const std::string & path, const char * label) {
     if (fstat(fd, &info) != 0 || info.st_size <= 0) {
         const int saved_errno = errno;
         close(fd);
+        const auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started_at).count();
+        g_mmap_telemetry.last_label = label != nullptr ? label : "";
+        g_mmap_telemetry.last_bytes = 0;
+        g_mmap_telemetry.last_result = -1;
+        g_mmap_telemetry.last_duration_ms = duration_ms;
         __android_log_print(
             ANDROID_LOG_WARN,
             TAG,
-            "MMAP|stage=readahead_stat_failed|label=%s|errno=%d|detail=%s",
+            "MMAP|stage=readahead_stat_failed|label=%s|errno=%d|detail=%s|duration_ms=%lld",
             label,
             saved_errno,
-            std::strerror(saved_errno));
+            std::strerror(saved_errno),
+            duration_ms);
         return false;
     }
 
@@ -243,13 +272,20 @@ bool madvise_model_readahead(const std::string & path, const char * label) {
     if (mapping == MAP_FAILED) {
         const int saved_errno = errno;
         close(fd);
+        const auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started_at).count();
+        g_mmap_telemetry.last_label = label != nullptr ? label : "";
+        g_mmap_telemetry.last_bytes = static_cast<long long>(info.st_size);
+        g_mmap_telemetry.last_result = -1;
+        g_mmap_telemetry.last_duration_ms = duration_ms;
         __android_log_print(
             ANDROID_LOG_WARN,
             TAG,
-            "MMAP|stage=readahead_mmap_failed|label=%s|errno=%d|detail=%s",
+            "MMAP|stage=readahead_mmap_failed|label=%s|errno=%d|detail=%s|duration_ms=%lld",
             label,
             saved_errno,
-            std::strerror(saved_errno));
+            std::strerror(saved_errno),
+            duration_ms);
         return false;
     }
 
@@ -261,13 +297,21 @@ bool madvise_model_readahead(const std::string & path, const char * label) {
 #endif
     munmap(mapping, static_cast<size_t>(info.st_size));
     close(fd);
+    const auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started_at).count();
+    g_mmap_telemetry.last_label = label != nullptr ? label : "";
+    g_mmap_telemetry.last_bytes = static_cast<long long>(info.st_size);
+    g_mmap_telemetry.last_result = advise_result;
+    g_mmap_telemetry.last_duration_ms = duration_ms;
+    g_mmap_telemetry.readahead_count += 1;
     __android_log_print(
         advise_result == 0 ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
         TAG,
-        "MMAP|stage=readahead|label=%s|bytes=%lld|result=%d",
+        "MMAP|stage=readahead|label=%s|bytes=%lld|result=%d|duration_ms=%lld",
         label,
         static_cast<long long>(info.st_size),
-        advise_result);
+        advise_result,
+        duration_ms);
     return advise_result == 0;
 }
 
@@ -748,6 +792,47 @@ void apply_android_backend_profile_env() {
     }
 }
 
+bool file_exists(const char * path) {
+    if (path == nullptr || *path == '\0') {
+        return false;
+    }
+    struct stat st {};
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+void apply_android_opencl_icd_hint_env() {
+    const char * env_filenames = std::getenv("OCL_ICD_FILENAMES");
+    if (env_filenames != nullptr && *env_filenames != '\0') {
+        const std::string resolved = env_filenames;
+        if (g_opencl_icd_source == "android_vendor_lib" && resolved == g_opencl_icd_filenames) {
+            return;
+        }
+        g_opencl_icd_filenames = resolved;
+        g_opencl_icd_source = "environment";
+        return;
+    }
+
+    static constexpr const char * kAndroidOpenClVendorCandidates[] = {
+        "/vendor/lib64/libOpenCL.so",
+        "/system/vendor/lib64/libOpenCL.so",
+        "/vendor/lib/libOpenCL.so",
+        "/system/vendor/lib/libOpenCL.so",
+    };
+
+    for (const char * candidate : kAndroidOpenClVendorCandidates) {
+        if (!file_exists(candidate)) {
+            continue;
+        }
+        setenv("OCL_ICD_FILENAMES", candidate, 1);
+        g_opencl_icd_filenames = candidate;
+        g_opencl_icd_source = "android_vendor_lib";
+        return;
+    }
+
+    g_opencl_icd_filenames.clear();
+    g_opencl_icd_source = "not_found";
+}
+
 const char * compiled_gpu_backends() {
 #if defined(GGML_USE_HEXAGON) && defined(GGML_USE_OPENCL)
     return "hexagon,opencl";
@@ -789,10 +874,14 @@ std::string json_escape(const std::string & value) {
 }
 
 struct BackendDiagnosticsSnapshot {
+    int registered_backend_count = 0;
     int opencl_device_count = 0;
     int hexagon_device_count = 0;
     int gpu_device_count = 0;
     int accel_device_count = 0;
+    std::string registered_backends;
+    std::string opencl_icd_filenames;
+    std::string opencl_icd_source;
     ggml_backend_dev_t opencl_device = nullptr;
     ggml_backend_dev_t hexagon_device = nullptr;
     uint64_t opencl_memory_bytes = 0;
@@ -854,8 +943,34 @@ std::string backend_label_for_device(ggml_backend_dev_t dev) {
     return "unknown";
 }
 
-BackendDiagnosticsSnapshot collect_backend_diagnostics() {
+BackendDiagnosticsSnapshot collect_registered_backend_diagnostics() {
     BackendDiagnosticsSnapshot info;
+    info.opencl_icd_filenames = g_opencl_icd_filenames;
+    info.opencl_icd_source = g_opencl_icd_source;
+    std::vector<std::string> backend_names;
+    backend_names.reserve(ggml_backend_reg_count());
+    for (size_t index = 0; index < ggml_backend_reg_count(); ++index) {
+        ggml_backend_reg_t reg = ggml_backend_reg_get(index);
+        if (reg == nullptr) {
+            continue;
+        }
+        info.registered_backend_count += 1;
+        const std::string name = lowercase_copy(safe_string(ggml_backend_reg_name(reg)));
+        backend_names.push_back(name.empty() ? "unknown" : name);
+    }
+    std::ostringstream out;
+    for (size_t index = 0; index < backend_names.size(); ++index) {
+        if (index > 0) {
+            out << ",";
+        }
+        out << backend_names[index];
+    }
+    info.registered_backends = out.str();
+    return info;
+}
+
+BackendDiagnosticsSnapshot collect_backend_diagnostics() {
+    BackendDiagnosticsSnapshot info = collect_registered_backend_diagnostics();
     for (size_t index = 0; index < ggml_backend_dev_count(); ++index) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(index);
         if (dev == nullptr) {
@@ -960,6 +1075,11 @@ std::string backend_diagnostics_json() {
         << "\"strict_accelerator_fail_fast\":" << (strict_accelerator_fail_fast ? "true" : "false") << ","
         << "\"auto_backend_cpu_fallback\":" << (auto_backend_cpu_fallback ? "true" : "false") << ","
         << "\"active_backend\":\"" << json_escape(g_active_backend) << "\","
+        << "\"backend_init_mode\":\"" << json_escape(backend_init_mode_label(g_backend_init_mode)) << "\","
+        << "\"registered_backend_count\":" << diag.registered_backend_count << ","
+        << "\"registered_backends\":\"" << json_escape(diag.registered_backends) << "\","
+        << "\"opencl_icd_filenames\":\"" << json_escape(diag.opencl_icd_filenames) << "\","
+        << "\"opencl_icd_source\":\"" << json_escape(diag.opencl_icd_source) << "\","
         << "\"opencl_device_count\":" << diag.opencl_device_count << ","
         << "\"hexagon_device_count\":" << diag.hexagon_device_count << ","
         << "\"gpu_device_count\":" << diag.gpu_device_count << ","
@@ -974,6 +1094,11 @@ std::string backend_diagnostics_json() {
         << "\"flashAttnActive\":" << (g_last_flash_attn_active ? "true" : "false") << ","
         << "\"flash_attn_guard_reason\":\"" << json_escape(flash_attn_guard_reason) << "\","
         << "\"quantized_kv_guard_reason\":\"" << json_escape(quantized_kv_guard_reason) << "\","
+        << "\"last_mmap_readahead_label\":\"" << json_escape(g_mmap_telemetry.last_label) << "\","
+        << "\"last_mmap_readahead_bytes\":" << g_mmap_telemetry.last_bytes << ","
+        << "\"last_mmap_readahead_result\":" << g_mmap_telemetry.last_result << ","
+        << "\"last_mmap_readahead_ms\":" << g_mmap_telemetry.last_duration_ms << ","
+        << "\"mmap_readahead_count\":" << static_cast<unsigned long long>(g_mmap_telemetry.readahead_count) << ","
         << "\"device_local_heap_bytes\":" << static_cast<unsigned long long>(g_active_backend_memory_bytes) << ","
         << "\"last_error_code\":\"" << json_escape(g_last_backend_error_code) << "\","
         << "\"last_error_detail\":\"" << json_escape(g_last_backend_error_detail) << "\""
@@ -1048,19 +1173,44 @@ int32_t estimate_max_gpu_layers_locked(int32_t requested_n_ctx) {
     return estimate;
 }
 
+const char * backend_init_mode_label(BackendInitMode mode) {
+    switch (mode) {
+        case BackendInitMode::GPU_ENABLED:
+            return "gpu-enabled";
+        case BackendInitMode::CPU_ONLY:
+            return "cpu-only";
+        case BackendInitMode::NONE:
+        default:
+            return "none";
+    }
+}
+
 void log_gpu_support_once() {
     static bool logged = false;
     if (logged) {
         return;
     }
     logged = true;
+    const BackendDiagnosticsSnapshot diag = collect_backend_diagnostics();
     __android_log_print(
         ANDROID_LOG_INFO,
         TAG,
-        "GPU_OFFLOAD|compiled_backend=%s|supported=%s|active_backend=%s",
+        "GPU_OFFLOAD|compiled_backend=%s|supported=%s|active_backend=%s|registered_backend_count=%d|registered_backends=%s|opencl_icd_source=%s|opencl_icd_filenames=%s|opencl_device_count=%d|hexagon_device_count=%d|"
+        "opencl_device_name=%s|opencl_device_version=%s|backend_init_mode=%s|last_error_code=%s|last_error_detail=%s",
         compiled_gpu_backends(),
-        gpu_offload_supported() ? "true" : "false",
-        g_active_backend.c_str());
+        (diag.hexagon_device_count > 0 || diag.opencl_device_count > 0) ? "true" : "false",
+        g_active_backend.c_str(),
+        diag.registered_backend_count,
+        diag.registered_backends.empty() ? "none" : diag.registered_backends.c_str(),
+        diag.opencl_icd_source.empty() ? "none" : diag.opencl_icd_source.c_str(),
+        diag.opencl_icd_filenames.empty() ? "none" : diag.opencl_icd_filenames.c_str(),
+        diag.opencl_device_count,
+        diag.hexagon_device_count,
+        diag.opencl_device_name.empty() ? "none" : diag.opencl_device_name.c_str(),
+        diag.opencl_device_version.empty() ? "unknown" : diag.opencl_device_version.c_str(),
+        backend_init_mode_label(g_backend_init_mode),
+        g_last_backend_error_code.empty() ? "none" : g_last_backend_error_code.c_str(),
+        g_last_backend_error_detail.empty() ? "none" : g_last_backend_error_detail.c_str());
 }
 
 void log_error(const std::string & message) {
@@ -1302,6 +1452,7 @@ void release_runtime_locked() {
 
 bool ensure_backend_initialized_locked(bool require_gpu_backend) {
     apply_android_backend_profile_env();
+    apply_android_opencl_icd_hint_env();
     const BackendInitMode previous_mode = g_backend_init_mode;
     const bool needs_backend_discovery =
         previous_mode == BackendInitMode::NONE ||
@@ -2938,7 +3089,16 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         const float resolved_xtc_threshold = std::max(0.0f, std::min(1.0f, static_cast<float>(xtcThreshold)));
         const float resolved_xtc_probability = std::max(0.0f, std::min(1.0f, static_cast<float>(xtcProbability)));
         const int32_t resolved_seed = static_cast<int32_t>(seed);
-        g_prompt_decode_batch_size = std::min(resolve_batch(nBatch), resolve_batch(nUbatch));
+        const int32_t resolved_prompt_decode_batch = std::min(resolve_batch(nBatch), resolve_batch(nUbatch));
+        g_prompt_decode_batch_size = use_gpu_ops
+            ? resolved_prompt_decode_batch
+            : std::min<int32_t>(resolved_prompt_decode_batch, CPU_PROMPT_DECODE_BATCH_CAP);
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "PROMPT_DECODE|batch_size=%d|cpu_cap_applied=%s",
+            static_cast<int>(g_prompt_decode_batch_size),
+            (!use_gpu_ops && g_prompt_decode_batch_size < resolved_prompt_decode_batch) ? "true" : "false");
         g_runtime_context_size = static_cast<int32_t>(context_params.n_ctx);
         g_runtime_n_keep = clamp_i32(
             static_cast<int32_t>(nKeep),

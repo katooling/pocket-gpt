@@ -68,6 +68,19 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
     }
 
     @Test
+    fun managedModelDirectoryLandsInExternalAppStorage() {
+        val externalRoot = appContext.getExternalFilesDir(null)
+            ?: throw AssertionError("External files dir is unavailable.")
+        val managedDir = store.managedModelDirectory()
+
+        assertTrue(
+            "Managed model storage should resolve under app-specific external storage.",
+            normalizePath(managedDir.absolutePath)
+                .startsWith(normalizePath(externalRoot.absolutePath)),
+        )
+    }
+
+    @Test
     fun removeInactiveSeededVersionDoesNotDeleteExternalSourcePath() = runBlocking {
         val oldSource = writeTempFile(
             dir = appContext.cacheDir,

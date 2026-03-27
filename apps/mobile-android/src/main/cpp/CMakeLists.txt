@@ -33,8 +33,8 @@ endif()
 
 include(FetchContent)
 
-# Build a minimal llama.cpp footprint with OpenCL/Hexagon GPU offload support on Android.
-set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+# Build a minimal llama.cpp footprint with statically linked backends on Android.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
@@ -117,14 +117,8 @@ set(POCKET_LLAMA_COMPILE_FLAGS
     -O3
     -DNDEBUG
     -fvectorize
-    -ffunction-sections
-    -fdata-sections
-    -flto
 )
-set(POCKET_LLAMA_LINK_FLAGS
-    -Wl,--gc-sections
-    -flto
-)
+set(POCKET_LLAMA_LINK_FLAGS)
 
 function(configure_pocket_llama_target target_name)
     target_include_directories(${target_name} PRIVATE

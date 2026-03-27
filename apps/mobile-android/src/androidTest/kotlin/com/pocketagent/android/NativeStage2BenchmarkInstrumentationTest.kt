@@ -4,10 +4,17 @@ import android.os.Debug
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshotParser
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.nativebridge.FlashAttnMode
+import com.pocketagent.runtime.PerformanceRuntimeConfig
+import com.pocketagent.runtime.RuntimePerformanceProfile
+import com.pocketagent.tools.ToolCall
+import com.pocketagent.tools.ToolModule
+import com.pocketagent.tools.ToolResult
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
@@ -37,6 +44,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         val modelPath = requireModelPathForBenchmark(args, modelId)
         val prefixCacheEnabled = parseBooleanArg(args, ARG_PREFIX_CACHE_ENABLED, defaultValue = true)
         val prefixCacheStrict = parseBooleanArg(args, ARG_PREFIX_CACHE_STRICT, defaultValue = false)
+        val runtimeOptions = resolveBenchmarkRuntimeOptions(args)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
         val minTokens = (args.getString(ARG_MIN_TOKENS)?.toIntOrNull() ?: DEFAULT_MIN_TOKENS)
             .coerceAtLeast(1)
@@ -52,6 +60,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             modelPathsById = mapOf(modelId to modelPath),
             prefixCacheEnabled = prefixCacheEnabled,
             prefixCacheStrict = prefixCacheStrict,
+            runtimeOptions = runtimeOptions,
         )
         configureContainerForModel(container = container, modelId = modelId)
 
@@ -69,6 +78,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                 scenario = scenario,
                 runIndex = -1,
                 maxTokens = warmupMaxTokens,
+                runtimeOptions = runtimeOptions,
             )
         }
 
@@ -79,6 +89,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             modelId = modelId,
             runs = runs,
             maxTokens = maxTokens,
+            runtimeOptions = runtimeOptions,
         )
 
         Log.i(METRIC_TAG, metricLine)
@@ -102,6 +113,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         val modelPath = requireModelPathForBenchmark(args, modelId)
         val prefixCacheEnabled = parseBooleanArg(args, ARG_PREFIX_CACHE_ENABLED, defaultValue = true)
         val prefixCacheStrict = parseBooleanArg(args, ARG_PREFIX_CACHE_STRICT, defaultValue = false)
+        val runtimeOptions = resolveBenchmarkRuntimeOptions(args)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
         val minTokens = (args.getString(ARG_MIN_TOKENS)?.toIntOrNull() ?: DEFAULT_MIN_TOKENS)
             .coerceAtLeast(1)
@@ -122,6 +134,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             modelPathsById = mapOf(modelId to modelPath),
             prefixCacheEnabled = prefixCacheEnabled,
             prefixCacheStrict = prefixCacheStrict,
+            runtimeOptions = runtimeOptions,
         )
         configureContainerForModel(container = container, modelId = modelId)
 
@@ -138,6 +151,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                 scenario = scenarios.first(),
                 runIndex = -1,
                 maxTokens = warmupMaxTokens,
+                runtimeOptions = runtimeOptions,
             )
         }
 
@@ -150,6 +164,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                 modelId = modelId,
                 runs = runs,
                 maxTokens = maxTokens,
+                runtimeOptions = runtimeOptions,
             )
             Log.i(METRIC_TAG, metricLine)
             println(metricLine)
@@ -163,10 +178,20 @@ class NativeStage2BenchmarkInstrumentationTest {
         modelId: String,
         runs: Int,
         maxTokens: Int,
+        runtimeOptions: BenchmarkRuntimeOptions,
     ): String {
         val firstTokenSamples = mutableListOf<Long>()
+        val modelLoadSamples = mutableListOf<Long>()
+        val prefillSamples = mutableListOf<Long>()
+        val decodeMsSamples = mutableListOf<Long>()
         val decodeSamples = mutableListOf<Double>()
         val tokenSamples = mutableListOf<Int>()
+        val residentHitSamples = mutableListOf<Int>()
+        val residentHitCountSamples = mutableListOf<Long>()
+        val prefixCacheHitSamples = mutableListOf<Int>()
+        val prefixCacheReusedTokenSamples = mutableListOf<Int>()
+        val prefixCacheHitRateSamples = mutableListOf<Double>()
+        val reloadReasons = mutableListOf<String>()
 
         repeat(runs) { index ->
             var attempt = 0
@@ -189,6 +214,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                         deviceState = scenarioDeviceState(scenario),
                         maxTokens = maxTokens,
                         keepModelLoaded = true,
+                        performanceConfig = runtimeOptions.performanceConfig,
                         onToken = { token -> localStreamedTokens.add(token) },
                     )
                 }
@@ -228,21 +254,49 @@ class NativeStage2BenchmarkInstrumentationTest {
             val decodeTps = observedTokenCount / (decodeDurationMs.toDouble() / 1000.0)
 
             firstTokenSamples.add(finalResponse.firstTokenLatencyMs)
+            finalResponse.runtimeStats?.modelLoadMs?.let(modelLoadSamples::add)
+            finalResponse.runtimeStats?.prefillMs?.let(prefillSamples::add)
+            finalResponse.runtimeStats?.decodeMs?.let(decodeMsSamples::add)
             decodeSamples.add(decodeTps)
             tokenSamples.add(observedTokenCount)
+            finalResponse.runtimeStats?.residentHit?.let { residentHitSamples += if (it) 1 else 0 }
+            finalResponse.runtimeStats?.residentHitCount?.let(residentHitCountSamples::add)
+            finalResponse.runtimeStats?.prefixCacheLastHit?.let { prefixCacheHitSamples += if (it) 1 else 0 }
+            finalResponse.runtimeStats?.prefixCacheLastReusedTokens?.let(prefixCacheReusedTokenSamples::add)
+            finalResponse.runtimeStats?.prefixCacheHitRate?.let(prefixCacheHitRateSamples::add)
+            finalResponse.runtimeStats?.reloadReason
+                ?.takeIf { it.isNotBlank() }
+                ?.let(reloadReasons::add)
         }
+        val diagnosticsSnapshot = RuntimeDiagnosticsSnapshotParser.parse(container.exportDiagnostics())
 
         return buildMetricLine(
             backend = backend?.name ?: com.pocketagent.nativebridge.RuntimeBackend.UNAVAILABLE.name,
             scenario = scenario,
             modelId = modelId,
             firstTokenMs = medianLong(firstTokenSamples),
+            modelLoadMs = medianLongOrNull(modelLoadSamples),
+            prefillMs = medianLongOrNull(prefillSamples),
+            decodeMs = medianLongOrNull(decodeMsSamples),
             decodeTps = medianDouble(decodeSamples),
             tokens = medianInt(tokenSamples),
             runs = runs,
             pssKb = currentPssKb(),
             coldFirstTokenMs = firstTokenSamples.firstOrNull() ?: 0L,
             warmFirstTokenMs = firstTokenSamples.lastOrNull() ?: 0L,
+            residentHit = medianIntOrNull(residentHitSamples),
+            residentHitCount = medianLongOrNull(residentHitCountSamples),
+            reloadReason = modeString(reloadReasons),
+            prefixCacheHit = medianIntOrNull(prefixCacheHitSamples),
+            prefixCacheReusedTokens = medianIntOrNull(prefixCacheReusedTokenSamples),
+            prefixCacheHitRate = medianDoubleOrNull(prefixCacheHitRateSamples),
+            mmapReadaheadMs = diagnosticsSnapshot.lastMmapReadaheadMs,
+            mmapReadaheadBytes = diagnosticsSnapshot.lastMmapReadaheadBytes,
+            activeBackend = diagnosticsSnapshot.activeBackend ?: "unknown",
+            backendProfile = diagnosticsSnapshot.backendProfile ?: "unknown",
+            qualificationState = diagnosticsSnapshot.backendQualificationState.name.lowercase(),
+            appliedConfig = runtimeOptions.performanceConfig,
+            toolsDisabled = runtimeOptions.disableTools,
         )
     }
 
@@ -286,6 +340,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         modelPathsById: Map<String, String>,
         prefixCacheEnabled: Boolean,
         prefixCacheStrict: Boolean,
+        runtimeOptions: BenchmarkRuntimeOptions,
     ): AndroidMvpContainer {
         val pathMap = modelPathsById
         val shaByModel = pathMap.mapValues { (_, modelPath) -> sha256HexFromFile(File(modelPath)) }
@@ -311,6 +366,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             prefixCacheStrict = prefixCacheStrict,
             responseCacheTtlSec = 0L,
             responseCacheMaxEntries = 0,
+            toolModule = if (runtimeOptions.disableTools) DisabledBenchmarkToolModule else ToolModuleDefaults.default,
         )
     }
 
@@ -333,6 +389,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         scenario: String,
         runIndex: Int,
         maxTokens: Int,
+        runtimeOptions: BenchmarkRuntimeOptions,
     ) {
         val session = container.createSession()
         runCatching {
@@ -343,6 +400,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                 deviceState = scenarioDeviceState(scenario),
                 maxTokens = maxTokens,
                 keepModelLoaded = true,
+                performanceConfig = runtimeOptions.performanceConfig,
                 onToken = {},
             )
         }.onFailure { throwable ->
@@ -361,12 +419,28 @@ class NativeStage2BenchmarkInstrumentationTest {
         scenario: String,
         modelId: String,
         firstTokenMs: Long,
+        modelLoadMs: Long?,
+        prefillMs: Long?,
+        decodeMs: Long?,
         decodeTps: Double,
         tokens: Int,
         runs: Int,
         pssKb: Int,
         coldFirstTokenMs: Long,
         warmFirstTokenMs: Long,
+        residentHit: Int?,
+        residentHitCount: Long?,
+        reloadReason: String?,
+        prefixCacheHit: Int?,
+        prefixCacheReusedTokens: Int?,
+        prefixCacheHitRate: Double?,
+        mmapReadaheadMs: Long?,
+        mmapReadaheadBytes: Long?,
+        activeBackend: String,
+        backendProfile: String,
+        qualificationState: String,
+        appliedConfig: PerformanceRuntimeConfig,
+        toolsDisabled: Boolean,
     ): String {
         val warmVsColdDelta = coldFirstTokenMs - warmFirstTokenMs
         return buildString {
@@ -375,6 +449,9 @@ class NativeStage2BenchmarkInstrumentationTest {
             append("|scenario=").append(scenario)
             append("|model_id=").append(modelId)
             append("|first_token_ms=").append(firstTokenMs)
+            modelLoadMs?.let { append("|model_load_ms=").append(it) }
+            prefillMs?.let { append("|prefill_ms=").append(it) }
+            decodeMs?.let { append("|decode_ms=").append(it) }
             append("|decode_tps=").append(String.format(Locale.US, "%.4f", decodeTps))
             append("|tokens=").append(tokens)
             append("|runs=").append(runs)
@@ -382,7 +459,55 @@ class NativeStage2BenchmarkInstrumentationTest {
             append("|cold_first_token_ms=").append(coldFirstTokenMs)
             append("|warm_first_token_ms=").append(warmFirstTokenMs)
             append("|warm_vs_cold_first_token_delta_ms=").append(warmVsColdDelta)
+            residentHit?.let { append("|resident_hit=").append(it) }
+            residentHitCount?.let { append("|resident_hit_count=").append(it) }
+            reloadReason?.let { append("|reload_reason=").append(it) }
+            prefixCacheHit?.let { append("|prefix_cache_hit=").append(it) }
+            prefixCacheReusedTokens?.let { append("|prefix_cache_reused_tokens=").append(it) }
+            prefixCacheHitRate?.let { append("|prefix_cache_hit_rate=").append(String.format(Locale.US, "%.4f", it)) }
+            mmapReadaheadMs?.let { append("|mmap_readahead_ms=").append(it) }
+            mmapReadaheadBytes?.let { append("|mmap_readahead_bytes=").append(it) }
+            append("|active_backend=").append(activeBackend)
+            append("|backend_profile=").append(backendProfile)
+            append("|qualification_state=").append(qualificationState)
+            append("|config_n_ctx=").append(appliedConfig.nCtx)
+            append("|config_n_batch=").append(appliedConfig.nBatch)
+            append("|config_n_ubatch=").append(appliedConfig.nUbatch)
+            append("|config_n_threads=").append(appliedConfig.nThreads)
+            append("|config_n_threads_batch=").append(appliedConfig.nThreadsBatch)
+            append("|config_flash_attn=").append(appliedConfig.flashAttnMode.name.lowercase())
+            append("|config_tools_disabled=").append(if (toolsDisabled) 1 else 0)
         }
+    }
+
+    private fun resolveBenchmarkRuntimeOptions(args: android.os.Bundle): BenchmarkRuntimeOptions {
+        val profile = when ((args.getString(ARG_PROFILE) ?: "balanced").trim().lowercase()) {
+            "battery" -> RuntimePerformanceProfile.BATTERY
+            "fast" -> RuntimePerformanceProfile.FAST
+            else -> RuntimePerformanceProfile.BALANCED
+        }
+        val baseConfig = PerformanceRuntimeConfig.forProfile(
+            profile = profile,
+            availableCpuThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
+            gpuEnabled = parseBooleanArg(args, ARG_GPU_ENABLED, defaultValue = false),
+        )
+        val flashAttnMode = when ((args.getString(ARG_FLASH_ATTN_MODE) ?: "default").trim().lowercase()) {
+            "auto" -> FlashAttnMode.AUTO
+            "on" -> FlashAttnMode.ON
+            "off" -> FlashAttnMode.OFF
+            else -> baseConfig.flashAttnMode
+        }
+        return BenchmarkRuntimeOptions(
+            performanceConfig = baseConfig.copy(
+                nCtx = parseIntArg(args, ARG_N_CTX, baseConfig.nCtx),
+                nBatch = parseIntArg(args, ARG_N_BATCH, baseConfig.nBatch),
+                nUbatch = parseIntArg(args, ARG_N_UBATCH, baseConfig.nUbatch),
+                nThreads = parseIntArg(args, ARG_N_THREADS, baseConfig.nThreads),
+                nThreadsBatch = parseIntArg(args, ARG_N_THREADS_BATCH, baseConfig.nThreadsBatch),
+                flashAttnMode = flashAttnMode,
+            ),
+            disableTools = parseBooleanArg(args, ARG_DISABLE_TOOLS, defaultValue = false),
+        )
     }
 
     private fun parseBooleanArg(
@@ -398,11 +523,33 @@ class NativeStage2BenchmarkInstrumentationTest {
         }
     }
 
+    private fun parseIntArg(
+        args: android.os.Bundle,
+        key: String,
+        defaultValue: Int,
+    ): Int {
+        return args.getString(key)?.toIntOrNull()?.takeIf { it > 0 } ?: defaultValue
+    }
+
     private fun medianLong(values: List<Long>): Long = values.sorted()[values.size / 2]
+
+    private fun medianLongOrNull(values: List<Long>): Long? = values.takeIf { it.isNotEmpty() }?.let(::medianLong)
 
     private fun medianDouble(values: List<Double>): Double = values.sorted()[values.size / 2]
 
+    private fun medianDoubleOrNull(values: List<Double>): Double? = values.takeIf { it.isNotEmpty() }?.let(::medianDouble)
+
     private fun medianInt(values: List<Int>): Int = values.sorted()[values.size / 2]
+
+    private fun medianIntOrNull(values: List<Int>): Int? = values.takeIf { it.isNotEmpty() }?.let(::medianInt)
+
+    private fun modeString(values: List<String>): String? {
+        return values.takeIf { it.isNotEmpty() }
+            ?.groupingBy { it }
+            ?.eachCount()
+            ?.maxByOrNull { (_, count) -> count }
+            ?.key
+    }
 
     private fun requireModelPathForBenchmark(args: android.os.Bundle, modelId: String): String {
         val key = argumentKeyForModel(modelId)
@@ -486,6 +633,15 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val ARG_SCENARIO = "stage2_scenario"
         private const val ARG_ENABLE_BENCHMARK = "stage2_enable_benchmark"
         private const val ARG_MODEL_ID = "stage2_model_id"
+        private const val ARG_PROFILE = "stage2_profile"
+        private const val ARG_GPU_ENABLED = "stage2_gpu_enabled"
+        private const val ARG_N_CTX = "stage2_n_ctx"
+        private const val ARG_N_BATCH = "stage2_n_batch"
+        private const val ARG_N_UBATCH = "stage2_n_ubatch"
+        private const val ARG_N_THREADS = "stage2_n_threads"
+        private const val ARG_N_THREADS_BATCH = "stage2_n_threads_batch"
+        private const val ARG_FLASH_ATTN_MODE = "stage2_flash_attn_mode"
+        private const val ARG_DISABLE_TOOLS = "stage2_disable_tools"
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
         private const val ARG_MODEL_PATH_SMOLLM3_Q4 = "stage2_model_smol_360m_path"
@@ -506,4 +662,19 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val MAX_ATTEMPTS_PER_RUN = 3
         private val SUPPORTED_MODELS = ModelCatalog.bridgeSupportedModels().toSet()
     }
+}
+
+private data class BenchmarkRuntimeOptions(
+    val performanceConfig: PerformanceRuntimeConfig,
+    val disableTools: Boolean,
+)
+
+private object DisabledBenchmarkToolModule : ToolModule {
+    override fun listEnabledTools(): List<String> = emptyList()
+    override fun validateToolCall(call: ToolCall): Boolean = false
+    override fun executeToolCall(call: ToolCall): ToolResult = ToolResult(success = false, content = "disabled")
+}
+
+private object ToolModuleDefaults {
+    val default: ToolModule = com.pocketagent.tools.SafeLocalToolRuntime()
 }

@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import com.pocketagent.android.BuildConfig
 import com.pocketagent.inference.ModelRuntimeProfile
+import com.pocketagent.nativebridge.OpenClRuntimePolicy
 import com.pocketagent.runtime.ModelRegistry
 import java.security.MessageDigest
 import kotlin.math.max
@@ -71,7 +72,11 @@ internal interface GpuProbeResultStore {
 }
 
 interface GpuOffloadQualifier {
-    fun evaluate(runtimeSupported: Boolean): GpuProbeResult
+    fun evaluate(
+        runtimeSupported: Boolean,
+        deviceAdvisory: DeviceGpuOffloadAdvisory = DeviceGpuOffloadAdvisory(),
+    ): GpuProbeResult
+
     fun diagnosticsLine(): String
     fun reportRuntimeFailure(
         reason: GpuProbeFailureReason,
@@ -80,7 +85,10 @@ interface GpuOffloadQualifier {
 
     companion object {
         val DISABLED: GpuOffloadQualifier = object : GpuOffloadQualifier {
-            override fun evaluate(runtimeSupported: Boolean): GpuProbeResult {
+            override fun evaluate(
+                runtimeSupported: Boolean,
+                deviceAdvisory: DeviceGpuOffloadAdvisory,
+            ): GpuProbeResult {
                 return if (runtimeSupported) {
                     GpuProbeResult(
                         status = GpuProbeStatus.QUALIFIED,
@@ -149,7 +157,7 @@ private fun resolveProbePolicy(
     return GpuProbePolicy(
         layerLadder = PROBE_LAYER_LADDER_FULL,
         totalTimeoutMs = PROBE_TOTAL_TIMEOUT_MS,
-        backendProfile = "auto",
+        backendProfile = "opencl",
     )
 }
 
@@ -182,7 +190,7 @@ private fun resolveProbeRequestFromStore(store: AndroidRuntimeProvisioningStore)
         layerLadder = PROBE_LAYER_LADDER_FULL,
         modelContentFingerprint = modelFingerprint,
         modelFileSizeBytes = modelFileSizeBytes,
-        backendProfile = "auto",
+        backendProfile = "opencl",
     )
 }
 
@@ -218,7 +226,10 @@ class AndroidGpuOffloadQualifier(
         ),
     )
 
-    override fun evaluate(runtimeSupported: Boolean): GpuProbeResult = delegate.evaluate(runtimeSupported)
+    override fun evaluate(
+        runtimeSupported: Boolean,
+        deviceAdvisory: DeviceGpuOffloadAdvisory,
+    ): GpuProbeResult = delegate.evaluate(runtimeSupported, deviceAdvisory)
 
     override fun diagnosticsLine(): String = delegate.diagnosticsLine()
 
@@ -251,8 +262,14 @@ internal class InternalAndroidGpuOffloadQualifier(
     private var latestBackendDiagnostics: NativeBackendDiagnostics = NativeBackendDiagnostics()
     @Volatile
     private var latestBackendDiagnosticsPayload: String = ""
+    @Volatile
+    private var latestDeviceAdvisory: DeviceGpuOffloadAdvisory = DeviceGpuOffloadAdvisory()
 
-    override fun evaluate(runtimeSupported: Boolean): GpuProbeResult {
+    override fun evaluate(
+        runtimeSupported: Boolean,
+        deviceAdvisory: DeviceGpuOffloadAdvisory,
+    ): GpuProbeResult {
+        latestDeviceAdvisory = deviceAdvisory
         val request = probeRequestResolver()
         if (!runtimeSupported) {
             return GpuProbeResult(
@@ -274,7 +291,18 @@ internal class InternalAndroidGpuOffloadQualifier(
         val nativeDiag = backendDiagnosticsReader.read()
         latestBackendDiagnostics = nativeDiag
         latestBackendDiagnosticsPayload = nativeDiag.rawPayload
-        val cacheKey = computeCacheKey(request = request, nativeDiagnostics = nativeDiag)
+        qualificationPrecheck(
+            request = request,
+            nativeDiagnostics = nativeDiag,
+            deviceAdvisory = deviceAdvisory,
+        )?.let { failure ->
+            return failure.also { latestResult = it }
+        }
+        val cacheKey = computeCacheKey(
+            request = request,
+            nativeDiagnostics = nativeDiag,
+            deviceAdvisory = deviceAdvisory,
+        )
         readCachedResult(cacheKey = cacheKey)?.let { cached ->
             latestResult = cached
             return cached
@@ -346,7 +374,11 @@ internal class InternalAndroidGpuOffloadQualifier(
         latestBackendDiagnostics = nativeDiag
         latestBackendDiagnosticsPayload = nativeDiag.rawPayload
         val cacheKey = when {
-            request != null -> computeCacheKey(request = request, nativeDiagnostics = nativeDiag)
+            request != null -> computeCacheKey(
+                request = request,
+                nativeDiagnostics = nativeDiag,
+                deviceAdvisory = latestDeviceAdvisory,
+            )
             !latestResult.cacheKey.isNullOrBlank() -> latestResult.cacheKey.orEmpty()
             else -> {
                 safeLogWarning("GPU_PROBE|runtime_failure_demote_skipped|reason=$reason|detail=${detail.orEmpty()}")
@@ -524,12 +556,14 @@ internal class InternalAndroidGpuOffloadQualifier(
     override fun diagnosticsLine(): String {
         val result = latestResult
         val nativeDiag = latestBackendDiagnostics
+        val deviceAdvisory = latestDeviceAdvisory
         val qualificationState = resolveBackendQualificationState(
             runtimeSupported = nativeDiag.runtimeSupported,
             probeStatus = result.status,
             probeReason = result.failureReason,
         )
         val compiledBackends = nativeDiag.compiledBackends().joinToString(",")
+        val registeredBackends = nativeDiag.registeredBackends.joinToString(",")
         val discoveredBackends = nativeDiag.discoveredAcceleratorBackends().joinToString(",")
         val activeBackend = nativeDiag.activeBackend.takeIf { value -> value.isNotBlank() } ?: "unknown"
         val flashAttnFeatureState = resolveBackendFeatureQualificationState(
@@ -546,8 +580,15 @@ internal class InternalAndroidGpuOffloadQualifier(
         )
         return "GPU_PROBE|status=${result.status}|max_layers=${result.maxStableGpuLayers}|reason=${result.failureReason ?: "none"}|" +
             "detail=${result.detail.orEmpty()}|cache_key=${result.cacheKey.orEmpty()}|" +
+            "device_advisory_supported=${deviceAdvisory.supportedForProbe}|" +
+            "device_advisory_auto_opencl=${deviceAdvisory.automaticOpenClEligible}|" +
+            "device_advisory_reason=${deviceAdvisory.reason}|" +
             "qualification_state=${qualificationState.name.lowercase()}|" +
-            "compiled_backends=$compiledBackends|discovered_backends=$discoveredBackends|active_backend=$activeBackend|" +
+            "compiled_backends=$compiledBackends|registered_backend_count=${nativeDiag.registeredBackendCount}|" +
+            "registered_backends=$registeredBackends|opencl_icd_source=${nativeDiag.openclIcdSource}|" +
+            "opencl_icd_filenames=${nativeDiag.openclIcdFilenames}|discovered_backends=$discoveredBackends|active_backend=$activeBackend|" +
+            "opencl_device_name=${nativeDiag.openclDeviceName.ifBlank { "unknown" }}|" +
+            "opencl_device_version=${nativeDiag.openclDeviceVersion.ifBlank { "unknown" }}|" +
             "flash_attn_feature_state=${flashAttnFeatureState.name.lowercase()}|" +
             "quantized_kv_feature_state=${quantizedKvFeatureState.name.lowercase()}|" +
             "native_backend_payload=${latestBackendDiagnosticsPayload}"
@@ -556,18 +597,23 @@ internal class InternalAndroidGpuOffloadQualifier(
     private fun computeCacheKey(
         request: GpuProbeRequest,
         nativeDiagnostics: NativeBackendDiagnostics,
+        deviceAdvisory: DeviceGpuOffloadAdvisory,
     ): String {
         val policy = resolveProbePolicy(nativeDiagnostics)
         val raw = listOf(
             "policy=$PROBE_POLICY_VERSION",
             "fingerprint=$deviceFingerprint",
             "compiledBackend=${nativeDiagnostics.compiledBackend}",
+            "activeBackend=${nativeDiagnostics.activeBackend}",
+            "openclDevices=${nativeDiagnostics.openclDeviceCount}",
+            "hexagonDevices=${nativeDiagnostics.hexagonDeviceCount}",
             "driverName=${nativeDiagnostics.driverName}",
             "driverVersion=${nativeDiagnostics.driverVersion}",
             "apiVersion=${nativeDiagnostics.selectedDeviceApiVersion}",
             "vramBytes=${nativeDiagnostics.deviceLocalHeapBytes}",
             "half16=${nativeDiagnostics.storageBuffer16BitAccess && nativeDiagnostics.shaderFloat16}",
             "build=$appBuildSignature",
+            "deviceAdvisory=${deviceAdvisory.cacheIdentity()}",
             "model=${request.cacheIdentity()}",
             "ladder=${policy.layerLadder.joinToString(",")}",
             "backendProfile=${policy.backendProfile}",
@@ -583,7 +629,57 @@ internal class InternalAndroidGpuOffloadQualifier(
             "version=${modelVersion.ifBlank { "unknown" }}"
         }
         val fileSizePart = modelFileSizeBytes.takeIf { it > 0L }?.let { bytes -> "|bytes=$bytes" }.orEmpty()
-        return "${modelId}|$versionOrFingerprint$fileSizePart"
+        val quantCompatibility = OpenClRuntimePolicy.releaseQuantCompatibility(
+            modelPath = modelPath,
+            modelId = modelId,
+            modelVersion = modelVersion,
+        )
+        return "${modelId}|$versionOrFingerprint$fileSizePart|openclQuant=${quantCompatibility.name}"
+    }
+
+    private fun qualificationPrecheck(
+        request: GpuProbeRequest,
+        nativeDiagnostics: NativeBackendDiagnostics,
+        deviceAdvisory: DeviceGpuOffloadAdvisory,
+    ): GpuProbeResult? {
+        if (!deviceAdvisory.supportedForProbe) {
+            return failPrecheck("device_advisory_rejected:${deviceAdvisory.reason}")
+        }
+        if (!deviceAdvisory.automaticOpenClEligible) {
+            return failPrecheck("device_not_in_release_opencl_allowlist:${deviceAdvisory.reason}")
+        }
+        if (!nativeDiagnostics.compiledBackends().contains("opencl")) {
+            return failPrecheck("opencl_not_compiled")
+        }
+        if (nativeDiagnostics.openclDeviceCount <= 0) {
+            return failPrecheck("opencl_runtime_no_devices")
+        }
+        if (
+            !OpenClRuntimePolicy.isReleaseSafeQuantization(
+                modelPath = request.modelPath,
+                modelId = request.modelId,
+                modelVersion = request.modelVersion,
+            )
+        ) {
+            return failPrecheck(
+                "opencl_quant_not_allowlisted:" +
+                    OpenClRuntimePolicy.releaseQuantCompatibility(
+                        modelPath = request.modelPath,
+                        modelId = request.modelId,
+                        modelVersion = request.modelVersion,
+                    ).name.lowercase(),
+            )
+        }
+        return null
+    }
+
+    private fun failPrecheck(detail: String): GpuProbeResult {
+        return GpuProbeResult(
+            status = GpuProbeStatus.FAILED,
+            failureReason = GpuProbeFailureReason.RUNTIME_UNSUPPORTED,
+            detail = detail,
+            checkedAtEpochMs = now(),
+        )
     }
 
     private fun readCachedResult(cacheKey: String): GpuProbeResult? {
@@ -683,6 +779,12 @@ data class NativeBackendDiagnostics(
     val runtimeSupported: Boolean = false,
     val compiledBackend: String = "",
     val activeBackend: String = "",
+    val registeredBackendCount: Int = 0,
+    val registeredBackends: List<String> = emptyList(),
+    val openclIcdFilenames: String = "",
+    val openclIcdSource: String = "",
+    val openclDeviceName: String = "",
+    val openclDeviceVersion: String = "",
     val driverName: String = "",
     val driverVersion: Long = 0L,
     val instanceApiVersion: Long = 0L,
@@ -735,6 +837,16 @@ class NativeBackendDiagnosticsReader(
             runtimeSupported = root.booleanOrDefault("runtime_supported", false),
             compiledBackend = root.stringOrDefault("compiled_backend", ""),
             activeBackend = root.stringOrDefault("active_backend", ""),
+            registeredBackendCount = root.intOrDefault("registered_backend_count", 0),
+            registeredBackends = root.stringOrDefault("registered_backends", "")
+                .split(',')
+                .map { token -> token.trim().lowercase() }
+                .filter { token -> token.isNotEmpty() }
+                .distinct(),
+            openclIcdFilenames = root.stringOrDefault("opencl_icd_filenames", ""),
+            openclIcdSource = root.stringOrDefault("opencl_icd_source", ""),
+            openclDeviceName = root.stringOrDefault("opencl_device_name", ""),
+            openclDeviceVersion = root.stringOrDefault("opencl_device_version", ""),
             driverName = root.stringOrDefault("driver_name", ""),
             driverVersion = root.longOrDefault("driver_version", 0L),
             instanceApiVersion = root.longOrDefault("instance_api_version", 0L),

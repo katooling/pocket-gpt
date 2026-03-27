@@ -49,14 +49,20 @@ data class RuntimeTuningRecommendation(
     val speculativeEnabled: Boolean? = null,
     val speculativeDraftGpuLayers: Int? = null,
     val useMmap: Boolean? = null,
+    val nThreads: Int? = null,
+    val nThreadsBatch: Int? = null,
     val nBatch: Int? = null,
     val nUbatch: Int? = null,
+    val nCtx: Int? = null,
     val targetGpuLayers: Int? = null,
     val targetSpeculativeEnabled: Boolean? = null,
     val targetSpeculativeDraftGpuLayers: Int? = null,
     val targetUseMmap: Boolean? = null,
+    val targetNThreads: Int? = null,
+    val targetNThreadsBatch: Int? = null,
     val targetNBatch: Int? = null,
     val targetNUbatch: Int? = null,
+    val targetNCtx: Int? = null,
     val lastPeakRssMb: Double? = null,
     val lastFirstTokenMs: Long? = null,
     val lastTokensPerSec: Double? = null,
@@ -89,8 +95,11 @@ data class RuntimeTuningSample(
     val appliedSpeculativeEnabled: Boolean,
     val appliedSpeculativeDraftGpuLayers: Int,
     val appliedUseMmap: Boolean,
+    val appliedNThreads: Int,
+    val appliedNThreadsBatch: Int,
     val appliedNBatch: Int,
     val appliedNUbatch: Int,
+    val appliedNCtx: Int,
     val decision: String,
 )
 
@@ -212,16 +221,22 @@ class RuntimeTuningDecider(
             speculativeEnabled = appliedConfig.speculativeEnabled,
             speculativeDraftGpuLayers = appliedConfig.speculativeDraftGpuLayers,
             useMmap = appliedConfig.useMmap,
+            nThreads = appliedConfig.nThreads,
+            nThreadsBatch = appliedConfig.nThreadsBatch,
             nBatch = appliedConfig.nBatch,
             nUbatch = appliedConfig.nUbatch,
+            nCtx = appliedConfig.nCtx,
         )
         var gpuLayers = previous.gpuLayers ?: appliedConfig.gpuLayers
         var kvCacheType = previous.kvCacheType ?: appliedConfig.kvCacheTypeV
         var speculativeEnabled = previous.speculativeEnabled ?: appliedConfig.speculativeEnabled
         var speculativeDraftGpuLayers = previous.speculativeDraftGpuLayers ?: appliedConfig.speculativeDraftGpuLayers
         var useMmap = previous.useMmap ?: appliedConfig.useMmap
+        var nThreads = previous.nThreads ?: appliedConfig.nThreads
+        var nThreadsBatch = previous.nThreadsBatch ?: appliedConfig.nThreadsBatch
         var nBatch = previous.nBatch ?: appliedConfig.nBatch
         var nUbatch = previous.nUbatch ?: appliedConfig.nUbatch
+        var nCtx = previous.nCtx ?: appliedConfig.nCtx
         var benchmarkWinCount = previous.benchmarkWinCount
         var promotionCount = previous.promotionCount
         var lastDecision = "hold"
@@ -259,6 +274,7 @@ class RuntimeTuningDecider(
             normalizedError.contains("mmap") ||
                 normalizedError.contains("readahead")
             ) || cpuOnlyMmapRegression
+        val timeoutRegression = !observation.success && normalizedError.contains("timeout")
         val benchmarkQualityWin = observation.success &&
             !observation.thermalThrottled &&
             (observation.peakRssMb == null || observation.peakRssMb <= PROMOTION_SAFE_PEAK_RSS_MB) &&
@@ -294,6 +310,38 @@ class RuntimeTuningDecider(
                 useMmap = false
                 benchmarkWinCount = 0
                 lastDecision = "demote_use_mmap"
+            }
+
+            timeoutRegression -> {
+                when {
+                    useMmap && appliedConfig.gpuLayers <= 0 -> {
+                        useMmap = false
+                        lastDecision = "timeout_demote_use_mmap"
+                    }
+
+                    nCtx > MIN_TUNED_CONTEXT -> {
+                        nCtx = demotedContextWindow(nCtx)
+                        lastDecision = "timeout_demote_n_ctx"
+                    }
+
+                    nThreadsBatch > nThreads -> {
+                        nThreadsBatch = demotedThreadCount(nThreadsBatch, floor = nThreads)
+                        lastDecision = "timeout_demote_n_threads_batch"
+                    }
+
+                    nThreads > MIN_TUNED_THREADS -> {
+                        nThreads = demotedThreadCount(nThreads, floor = MIN_TUNED_THREADS)
+                        nThreadsBatch = nThreadsBatch.coerceAtLeast(nThreads).coerceAtMost(targetConfig.nThreadsBatch)
+                        lastDecision = "timeout_demote_n_threads"
+                    }
+
+                    else -> {
+                        nBatch = demotedBatch(nBatch)
+                        nUbatch = demotedBatch(nUbatch)
+                        lastDecision = "timeout_demote_batch"
+                    }
+                }
+                benchmarkWinCount = 0
             }
 
             benchmarkQualityWin -> {
@@ -339,6 +387,30 @@ class RuntimeTuningDecider(
                             lastDecision = "promote_use_mmap"
                         }
 
+                        nCtx < targetConfig.nCtx -> {
+                            nCtx = promotedContextWindow(current = nCtx, target = targetConfig.nCtx)
+                            promotionCount += 1
+                            benchmarkWinCount = 0
+                            lastDecision = "promote_n_ctx"
+                        }
+
+                        nThreads < targetConfig.nThreads -> {
+                            nThreads = promotedThreadCount(current = nThreads, target = targetConfig.nThreads)
+                            promotionCount += 1
+                            benchmarkWinCount = 0
+                            lastDecision = "promote_n_threads"
+                        }
+
+                        nThreadsBatch < targetConfig.nThreadsBatch -> {
+                            nThreadsBatch = promotedThreadCount(
+                                current = nThreadsBatch,
+                                target = targetConfig.nThreadsBatch,
+                            )
+                            promotionCount += 1
+                            benchmarkWinCount = 0
+                            lastDecision = "promote_n_threads_batch"
+                        }
+
                         else -> {
                             lastDecision = "benchmark_win_no_change"
                         }
@@ -365,14 +437,20 @@ class RuntimeTuningDecider(
             speculativeEnabled = speculativeEnabled,
             speculativeDraftGpuLayers = speculativeDraftGpuLayers.coerceAtLeast(0),
             useMmap = useMmap,
+            nThreads = nThreads.coerceAtLeast(MIN_TUNED_THREADS),
+            nThreadsBatch = nThreadsBatch.coerceAtLeast(MIN_TUNED_THREADS),
             nBatch = nBatch.coerceAtLeast(MIN_TUNED_BATCH),
             nUbatch = nUbatch.coerceAtLeast(MIN_TUNED_BATCH),
+            nCtx = nCtx.coerceAtLeast(MIN_TUNED_CONTEXT),
             targetGpuLayers = targetConfig.gpuLayers.coerceAtLeast(0),
             targetSpeculativeEnabled = targetConfig.speculativeEnabled,
             targetSpeculativeDraftGpuLayers = targetConfig.speculativeDraftGpuLayers.coerceAtLeast(0),
             targetUseMmap = targetConfig.useMmap,
+            targetNThreads = targetConfig.nThreads,
+            targetNThreadsBatch = targetConfig.nThreadsBatch,
             targetNBatch = targetConfig.nBatch,
             targetNUbatch = targetConfig.nUbatch,
+            targetNCtx = targetConfig.nCtx,
             lastPeakRssMb = observation.peakRssMb ?: previous.lastPeakRssMb,
             lastFirstTokenMs = observation.firstTokenMs ?: previous.lastFirstTokenMs,
             lastTokensPerSec = observation.tokensPerSec ?: previous.lastTokensPerSec,
@@ -415,6 +493,27 @@ class RuntimeTuningDecider(
         return minOf(target, current + maxOf(128, current / 4))
     }
 
+    private fun demotedContextWindow(current: Int): Int {
+        return when {
+            current > 4096 -> 4096
+            current > 2048 -> 2048
+            current > 1536 -> 1536
+            else -> MIN_TUNED_CONTEXT
+        }
+    }
+
+    private fun promotedContextWindow(current: Int, target: Int): Int {
+        return minOf(target, maxOf(current * 2, current + 512))
+    }
+
+    private fun demotedThreadCount(current: Int, floor: Int): Int {
+        return (current * 3 / 4).coerceAtLeast(floor)
+    }
+
+    private fun promotedThreadCount(current: Int, target: Int): Int {
+        return minOf(target, current + 1)
+    }
+
     private companion object {
         private const val HIGH_PEAK_RSS_MB = 2800.0
         private const val PROMOTION_SAFE_PEAK_RSS_MB = 2200.0
@@ -423,7 +522,9 @@ class RuntimeTuningDecider(
         private const val SLOW_TOKENS_PER_SEC = 8.0
         private const val PROMOTION_FIRST_TOKEN_MS = 2200L
         private const val PROMOTION_TOKENS_PER_SEC = 12.0
+        private const val MIN_TUNED_THREADS = 2
         private const val MIN_TUNED_BATCH = 128
+        private const val MIN_TUNED_CONTEXT = 1024
         private const val BENCHMARK_PROMOTION_THRESHOLD = 3
     }
 }
@@ -469,8 +570,11 @@ class AndroidRuntimeTuningStore(
                 0
             },
             useMmap = recommendation.useMmap ?: baseConfig.useMmap,
+            nThreads = recommendation.nThreads ?: baseConfig.nThreads,
+            nThreadsBatch = recommendation.nThreadsBatch ?: baseConfig.nThreadsBatch,
             nBatch = recommendation.nBatch ?: baseConfig.nBatch,
             nUbatch = recommendation.nUbatch ?: baseConfig.nUbatch,
+            nCtx = recommendation.nCtx ?: baseConfig.nCtx,
         )
     }
 
@@ -519,8 +623,11 @@ class AndroidRuntimeTuningStore(
                 appliedSpeculativeEnabled = appliedConfig.speculativeEnabled,
                 appliedSpeculativeDraftGpuLayers = appliedConfig.speculativeDraftGpuLayers,
                 appliedUseMmap = appliedConfig.useMmap,
+                appliedNThreads = appliedConfig.nThreads,
+                appliedNThreadsBatch = appliedConfig.nThreadsBatch,
                 appliedNBatch = appliedConfig.nBatch,
                 appliedNUbatch = appliedConfig.nUbatch,
+                appliedNCtx = appliedConfig.nCtx,
                 decision = next.lastDecision,
             ),
         )
@@ -535,7 +642,7 @@ class AndroidRuntimeTuningStore(
         thermalThrottled: Boolean,
     ) {
         val normalizedError = errorCode.orEmpty().trim().lowercase()
-        if (normalizedError.isBlank() || normalizedError == "cancelled" || normalizedError == "timeout") {
+        if (normalizedError.isBlank() || normalizedError == "cancelled") {
             return
         }
         val resolvedModelId = resolveModelId(modelId) ?: return
@@ -569,8 +676,11 @@ class AndroidRuntimeTuningStore(
                 appliedSpeculativeEnabled = appliedConfig.speculativeEnabled,
                 appliedSpeculativeDraftGpuLayers = appliedConfig.speculativeDraftGpuLayers,
                 appliedUseMmap = appliedConfig.useMmap,
+                appliedNThreads = appliedConfig.nThreads,
+                appliedNThreadsBatch = appliedConfig.nThreadsBatch,
                 appliedNBatch = appliedConfig.nBatch,
                 appliedNUbatch = appliedConfig.nUbatch,
+                appliedNCtx = appliedConfig.nCtx,
                 decision = next.lastDecision,
             ),
         )
@@ -640,10 +750,16 @@ class AndroidRuntimeTuningStore(
             append("|target_draft_gpu_layers=${payload.optIntOrMinusOne("targetSpeculativeDraftGpuLayers")}")
             append("|recommended_use_mmap=${payload.optStringOr("useMmap", "unknown")}")
             append("|target_use_mmap=${payload.optStringOr("targetUseMmap", "unknown")}")
+            append("|recommended_n_threads=${payload.optIntOrMinusOne("nThreads")}")
+            append("|target_n_threads=${payload.optIntOrMinusOne("targetNThreads")}")
+            append("|recommended_n_threads_batch=${payload.optIntOrMinusOne("nThreadsBatch")}")
+            append("|target_n_threads_batch=${payload.optIntOrMinusOne("targetNThreadsBatch")}")
             append("|recommended_n_batch=${payload.optIntOrMinusOne("nBatch")}")
             append("|target_n_batch=${payload.optIntOrMinusOne("targetNBatch")}")
             append("|recommended_n_ubatch=${payload.optIntOrMinusOne("nUbatch")}")
             append("|target_n_ubatch=${payload.optIntOrMinusOne("targetNUbatch")}")
+            append("|recommended_n_ctx=${payload.optIntOrMinusOne("nCtx")}")
+            append("|target_n_ctx=${payload.optIntOrMinusOne("targetNCtx")}")
             append("|benchmark_win_count=${payload.optInt("benchmarkWinCount", 0)}")
             append("|promotion_count=${payload.optInt("promotionCount", 0)}")
             append("|last_decision=${sanitizeDiagnosticValue(payload.optString("lastDecision", "none"))}")
@@ -679,8 +795,11 @@ class AndroidRuntimeTuningStore(
             append("|applied_speculative=${sample.optBoolean("appliedSpeculativeEnabled", false)}")
             append("|applied_draft_gpu_layers=${sample.optInt("appliedSpeculativeDraftGpuLayers", 0)}")
             append("|applied_use_mmap=${sample.optBoolean("appliedUseMmap", true)}")
+            append("|applied_n_threads=${sample.optInt("appliedNThreads", -1)}")
+            append("|applied_n_threads_batch=${sample.optInt("appliedNThreadsBatch", -1)}")
             append("|applied_n_batch=${sample.optInt("appliedNBatch", -1)}")
             append("|applied_n_ubatch=${sample.optInt("appliedNUbatch", -1)}")
+            append("|applied_n_ctx=${sample.optInt("appliedNCtx", -1)}")
             append("|timestamp_epoch_ms=${sample.optLong("timestampEpochMs", 0L)}")
         }
     }
@@ -811,14 +930,20 @@ class AndroidRuntimeTuningStore(
             speculativeEnabled = payload.takeIf { it.has("speculativeEnabled") }?.getBoolean("speculativeEnabled"),
             speculativeDraftGpuLayers = payload.takeIf { it.has("speculativeDraftGpuLayers") }?.getInt("speculativeDraftGpuLayers"),
             useMmap = payload.takeIf { it.has("useMmap") }?.getBoolean("useMmap"),
+            nThreads = payload.takeIf { it.has("nThreads") }?.getInt("nThreads"),
+            nThreadsBatch = payload.takeIf { it.has("nThreadsBatch") }?.getInt("nThreadsBatch"),
             nBatch = payload.takeIf { it.has("nBatch") }?.getInt("nBatch"),
             nUbatch = payload.takeIf { it.has("nUbatch") }?.getInt("nUbatch"),
+            nCtx = payload.takeIf { it.has("nCtx") }?.getInt("nCtx"),
             targetGpuLayers = payload.takeIf { it.has("targetGpuLayers") }?.getInt("targetGpuLayers"),
             targetSpeculativeEnabled = payload.takeIf { it.has("targetSpeculativeEnabled") }?.getBoolean("targetSpeculativeEnabled"),
             targetSpeculativeDraftGpuLayers = payload.takeIf { it.has("targetSpeculativeDraftGpuLayers") }?.getInt("targetSpeculativeDraftGpuLayers"),
             targetUseMmap = payload.takeIf { it.has("targetUseMmap") }?.getBoolean("targetUseMmap"),
+            targetNThreads = payload.takeIf { it.has("targetNThreads") }?.getInt("targetNThreads"),
+            targetNThreadsBatch = payload.takeIf { it.has("targetNThreadsBatch") }?.getInt("targetNThreadsBatch"),
             targetNBatch = payload.takeIf { it.has("targetNBatch") }?.getInt("targetNBatch"),
             targetNUbatch = payload.takeIf { it.has("targetNUbatch") }?.getInt("targetNUbatch"),
+            targetNCtx = payload.takeIf { it.has("targetNCtx") }?.getInt("targetNCtx"),
             lastPeakRssMb = payload.takeIf { it.has("lastPeakRssMb") }?.getDouble("lastPeakRssMb"),
             lastFirstTokenMs = payload.takeIf { it.has("lastFirstTokenMs") }?.getLong("lastFirstTokenMs"),
             lastTokensPerSec = payload.takeIf { it.has("lastTokensPerSec") }?.getDouble("lastTokensPerSec"),
@@ -853,14 +978,20 @@ class AndroidRuntimeTuningStore(
             recommendation.speculativeEnabled?.let { put("speculativeEnabled", it) }
             recommendation.speculativeDraftGpuLayers?.let { put("speculativeDraftGpuLayers", it) }
             recommendation.useMmap?.let { put("useMmap", it) }
+            recommendation.nThreads?.let { put("nThreads", it) }
+            recommendation.nThreadsBatch?.let { put("nThreadsBatch", it) }
             recommendation.nBatch?.let { put("nBatch", it) }
             recommendation.nUbatch?.let { put("nUbatch", it) }
+            recommendation.nCtx?.let { put("nCtx", it) }
             recommendation.targetGpuLayers?.let { put("targetGpuLayers", it) }
             recommendation.targetSpeculativeEnabled?.let { put("targetSpeculativeEnabled", it) }
             recommendation.targetSpeculativeDraftGpuLayers?.let { put("targetSpeculativeDraftGpuLayers", it) }
             recommendation.targetUseMmap?.let { put("targetUseMmap", it) }
+            recommendation.targetNThreads?.let { put("targetNThreads", it) }
+            recommendation.targetNThreadsBatch?.let { put("targetNThreadsBatch", it) }
             recommendation.targetNBatch?.let { put("targetNBatch", it) }
             recommendation.targetNUbatch?.let { put("targetNUbatch", it) }
+            recommendation.targetNCtx?.let { put("targetNCtx", it) }
             recommendation.lastPeakRssMb?.let { put("lastPeakRssMb", it) }
             recommendation.lastFirstTokenMs?.let { put("lastFirstTokenMs", it) }
             recommendation.lastTokensPerSec?.let { put("lastTokensPerSec", it) }
@@ -896,8 +1027,11 @@ class AndroidRuntimeTuningStore(
                 put("appliedSpeculativeEnabled", sample.appliedSpeculativeEnabled)
                 put("appliedSpeculativeDraftGpuLayers", sample.appliedSpeculativeDraftGpuLayers)
                 put("appliedUseMmap", sample.appliedUseMmap)
+                put("appliedNThreads", sample.appliedNThreads)
+                put("appliedNThreadsBatch", sample.appliedNThreadsBatch)
                 put("appliedNBatch", sample.appliedNBatch)
                 put("appliedNUbatch", sample.appliedNUbatch)
+                put("appliedNCtx", sample.appliedNCtx)
                 put("decision", sample.decision)
             },
         )

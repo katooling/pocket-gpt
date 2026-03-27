@@ -14,6 +14,7 @@ import android.os.Messenger
 import android.os.RemoteException
 import android.util.Log
 import com.pocketagent.nativebridge.CachePolicy
+import com.pocketagent.nativebridge.FlashAttnMode
 import com.pocketagent.nativebridge.GpuExecutionBackend
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
 import com.pocketagent.nativebridge.RuntimeGenerationConfig
@@ -114,9 +115,9 @@ internal class GpuProbeRunner(
                 gpuBackend = request.backendProfile.toGpuExecutionBackend(),
                 nBatch = safeBatch,
                 nUbatch = safeBatch,
-                // Force safe defaults for probing: use F16 KV cache since
-                // OpenCL lacks SET_ROWS support needed for quantized types, and the
-                // probe should test the most compatible configuration.
+                // Force safe defaults for probing so the qualification path matches
+                // the release OpenCL policy rather than optimistic AUTO defaults.
+                flashAttnMode = FlashAttnMode.OFF,
                 kvCacheTypeK = com.pocketagent.nativebridge.KvCacheType.F16,
                 kvCacheTypeV = com.pocketagent.nativebridge.KvCacheType.F16,
             )

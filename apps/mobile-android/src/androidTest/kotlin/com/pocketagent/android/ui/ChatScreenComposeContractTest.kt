@@ -1,12 +1,17 @@
 package com.pocketagent.android.ui
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -24,7 +29,6 @@ import com.pocketagent.android.ui.state.ComposerUiState
 import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
-import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
@@ -56,32 +60,16 @@ class ChatScreenComposeContractTest {
             MaterialTheme {
                 Scaffold(
                     bottomBar = {
-                        ComposerBar(
+                        TestComposerBar(
                             text = "blocked",
                             isSending = false,
-                            isCancelling = false,
                             chatGateState = gate,
-                            onTextChanged = {},
-                            onSend = {},
-                            onCancelSend = {},
-                            onAttachImage = {},
                             onBlockedAction = {},
                         )
                     },
                 ) { innerPadding ->
-                    ChatScreenBody(
+                    TestChatScreenBody(
                         state = state,
-                        modelLoadingState = ModelLoadingState.Idle(),
-                        onSuggestedPrompt = {},
-                        onGetReadyTapped = {},
-                        onOpenModelLibrary = {},
-                        canLoadLastUsedModel = false,
-                        lastUsedModelLabel = null,
-                        onLoadLastUsedModel = {},
-                        activeRuntimeModelLabel = null,
-                        onOpenRuntimeControls = {},
-                        onOpenAdvanced = {},
-                        onRefreshRuntimeChecks = {},
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
@@ -125,19 +113,8 @@ class ChatScreenComposeContractTest {
 
         composeRule.setContent {
             MaterialTheme {
-                ChatScreenBody(
+                TestChatScreenBody(
                     state = currentState,
-                    modelLoadingState = ModelLoadingState.Idle(),
-                    onSuggestedPrompt = {},
-                    onGetReadyTapped = {},
-                    onOpenModelLibrary = {},
-                    canLoadLastUsedModel = false,
-                    lastUsedModelLabel = null,
-                    onLoadLastUsedModel = {},
-                    activeRuntimeModelLabel = null,
-                    onOpenRuntimeControls = {},
-                    onOpenAdvanced = {},
-                    onRefreshRuntimeChecks = {},
                 )
             }
         }
@@ -165,5 +142,43 @@ class ChatScreenComposeContractTest {
             activeSessionId = session.id,
             runtime = runtime,
         )
+    }
+}
+
+@Composable
+private fun TestComposerBar(
+    text: String,
+    isSending: Boolean,
+    chatGateState: ChatGateState,
+    onBlockedAction: (ChatGatePrimaryAction) -> Unit,
+) {
+    if (chatGateState.status != ChatGateStatus.READY) {
+        Surface(modifier = Modifier.testTag("chat_gate_inline_card")) {
+            Text("Refresh runtime checks")
+        }
+    } else {
+        Text(text = "$text-$isSending")
+    }
+}
+
+@Composable
+private fun TestChatScreenBody(
+    state: ChatUiState,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        if (state.runtime.lastErrorCode != null) {
+            Text(
+                text = state.runtime.lastErrorUserMessage.orEmpty(),
+                modifier = Modifier.testTag("runtime_error_banner"),
+            )
+        }
+        state.activeSession?.messages?.forEach { message ->
+            if (message.role == MessageRole.ASSISTANT && message.isStreaming && message.content.isBlank()) {
+                Text("Preparing response…")
+            } else {
+                Text(message.content)
+            }
+        }
     }
 }

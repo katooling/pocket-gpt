@@ -21,11 +21,41 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onEach
 
-fun interface DeviceGpuOffloadSupport {
-    fun isSupported(): Boolean
+data class DeviceGpuOffloadAdvisory(
+    val isArm64V8a: Boolean = true,
+    val isEmulator: Boolean = false,
+    val isAdrenoFamily: Boolean = true,
+    val hasArmDotProd: Boolean = true,
+    val hasArmI8mm: Boolean = true,
+    val adrenoGeneration: Int = 0,
+    val supportedForProbe: Boolean = true,
+    val automaticOpenClEligible: Boolean = true,
+    val reason: String = "assumed_supported",
+) {
+    fun cacheIdentity(): String {
+        return listOf(
+            "arm64=$isArm64V8a",
+            "emulator=$isEmulator",
+            "adreno=$isAdrenoFamily",
+            "dotprod=$hasArmDotProd",
+            "i8mm=$hasArmI8mm",
+            "adrenoGen=$adrenoGeneration",
+            "probeSupported=$supportedForProbe",
+            "autoOpenCl=$automaticOpenClEligible",
+            "reason=$reason",
+        ).joinToString(separator = "|")
+    }
+}
+
+interface DeviceGpuOffloadSupport {
+    fun advisory(): DeviceGpuOffloadAdvisory
+
+    fun isSupported(): Boolean = advisory().supportedForProbe
 
     companion object {
-        val ASSUME_SUPPORTED = DeviceGpuOffloadSupport { true }
+        val ASSUME_SUPPORTED = object : DeviceGpuOffloadSupport {
+            override fun advisory(): DeviceGpuOffloadAdvisory = DeviceGpuOffloadAdvisory()
+        }
     }
 }
 
@@ -140,8 +170,14 @@ class MvpRuntimeGateway(
 
     override fun exportDiagnostics(): String {
         val runtimeSupported = runCatching { facade.supportsGpuOffload() }.getOrElse { false }
-        val deviceFeatureAdvisorySupported = runCatching { deviceGpuOffloadSupport.isSupported() }.getOrElse { false }
-        val probe = runCatching { gpuOffloadQualifier.evaluate(runtimeSupported) }.getOrElse {
+        val deviceAdvisory = runCatching { deviceGpuOffloadSupport.advisory() }.getOrElse {
+            DeviceGpuOffloadAdvisory(
+                supportedForProbe = false,
+                automaticOpenClEligible = false,
+                reason = "advisory_query_failed:${it.message ?: it::class.simpleName}",
+            )
+        }
+        val probe = runCatching { gpuOffloadQualifier.evaluate(runtimeSupported, deviceAdvisory) }.getOrElse {
             GpuProbeResult(
                 status = GpuProbeStatus.FAILED,
                 failureReason = GpuProbeFailureReason.UNKNOWN,
@@ -152,7 +188,12 @@ class MvpRuntimeGateway(
         val diagnosticFooter = buildString {
             appendLine()
             append(
-                "GPU_OFFLOAD|runtime_supported=$runtimeSupported|device_feature_advisory_supported=$deviceFeatureAdvisorySupported|" +
+                "GPU_OFFLOAD|runtime_supported=$runtimeSupported|device_feature_advisory_supported=${deviceAdvisory.supportedForProbe}|" +
+                    "device_feature_release_opencl_eligible=${deviceAdvisory.automaticOpenClEligible}|" +
+                    "device_feature_arm64=${deviceAdvisory.isArm64V8a}|device_feature_emulator=${deviceAdvisory.isEmulator}|" +
+                    "device_feature_adreno=${deviceAdvisory.isAdrenoFamily}|device_feature_dotprod=${deviceAdvisory.hasArmDotProd}|" +
+                    "device_feature_i8mm=${deviceAdvisory.hasArmI8mm}|device_feature_adreno_gen=${deviceAdvisory.adrenoGeneration}|" +
+                    "device_feature_reason=${deviceAdvisory.reason}|" +
                     "probe_status=${probe.status}|probe_layers=${probe.maxStableGpuLayers}|" +
                     "probe_reason=${probe.failureReason ?: "none"}|probe_source=runtime_plus_probe|probe_detail=${probe.detail.orEmpty()}",
             )
@@ -261,19 +302,26 @@ class MvpRuntimeGateway(
 
     override fun gpuOffloadStatus(): GpuProbeResult {
         val runtimeSupported = runCatching { facade.supportsGpuOffload() }.getOrElse { false }
-        val deviceFeatureAdvisorySupported = runCatching { deviceGpuOffloadSupport.isSupported() }
-            .getOrElse { false }
-        val probe = runCatching { gpuOffloadQualifier.evaluate(runtimeSupported) }.getOrElse {
+        val deviceAdvisory = runCatching { deviceGpuOffloadSupport.advisory() }.getOrElse {
+            DeviceGpuOffloadAdvisory(
+                supportedForProbe = false,
+                automaticOpenClEligible = false,
+                reason = "advisory_query_failed:${it.message ?: it::class.simpleName}",
+            )
+        }
+        val probe = runCatching { gpuOffloadQualifier.evaluate(runtimeSupported, deviceAdvisory) }.getOrElse {
             GpuProbeResult(
                 status = GpuProbeStatus.FAILED,
                 failureReason = GpuProbeFailureReason.UNKNOWN,
                 detail = "probe_evaluation_failed:${it.message ?: it::class.simpleName}",
             )
         }
-        if (runtimeSupported != deviceFeatureAdvisorySupported || probe.status != GpuProbeStatus.QUALIFIED) {
+        if (runtimeSupported != deviceAdvisory.supportedForProbe || probe.status != GpuProbeStatus.QUALIFIED) {
             safeLogInfo(
                 "GPU_OFFLOAD|eligibility|runtime_supported=$runtimeSupported|" +
-                    "device_feature_advisory_supported=$deviceFeatureAdvisorySupported|" +
+                    "device_feature_advisory_supported=${deviceAdvisory.supportedForProbe}|" +
+                    "device_feature_release_opencl_eligible=${deviceAdvisory.automaticOpenClEligible}|" +
+                    "device_feature_reason=${deviceAdvisory.reason}|" +
                     "probe_status=${probe.status}|probe_layers=${probe.maxStableGpuLayers}|" +
                     "probe_reason=${probe.failureReason ?: "none"}|authoritative=runtime_plus_probe",
             )

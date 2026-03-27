@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui.controllers
 
+import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.data.chat.toUiSession
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.runtime.ChatRuntimeService
@@ -56,6 +57,7 @@ class ChatStartupFlow(
         val restoredKeepAlivePreference = RuntimeKeepAlivePreference.valueOf(persisted.keepAlivePreference)
         val restoredFirstSessionStage = FirstSessionStage.valueOf(persisted.firstSessionStage)
         val restoredAdvancedUnlocked = true
+        val gpuManualOverrideAllowed = BuildConfig.DEBUG
         val initialFirstSessionStage = when {
             !persisted.onboardingCompleted -> FirstSessionStage.ONBOARDING
             restoredFirstSessionStage == FirstSessionStage.ONBOARDING -> FirstSessionStage.GET_READY
@@ -63,7 +65,7 @@ class ChatStartupFlow(
         }
         val gpuProbe = runtimeGateway.gpuOffloadStatus()
         val gpuSupported = gpuProbe.status == GpuProbeStatus.QUALIFIED && gpuProbe.maxStableGpuLayers > 0
-        val restoredGpuEnabled = persisted.gpuAccelerationEnabled && gpuSupported
+        val restoredGpuEnabled = persisted.gpuAccelerationEnabled && (gpuSupported || gpuManualOverrideAllowed)
         runtimeGateway.setRoutingMode(effectiveRoutingMode)
 
         val bootstrapRuntimeState = if (loadError == null) {
@@ -73,8 +75,10 @@ class ChatStartupFlow(
                 keepAlivePreference = restoredKeepAlivePreference,
                 gpuAccelerationEnabled = restoredGpuEnabled,
                 gpuAccelerationSupported = gpuSupported,
+                gpuManualOverrideAllowed = gpuManualOverrideAllowed,
                 gpuProbeStatus = gpuProbe.status,
                 gpuProbeFailureReason = gpuProbe.failureReason?.name,
+                gpuProbeDetail = gpuProbe.detail,
                 gpuMaxQualifiedLayers = gpuProbe.maxStableGpuLayers,
                 runtimeBackend = runtimeBackend,
                 startupProbeState = StartupProbeState.RUNNING,
@@ -88,8 +92,10 @@ class ChatStartupFlow(
                 keepAlivePreference = restoredKeepAlivePreference,
                 gpuAccelerationEnabled = restoredGpuEnabled,
                 gpuAccelerationSupported = gpuSupported,
+                gpuManualOverrideAllowed = gpuManualOverrideAllowed,
                 gpuProbeStatus = gpuProbe.status,
                 gpuProbeFailureReason = gpuProbe.failureReason?.name,
+                gpuProbeDetail = gpuProbe.detail,
                 gpuMaxQualifiedLayers = gpuProbe.maxStableGpuLayers,
                 runtimeBackend = runtimeBackend,
                 startupProbeState = StartupProbeState.BLOCKED,

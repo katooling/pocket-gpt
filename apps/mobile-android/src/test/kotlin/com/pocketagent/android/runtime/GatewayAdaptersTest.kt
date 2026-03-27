@@ -172,7 +172,7 @@ class GatewayAdaptersTest {
         val facade = RecordingMvpRuntimeFacade()
         val gateway = MvpRuntimeGateway(
             facade = facade,
-            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
+            deviceGpuOffloadSupport = fakeDeviceGpuOffloadSupport(true),
             gpuOffloadQualifier = FakeGpuQualifier(
                 resultWhenRuntimeSupported = GpuProbeResult(
                     status = GpuProbeStatus.PENDING,
@@ -189,7 +189,7 @@ class GatewayAdaptersTest {
         val facade = RecordingMvpRuntimeFacade(gpuSupported = true)
         val gateway = MvpRuntimeGateway(
             facade = facade,
-            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
+            deviceGpuOffloadSupport = fakeDeviceGpuOffloadSupport(true),
             gpuOffloadQualifier = FakeGpuQualifier(
                 resultWhenRuntimeSupported = GpuProbeResult(
                     status = GpuProbeStatus.FAILED,
@@ -206,7 +206,7 @@ class GatewayAdaptersTest {
         val facade = RecordingMvpRuntimeFacade(gpuSupported = true)
         val gateway = MvpRuntimeGateway(
             facade = facade,
-            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { false },
+            deviceGpuOffloadSupport = fakeDeviceGpuOffloadSupport(false),
             gpuOffloadQualifier = FakeGpuQualifier(
                 resultWhenRuntimeSupported = GpuProbeResult(
                     status = GpuProbeStatus.QUALIFIED,
@@ -259,7 +259,7 @@ class GatewayAdaptersTest {
         )
         val gateway = MvpRuntimeGateway(
             facade = facade,
-            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
+            deviceGpuOffloadSupport = fakeDeviceGpuOffloadSupport(true),
             gpuOffloadQualifier = qualifier,
         )
 
@@ -310,7 +310,7 @@ class GatewayAdaptersTest {
         )
         val gateway = MvpRuntimeGateway(
             facade = facade,
-            deviceGpuOffloadSupport = DeviceGpuOffloadSupport { true },
+            deviceGpuOffloadSupport = fakeDeviceGpuOffloadSupport(true),
             gpuOffloadQualifier = qualifier,
         )
 
@@ -346,7 +346,10 @@ private class FakeGpuQualifier(
 ) : GpuOffloadQualifier {
     val reportedFailures: MutableList<Pair<GpuProbeFailureReason, String?>> = mutableListOf()
 
-    override fun evaluate(runtimeSupported: Boolean): GpuProbeResult {
+    override fun evaluate(
+        runtimeSupported: Boolean,
+        deviceAdvisory: DeviceGpuOffloadAdvisory,
+    ): GpuProbeResult {
         return if (runtimeSupported) {
             resultWhenRuntimeSupported
         } else {
@@ -361,6 +364,16 @@ private class FakeGpuQualifier(
 
     override fun reportRuntimeFailure(reason: GpuProbeFailureReason, detail: String?) {
         reportedFailures += reason to detail
+    }
+}
+
+private fun fakeDeviceGpuOffloadSupport(supported: Boolean): DeviceGpuOffloadSupport {
+    return object : DeviceGpuOffloadSupport {
+        override fun advisory(): DeviceGpuOffloadAdvisory = DeviceGpuOffloadAdvisory(
+            supportedForProbe = supported,
+            automaticOpenClEligible = supported,
+            reason = if (supported) "fake_supported" else "fake_unsupported",
+        )
     }
 }
 

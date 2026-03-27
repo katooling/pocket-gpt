@@ -139,6 +139,83 @@ class RuntimeTuningDeciderTest {
     }
 
     @Test
+    fun `cpu timeout demotes context before batch size`() {
+        val decider = RuntimeTuningDecider()
+        val targetConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.FAST,
+            availableCpuThreads = 8,
+            gpuEnabled = false,
+        ).copy(
+            useMmap = false,
+            nCtx = 8192,
+            nThreads = 8,
+            nThreadsBatch = 12,
+            nBatch = 768,
+            nUbatch = 768,
+        )
+
+        val next = decider.nextRecommendation(
+            current = null,
+            appliedConfig = targetConfig,
+            targetConfig = targetConfig,
+            observation = RuntimeTuningObservation(
+                success = false,
+                errorCode = "timeout",
+            ),
+        )
+
+        assertEquals(4096, next.nCtx)
+        assertEquals(8, next.nThreads)
+        assertEquals(12, next.nThreadsBatch)
+        assertEquals("timeout_demote_n_ctx", next.lastDecision)
+    }
+
+    @Test
+    fun `cpu timeout demotes threads after context floor`() {
+        val decider = RuntimeTuningDecider()
+        val targetConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.BALANCED,
+            availableCpuThreads = 8,
+            gpuEnabled = false,
+        ).copy(
+            useMmap = false,
+            nCtx = 1024,
+            nThreads = 6,
+            nThreadsBatch = 9,
+            nBatch = 512,
+            nUbatch = 512,
+        )
+
+        val first = decider.nextRecommendation(
+            current = null,
+            appliedConfig = targetConfig,
+            targetConfig = targetConfig,
+            observation = RuntimeTuningObservation(
+                success = false,
+                errorCode = "timeout",
+            ),
+        )
+        val second = decider.nextRecommendation(
+            current = first,
+            appliedConfig = targetConfig.copy(
+                nThreads = first.nThreads ?: targetConfig.nThreads,
+                nThreadsBatch = first.nThreadsBatch ?: targetConfig.nThreadsBatch,
+                nCtx = first.nCtx ?: targetConfig.nCtx,
+            ),
+            targetConfig = targetConfig,
+            observation = RuntimeTuningObservation(
+                success = false,
+                errorCode = "timeout",
+            ),
+        )
+
+        assertEquals(6, first.nThreads)
+        assertEquals(6, first.nThreadsBatch)
+        assertEquals(4, second.nThreads)
+        assertEquals("timeout_demote_n_threads", second.lastDecision)
+    }
+
+    @Test
     fun `three benchmark-quality wins promote demoted gpu layers toward target`() {
         val decider = RuntimeTuningDecider(nowMs = { 100L })
         val targetConfig = PerformanceRuntimeConfig.forProfile(

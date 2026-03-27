@@ -34,6 +34,10 @@ data class RuntimeDiagnosticsSnapshot(
     val backendProfile: String? = null,
     val compiledBackend: String? = null,
     val compiledBackends: List<String> = emptyList(),
+    val registeredBackendCount: Int? = null,
+    val registeredBackends: List<String>? = null,
+    val openclIcdFilenames: String? = null,
+    val openclIcdSource: String? = null,
     val discoveredBackends: List<String>? = null,
     val activeBackend: String? = null,
     val backendCapabilities: List<RuntimeBackendCapability> = emptyList(),
@@ -44,6 +48,11 @@ data class RuntimeDiagnosticsSnapshot(
     val openclDeviceVersion: String? = null,
     val openclAdrenoGeneration: Int? = null,
     val activeModelQuantization: String? = null,
+    val lastMmapReadaheadLabel: String? = null,
+    val lastMmapReadaheadBytes: Long? = null,
+    val lastMmapReadaheadResult: Int? = null,
+    val lastMmapReadaheadMs: Long? = null,
+    val mmapReadaheadCount: Long? = null,
     val flashAttnQualificationState: BackendFeatureQualificationState = BackendFeatureQualificationState.UNKNOWN,
     val quantizedKvQualificationState: BackendFeatureQualificationState = BackendFeatureQualificationState.UNKNOWN,
     val flashAttnGuardReason: String? = null,
@@ -82,6 +91,11 @@ internal object RuntimeDiagnosticsSnapshotParser {
         val compiledBackends = parseBackendList(
             compiledBackend ?: gpuProbeFields["compiled_backends"],
         )
+        val registeredBackendCount = nativePayloadRoot.intOrNull("registered_backend_count")
+        val registeredBackends = parseBackendList(nativePayloadRoot.stringOrNull("registered_backends"))
+            .ifEmpty { null }
+        val openclIcdFilenames = nativePayloadRoot.stringOrNull("opencl_icd_filenames")
+        val openclIcdSource = nativePayloadRoot.stringOrNull("opencl_icd_source")
         val discoveredBackends = resolveDiscoveredBackends(
             openclDeviceCount = openclDeviceCount,
             hexagonDeviceCount = hexagonDeviceCount,
@@ -106,6 +120,11 @@ internal object RuntimeDiagnosticsSnapshotParser {
         val openclDeviceVersion = nativePayloadRoot.stringOrNull("opencl_device_version")
         val openclAdrenoGeneration = nativePayloadRoot.intOrNull("opencl_adreno_generation")
         val activeModelQuantization = nativePayloadRoot.stringOrNull("active_model_quantization")
+        val lastMmapReadaheadLabel = nativePayloadRoot.stringOrNull("last_mmap_readahead_label")
+        val lastMmapReadaheadBytes = nativePayloadRoot.longOrNull("last_mmap_readahead_bytes")
+        val lastMmapReadaheadResult = nativePayloadRoot.intOrNull("last_mmap_readahead_result")
+        val lastMmapReadaheadMs = nativePayloadRoot.longOrNull("last_mmap_readahead_ms")
+        val mmapReadaheadCount = nativePayloadRoot.longOrNull("mmap_readahead_count")
         val flashAttnGuardReason = nativePayloadRoot.stringOrNull("flash_attn_guard_reason")
         val quantizedKvGuardReason = nativePayloadRoot.stringOrNull("quantized_kv_guard_reason")
         val flashAttnQualificationState = parseBackendFeatureQualificationState(gpuProbeFields["flash_attn_feature_state"])
@@ -127,6 +146,10 @@ internal object RuntimeDiagnosticsSnapshotParser {
             backendProfile = backendProfile,
             compiledBackend = compiledBackend,
             compiledBackends = compiledBackends,
+            registeredBackendCount = registeredBackendCount,
+            registeredBackends = registeredBackends,
+            openclIcdFilenames = openclIcdFilenames,
+            openclIcdSource = openclIcdSource,
             discoveredBackends = discoveredBackends,
             activeBackend = activeBackend,
             backendCapabilities = backendCapabilities,
@@ -137,6 +160,11 @@ internal object RuntimeDiagnosticsSnapshotParser {
             openclDeviceVersion = openclDeviceVersion,
             openclAdrenoGeneration = openclAdrenoGeneration,
             activeModelQuantization = activeModelQuantization,
+            lastMmapReadaheadLabel = lastMmapReadaheadLabel,
+            lastMmapReadaheadBytes = lastMmapReadaheadBytes,
+            lastMmapReadaheadResult = lastMmapReadaheadResult,
+            lastMmapReadaheadMs = lastMmapReadaheadMs,
+            mmapReadaheadCount = mmapReadaheadCount,
             flashAttnQualificationState = flashAttnQualificationState,
             quantizedKvQualificationState = quantizedKvQualificationState,
             flashAttnGuardReason = flashAttnGuardReason,
@@ -209,6 +237,14 @@ internal object RuntimeDiagnosticsSnapshotParser {
             ?.contentOrNull
             ?.trim()
             ?.toIntOrNull()
+    }
+
+    private fun JsonObject.longOrNull(key: String): Long? {
+        return this[key]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.trim()
+            ?.toLongOrNull()
     }
 
     private fun parseBackendList(raw: String?): List<String> {

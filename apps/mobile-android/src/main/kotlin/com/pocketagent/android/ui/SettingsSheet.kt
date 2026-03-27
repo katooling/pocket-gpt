@@ -59,6 +59,7 @@ internal fun AdvancedSettingsSheet(
     onExportDiagnostics: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
+    val gpuToggleEnabled = state.runtime.gpuAccelerationSupported || state.runtime.gpuManualOverrideAllowed
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -211,7 +212,7 @@ internal fun AdvancedSettingsSheet(
                 .fillMaxWidth()
                 .toggleable(
                     value = state.runtime.gpuAccelerationEnabled,
-                    enabled = state.runtime.gpuAccelerationSupported,
+                    enabled = gpuToggleEnabled,
                     role = Role.Switch,
                     onValueChange = { checked ->
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -222,7 +223,7 @@ internal fun AdvancedSettingsSheet(
         ) {
             androidx.compose.material3.Switch(
                 checked = state.runtime.gpuAccelerationEnabled,
-                enabled = state.runtime.gpuAccelerationSupported,
+                enabled = gpuToggleEnabled,
                 onCheckedChange = null,
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -232,6 +233,8 @@ internal fun AdvancedSettingsSheet(
                         stringResource(id = R.string.ui_gpu_acceleration_validating)
                     state.runtime.gpuAccelerationSupported ->
                         stringResource(id = R.string.ui_gpu_acceleration_toggle)
+                    state.runtime.gpuManualOverrideAllowed ->
+                        "${stringResource(id = R.string.ui_gpu_acceleration_toggle)} (debug override)"
                     else ->
                         stringResource(
                             id = R.string.ui_gpu_acceleration_unavailable_with_reason,
@@ -245,6 +248,17 @@ internal fun AdvancedSettingsSheet(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (!state.runtime.gpuProbeDetail.isNullOrBlank()) {
+            Text(
+                text = state.runtime.gpuProbeDetail.orEmpty(),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (state.runtime.gpuAccelerationSupported) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+        }
         if (shouldShowOpenClQuantizationWarning(state)) {
             Text(
                 text = stringResource(id = R.string.ui_gpu_acceleration_opencl_quant_warning),
@@ -356,10 +370,32 @@ private fun DiagnosticsSection(
                 runtime.activeModelId?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_active_model), it) }
                 runtime.lastFirstTokenLatencyMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_first_token), stringResource(id = R.string.ui_diag_ms_format, it)) }
                 runtime.lastTotalLatencyMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_total_latency), stringResource(id = R.string.ui_diag_ms_format, it)) }
+                runtime.lastModelLoadMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_model_load), stringResource(id = R.string.ui_diag_ms_format, it)) }
                 runtime.lastPrefillMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_prefill), stringResource(id = R.string.ui_diag_ms_format, it)) }
                 runtime.lastDecodeMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_decode), stringResource(id = R.string.ui_diag_ms_format, it)) }
                 runtime.lastTokensPerSec?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_decode_rate), stringResource(id = R.string.ui_diag_tok_s_format, it)) }
                 runtime.lastPeakRssMb?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_peak_rss), stringResource(id = R.string.ui_diag_mb_format, it)) }
+                runtime.lastResidentHit?.let {
+                    DiagnosticLine(
+                        stringResource(id = R.string.ui_diag_resident_hit),
+                        stringResource(id = if (it) R.string.ui_runtime_technical_yes else R.string.ui_runtime_technical_no),
+                    )
+                }
+                runtime.lastResidentHitCount?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_resident_hit_count), it.toString()) }
+                runtime.lastReloadReason?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_reload_reason), it) }
+                runtime.lastPrefixCacheHit?.let {
+                    DiagnosticLine(
+                        stringResource(id = R.string.ui_diag_prefix_cache_hit),
+                        stringResource(id = if (it) R.string.ui_runtime_technical_yes else R.string.ui_runtime_technical_no),
+                    )
+                }
+                runtime.lastPrefixCacheReusedTokens?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_prefix_cache_reused_tokens), it.toString()) }
+                runtime.lastPrefixCacheHitRate?.let {
+                    DiagnosticLine(
+                        stringResource(id = R.string.ui_diag_prefix_cache_hit_rate),
+                        String.format(java.util.Locale.US, "%.2f", it),
+                    )
+                }
             }
         }
         TextButton(onClick = onExportDiagnostics) {

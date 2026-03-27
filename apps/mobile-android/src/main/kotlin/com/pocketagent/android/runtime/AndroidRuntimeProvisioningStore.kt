@@ -956,8 +956,8 @@ class AndroidRuntimeProvisioningStore(
                     candidate.exists() && candidate.isDirectory && candidate.canWrite()
                 }.getOrDefault(false)
             }
-        val root = externalRoot ?: context.filesDir
-        return root
+        return externalRoot
+            ?: error("External model storage is unavailable; app-private storage is not a supported canonical cache path.")
     }
 
     private fun externalStorageRoots(): Array<File?> {

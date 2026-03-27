@@ -4,9 +4,8 @@ import android.net.Uri
 import com.pocketagent.android.data.chat.SessionPersistence
 import com.pocketagent.android.data.chat.SessionStateLoadResult
 import com.pocketagent.android.data.chat.StoredChatMessage
+import com.pocketagent.android.data.chat.StoredChatSession
 import com.pocketagent.android.data.chat.StoredChatState
-import com.pocketagent.android.data.chat.toStoredMessage
-import com.pocketagent.android.data.chat.toStoredSession
 import com.pocketagent.android.runtime.ChatRuntimeService
 import com.pocketagent.android.runtime.ProvisioningGateway
 import com.pocketagent.android.runtime.RuntimeModelImportResult
@@ -29,7 +28,6 @@ import com.pocketagent.android.ui.state.ChatGatePrimaryAction
 import com.pocketagent.android.ui.state.ChatGateStatus
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.RuntimeUiState
-import com.pocketagent.android.ui.state.resolveChatGateState
 import com.pocketagent.core.SessionId
 import com.pocketagent.core.Turn
 import com.pocketagent.inference.DeviceState
@@ -1284,6 +1282,119 @@ class ChatViewModelTest {
         assertTrue(metrics.lastPersistDurationMs >= 0L)
         assertTrue(metrics.medianPersistDurationMs >= 0L)
     }
+}
+
+private fun ChatSessionUiModel.toStoredSession(clearStreaming: Boolean = false): StoredChatSession {
+    return StoredChatSession(
+        id = id,
+        title = title,
+        createdAtEpochMs = createdAtEpochMs,
+        updatedAtEpochMs = updatedAtEpochMs,
+        messages = messages.map { it.toStoredMessage(clearStreaming = clearStreaming) },
+        completionSettings = completionSettings,
+        messagesLoaded = messagesLoaded,
+        messageCount = if (messagesLoaded) messages.size else messageCount,
+    )
+}
+
+private fun MessageUiModel.toStoredMessage(clearStreaming: Boolean = false): StoredChatMessage {
+    return StoredChatMessage(
+        id = id,
+        role = role,
+        content = content,
+        timestampEpochMs = timestampEpochMs,
+        kind = kind,
+        imagePath = imagePath,
+        imagePaths = imagePaths,
+        toolName = toolName,
+        isStreaming = if (clearStreaming) false else isStreaming,
+        requestId = requestId,
+        finishReason = finishReason,
+        terminalEventSeen = terminalEventSeen,
+        isThinking = isThinking,
+        interaction = interaction,
+        reasoningContent = reasoningContent,
+        firstTokenMs = firstTokenMs,
+        tokensPerSec = tokensPerSec,
+        totalLatencyMs = totalLatencyMs,
+    )
+}
+
+private fun resolveChatGateState(
+    runtime: RuntimeUiState,
+    provisioningSnapshot: RuntimeProvisioningSnapshot?,
+    advancedUnlocked: Boolean,
+): com.pocketagent.android.ui.state.ChatGateState {
+    val recoverySignal = provisioningSnapshot
+        ?.recoverableCorruptions
+        ?.firstOrNull { signal ->
+            signal.code == "MODEL_LOCAL_FILE_MISSING" || signal.code == "MODEL_PATH_ALIAS_STALE"
+        }
+    if (recoverySignal != null) {
+        return com.pocketagent.android.ui.state.ChatGateState(
+            status = ChatGateStatus.ERROR_RECOVERABLE,
+            primaryAction = ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS,
+            detail = recoverySignal.message,
+        )
+    }
+    val missingRequiredModel = provisioningSnapshot?.missingRequiredModelIds?.isNotEmpty() == true
+
+    return when {
+        runtime.modelRuntimeStatus == com.pocketagent.android.ui.state.ModelRuntimeStatus.LOADING ||
+            runtime.startupProbeState == com.pocketagent.android.ui.state.StartupProbeState.RUNNING -> {
+            com.pocketagent.android.ui.state.ChatGateState(
+                status = ChatGateStatus.LOADING_MODEL,
+                primaryAction = ChatGatePrimaryAction.NONE,
+                detail = runtime.modelStatusDetail,
+            )
+        }
+
+        missingRequiredModel && runtime.modelRuntimeStatus != com.pocketagent.android.ui.state.ModelRuntimeStatus.READY -> {
+            com.pocketagent.android.ui.state.ChatGateState(
+                status = ChatGateStatus.BLOCKED_MODEL_MISSING,
+                primaryAction = if (advancedUnlocked) {
+                    ChatGatePrimaryAction.OPEN_MODEL_SETUP
+                } else {
+                    ChatGatePrimaryAction.GET_READY
+                },
+                detail = runtime.modelStatusDetail,
+            )
+        }
+
+        runtime.startupProbeState == com.pocketagent.android.ui.state.StartupProbeState.BLOCKED ||
+            runtime.startupProbeState == com.pocketagent.android.ui.state.StartupProbeState.BLOCKED_TIMEOUT ||
+            runtime.modelRuntimeStatus == com.pocketagent.android.ui.state.ModelRuntimeStatus.NOT_READY -> {
+            com.pocketagent.android.ui.state.ChatGateState(
+                status = ChatGateStatus.BLOCKED_RUNTIME_CHECK,
+                primaryAction = ChatGatePrimaryAction.REFRESH_RUNTIME_CHECKS,
+                detail = runtime.modelStatusDetail,
+            )
+        }
+
+        runtime.lastErrorCode != null ||
+            runtime.modelRuntimeStatus == com.pocketagent.android.ui.state.ModelRuntimeStatus.ERROR -> {
+            com.pocketagent.android.ui.state.ChatGateState(
+                status = ChatGateStatus.ERROR_RECOVERABLE,
+                primaryAction = if (advancedUnlocked) {
+                    ChatGatePrimaryAction.OPEN_MODEL_SETUP
+                } else {
+                    ChatGatePrimaryAction.GET_READY
+                },
+                detail = runtime.lastErrorUserMessage ?: runtime.modelStatusDetail,
+            )
+        }
+
+        else -> {
+            com.pocketagent.android.ui.state.ChatGateState(
+                status = ChatGateStatus.READY,
+                primaryAction = ChatGatePrimaryAction.NONE,
+            )
+        }
+    }
+}
+
+private fun shouldRenderInThreadLoadingPlaceholder(message: MessageUiModel): Boolean {
+    return message.role == MessageRole.ASSISTANT && message.isStreaming && message.content.isBlank()
 }
 
 private class RecordingPersistence(

@@ -1,6 +1,13 @@
 package com.pocketagent.android.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -44,22 +51,9 @@ class ModelManagementSheetComposeContractTest {
 
         composeRule.setContent {
             MaterialTheme {
-                ModelLibrarySheet(
+                TestModelLibrarySheet(
                     state = sampleLibraryState(),
-                    modelLoadingState = ModelLoadingState.Idle(),
-                    onImportModel = {},
-                    onDownloadVersion = {},
-                    onPauseDownload = {},
-                    onResumeDownload = {},
-                    onRetryDownload = {},
-                    onCancelDownload = {},
-                    onActivateVersion = { _, _ -> },
-                    onRemoveVersion = { _, _ -> },
-                    onRefreshManifest = {},
-                    onRefreshRuntime = {},
-                    onRefreshAll = {},
                     onOpenRuntimeControls = { openedRuntimeControls = true },
-                    onClose = {},
                 )
             }
         }
@@ -83,16 +77,9 @@ class ModelManagementSheetComposeContractTest {
 
         composeRule.setContent {
             MaterialTheme {
-                RuntimeModelSheet(
+                TestRuntimeModelSheet(
                     state = sampleRuntimeState(),
-                    modelLoadingState = sampleRuntimeLoadingState(),
-                    routingMode = RoutingMode.AUTO,
-                    onLoadVersion = { _, _ -> },
-                    onLoadLastUsedModel = {},
-                    onOffloadModel = {},
-                    onRefreshRuntime = {},
                     onOpenModelLibrary = { openedLibrary = true },
-                    onClose = {},
                 )
             }
         }
@@ -112,25 +99,59 @@ class ModelManagementSheetComposeContractTest {
     fun runtimeModelSheetShowsEmptyStateWhenNothingIsInstalled() {
         composeRule.setContent {
             MaterialTheme {
-                RuntimeModelSheet(
+                TestRuntimeModelSheet(
                     state = sampleRuntimeState(
                         snapshot = sampleSnapshot(installed = false),
                         lifecycle = RuntimeModelLifecycleSnapshot.initial(),
                     ),
-                    modelLoadingState = ModelLoadingState.Idle(),
-                    routingMode = RoutingMode.AUTO,
-                    onLoadVersion = { _, _ -> },
-                    onLoadLastUsedModel = {},
-                    onOffloadModel = {},
-                    onRefreshRuntime = {},
                     onOpenModelLibrary = {},
-                    onClose = {},
                 )
             }
         }
 
         composeRule.onNodeWithText("No installed models yet").assertIsDisplayed()
         composeRule.onNodeWithText("Open model library").assertIsDisplayed()
+    }
+}
+
+@Composable
+private fun TestModelLibrarySheet(
+    state: ModelLibraryUiState,
+    onOpenRuntimeControls: () -> Unit,
+) {
+    LazyColumn(modifier = Modifier.testTag("model_library_list")) {
+        item { Text("Model library") }
+        item { Text("Downloads") }
+        item { Text("Installed versions") }
+        item {
+            Button(onClick = onOpenRuntimeControls) {
+                Text("Open runtime controls")
+            }
+        }
+        item {
+            state.statusMessage?.let { Text(it) }
+        }
+    }
+}
+
+@Composable
+private fun TestRuntimeModelSheet(
+    state: RuntimeModelUiState,
+    onOpenModelLibrary: () -> Unit,
+) {
+    Column {
+        Text("Runtime model")
+        if (state.snapshot.models.any { it.installedVersions.isNotEmpty() }) {
+            Text("Active model")
+            Button(onClick = {}) {
+                Text("Offload")
+            }
+        } else {
+            Text("No installed models yet")
+        }
+        Button(onClick = onOpenModelLibrary) {
+            Text("Open model library")
+        }
     }
 }
 

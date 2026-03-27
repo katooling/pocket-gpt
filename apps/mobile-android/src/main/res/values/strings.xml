@@ -397,10 +397,17 @@
     <string name="ui_diag_active_model">Active model</string>
     <string name="ui_diag_first_token">First token</string>
     <string name="ui_diag_total_latency">Total latency</string>
+    <string name="ui_diag_model_load">Model load</string>
     <string name="ui_diag_prefill">Prefill</string>
     <string name="ui_diag_decode">Decode</string>
     <string name="ui_diag_decode_rate">Decode rate</string>
     <string name="ui_diag_peak_rss">Peak RSS</string>
+    <string name="ui_diag_resident_hit">Resident hit</string>
+    <string name="ui_diag_resident_hit_count">Resident hit count</string>
+    <string name="ui_diag_reload_reason">Reload reason</string>
+    <string name="ui_diag_prefix_cache_hit">Prefix cache hit</string>
+    <string name="ui_diag_prefix_cache_reused_tokens">Prefix reused tokens</string>
+    <string name="ui_diag_prefix_cache_hit_rate">Prefix cache hit rate</string>
     <string name="ui_diag_ms_format">%1$dms</string>
     <string name="ui_diag_tok_s_format">%.2f tok/s</string>
     <string name="ui_diag_mb_format">%.0f MB</string>

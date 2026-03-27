@@ -224,7 +224,7 @@ class GpuOffloadQualificationTest {
     }
 
     @Test
-    fun `qualification keeps baseline timeout policy when opencl is not compiled`() = runTest {
+    fun `qualification fails fast when opencl is not compiled`() = runTest {
         val probeClient = RecordingProbeClient(
             responseForRequest = { request ->
                 val layer = request.layerLadder.singleOrNull() ?: 0
@@ -245,12 +245,10 @@ class GpuOffloadQualificationTest {
             scope = TestScope(dispatcher),
         )
 
-        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
-        advanceUntilIdle()
         val result = qualifier.evaluate(runtimeSupported = true)
-        assertEquals(GpuProbeStatus.QUALIFIED, result.status)
-        assertEquals(32, result.maxStableGpuLayers)
-        assertEquals(listOf(20_000L, 20_000L, 25_000L, 30_000L, 38_000L, 45_000L), probeClient.timeoutHistory)
+        assertEquals(GpuProbeStatus.FAILED, result.status)
+        assertTrue(result.detail?.contains("opencl_not_compiled") == true)
+        assertEquals(0, probeClient.callCount)
     }
 
     @Test
@@ -527,6 +525,93 @@ class GpuOffloadQualificationTest {
         assertEquals(GpuProbeStatus.FAILED, result.status)
         assertTrue(qualifier.diagnosticsLine().contains("qualification_state=runtime_unsupported"))
     }
+
+    @Test
+    fun `qualification fails fast when advisory is not release eligible`() = runTest {
+        val probeClient = RecordingProbeClient {
+            GpuProbeResult(
+                status = GpuProbeStatus.QUALIFIED,
+                maxStableGpuLayers = 8,
+            )
+        }
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+        )
+
+        val result = qualifier.evaluate(
+            runtimeSupported = true,
+            deviceAdvisory = DeviceGpuOffloadAdvisory(
+                isArm64V8a = true,
+                isEmulator = false,
+                isAdrenoFamily = true,
+                hasArmDotProd = true,
+                hasArmI8mm = true,
+                adrenoGeneration = 6,
+                supportedForProbe = true,
+                automaticOpenClEligible = false,
+                reason = "adreno_generation_below_7xx",
+            ),
+        )
+
+        assertEquals(GpuProbeStatus.FAILED, result.status)
+        assertTrue(result.detail?.contains("device_not_in_release_opencl_allowlist") == true)
+        assertEquals(0, probeClient.callCount)
+    }
+
+    @Test
+    fun `cache key invalidates when opencl device count changes`() = runTest {
+        val probeClient = RecordingProbeClient {
+            GpuProbeResult(
+                status = GpuProbeStatus.QUALIFIED,
+                maxStableGpuLayers = 4,
+            )
+        }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        var diagnosticsPayload = diagnosticsJson(driverVersion = 1L, openclDeviceCount = 1)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            diagnosticsReader = NativeBackendDiagnosticsReader(payloadProvider = { diagnosticsPayload }),
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        assertEquals(GpuProbeStatus.QUALIFIED, qualifier.evaluate(runtimeSupported = true).status)
+        assertEquals(4, probeClient.callCount)
+
+        diagnosticsPayload = diagnosticsJson(driverVersion = 1L, openclDeviceCount = 2)
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        assertEquals(GpuProbeStatus.QUALIFIED, qualifier.evaluate(runtimeSupported = true).status)
+        assertEquals(8, probeClient.callCount)
+    }
+
+    @Test
+    fun `qualification fails fast when model quantization is not in release allowlist`() = runTest {
+        val probeClient = RecordingProbeClient {
+            GpuProbeResult(
+                status = GpuProbeStatus.QUALIFIED,
+                maxStableGpuLayers = 8,
+            )
+        }
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = {
+                testProbeRequest(
+                    modelVersion = "q4_k_m",
+                    modelPath = "/tmp/model-q4_k_m.gguf",
+                )
+            },
+        )
+
+        val result = qualifier.evaluate(runtimeSupported = true)
+
+        assertEquals(GpuProbeStatus.FAILED, result.status)
+        assertTrue(result.detail?.contains("opencl_quant_not_allowlisted") == true)
+        assertEquals(0, probeClient.callCount)
+    }
 }
 
 private fun buildQualifier(
@@ -551,14 +636,15 @@ private fun buildQualifier(
 }
 
 private fun testProbeRequest(
-    modelVersion: String = "v1",
+    modelVersion: String = "q4_0",
+    modelPath: String = "/tmp/model-q4_0.gguf",
     modelContentFingerprint: String? = null,
     modelFileSizeBytes: Long = 0L,
 ): GpuProbeRequest {
     return GpuProbeRequest(
         modelId = "qwen3.5-0.8b-q4",
         modelVersion = modelVersion,
-        modelPath = "/tmp/model.gguf",
+        modelPath = modelPath,
         layerLadder = listOf(1, 2, 4, 8, 16, 32),
         modelContentFingerprint = modelContentFingerprint,
         modelFileSizeBytes = modelFileSizeBytes,
