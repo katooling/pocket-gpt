@@ -257,6 +257,7 @@
     <string name="ui_model_runtime_error_backend_init">Runtime backend failed to initialize: %1$s</string>
     <string name="ui_model_runtime_error_out_of_memory">Runtime blocked model load for memory safety: %1$s</string>
     <string name="ui_model_runtime_error_busy_generation">Runtime is busy generating. Wait for completion, then offload.</string>
+    <string name="ui_model_operation_already_in_progress">A model operation is already in progress</string>
     <string name="ui_model_runtime_error_cancelled_newer_request">Load/offload request cancelled by a newer action.</string>
     <string name="ui_model_runtime_error_unknown">Runtime model action failed: %1$s</string>
     <string name="ui_model_search_placeholder">Search models…</string>
@@ -395,6 +396,8 @@
     <string name="ui_diag_backend">Backend</string>
     <string name="ui_diag_detail">Detail</string>
     <string name="ui_diag_active_model">Active model</string>
+    <string name="ui_diag_model_quantization">Model quantization</string>
+    <string name="ui_diag_model_memory_mode">Model memory</string>
     <string name="ui_diag_first_token">First token</string>
     <string name="ui_diag_total_latency">Total latency</string>
     <string name="ui_diag_model_load">Model load</string>
@@ -406,6 +409,7 @@
     <string name="ui_diag_resident_hit_count">Resident hit count</string>
     <string name="ui_diag_reload_reason">Reload reason</string>
     <string name="ui_diag_prefix_cache_hit">Prefix cache hit</string>
+    <string name="ui_diag_prefix_cache_mode">Prefix cache mode</string>
     <string name="ui_diag_prefix_cache_reused_tokens">Prefix reused tokens</string>
     <string name="ui_diag_prefix_cache_hit_rate">Prefix cache hit rate</string>
     <string name="ui_diag_ms_format">%1$dms</string>
@@ -426,4 +430,23 @@
     <string name="a11y_local_tools">Local tools</string>
     <string name="a11y_chat_settings">Chat settings</string>
     <string name="a11y_copy_code">Copy code</string>
+
+    <!-- Model download status labels -->
+    <string name="model_download_status_queued">Queued</string>
+    <string name="model_download_status_downloading">Downloading</string>
+    <string name="model_download_status_paused">Paused</string>
+    <string name="model_download_status_verifying">Verifying</string>
+    <string name="model_download_status_complete">Complete</string>
+    <string name="model_download_status_failed">Failed</string>
+    <string name="model_download_status_cancelled">Cancelled</string>
+
+    <!-- Advanced section toggle actions -->
+    <string name="action_show_advanced">Show advanced</string>
+    <string name="action_hide_advanced">Hide advanced</string>
+
+    <!-- Accessibility content descriptions -->
+    <string name="cd_model_download_version">Download version %1$s %2$s</string>
+    <string name="cd_model_status_indicator">Model status: %1$s</string>
+    <string name="cd_session_delete">Delete session</string>
+    <string name="cd_message_options">Message options</string>
 </resources>

@@ -11,6 +11,7 @@ import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.nativebridge.LlamaCppInferenceModule
+import com.pocketagent.memory.InMemoryMemoryModule
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -93,7 +94,7 @@ class AndroidMvpContainerTest {
     }
 
     @Test
-    fun `follow-up prompt includes relevant memory snippet`() {
+    fun `follow-up prompt retains relevant prior context`() {
         val inference = RecordingInferenceModule()
         val container = defaultContainer(inferenceModule = inference)
         val session = container.createSession()
@@ -113,11 +114,8 @@ class AndroidMvpContainerTest {
 
         assertEquals(2, inference.capturedPrompts.size)
         val secondPrompt = inference.capturedPrompts[1]
-        assertTrue(secondPrompt.contains("memory:"))
-        assertTrue(
-            secondPrompt.contains("memory: project launch timeline and owner updates") ||
-                secondPrompt.contains("memory: what is the launch timeline follow up"),
-        )
+        assertTrue(secondPrompt.contains("project launch timeline and owner updates"))
+        assertTrue(secondPrompt.contains("what is the launch timeline follow up"))
     }
 
     @Test
@@ -555,6 +553,7 @@ private fun defaultContainer(
         inferenceModule = inferenceModule,
         policyModule = policyModule,
         observabilityModule = observabilityModule,
+        memoryModule = InMemoryMemoryModule(),
         artifactPayloadByModelId = payloads,
         artifactSha256ByModelId = payloads.mapValues { (_, bytes) -> sha256Hex(bytes) },
         artifactProvenanceIssuerByModelId = issuerByModel,

@@ -27,10 +27,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,50 +56,54 @@ internal fun ModelSheet(
     runtimeState: RuntimeModelUiState,
     modelLoadingState: ModelLoadingState,
     routingMode: RoutingMode,
-    onImportModel: (String) -> Unit,
-    onDownloadVersion: (ModelDistributionVersion) -> Unit,
-    onPauseDownload: (String) -> Unit,
-    onResumeDownload: (String) -> Unit,
-    onRetryDownload: (String) -> Unit,
-    onCancelDownload: (String) -> Unit,
-    onSetDefaultVersion: (String, String) -> Unit,
-    onLoadVersion: (String, String) -> Unit,
-    onLoadLastUsedModel: () -> Unit,
-    onOffloadModel: () -> Unit,
-    onRemoveVersion: (String, String) -> Unit,
-    onRefreshAll: () -> Unit,
-    onClose: () -> Unit,
+    onEvent: (ModelSheetEvent) -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var pendingRemoveVersion by remember { mutableStateOf<Pair<String, String>?>(null) }
     val activeModel = modelLoadingState.activeOrRequestedModel()
     val busy = modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading
-    val installedVersions = libraryState.snapshot.models.flatMap { model ->
-        model.installedVersions.map { version -> model to version }
-    }.filter { (model, version) ->
-        matchesModelSearch(
-            searchQuery = searchQuery,
-            modelId = model.modelId,
-            displayName = model.displayName,
-            version = version.version,
-        )
+    val installedVersions by remember(libraryState, searchQuery) {
+        derivedStateOf {
+            libraryState.snapshot.models.flatMap { model ->
+                model.installedVersions.map { version -> model to version }
+            }.filter { (model, version) ->
+                matchesModelSearch(
+                    searchQuery = searchQuery,
+                    modelId = model.modelId,
+                    displayName = model.displayName,
+                    version = version.version,
+                )
+            }
+        }
     }
-    val installedKeys = installedVersions
-        .map { (model, version) -> versionKey(model.modelId, version.version) }
-        .toSet()
-    val availableVersions = libraryState.manifest.models.flatMap { model ->
-        model.versions.map { version -> model.displayName to version }
-    }.filter { (_, version) ->
-        versionKey(version.modelId, version.version) !in installedKeys &&
-            matchesModelSearch(
-                searchQuery = searchQuery,
-                modelId = version.modelId,
-                displayName = version.modelId,
-                version = version.version,
-            )
+    val installedKeys by remember(installedVersions) {
+        derivedStateOf {
+            installedVersions
+                .map { (model, version) -> versionKey(model.modelId, version.version) }
+                .toSet()
+        }
     }
-    val downloadTasksByKey = libraryState.downloads.associateBy { task ->
-        versionKey(task.modelId, task.version)
+    val availableVersions by remember(libraryState, searchQuery, installedKeys) {
+        derivedStateOf {
+            libraryState.manifest.models.flatMap { model ->
+                model.versions.map { version -> model.displayName to version }
+            }.filter { (_, version) ->
+                versionKey(version.modelId, version.version) !in installedKeys &&
+                    matchesModelSearch(
+                        searchQuery = searchQuery,
+                        modelId = version.modelId,
+                        displayName = version.modelId,
+                        version = version.version,
+                    )
+            }
+        }
+    }
+    val downloadTasksByKey by remember(libraryState) {
+        derivedStateOf {
+            libraryState.downloads.associateBy { task ->
+                versionKey(task.modelId, task.version)
+            }
+        }
     }
 
     LazyColumn(
@@ -124,7 +131,7 @@ internal fun ModelSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                OutlinedButton(onClick = onRefreshAll) {
+                OutlinedButton(onClick = { onEvent(ModelSheetEvent.RefreshAll) }) {
                     Text(stringResource(id = R.string.ui_refresh))
                 }
             }
@@ -142,8 +149,8 @@ internal fun ModelSheet(
             ActiveModelSection(
                 modelLoadingState = modelLoadingState,
                 routingMode = routingMode,
-                onLoadLastUsedModel = onLoadLastUsedModel,
-                onOffloadModel = onOffloadModel,
+                onLoadLastUsedModel = { onEvent(ModelSheetEvent.LoadLastUsedModel) },
+                onOffloadModel = { onEvent(ModelSheetEvent.OffloadModel) },
             )
         }
         item { HorizontalDivider() }
@@ -168,10 +175,10 @@ internal fun ModelSheet(
                     activeModel = activeModel,
                     loadedModel = modelLoadingState.loadedModel,
                     busy = busy,
-                    onImportModel = onImportModel,
-                    onSetDefaultVersion = onSetDefaultVersion,
-                    onLoadVersion = onLoadVersion,
-                    onRemoveVersion = { modelId, version -> pendingRemoveVersion = modelId to version },
+                    onImportModel = { modelId -> onEvent(ModelSheetEvent.ImportModel(modelId)) },
+                    onSetDefaultVersion = { modelId, ver -> onEvent(ModelSheetEvent.SetDefaultVersion(modelId, ver)) },
+                    onLoadVersion = { modelId, ver -> onEvent(ModelSheetEvent.LoadVersion(modelId, ver)) },
+                    onRemoveVersion = { modelId, ver -> pendingRemoveVersion = modelId to ver },
                 )
             }
         }
@@ -196,12 +203,12 @@ internal fun ModelSheet(
                     version = version,
                     task = downloadTasksByKey[versionKey(version.modelId, version.version)],
                     isImporting = runtimeState.isImporting,
-                    onImportModel = onImportModel,
-                    onDownloadVersion = onDownloadVersion,
-                    onPauseDownload = onPauseDownload,
-                    onResumeDownload = onResumeDownload,
-                    onRetryDownload = onRetryDownload,
-                    onCancelDownload = onCancelDownload,
+                    onImportModel = { modelId -> onEvent(ModelSheetEvent.ImportModel(modelId)) },
+                    onDownloadVersion = { ver -> onEvent(ModelSheetEvent.DownloadVersion(ver)) },
+                    onPauseDownload = { taskId -> onEvent(ModelSheetEvent.PauseDownload(taskId)) },
+                    onResumeDownload = { taskId -> onEvent(ModelSheetEvent.ResumeDownload(taskId)) },
+                    onRetryDownload = { taskId -> onEvent(ModelSheetEvent.RetryDownload(taskId)) },
+                    onCancelDownload = { taskId -> onEvent(ModelSheetEvent.CancelDownload(taskId)) },
                 )
             }
         }
@@ -219,7 +226,7 @@ internal fun ModelSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                Button(onClick = onClose) {
+                Button(onClick = { onEvent(ModelSheetEvent.Close) }) {
                     Text(stringResource(id = R.string.ui_close))
                 }
             }
@@ -232,7 +239,7 @@ internal fun ModelSheet(
             text = { Text(stringResource(id = R.string.ui_remove_model_body, version)) },
             confirmButton = {
                 TextButton(onClick = {
-                    onRemoveVersion(modelId, version)
+                    onEvent(ModelSheetEvent.RemoveVersion(modelId, version))
                     pendingRemoveVersion = null
                 }) {
                     Text(stringResource(id = R.string.ui_remove))
@@ -553,7 +560,7 @@ private fun StatusRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatusDot(color = color)
+        StatusDot(color = color, statusLabel = label)
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -563,12 +570,13 @@ private fun StatusRow(
 }
 
 @Composable
-private fun StatusDot(color: Color) {
+private fun StatusDot(color: Color, statusLabel: String) {
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .size(10.dp)
             .clip(MaterialTheme.shapes.small)
-            .background(color),
+            .background(color)
+            .semantics { contentDescription = "Model status: $statusLabel" },
     )
 }
 

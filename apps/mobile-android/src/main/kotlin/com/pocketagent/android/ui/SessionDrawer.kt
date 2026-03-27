@@ -26,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -43,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -109,8 +112,8 @@ internal fun SessionDrawer(
     onDeleteSession: (String) -> Unit,
 ) {
     val createSessionDescription = stringResource(id = R.string.a11y_create_session)
-    val groupedSessions = remember(state.sessions) {
-        groupSessionsByDate(state.sessions)
+    val groupedSessions by remember(state.sessions) {
+        derivedStateOf { groupSessionsByDate(state.sessions) }
     }
     var pendingDeleteSession by remember { mutableStateOf<ChatSessionUiModel?>(null) }
 
@@ -145,7 +148,7 @@ internal fun SessionDrawer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = PocketAgentDimensions.sheetHorizontalPadding, vertical = PocketAgentDimensions.screenPadding),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -178,7 +181,7 @@ internal fun SessionDrawer(
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = PocketAgentDimensions.sheetHorizontalPadding, vertical = PocketAgentDimensions.sectionSpacing),
                 )
             }
             items(sessions, key = { it.id }) { session ->
@@ -241,6 +244,7 @@ private fun SessionRow(
         id = R.string.a11y_delete_session,
         session.title,
     )
+    val deleteSessionActionLabel = stringResource(id = R.string.cd_session_delete)
     val subtitle = if (session.messageCount > 0) {
         "${session.messageCount} messages"
     } else {
@@ -255,8 +259,12 @@ private fun SessionRow(
                 selected = isActive
                 stateDescription = activeStateDescription
                 contentDescription = switchSessionDescription
+                onLongClick(label = deleteSessionActionLabel) {
+                    onDeleteSession(session.id)
+                    true
+                }
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = PocketAgentDimensions.sheetHorizontalPadding, vertical = PocketAgentDimensions.screenPadding),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {

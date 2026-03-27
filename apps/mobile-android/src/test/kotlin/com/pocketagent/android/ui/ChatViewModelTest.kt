@@ -60,6 +60,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
@@ -168,11 +169,11 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.advancedUnlocked)
-        viewModel.setAdvancedSheetOpen(true)
-        viewModel.setToolDialogOpen(true)
+        viewModel.showSurface(com.pocketagent.android.ui.state.ModalSurface.AdvancedSettings)
+        assertTrue(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.AdvancedSettings)
 
-        assertTrue(viewModel.uiState.value.isAdvancedSheetOpen)
-        assertTrue(viewModel.uiState.value.isToolDialogOpen)
+        viewModel.showSurface(com.pocketagent.android.ui.state.ModalSurface.ToolSuggestions)
+        assertTrue(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.ToolSuggestions)
     }
 
     @Test
@@ -199,6 +200,58 @@ class ChatViewModelTest {
         assertTrue(state.nativeRuntimeSupported == true)
         assertTrue(state.strictAcceleratorFailFast == true)
         assertTrue(state.autoBackendCpuFallback == true)
+    }
+
+    @Test
+    fun `load last used send follow up offload reload send remains stable`() = runTest(dispatcher) {
+        val provisioning = QuickLoadProvisioningGatewayForTest()
+        val runtime = RecordingRuntimeFacade()
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(
+                initialState = StoredChatState(
+                    onboardingCompleted = true,
+                    advancedUnlocked = true,
+                ),
+            ),
+            provisioningGateway = provisioning,
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        val initialLoadResult = viewModel.loadLastUsedModel()
+        advanceUntilIdle()
+        assertTrue(initialLoadResult?.success == true)
+        assertTrue(viewModel.modelLoadingState.value is com.pocketagent.android.ui.state.ModelLoadingState.Loaded)
+
+        viewModel.onComposerChanged("quick load prompt")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        viewModel.onComposerChanged("follow up prompt")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val offloadResult = viewModel.offloadModel("quick-load-test")
+        advanceUntilIdle()
+        assertTrue(offloadResult?.success == true)
+        assertTrue(viewModel.modelLoadingState.value is com.pocketagent.android.ui.state.ModelLoadingState.Idle)
+
+        val reloadResult = viewModel.loadLastUsedModel()
+        advanceUntilIdle()
+        assertTrue(reloadResult?.success == true)
+        assertTrue(viewModel.modelLoadingState.value is com.pocketagent.android.ui.state.ModelLoadingState.Loaded)
+
+        viewModel.onComposerChanged("after reload prompt")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val activeSession = viewModel.uiState.value.activeSession!!
+        assertTrue(activeSession.messages.any { it.role == MessageRole.ASSISTANT && it.content.contains("response for quick load prompt") })
+        assertTrue(activeSession.messages.any { it.role == MessageRole.ASSISTANT && it.content.contains("response for follow up prompt") })
+        assertTrue(activeSession.messages.any { it.role == MessageRole.ASSISTANT && it.content.contains("response for after reload prompt") })
+        assertEquals(2, provisioning.loadLastUsedCalls)
+        assertEquals(listOf("quick-load-test"), provisioning.offloadReasons)
     }
 
     @Test
@@ -1770,6 +1823,152 @@ private class LoadingProvisioningGateway : ProvisioningGateway {
 
     override suspend fun offloadModel(reason: String): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
         error("not used in ChatViewModelTest")
+    }
+
+    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+        error("not used in ChatViewModelTest")
+    }
+
+    override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
+
+    override fun setDownloadWifiOnlyEnabled(enabled: Boolean) = Unit
+
+    override fun acknowledgeLargeDownloadCellularWarning() = Unit
+
+    override fun pauseDownload(taskId: String) = Unit
+
+    override fun resumeDownload(taskId: String) = Unit
+
+    override fun retryDownload(taskId: String) = Unit
+
+    override fun cancelDownload(taskId: String) = Unit
+
+    override fun syncDownloadsFromScheduler() = Unit
+}
+
+private class QuickLoadProvisioningGatewayForTest(
+    private val modelId: String = "qwen3.5-0.8b-q4",
+    private val modelVersion: String = "v1",
+) : ProvisioningGateway {
+    private val downloads = MutableStateFlow<List<DownloadTaskState>>(emptyList())
+    private val preferences = MutableStateFlow(DownloadPreferencesState())
+    private val lifecycle = MutableStateFlow(
+        RuntimeModelLifecycleSnapshot.initial().copy(
+            state = ModelLifecycleState.UNLOADED,
+            loadedModel = null,
+            lastUsedModel = RuntimeLoadedModel(
+                modelId = modelId,
+                modelVersion = modelVersion,
+            ),
+        ),
+    )
+
+    var loadLastUsedCalls: Int = 0
+        private set
+    val offloadReasons = mutableListOf<String>()
+
+    override fun currentSnapshot(): RuntimeProvisioningSnapshot = RuntimeProvisioningSnapshot(
+        models = listOf(
+            ProvisionedModelState(
+                modelId = modelId,
+                displayName = "Qwen",
+                fileName = "qwen.gguf",
+                absolutePath = "/tmp/qwen.gguf",
+                sha256 = "a".repeat(64),
+                importedAtEpochMs = 1L,
+                activeVersion = modelVersion,
+                installedVersions = listOf(
+                    ModelVersionDescriptor(
+                        modelId = modelId,
+                        version = modelVersion,
+                        displayName = "Qwen",
+                        absolutePath = "/tmp/qwen.gguf",
+                        sha256 = "a".repeat(64),
+                        provenanceIssuer = "issuer",
+                        provenanceSignature = "sig",
+                        runtimeCompatibility = "android-arm64-v8a",
+                        fileSizeBytes = 123L,
+                        importedAtEpochMs = 1L,
+                        isActive = true,
+                    ),
+                ),
+            ),
+        ),
+        storageSummary = StorageSummary(
+            totalBytes = 1_000L,
+            freeBytes = 500L,
+            usedByModelsBytes = 250L,
+            tempDownloadBytes = 0L,
+        ),
+        requiredModelIds = setOf(modelId),
+    )
+
+    override fun observeDownloads(): StateFlow<List<DownloadTaskState>> = downloads
+
+    override fun observeDownloadPreferences(): StateFlow<DownloadPreferencesState> = preferences
+
+    override fun currentDownloadPreferences(): DownloadPreferencesState = preferences.value
+
+    override fun observeModelLifecycle(): StateFlow<RuntimeModelLifecycleSnapshot> = lifecycle
+
+    override fun currentModelLifecycle(): RuntimeModelLifecycleSnapshot = lifecycle.value
+
+    override suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult {
+        error("not used in ChatViewModelTest")
+    }
+
+    override suspend fun loadModelDistributionManifest(): ModelDistributionManifest {
+        error("not used in ChatViewModelTest")
+    }
+
+    override fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor> {
+        return currentSnapshot().models.firstOrNull { it.modelId == modelId }?.installedVersions.orEmpty()
+    }
+
+    override fun setActiveVersion(modelId: String, version: String): Boolean = true
+
+    override fun removeVersion(modelId: String, version: String): Boolean = true
+
+    override suspend fun loadInstalledModel(
+        modelId: String,
+        version: String,
+    ): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        val loadedModel = RuntimeLoadedModel(modelId = modelId, modelVersion = version)
+        lifecycle.value = lifecycle.value.copy(
+            state = ModelLifecycleState.LOADED,
+            loadedModel = loadedModel,
+            requestedModel = null,
+            lastUsedModel = loadedModel,
+            errorCode = null,
+            errorDetail = null,
+        )
+        return com.pocketagent.runtime.RuntimeModelLifecycleCommandResult.applied(loadedModel = loadedModel)
+    }
+
+    override suspend fun loadLastUsedModel(): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        loadLastUsedCalls += 1
+        val lastUsed = lifecycle.value.lastUsedModel
+            ?: return com.pocketagent.runtime.RuntimeModelLifecycleCommandResult.rejected(
+                code = com.pocketagent.nativebridge.ModelLifecycleErrorCode.MODEL_FILE_UNAVAILABLE,
+                detail = "last_loaded_model_missing",
+            )
+        return loadInstalledModel(
+            modelId = lastUsed.modelId,
+            version = lastUsed.modelVersion.orEmpty(),
+        )
+    }
+
+    override suspend fun offloadModel(reason: String): com.pocketagent.runtime.RuntimeModelLifecycleCommandResult {
+        offloadReasons += reason
+        lifecycle.value = lifecycle.value.copy(
+            state = ModelLifecycleState.UNLOADED,
+            loadedModel = null,
+            requestedModel = null,
+            errorCode = null,
+            errorDetail = null,
+            queuedOffload = false,
+        )
+        return com.pocketagent.runtime.RuntimeModelLifecycleCommandResult.applied()
     }
 
     override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {

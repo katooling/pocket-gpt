@@ -44,6 +44,11 @@ class NativeStage2BenchmarkInstrumentationTest {
         val modelPath = requireModelPathForBenchmark(args, modelId)
         val prefixCacheEnabled = parseBooleanArg(args, ARG_PREFIX_CACHE_ENABLED, defaultValue = true)
         val prefixCacheStrict = parseBooleanArg(args, ARG_PREFIX_CACHE_STRICT, defaultValue = false)
+        val sessionMode = parseSessionMode(args.getString(ARG_SESSION_MODE))
+        val requirePrefixCacheHit = parseBooleanArg(args, ARG_REQUIRE_PREFIX_CACHE_HIT, defaultValue = false)
+        require(!requirePrefixCacheHit || (prefixCacheEnabled && sessionMode == BenchmarkSessionMode.SHARED)) {
+            "$ARG_REQUIRE_PREFIX_CACHE_HIT requires shared session mode with prefix cache enabled."
+        }
         val runtimeOptions = resolveBenchmarkRuntimeOptions(args)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
         val minTokens = (args.getString(ARG_MIN_TOKENS)?.toIntOrNull() ?: DEFAULT_MIN_TOKENS)
@@ -90,6 +95,8 @@ class NativeStage2BenchmarkInstrumentationTest {
             runs = runs,
             maxTokens = maxTokens,
             runtimeOptions = runtimeOptions,
+            sessionMode = sessionMode,
+            requirePrefixCacheHit = requirePrefixCacheHit,
         )
 
         Log.i(METRIC_TAG, metricLine)
@@ -113,6 +120,11 @@ class NativeStage2BenchmarkInstrumentationTest {
         val modelPath = requireModelPathForBenchmark(args, modelId)
         val prefixCacheEnabled = parseBooleanArg(args, ARG_PREFIX_CACHE_ENABLED, defaultValue = true)
         val prefixCacheStrict = parseBooleanArg(args, ARG_PREFIX_CACHE_STRICT, defaultValue = false)
+        val sessionMode = parseSessionMode(args.getString(ARG_SESSION_MODE))
+        val requirePrefixCacheHit = parseBooleanArg(args, ARG_REQUIRE_PREFIX_CACHE_HIT, defaultValue = false)
+        require(!requirePrefixCacheHit || (prefixCacheEnabled && sessionMode == BenchmarkSessionMode.SHARED)) {
+            "$ARG_REQUIRE_PREFIX_CACHE_HIT requires shared session mode with prefix cache enabled."
+        }
         val runtimeOptions = resolveBenchmarkRuntimeOptions(args)
         val runs = (args.getString(ARG_RUNS)?.toIntOrNull() ?: 3).coerceAtLeast(1)
         val minTokens = (args.getString(ARG_MIN_TOKENS)?.toIntOrNull() ?: DEFAULT_MIN_TOKENS)
@@ -165,6 +177,8 @@ class NativeStage2BenchmarkInstrumentationTest {
                 runs = runs,
                 maxTokens = maxTokens,
                 runtimeOptions = runtimeOptions,
+                sessionMode = sessionMode,
+                requirePrefixCacheHit = requirePrefixCacheHit,
             )
             Log.i(METRIC_TAG, metricLine)
             println(metricLine)
@@ -179,6 +193,8 @@ class NativeStage2BenchmarkInstrumentationTest {
         runs: Int,
         maxTokens: Int,
         runtimeOptions: BenchmarkRuntimeOptions,
+        sessionMode: BenchmarkSessionMode,
+        requirePrefixCacheHit: Boolean,
     ): String {
         val firstTokenSamples = mutableListOf<Long>()
         val modelLoadSamples = mutableListOf<Long>()
@@ -201,22 +217,78 @@ class NativeStage2BenchmarkInstrumentationTest {
                 attempt += 1
                 val session = container.createSession()
                 val localStreamedTokens = mutableListOf<String>()
-                val prompt = buildAttemptPrompt(
-                    scenario = scenario,
-                    runIndex = index,
-                    attempt = attempt,
-                )
+                val attemptMaxTokens = benchmarkMaxTokensForAttempt(maxTokens = maxTokens, attempt = attempt)
                 val outcome = runCatching {
-                    container.sendUserMessage(
-                        sessionId = session,
-                        userText = prompt,
-                        taskType = if (scenario == "A") "short_text" else "long_text",
-                        deviceState = scenarioDeviceState(scenario),
-                        maxTokens = maxTokens,
-                        keepModelLoaded = true,
-                        performanceConfig = runtimeOptions.performanceConfig,
-                        onToken = { token -> localStreamedTokens.add(token) },
-                    )
+                    when (sessionMode) {
+                        BenchmarkSessionMode.ISOLATED -> {
+                            container.sendUserMessage(
+                                sessionId = session,
+                                userText = buildAttemptPrompt(
+                                    scenario = scenario,
+                                    runIndex = index,
+                                    attempt = attempt,
+                                    promptKind = BenchmarkPromptKind.ISOLATED,
+                                ),
+                                taskType = scenarioTaskType(scenario),
+                                deviceState = scenarioDeviceState(scenario),
+                                maxTokens = attemptMaxTokens,
+                                keepModelLoaded = true,
+                                requestId = benchmarkRequestId(
+                                    scenario = scenario,
+                                    runIndex = index,
+                                    attempt = attempt,
+                                    promptKind = BenchmarkPromptKind.ISOLATED,
+                                ),
+                                performanceConfig = runtimeOptions.performanceConfig,
+                                onToken = { token -> localStreamedTokens.add(token) },
+                            )
+                        }
+
+                        BenchmarkSessionMode.SHARED -> {
+                            container.sendUserMessage(
+                                sessionId = session,
+                                userText = buildAttemptPrompt(
+                                    scenario = scenario,
+                                    runIndex = index,
+                                    attempt = attempt,
+                                    promptKind = BenchmarkPromptKind.PRIMER,
+                                ),
+                                taskType = scenarioTaskType(scenario),
+                                deviceState = scenarioDeviceState(scenario),
+                                maxTokens = followUpPrimerMaxTokens(attemptMaxTokens),
+                                keepModelLoaded = true,
+                                requestId = benchmarkRequestId(
+                                    scenario = scenario,
+                                    runIndex = index,
+                                    attempt = attempt,
+                                    promptKind = BenchmarkPromptKind.PRIMER,
+                                ),
+                                performanceConfig = runtimeOptions.performanceConfig,
+                                onToken = {},
+                            )
+                            container.sendUserMessage(
+                                sessionId = session,
+                                userText = buildAttemptPrompt(
+                                    scenario = scenario,
+                                    runIndex = index,
+                                    attempt = attempt,
+                                    promptKind = BenchmarkPromptKind.FOLLOW_UP,
+                                ),
+                                taskType = scenarioTaskType(scenario),
+                                deviceState = scenarioDeviceState(scenario),
+                                maxTokens = attemptMaxTokens,
+                                keepModelLoaded = true,
+                                requestId = benchmarkRequestId(
+                                    scenario = scenario,
+                                    runIndex = index,
+                                    attempt = attempt,
+                                    promptKind = BenchmarkPromptKind.FOLLOW_UP,
+                                ),
+                                performanceConfig = runtimeOptions.performanceConfig,
+                                onToken = { token -> localStreamedTokens.add(token) },
+                            )
+                        }
+                    }
                 }
                 if (outcome.isSuccess) {
                     response = outcome.getOrNull()
@@ -227,7 +299,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                 if (failure?.message?.contains("Runtime returned no tokens.") == true && attempt < MAX_ATTEMPTS_PER_RUN) {
                     Log.w(
                         METRIC_TAG,
-                        "Scenario $scenario run=$index attempt=$attempt produced no tokens; retrying.",
+                        "Scenario $scenario run=$index attempt=$attempt produced no visible tokens; retrying with safer token budget.",
                     )
                     continue
                 }
@@ -268,6 +340,16 @@ class NativeStage2BenchmarkInstrumentationTest {
                 ?.takeIf { it.isNotBlank() }
                 ?.let(reloadReasons::add)
         }
+        if (requirePrefixCacheHit) {
+            val prefixCacheHits = prefixCacheHitSamples.sum()
+            val maxReusedTokens = prefixCacheReusedTokenSamples.maxOrNull() ?: 0
+            check(prefixCacheHits > 0) {
+                "Expected at least one prefix-cache hit for scenario $scenario with shared-session benchmarking."
+            }
+            check(maxReusedTokens > 0) {
+                "Expected reused prefix-cache tokens for scenario $scenario with shared-session benchmarking."
+            }
+        }
         val diagnosticsSnapshot = RuntimeDiagnosticsSnapshotParser.parse(container.exportDiagnostics())
 
         return buildMetricLine(
@@ -297,6 +379,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             qualificationState = diagnosticsSnapshot.backendQualificationState.name.lowercase(),
             appliedConfig = runtimeOptions.performanceConfig,
             toolsDisabled = runtimeOptions.disableTools,
+            sessionMode = sessionMode,
         )
     }
 
@@ -328,8 +411,17 @@ class NativeStage2BenchmarkInstrumentationTest {
         return scenarios
     }
 
-    private fun buildAttemptPrompt(scenario: String, runIndex: Int, attempt: Int): String {
-        val base = scenarioPrompt(scenario = scenario, runIndex = runIndex)
+    private fun buildAttemptPrompt(
+        scenario: String,
+        runIndex: Int,
+        attempt: Int,
+        promptKind: BenchmarkPromptKind,
+    ): String {
+        val base = scenarioPrompt(
+            scenario = scenario,
+            runIndex = runIndex,
+            promptKind = promptKind,
+        )
         if (attempt <= 1) {
             return base
         }
@@ -370,11 +462,34 @@ class NativeStage2BenchmarkInstrumentationTest {
         )
     }
 
-    private fun scenarioPrompt(scenario: String, runIndex: Int): String {
+    private fun scenarioPrompt(
+        scenario: String,
+        runIndex: Int,
+        promptKind: BenchmarkPromptKind,
+    ): String {
         return when (scenario) {
-            "A" -> "Summarize rollout status in one sentence. run=$runIndex"
-            else -> "List top rollout risks with short mitigations. run=$runIndex"
+            "A" -> when (promptKind) {
+                BenchmarkPromptKind.ISOLATED,
+                BenchmarkPromptKind.PRIMER,
+                -> "Answer directly in one plain sentence with no reasoning or tags. Summarize rollout status. run=$runIndex"
+
+                BenchmarkPromptKind.FOLLOW_UP ->
+                    "Answer directly with exactly three plain words, no reasoning or tags. Using the same rollout status, rewrite it. run=$runIndex"
+            }
+
+            else -> when (promptKind) {
+                BenchmarkPromptKind.ISOLATED,
+                BenchmarkPromptKind.PRIMER,
+                -> "Answer directly with a short list, no reasoning or tags. List top rollout risks with short mitigations. run=$runIndex"
+
+                BenchmarkPromptKind.FOLLOW_UP ->
+                    "Answer directly with a short prioritized checklist, no reasoning or tags. Using the same rollout risks, turn them into a checklist. run=$runIndex"
+            }
         }
+    }
+
+    private fun scenarioTaskType(scenario: String): String {
+        return if (scenario == "A") "short_text" else "long_text"
     }
 
     private fun scenarioDeviceState(scenario: String): DeviceState {
@@ -395,8 +510,12 @@ class NativeStage2BenchmarkInstrumentationTest {
         runCatching {
             container.sendUserMessage(
                 sessionId = session,
-                userText = scenarioPrompt(scenario = scenario, runIndex = runIndex),
-                taskType = if (scenario == "A") "short_text" else "long_text",
+                userText = scenarioPrompt(
+                    scenario = scenario,
+                    runIndex = runIndex,
+                    promptKind = BenchmarkPromptKind.ISOLATED,
+                ),
+                taskType = scenarioTaskType(scenario),
                 deviceState = scenarioDeviceState(scenario),
                 maxTokens = maxTokens,
                 keepModelLoaded = true,
@@ -441,12 +560,14 @@ class NativeStage2BenchmarkInstrumentationTest {
         qualificationState: String,
         appliedConfig: PerformanceRuntimeConfig,
         toolsDisabled: Boolean,
+        sessionMode: BenchmarkSessionMode,
     ): String {
         val warmVsColdDelta = coldFirstTokenMs - warmFirstTokenMs
         return buildString {
             append("STAGE2_METRIC")
             append("|backend=").append(backend)
             append("|scenario=").append(scenario)
+            append("|session_mode=").append(sessionMode.wireValue)
             append("|model_id=").append(modelId)
             append("|first_token_ms=").append(firstTokenMs)
             modelLoadMs?.let { append("|model_load_ms=").append(it) }
@@ -529,6 +650,34 @@ class NativeStage2BenchmarkInstrumentationTest {
         defaultValue: Int,
     ): Int {
         return args.getString(key)?.toIntOrNull()?.takeIf { it > 0 } ?: defaultValue
+    }
+
+    private fun parseSessionMode(raw: String?): BenchmarkSessionMode {
+        return when (raw?.trim()?.lowercase()) {
+            BenchmarkSessionMode.SHARED.wireValue -> BenchmarkSessionMode.SHARED
+            else -> BenchmarkSessionMode.ISOLATED
+        }
+    }
+
+    private fun followUpPrimerMaxTokens(maxTokens: Int): Int {
+        return maxTokens.coerceAtMost(24).coerceAtLeast(4)
+    }
+
+    private fun benchmarkMaxTokensForAttempt(maxTokens: Int, attempt: Int): Int {
+        return if (attempt <= 1) {
+            maxTokens
+        } else {
+            maxTokens.coerceAtLeast(MIN_RETRY_MAX_TOKENS)
+        }
+    }
+
+    private fun benchmarkRequestId(
+        scenario: String,
+        runIndex: Int,
+        attempt: Int,
+        promptKind: BenchmarkPromptKind,
+    ): String {
+        return "bench-${scenario.lowercase()}-$runIndex-$attempt-${promptKind.name.lowercase()}"
     }
 
     private fun medianLong(values: List<Long>): Long = values.sorted()[values.size / 2]
@@ -655,11 +804,14 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val ARG_WARMUP_MAX_TOKENS = "stage2_warmup_max_tokens"
         private const val ARG_PREFIX_CACHE_ENABLED = "stage2_prefix_cache_enabled"
         private const val ARG_PREFIX_CACHE_STRICT = "stage2_prefix_cache_strict"
+        private const val ARG_SESSION_MODE = "stage2_session_mode"
+        private const val ARG_REQUIRE_PREFIX_CACHE_HIT = "stage2_require_prefix_cache_hit"
         private const val METRIC_TAG = "STAGE2_METRIC"
         private const val DEFAULT_HASH_BUFFER_SIZE = 1024 * 1024
         private const val DEFAULT_MIN_TOKENS = 16
         private const val DEFAULT_WARMUP_MAX_TOKENS = 8
         private const val MAX_ATTEMPTS_PER_RUN = 3
+        private const val MIN_RETRY_MAX_TOKENS = 16
         private val SUPPORTED_MODELS = ModelCatalog.bridgeSupportedModels().toSet()
     }
 }
@@ -668,6 +820,17 @@ private data class BenchmarkRuntimeOptions(
     val performanceConfig: PerformanceRuntimeConfig,
     val disableTools: Boolean,
 )
+
+private enum class BenchmarkSessionMode(val wireValue: String) {
+    ISOLATED("isolated"),
+    SHARED("shared"),
+}
+
+private enum class BenchmarkPromptKind {
+    ISOLATED,
+    PRIMER,
+    FOLLOW_UP,
+}
 
 private object DisabledBenchmarkToolModule : ToolModule {
     override fun listEnabledTools(): List<String> = emptyList()

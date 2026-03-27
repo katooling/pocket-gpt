@@ -51,6 +51,8 @@ import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatGatePrimaryAction
 import com.pocketagent.android.ui.state.ChatGateState
 import com.pocketagent.android.ui.state.ChatGateStatus
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.tickLight
 
 @Composable
 internal fun ComposerBar(
@@ -98,11 +100,11 @@ internal fun ComposerBar(
             .fillMaxWidth()
             .imePadding()
             .animateContentSize()
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = PocketAgentDimensions.sectionSpacing, vertical = PocketAgentDimensions.sectionSpacing),
     ) {
         if (shouldShowChatGateInlineCard(chatGateState)) {
             ChatGateInlineCard(chatGateState = chatGateState)
-            Spacer(modifier = Modifier.size(8.dp))
+            Spacer(modifier = Modifier.size(PocketAgentDimensions.sectionSpacing))
         }
         if (isEditing) {
             Row(
@@ -166,7 +168,7 @@ internal fun ComposerBar(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
         ) {
             IconButton(
                 onClick = onAttachImage,
@@ -193,7 +195,7 @@ internal fun ComposerBar(
             if (showThinkingToggle) {
                 IconButton(
                     onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        haptic.tickLight()
                         onToggleThinking()
                     },
                 ) {
@@ -235,7 +237,7 @@ internal fun ComposerBar(
                     },
                 interactionSource = sendInteractionSource,
                 onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    haptic.tickLight()
                     when {
                         isSending && !isCancelling -> onCancelSend()
                         isEditing -> onSubmitEdit()
@@ -267,7 +269,7 @@ internal fun ChatGateInlineCard(
             text = chatGateInlineMessage(chatGateState),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(PocketAgentDimensions.cardPadding),
         )
     }
 }

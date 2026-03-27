@@ -7,6 +7,7 @@ import com.pocketagent.android.runtime.GpuProbeResult
 import com.pocketagent.android.runtime.GpuProbeStatus
 import com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshot
 import com.pocketagent.android.ui.state.FirstSessionStage
+import com.pocketagent.android.ui.state.ModalSurface
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.StartupProbeState
@@ -101,24 +102,11 @@ internal fun ChatViewModel.setSessionDrawerOpenInternal(isOpen: Boolean) {
     _uiState.update { it.copy(isSessionDrawerOpen = isOpen) }
 }
 
-internal fun ChatViewModel.setAdvancedSheetOpenInternal(isOpen: Boolean) {
-    if (_uiState.value.isAdvancedSheetOpen == isOpen) {
-        return
-    }
-    _uiState.update {
-        it.copy(isAdvancedSheetOpen = isOpen)
-    }
-}
-
-internal fun ChatViewModel.setToolDialogOpenInternal(isOpen: Boolean) {
-    _uiState.update { it.copy(isToolDialogOpen = isOpen) }
-}
-
 internal fun ChatViewModel.prefillComposerInternal(text: String) {
     _uiState.update { state ->
         state.copy(
             composer = state.composer.copy(text = text),
-            isToolDialogOpen = false,
+            activeSurface = ModalSurface.None,
         )
     }
 }
@@ -291,6 +279,8 @@ internal fun ChatViewModel.refreshRuntimeDiagnostics() {
                     compiledBackend = diagnostics.compiledBackend ?: state.runtime.compiledBackend,
                     activeModelQuantization = diagnostics.activeModelQuantization
                         ?: state.runtime.activeModelQuantization,
+                    modelMemoryMode = diagnostics.modelMemoryMode ?: state.runtime.modelMemoryMode,
+                    prefixCacheMode = diagnostics.prefixCacheMode ?: state.runtime.prefixCacheMode,
                     nativeRuntimeSupported = diagnostics.nativeRuntimeSupported
                         ?: state.runtime.nativeRuntimeSupported,
                     strictAcceleratorFailFast = diagnostics.strictAcceleratorFailFast

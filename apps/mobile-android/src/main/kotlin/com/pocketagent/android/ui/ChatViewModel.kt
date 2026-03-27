@@ -44,6 +44,7 @@ import com.pocketagent.android.ui.state.PersistedInteractionMessage
 import com.pocketagent.android.ui.state.PersistedInteractionPart
 import com.pocketagent.android.ui.state.PersistedToolCall
 import com.pocketagent.android.ui.state.PersistedToolCallStatus
+import com.pocketagent.android.ui.state.ModalSurface
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
@@ -230,10 +231,6 @@ class ChatViewModel(
         persistState()
     }
 
-    fun setCompletionSettingsOpen(isOpen: Boolean) {
-        _uiState.update { it.copy(isCompletionSettingsOpen = isOpen) }
-    }
-
     fun addAttachedImage(imagePath: String) {
         addAttachedImageInternal(imagePath)
     }
@@ -300,12 +297,12 @@ class ChatViewModel(
         setSessionDrawerOpenInternal(isOpen)
     }
 
-    fun setAdvancedSheetOpen(isOpen: Boolean) {
-        setAdvancedSheetOpenInternal(isOpen)
+    fun showSurface(surface: ModalSurface) {
+        _uiState.update { it.copy(activeSurface = surface) }
     }
 
-    fun setToolDialogOpen(isOpen: Boolean) {
-        setToolDialogOpenInternal(isOpen)
+    fun dismissSurface() {
+        _uiState.update { it.copy(activeSurface = ModalSurface.None) }
     }
 
     fun prefillComposer(text: String) {

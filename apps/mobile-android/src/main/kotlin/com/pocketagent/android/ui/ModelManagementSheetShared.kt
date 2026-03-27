@@ -47,6 +47,33 @@ internal fun DownloadTaskState.readableStateName(): String {
     }
 }
 
+@Composable
+internal fun DownloadTaskState.readableStateNameLocalized(): String {
+    return when (status) {
+        DownloadTaskStatus.QUEUED -> stringResource(id = R.string.model_download_status_queued)
+        DownloadTaskStatus.DOWNLOADING -> stringResource(id = R.string.model_download_status_downloading)
+        DownloadTaskStatus.PAUSED -> stringResource(id = R.string.model_download_status_paused)
+        DownloadTaskStatus.VERIFYING -> {
+            if (processingStage == DownloadProcessingStage.INSTALLING) {
+                stringResource(id = R.string.ui_model_stage_installing)
+            } else {
+                stringResource(id = R.string.model_download_status_verifying)
+            }
+        }
+        DownloadTaskStatus.INSTALLED_INACTIVE -> stringResource(id = R.string.ui_model_installed_inactive)
+        DownloadTaskStatus.FAILED -> {
+            when (processingStage) {
+                DownloadProcessingStage.DOWNLOADING -> stringResource(id = R.string.ui_model_stage_failure_download)
+                DownloadProcessingStage.VERIFYING -> stringResource(id = R.string.ui_model_stage_failure_verification)
+                DownloadProcessingStage.INSTALLING -> stringResource(id = R.string.ui_model_stage_failure_install)
+                DownloadProcessingStage.CORRUPT -> stringResource(id = R.string.ui_model_stage_failure_corrupt)
+            }
+        }
+        DownloadTaskStatus.COMPLETED -> stringResource(id = R.string.model_download_status_complete)
+        DownloadTaskStatus.CANCELLED -> stringResource(id = R.string.model_download_status_cancelled)
+    }
+}
+
 internal fun DownloadTaskState.transferSummary(): String? {
     val speed = downloadSpeedBps?.takeIf { it > 0L } ?: return null
     val eta = etaSeconds?.takeIf { it >= 0L }

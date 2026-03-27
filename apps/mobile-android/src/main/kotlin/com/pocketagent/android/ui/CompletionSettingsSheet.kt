@@ -29,10 +29,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.CompletionSettings
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import kotlin.math.roundToInt
 
 @Composable
@@ -84,7 +87,7 @@ internal fun CompletionSettingsSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = PocketAgentDimensions.sheetHorizontalPadding)
             .navigationBarsPadding()
             .imePadding()
             .verticalScroll(rememberScrollState()),
@@ -166,7 +169,7 @@ internal fun CompletionSettingsSheet(
                 style = MaterialTheme.typography.labelLarge,
             )
             Text(
-                text = if (showAdvanced) "Hide" else "Show",
+                text = if (showAdvanced) stringResource(id = R.string.action_hide_advanced) else stringResource(id = R.string.action_show_advanced),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -226,14 +229,14 @@ internal fun CompletionSettingsSheet(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(PocketAgentDimensions.screenPadding))
         Button(
             onClick = onClose,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(id = R.string.ui_completion_done))
         }
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(PocketAgentDimensions.sheetHorizontalPadding))
     }
 }
 
@@ -272,6 +275,8 @@ private fun SliderSetting(
         onValueChange = onValueChange,
         onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = "$label: $valueLabel" },
     )
 }

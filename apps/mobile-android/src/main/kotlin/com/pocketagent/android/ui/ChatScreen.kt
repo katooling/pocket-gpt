@@ -17,9 +17,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,7 +63,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
@@ -82,6 +83,8 @@ import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.theme.LocalReduceMotion
 import com.pocketagent.android.ui.state.ChatUiState
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.tickLight
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.ModelLoadingState
@@ -110,7 +113,7 @@ internal fun ChatScreenBody(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(12.dp),
+            .padding(PocketAgentDimensions.screenPadding),
     ) {
         OfflineAndStatusHeader(
             state = state,
@@ -123,7 +126,7 @@ internal fun ChatScreenBody(
             activeRuntimeModelLabel = activeRuntimeModelLabel,
             onRefresh = onRefresh,
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(PocketAgentDimensions.sectionSpacing))
         MessageList(
             activeSession = state.activeSession,
             runtimeStatusDetail = state.runtime.modelStatusDetail,
@@ -321,9 +324,9 @@ private fun MessageList(
                     val visibleState = remember { MutableTransitionState(false).apply { targetState = true } }
                     AnimatedVisibility(
                         visibleState = visibleState,
-                        enter = fadeIn(tween(300)) + slideInVertically(
+                        enter = fadeIn(tween(PocketAgentDimensions.animNormal)) + slideInVertically(
                             initialOffsetY = { it / 4 },
-                            animationSpec = tween(300),
+                            animationSpec = tween(PocketAgentDimensions.animNormal),
                         ),
                     ) {
                         MessageBubble(
@@ -343,7 +346,7 @@ private fun MessageList(
         }
         AnimatedVisibility(
             visible = !isNearBottom,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(PocketAgentDimensions.screenPadding),
             enter = scaleIn() + fadeIn(),
             exit = scaleOut() + fadeOut(),
         ) {
@@ -360,7 +363,6 @@ private fun MessageList(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: MessageUiModel,
@@ -399,24 +401,29 @@ private fun MessageBubble(
             color = when (message.role) {
                 MessageRole.USER -> MaterialTheme.colorScheme.primaryContainer
                 MessageRole.ASSISTANT -> MaterialTheme.colorScheme.surfaceVariant
-                MessageRole.TOOL -> MaterialTheme.colorScheme.tertiaryContainer
+                MessageRole.TOOL -> MaterialTheme.colorScheme.secondaryContainer
                 MessageRole.SYSTEM -> MaterialTheme.colorScheme.errorContainer
             },
             modifier = Modifier.clip(bubbleShape).fillMaxWidth(0.9f),
         ) {
             Box {
+                val messageOptionsLabel = stringResource(R.string.cd_message_options)
                 Column(
                     modifier = Modifier
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = {
-                                if (message.content.isNotBlank()) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    showContextMenu = true
-                                }
-                            },
-                        )
-                        .padding(12.dp),
+                        .semantics {
+                            onLongClick(label = messageOptionsLabel) { true }
+                        }
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    if (message.content.isNotBlank()) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        showContextMenu = true
+                                    }
+                                },
+                            )
+                        }
+                        .padding(PocketAgentDimensions.messageBubblePadding),
                 ) {
                     val attachmentPaths = message.imagePaths.ifEmpty { listOfNotNull(message.imagePath) }
                     when {
@@ -567,7 +574,7 @@ private fun MessageActions(
     ) {
         IconButton(
             onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                haptic.tickLight()
                 clipboardManager.setText(AnnotatedString(message.content))
                 onCopiedToClipboard()
             },
@@ -577,7 +584,7 @@ private fun MessageActions(
         if (message.role == MessageRole.USER) {
             IconButton(
                 onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    haptic.tickLight()
                     onEditMessage(message.id)
                 },
             ) {
@@ -587,7 +594,7 @@ private fun MessageActions(
         if (message.role == MessageRole.ASSISTANT) {
             IconButton(
                 onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    haptic.tickLight()
                     onRegenerateMessage(message.id)
                 },
             ) {
@@ -615,7 +622,7 @@ private fun MessageContextMenu(
         androidx.compose.material3.DropdownMenuItem(
             text = { Text(stringResource(id = R.string.ui_copy)) },
             onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                haptic.tickLight()
                 clipboardManager.setText(AnnotatedString(message.content))
                 onCopiedToClipboard()
                 onDismiss()
@@ -694,19 +701,19 @@ private fun LoadingDotsAnimation() {
     val alpha1 by infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(600, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(animation = tween(PocketAgentDimensions.animSlow, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
         label = "dot1",
     )
     val alpha2 by infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(600, delayMillis = 200, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(animation = tween(PocketAgentDimensions.animSlow, delayMillis = PocketAgentDimensions.animFast, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
         label = "dot2",
     )
     val alpha3 by infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(600, delayMillis = 400, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(animation = tween(PocketAgentDimensions.animSlow, delayMillis = 400, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
         label = "dot3",
     )
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -774,7 +781,7 @@ private fun SuggestedPromptCard(
     ) {
         Text(
             text = prompt,
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(PocketAgentDimensions.cardPadding),
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -792,7 +799,7 @@ private fun AttachmentThumbnailRow(
             AsyncImage(
                 model = coil.request.ImageRequest.Builder(LocalContext.current)
                     .data(File(path))
-                    .crossfade(300)
+                    .crossfade(PocketAgentDimensions.animNormal)
                     .build(),
                 contentDescription = stringResource(id = R.string.ui_image_message_label, path),
                 contentScale = ContentScale.Crop,

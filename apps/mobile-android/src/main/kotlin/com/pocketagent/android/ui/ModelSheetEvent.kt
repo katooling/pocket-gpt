@@ -1,0 +1,19 @@
+package com.pocketagent.android.ui
+
+import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+
+sealed interface ModelSheetEvent {
+    data class ImportModel(val modelId: String) : ModelSheetEvent
+    data class DownloadVersion(val version: ModelDistributionVersion) : ModelSheetEvent
+    data class PauseDownload(val taskId: String) : ModelSheetEvent
+    data class ResumeDownload(val taskId: String) : ModelSheetEvent
+    data class RetryDownload(val taskId: String) : ModelSheetEvent
+    data class CancelDownload(val taskId: String) : ModelSheetEvent
+    data class SetDefaultVersion(val modelId: String, val version: String) : ModelSheetEvent
+    data class LoadVersion(val modelId: String, val version: String) : ModelSheetEvent
+    data object LoadLastUsedModel : ModelSheetEvent
+    data object OffloadModel : ModelSheetEvent
+    data class RemoveVersion(val modelId: String, val version: String) : ModelSheetEvent
+    data object RefreshAll : ModelSheetEvent
+    data object Close : ModelSheetEvent
+}

@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeStatus
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.tickLight
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
@@ -64,10 +66,10 @@ internal fun AdvancedSettingsSheet(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(PocketAgentDimensions.sheetHorizontalPadding)
             .navigationBarsPadding()
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.screenPadding),
     ) {
         Text(
             text = stringResource(id = R.string.ui_advanced_controls_title),
@@ -129,7 +131,7 @@ internal fun AdvancedSettingsSheet(
                     value = wifiOnlyDownloadsEnabled,
                     role = Role.Switch,
                     onValueChange = { checked ->
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        haptic.tickLight()
                         onWifiOnlyDownloadsChanged(checked)
                     },
                 ),
@@ -153,7 +155,7 @@ internal fun AdvancedSettingsSheet(
                     value = state.defaultThinkingEnabled,
                     role = Role.Switch,
                     onValueChange = { checked ->
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        haptic.tickLight()
                         onDefaultThinkingEnabledChanged(checked)
                     },
                 ),
@@ -215,7 +217,7 @@ internal fun AdvancedSettingsSheet(
                     enabled = gpuToggleEnabled,
                     role = Role.Switch,
                     onValueChange = { checked ->
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        haptic.tickLight()
                         onGpuAccelerationEnabledChanged(checked)
                     },
                 ),
@@ -353,7 +355,7 @@ private fun DiagnosticsSection(
             shape = MaterialTheme.shapes.medium,
         ) {
             Column(
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(PocketAgentDimensions.cardPadding),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 DiagnosticLine(
@@ -368,6 +370,9 @@ private fun DiagnosticsSection(
                 runtime.runtimeBackend?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_backend), it) }
                 runtime.modelStatusDetail?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_detail), it) }
                 runtime.activeModelId?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_active_model), it) }
+                runtime.activeModelQuantization?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_model_quantization), it) }
+                runtime.modelMemoryMode?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_model_memory_mode), it) }
+                runtime.prefixCacheMode?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_prefix_cache_mode), it) }
                 runtime.lastFirstTokenLatencyMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_first_token), stringResource(id = R.string.ui_diag_ms_format, it)) }
                 runtime.lastTotalLatencyMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_total_latency), stringResource(id = R.string.ui_diag_ms_format, it)) }
                 runtime.lastModelLoadMs?.let { DiagnosticLine(stringResource(id = R.string.ui_diag_model_load), stringResource(id = R.string.ui_diag_ms_format, it)) }

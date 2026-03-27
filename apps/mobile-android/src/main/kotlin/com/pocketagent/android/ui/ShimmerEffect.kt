@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -73,7 +74,9 @@ internal fun ShimmerMessageBubble(
 ) {
     val brush = shimmerBrush()
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clearAndSetSemantics { },
         horizontalArrangement = if (alignEnd) Arrangement.End else Arrangement.Start,
     ) {
         Box(
@@ -102,7 +105,8 @@ internal fun ShimmerMessageLoadingPlaceholder() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clearAndSetSemantics { },
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ShimmerMessageBubble(alignEnd = true, lineCount = 1)
