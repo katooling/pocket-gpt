@@ -48,6 +48,8 @@ data class RuntimeDiagnosticsSnapshot(
     val openclDeviceVersion: String? = null,
     val openclAdrenoGeneration: Int? = null,
     val activeModelQuantization: String? = null,
+    val modelMemoryMode: String? = null,
+    val prefixCacheMode: String? = null,
     val lastMmapReadaheadLabel: String? = null,
     val lastMmapReadaheadBytes: Long? = null,
     val lastMmapReadaheadResult: Int? = null,
@@ -120,6 +122,8 @@ internal object RuntimeDiagnosticsSnapshotParser {
         val openclDeviceVersion = nativePayloadRoot.stringOrNull("opencl_device_version")
         val openclAdrenoGeneration = nativePayloadRoot.intOrNull("opencl_adreno_generation")
         val activeModelQuantization = nativePayloadRoot.stringOrNull("active_model_quantization")
+        val modelMemoryMode = nativePayloadRoot.stringOrNull("model_memory_mode")
+        val prefixCacheMode = nativePayloadRoot.stringOrNull("prefix_cache_mode")
         val lastMmapReadaheadLabel = nativePayloadRoot.stringOrNull("last_mmap_readahead_label")
         val lastMmapReadaheadBytes = nativePayloadRoot.longOrNull("last_mmap_readahead_bytes")
         val lastMmapReadaheadResult = nativePayloadRoot.intOrNull("last_mmap_readahead_result")
@@ -160,6 +164,8 @@ internal object RuntimeDiagnosticsSnapshotParser {
             openclDeviceVersion = openclDeviceVersion,
             openclAdrenoGeneration = openclAdrenoGeneration,
             activeModelQuantization = activeModelQuantization,
+            modelMemoryMode = modelMemoryMode,
+            prefixCacheMode = prefixCacheMode,
             lastMmapReadaheadLabel = lastMmapReadaheadLabel,
             lastMmapReadaheadBytes = lastMmapReadaheadBytes,
             lastMmapReadaheadResult = lastMmapReadaheadResult,

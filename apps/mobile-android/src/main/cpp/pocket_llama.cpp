@@ -60,6 +60,9 @@ llama_sampler * g_draft_sampler = nullptr;
 std::atomic<bool> g_cancel_requested{false};
 constexpr size_t MAX_TARGET_PREFIX_STATE_BYTES = 192u * 1024u * 1024u;
 constexpr size_t MAX_DRAFT_PREFIX_STATE_BYTES = 48u * 1024u * 1024u;
+bool g_model_uses_recurrent_memory = false;
+bool g_model_uses_hybrid_memory = false;
+bool g_prefix_cache_prefill_only_mode = false;
 
 struct PrefixCacheSlot {
     std::vector<llama_token> target_prompt_tokens;
@@ -163,6 +166,8 @@ int32_t clamp_i32(int32_t value, int32_t min_value, int32_t max_value) {
 
 const char * compiled_gpu_backends();
 const char * backend_init_mode_label(BackendInitMode mode);
+const char * model_memory_mode_label();
+const char * prefix_cache_mode_label();
 
 int32_t resolve_threads(jint requested_threads) {
     const auto hardware_threads = std::thread::hardware_concurrency();
@@ -554,7 +559,9 @@ bool shift_context_window_locked(
             static_cast<int>(context_tokens_before));
         return false;
     }
-    if (!llama_memory_seq_rm(memory, -1, n_keep, n_keep + safe_discard)) {
+    // This runtime uses a single active sequence (seq 0). Using seq_id = -1 for
+    // partial-range trims can fail on recurrent / hybrid memory backends.
+    if (!llama_memory_seq_rm(memory, 0, n_keep, n_keep + safe_discard)) {
         __android_log_print(
             ANDROID_LOG_WARN,
             TAG,
@@ -873,6 +880,14 @@ std::string json_escape(const std::string & value) {
     return escaped;
 }
 
+std::string summarize_cache_key(const std::string & cache_key) {
+    if (cache_key.empty()) {
+        return "empty";
+    }
+    const size_t preview_len = std::min<size_t>(12, cache_key.size());
+    return cache_key.substr(0, preview_len);
+}
+
 struct BackendDiagnosticsSnapshot {
     int registered_backend_count = 0;
     int opencl_device_count = 0;
@@ -1091,6 +1106,8 @@ std::string backend_diagnostics_json() {
         << "\"opencl_device_version\":\"" << json_escape(diag.opencl_device_version) << "\","
         << "\"opencl_adreno_generation\":" << diag.opencl_adreno_generation << ","
         << "\"active_model_quantization\":\"" << json_escape(g_last_model_quantization) << "\","
+        << "\"model_memory_mode\":\"" << json_escape(model_memory_mode_label()) << "\","
+        << "\"prefix_cache_mode\":\"" << json_escape(prefix_cache_mode_label()) << "\","
         << "\"flashAttnActive\":" << (g_last_flash_attn_active ? "true" : "false") << ","
         << "\"flash_attn_guard_reason\":\"" << json_escape(flash_attn_guard_reason) << "\","
         << "\"quantized_kv_guard_reason\":\"" << json_escape(quantized_kv_guard_reason) << "\","
@@ -1183,6 +1200,23 @@ const char * backend_init_mode_label(BackendInitMode mode) {
         default:
             return "none";
     }
+}
+
+const char * model_memory_mode_label() {
+    if (g_model_uses_hybrid_memory && g_model_uses_recurrent_memory) {
+        return "hybrid_recurrent";
+    }
+    if (g_model_uses_hybrid_memory) {
+        return "hybrid";
+    }
+    if (g_model_uses_recurrent_memory) {
+        return "recurrent";
+    }
+    return "standard";
+}
+
+const char * prefix_cache_mode_label() {
+    return g_prefix_cache_prefill_only_mode ? "prefill_only" : "full_sequence";
 }
 
 void log_gpu_support_once() {
@@ -1441,6 +1475,9 @@ void release_runtime_locked() {
     g_last_model_quantization = "unknown";
     g_active_backend = "cpu";
     g_active_backend_memory_bytes = 0;
+    g_model_uses_recurrent_memory = false;
+    g_model_uses_hybrid_memory = false;
+    g_prefix_cache_prefill_only_mode = false;
     g_speculative_acceptance_rate = 0.65f;
     g_speculative_enabled = false;
     g_speculative_max_draft_tokens = 6;
@@ -1589,6 +1626,14 @@ int store_prefix_cache_slot(
     slot.valid = true;
     slot.last_used_epoch = ++g_prefix_cache_epoch;
     g_active_prefix_cache_slot = slot_index;
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "PREFIX_CACHE|stage=store_slot|slot=%d|cache_key_len=%zu|cache_key_prefix=%s|target_tokens=%zu",
+        slot_index,
+        cache_key.size(),
+        summarize_cache_key(cache_key).c_str(),
+        target_prompt_tokens.size());
     return slot_index;
 }
 
@@ -1616,9 +1661,34 @@ int reuse_prefix_cache_slot(
         }
         const bool key_matches = !cache_key.empty() && cache_key == slot.cache_key;
         if (strict_mode && !key_matches) {
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "PREFIX_CACHE|stage=reuse_candidate|slot=%zu|strict_mode=true|key_match=false|candidate_reuse=0|stored_tokens=%zu|prompt_tokens=%zu|requested_key_len=%zu|requested_key_prefix=%s|stored_key_len=%zu|stored_key_prefix=%s",
+                idx,
+                slot.target_prompt_tokens.size(),
+                prompt_tokens.size(),
+                cache_key.size(),
+                summarize_cache_key(cache_key).c_str(),
+                slot.cache_key.size(),
+                summarize_cache_key(slot.cache_key).c_str());
             continue;
         }
         const size_t candidate_reuse = longest_common_prefix(slot.target_prompt_tokens, prompt_tokens);
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "PREFIX_CACHE|stage=reuse_candidate|slot=%zu|strict_mode=%s|key_match=%s|candidate_reuse=%zu|stored_tokens=%zu|prompt_tokens=%zu|requested_key_len=%zu|requested_key_prefix=%s|stored_key_len=%zu|stored_key_prefix=%s",
+            idx,
+            strict_mode ? "true" : "false",
+            key_matches ? "true" : "false",
+            candidate_reuse,
+            slot.target_prompt_tokens.size(),
+            prompt_tokens.size(),
+            cache_key.size(),
+            summarize_cache_key(cache_key).c_str(),
+            slot.cache_key.size(),
+            summarize_cache_key(slot.cache_key).c_str());
         if (candidate_reuse == 0) {
             continue;
         }
@@ -1741,7 +1811,9 @@ bool capture_seq_state(
         log_prefix_cache_state_event("store_state", label, slot_index, 0, false, "context_null");
         return false;
     }
-    const size_t state_size = llama_state_seq_get_size(ctx, 0);
+    const size_t state_size = g_prefix_cache_prefill_only_mode
+        ? llama_state_seq_get_size_ext(ctx, 0, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY)
+        : llama_state_seq_get_size(ctx, 0);
     if (state_size == 0) {
         log_prefix_cache_state_event("store_state", label, slot_index, 0, false, "empty");
         return false;
@@ -1751,7 +1823,9 @@ bool capture_seq_state(
         return false;
     }
     state->resize(state_size);
-    const size_t written = llama_state_seq_get_data(ctx, state->data(), state->size(), 0);
+    const size_t written = g_prefix_cache_prefill_only_mode
+        ? llama_state_seq_get_data_ext(ctx, state->data(), state->size(), 0, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY)
+        : llama_state_seq_get_data(ctx, state->data(), state->size(), 0);
     if (written != state_size) {
         state->clear();
         log_prefix_cache_state_event("store_state", label, slot_index, written, false, "copy_failed");
@@ -1775,7 +1849,9 @@ bool restore_seq_state(
         return false;
     }
     llama_memory_clear(llama_get_memory(ctx), false);
-    const size_t restored = llama_state_seq_set_data(ctx, state.data(), state.size(), 0);
+    const size_t restored = g_prefix_cache_prefill_only_mode
+        ? llama_state_seq_set_data_ext(ctx, state.data(), state.size(), 0, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY)
+        : llama_state_seq_set_data(ctx, state.data(), state.size(), 0);
     if (restored == 0) {
         log_prefix_cache_state_event("restore_state", label, slot_index, state.size(), false, "copy_failed");
         return false;
@@ -2240,7 +2316,7 @@ SpeculativeStepResult run_speculative_step(
     }
 
     if (static_cast<int>(draft_tokens.size()) < g_speculative_min_draft_tokens) {
-        llama_memory_seq_rm(llama_get_memory(g_draft_context), -1, base_draft_tokens, -1);
+        llama_memory_seq_rm(llama_get_memory(g_draft_context), 0, base_draft_tokens, -1);
         *draft_context_tokens = base_draft_tokens;
         llama_sampler_reset(g_draft_sampler);
         const llama_token token = llama_sampler_sample(g_sampler, g_context, -1);
@@ -2272,7 +2348,7 @@ SpeculativeStepResult run_speculative_step(
     llama_sampler_accept(g_sampler, first_token);
 
     if (first_token != draft_tokens[0]) {
-        llama_memory_seq_rm(llama_get_memory(g_draft_context), -1, base_draft_tokens, -1);
+        llama_memory_seq_rm(llama_get_memory(g_draft_context), 0, base_draft_tokens, -1);
         *draft_context_tokens = base_draft_tokens;
         llama_sampler_reset(g_draft_sampler);
         if (!decode_single_token(g_context, first_token)) {
@@ -2330,7 +2406,7 @@ SpeculativeStepResult run_speculative_step(
     }
 
     const llama_pos keep_target_tokens = base_target_tokens + static_cast<llama_pos>(accepted_drafts);
-    llama_memory_seq_rm(llama_get_memory(g_context), -1, keep_target_tokens, -1);
+    llama_memory_seq_rm(llama_get_memory(g_context), 0, keep_target_tokens, -1);
     *target_context_tokens = keep_target_tokens;
 
     result.emitted_tokens.insert(
@@ -2348,7 +2424,7 @@ SpeculativeStepResult run_speculative_step(
     }
 
     const llama_pos keep_draft_tokens = base_draft_tokens + static_cast<llama_pos>(accepted_drafts);
-    llama_memory_seq_rm(llama_get_memory(g_draft_context), -1, keep_draft_tokens, -1);
+    llama_memory_seq_rm(llama_get_memory(g_draft_context), 0, keep_draft_tokens, -1);
     *draft_context_tokens = keep_draft_tokens;
     llama_sampler_reset(g_draft_sampler);
     if (!result.reached_eog) {
@@ -2500,23 +2576,50 @@ jint generate_locked(
         cache_slot = reuse_prefix_cache_slot(cache_policy, cache_key, prompt_tokens, &strict_key_match, &reused_tokens);
         if (cache_slot >= 0 && reused_tokens > 0) {
             auto & selected_slot = g_prefix_cache_slots[static_cast<size_t>(cache_slot)];
-            bool target_state_ready = cache_slot == previously_active_cache_slot;
-            if (!target_state_ready) {
-                target_state_ready = restore_seq_state(
-                    g_context,
-                    selected_slot.target_seq_state,
-                    "target",
-                    cache_slot);
+            const size_t stored_target_tokens = selected_slot.target_prompt_tokens.size();
+            if (g_prefix_cache_prefill_only_mode && reused_tokens < stored_target_tokens) {
+                __android_log_print(
+                    ANDROID_LOG_INFO,
+                    TAG,
+                    "PREFIX_CACHE|stage=target_reuse_skip|slot=%d|reason=partial_reuse_unsupported|requested_reuse=%zu|stored_tokens=%zu",
+                    cache_slot,
+                    reused_tokens,
+                    stored_target_tokens);
+                reused_tokens = 0;
+                cache_slot = -1;
+            }
+        }
+        if (cache_slot >= 0 && reused_tokens > 0) {
+            auto & selected_slot = g_prefix_cache_slots[static_cast<size_t>(cache_slot)];
+            const size_t stored_target_tokens = selected_slot.target_prompt_tokens.size();
+            bool target_state_ready = restore_seq_state(
+                g_context,
+                selected_slot.target_seq_state,
+                "target",
+                cache_slot);
+            if (!target_state_ready &&
+                cache_slot == previously_active_cache_slot &&
+                selected_slot.target_seq_state.empty()) {
+                target_state_ready = true;
             }
             if (target_state_ready &&
-                llama_memory_seq_rm(llama_get_memory(g_context), -1, static_cast<llama_pos>(reused_tokens), -1)) {
-                decode_offset = reused_tokens;
+                (reused_tokens >= stored_target_tokens ||
+                    llama_memory_seq_rm(llama_get_memory(g_context), 0, static_cast<llama_pos>(reused_tokens), -1))) {
+                decode_offset = std::min(reused_tokens, stored_target_tokens);
                 cache_hit = true;
-                llama_pos reused_context_tokens = static_cast<llama_pos>(reused_tokens);
+                llama_pos reused_context_tokens = static_cast<llama_pos>(decode_offset);
                 shift_prefill_window(g_context, &reused_context_tokens, &selected_slot.target_prompt_tokens, "target_prefill");
-                reused_tokens = std::min(reused_tokens, static_cast<size_t>(reused_context_tokens));
+                reused_tokens = std::min(decode_offset, static_cast<size_t>(reused_context_tokens));
                 decode_offset = std::min(decode_offset, static_cast<size_t>(reused_context_tokens));
             } else {
+                __android_log_print(
+                    ANDROID_LOG_INFO,
+                    TAG,
+                    "PREFIX_CACHE|stage=target_reuse_abort|slot=%d|target_state_ready=%s|requested_reuse=%zu|previously_active_slot=%d",
+                    cache_slot,
+                    target_state_ready ? "true" : "false",
+                    reused_tokens,
+                    previously_active_cache_slot);
                 reused_tokens = 0;
                 cache_slot = -1;
             }
@@ -2548,7 +2651,12 @@ jint generate_locked(
         return cancelled ? STREAM_STATUS_CANCELLED : STREAM_STATUS_RUNTIME_ERROR;
     }
 
+    std::vector<uint8_t> target_prefill_seq_state;
+    std::vector<uint8_t> draft_prefill_seq_state;
     log_prefix_cache_event("target", cache_policy, cache_hit, reused_tokens, prompt_tokens.size(), strict_key_match, cache_slot);
+    if (use_prefix_cache && g_prefix_cache_prefill_only_mode) {
+        capture_seq_state(g_context, &target_prefill_seq_state, MAX_TARGET_PREFIX_STATE_BYTES, "target_prefill", cache_slot);
+    }
 
     const bool speculative_ready = g_speculative_enabled &&
         g_draft_model != nullptr &&
@@ -2570,26 +2678,36 @@ jint generate_locked(
             if (draft_strict_key_match && !selected_slot.draft_prompt_tokens.empty()) {
                 draft_reused_tokens = longest_common_prefix(selected_slot.draft_prompt_tokens, prompt_tokens);
                 if (draft_reused_tokens > 0) {
-                    bool draft_state_ready = cache_slot == previously_active_cache_slot;
-                    if (!draft_state_ready) {
-                        draft_state_ready = restore_seq_state(
-                            g_draft_context,
-                            selected_slot.draft_seq_state,
-                            "draft",
-                            cache_slot);
+                    const size_t stored_draft_tokens = selected_slot.draft_prompt_tokens.size();
+                    if (g_prefix_cache_prefill_only_mode && draft_reused_tokens < stored_draft_tokens) {
+                        draft_reused_tokens = 0;
+                    }
+                }
+                if (draft_reused_tokens > 0) {
+                    const size_t stored_draft_tokens = selected_slot.draft_prompt_tokens.size();
+                    bool draft_state_ready = restore_seq_state(
+                        g_draft_context,
+                        selected_slot.draft_seq_state,
+                        "draft",
+                        cache_slot);
+                    if (!draft_state_ready &&
+                        cache_slot == previously_active_cache_slot &&
+                        selected_slot.draft_seq_state.empty()) {
+                        draft_state_ready = true;
                     }
                     if (draft_state_ready &&
-                        llama_memory_seq_rm(llama_get_memory(g_draft_context), -1, static_cast<llama_pos>(draft_reused_tokens), -1)) {
-                        draft_decode_offset = draft_reused_tokens;
+                        (draft_reused_tokens >= stored_draft_tokens ||
+                            llama_memory_seq_rm(llama_get_memory(g_draft_context), 0, static_cast<llama_pos>(draft_reused_tokens), -1))) {
+                        draft_decode_offset = std::min(draft_reused_tokens, stored_draft_tokens);
                         draft_cache_hit = true;
-                        llama_pos draft_reused_context_tokens = static_cast<llama_pos>(draft_reused_tokens);
+                        llama_pos draft_reused_context_tokens = static_cast<llama_pos>(draft_decode_offset);
                         shift_prefill_window(
                             g_draft_context,
                             &draft_reused_context_tokens,
                             &selected_slot.draft_prompt_tokens,
                             "draft_prefill");
                         draft_reused_tokens = std::min(
-                            draft_reused_tokens,
+                            draft_decode_offset,
                             static_cast<size_t>(draft_reused_context_tokens));
                         draft_decode_offset = std::min(
                             draft_decode_offset,
@@ -2610,6 +2728,9 @@ jint generate_locked(
             return STREAM_STATUS_RUNTIME_ERROR;
         }
         tracked_draft_tokens = prompt_tokens;
+        if (use_prefix_cache && g_prefix_cache_prefill_only_mode) {
+            capture_seq_state(g_draft_context, &draft_prefill_seq_state, MAX_DRAFT_PREFIX_STATE_BYTES, "draft_prefill", cache_slot);
+        }
         if (cache_hit) {
             g_active_prefix_cache_slot = cache_slot;
         }
@@ -2793,21 +2914,31 @@ jint generate_locked(
     if (cache_hit && !speculative_ready) {
         g_active_prefix_cache_slot = cache_slot;
     }
+    const auto & target_tokens_to_store = g_prefix_cache_prefill_only_mode ? prompt_tokens : tracked_target_tokens;
+    const auto & draft_tokens_to_store = g_prefix_cache_prefill_only_mode ? prompt_tokens : tracked_draft_tokens;
     cache_slot = store_prefix_cache_slot(
-        tracked_target_tokens,
-        speculative_ready ? &tracked_draft_tokens : nullptr,
+        target_tokens_to_store,
+        speculative_ready ? &draft_tokens_to_store : nullptr,
         cache_key);
     auto & stored_slot = g_prefix_cache_slots[static_cast<size_t>(cache_slot)];
-    capture_seq_state(g_context, &stored_slot.target_seq_state, MAX_TARGET_PREFIX_STATE_BYTES, "target", cache_slot);
+    if (g_prefix_cache_prefill_only_mode && !target_prefill_seq_state.empty()) {
+        stored_slot.target_seq_state = std::move(target_prefill_seq_state);
+    } else {
+        capture_seq_state(g_context, &stored_slot.target_seq_state, MAX_TARGET_PREFIX_STATE_BYTES, "target", cache_slot);
+    }
     if (speculative_ready) {
-        capture_seq_state(g_draft_context, &stored_slot.draft_seq_state, MAX_DRAFT_PREFIX_STATE_BYTES, "draft", cache_slot);
+        if (g_prefix_cache_prefill_only_mode && !draft_prefill_seq_state.empty()) {
+            stored_slot.draft_seq_state = std::move(draft_prefill_seq_state);
+        } else {
+            capture_seq_state(g_draft_context, &stored_slot.draft_seq_state, MAX_DRAFT_PREFIX_STATE_BYTES, "draft", cache_slot);
+        }
     }
     log_prefix_cache_event(
         "target_store",
         cache_policy,
         cache_hit,
         reused_tokens,
-        tracked_target_tokens.size(),
+        target_tokens_to_store.size(),
         strict_key_match,
         cache_slot);
     if (speculative_ready) {
@@ -2816,7 +2947,7 @@ jint generate_locked(
             cache_policy,
             draft_cache_hit,
             draft_reused_tokens,
-            tracked_draft_tokens.size(),
+            draft_tokens_to_store.size(),
             draft_strict_key_match,
             cache_slot);
     }
@@ -2990,6 +3121,16 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         }
         g_model_layer_count = llama_model_n_layer(g_model);
         g_model_size_bytes = static_cast<uint64_t>(llama_model_size(g_model));
+        g_model_uses_recurrent_memory = llama_model_is_recurrent(g_model);
+        g_model_uses_hybrid_memory = llama_model_is_hybrid(g_model);
+        g_prefix_cache_prefill_only_mode = g_model_uses_recurrent_memory || g_model_uses_hybrid_memory;
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "PREFIX_CACHE|stage=model_capability|prefill_only_mode=%s|model_recurrent=%s|model_hybrid=%s",
+            g_prefix_cache_prefill_only_mode ? "true" : "false",
+            g_model_uses_recurrent_memory ? "true" : "false",
+            g_model_uses_hybrid_memory ? "true" : "false");
 
         llama_context_params context_params = llama_context_default_params();
         context_params.n_ctx = static_cast<uint32_t>(resolve_context_size(nCtx));
@@ -3277,6 +3418,13 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     std::string output;
     output.reserve(static_cast<size_t>(std::max(1, static_cast<int>(maxTokens))) * 4);
     const std::string cache_key = to_std_string(env, cacheKey);
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "PREFIX_CACHE|stage=generate_enter|request=sync|cache_key_len=%zu|cache_key_prefix=%s|cache_policy=%d",
+        cache_key.size(),
+        summarize_cache_key(cache_key).c_str(),
+        static_cast<int>(cachePolicy));
 
     std::lock_guard<std::mutex> lock(g_mutex);
     const jint status = generate_locked(
@@ -3356,6 +3504,14 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         return STREAM_STATUS_RUNTIME_ERROR;
     }
     const std::string cache_key = to_std_string(env, cacheKey);
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        TAG,
+        "PREFIX_CACHE|stage=generate_enter|request=%s|cache_key_len=%zu|cache_key_prefix=%s|cache_policy=%d",
+        request_id.empty() ? "none" : request_id.c_str(),
+        cache_key.size(),
+        summarize_cache_key(cache_key).c_str(),
+        static_cast<int>(cachePolicy));
     jclass callback_class = env->GetObjectClass(callback);
     if (callback_class == nullptr) {
         log_error("nativeGenerateStream failed: callback class missing");

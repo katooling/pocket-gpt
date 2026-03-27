@@ -139,7 +139,12 @@ internal class RuntimePlanResolver(
             listOf(modelId, taskType, stopSequences.joinToString(separator = "\\u001f")).joinToString("|"),
         )
         val prefixCacheSlotId = sha256Hex(
-            listOf("slot", sessionId, templateFingerprint, loadFingerprint).joinToString("|"),
+            listOf(
+                "slot",
+                sessionId,
+                modelId,
+                templateFingerprint,
+            ).joinToString("|"),
         )
         val sessionCacheKey = sha256Hex(
             listOf("session", modelId, modelVersion.orEmpty(), resolvedModelPathHash, loadFingerprint).joinToString("|"),

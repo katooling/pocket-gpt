@@ -34,6 +34,8 @@ internal class SendMessageUseCase(
     private val cancelBySession: (SessionId) -> Boolean,
     private val runtimeInferencePorts: RuntimeInferencePorts = inferenceModule.runtimeInferencePorts(),
 ) {
+    private val sessionMemorySnippetsBySessionId: MutableMap<String, List<String>> = mutableMapOf()
+
     data class Request(
         val sessionId: SessionId,
         val userText: String,
@@ -67,6 +69,16 @@ internal class SendMessageUseCase(
         }
 
         conversationModule.appendUserTurn(request.sessionId, latestUserText)
+        val transcriptMessages = if (request.messages.isNotEmpty()) {
+            request.messages
+        } else {
+            conversationModule.listTurns(request.sessionId).map { turn -> turn.toInteractionMessage() }
+        }
+        val memorySnippets = resolveMemorySnippets(
+            sessionId = request.sessionId,
+            latestUserText = latestUserText,
+            transcriptMessages = transcriptMessages,
+        )
         requirePolicyEvent(
             eventType = "memory.write_user_turn",
             failureMessage = "Policy module rejected memory write event type.",
@@ -83,12 +95,6 @@ internal class SendMessageUseCase(
         val promptCharBudget = when (request.taskType) {
             "long_text" -> MAX_PROMPT_CHARS_LONG
             else -> MAX_PROMPT_CHARS_SHORT
-        }
-        val memorySnippets = memoryModule.retrieveRelevantMemory(latestUserText, 3).map { it.content }
-        val transcriptMessages = if (request.messages.isNotEmpty()) {
-            request.messages
-        } else {
-            conversationModule.listTurns(request.sessionId).map { turn -> turn.toInteractionMessage() }
         }
         val showThinking = executionContext.samplingOverrides?.showThinking ?: false
         val renderedPrompt = interactionPlanner.buildRenderedPrompt(
@@ -122,10 +128,7 @@ internal class SendMessageUseCase(
                 estimatedMemoryMb = runtimePlan.estimatedMemoryMb,
             )
         }
-        val prefixCacheKey = buildPrefixCacheKey(
-            slotId = runtimePlan.prefixCacheSlotId,
-            modelId = modelId,
-        )
+        val prefixCacheKey = buildPrefixCacheKey(runtimePlan.prefixCacheSlotId)
         requirePolicyEvent(
             eventType = "inference.generate",
             failureMessage = "Policy module rejected inference event type.",
@@ -368,19 +371,31 @@ internal class SendMessageUseCase(
             reasoningContent = reasoningContent,
         )
     }
-    private fun buildPrefixCacheKey(
-        slotId: String,
-        modelId: String,
-    ): String {
-        val keyMaterial = buildList {
-            add(CACHE_KEY_VERSION)
-            add(slotId)
-            add(modelId)
-            add(runtimeConfig.runtimeCompatibilityTag)
-            add(runtimeConfig.artifactSha256ByModelId[modelId].orEmpty())
-            add(runtimeConfig.artifactProvenanceSignatureByModelId[modelId].orEmpty())
-        }.joinToString("|")
-        return sha256Hex(keyMaterial)
+    private fun buildPrefixCacheKey(slotId: String): String = slotId
+
+    private fun resolveMemorySnippets(
+        sessionId: SessionId,
+        latestUserText: String,
+        transcriptMessages: List<InteractionMessage>,
+    ): List<String> {
+        val cachedSnippets = synchronized(sessionMemorySnippetsBySessionId) {
+            sessionMemorySnippetsBySessionId[sessionId.value].orEmpty()
+        }
+        if (!shouldRetrieveMemorySnippets(transcriptMessages)) {
+            return cachedSnippets
+        }
+        if (cachedSnippets.isNotEmpty()) {
+            return cachedSnippets
+        }
+        val retrievedSnippets = memoryModule.retrieveRelevantMemory(latestUserText, 3)
+            .map { chunk -> chunk.content.trim() }
+            .filter { snippet -> snippet.isNotBlank() }
+        if (retrievedSnippets.isNotEmpty()) {
+            synchronized(sessionMemorySnippetsBySessionId) {
+                sessionMemorySnippetsBySessionId[sessionId.value] = retrievedSnippets
+            }
+        }
+        return retrievedSnippets
     }
 
     private fun requirePolicyEvent(eventType: String, failureMessage: String) {
@@ -388,10 +403,19 @@ internal class SendMessageUseCase(
     }
 
     companion object {
-        private const val CACHE_KEY_VERSION = "v1"
         private const val MAX_PROMPT_CHARS_SHORT: Int = 1024
         private const val MAX_PROMPT_CHARS_LONG: Int = 2048
     }
+}
+
+private fun shouldRetrieveMemorySnippets(messages: List<InteractionMessage>): Boolean {
+    val hasAssistantContext = messages.any { message ->
+        message.role == InteractionRole.ASSISTANT || message.role == InteractionRole.TOOL
+    }
+    if (hasAssistantContext) {
+        return false
+    }
+    return messages.count { message -> message.role == InteractionRole.USER } <= 1
 }
 
 private fun List<InteractionMessage>.latestUserMessageText(): String {

@@ -592,6 +592,10 @@ class NativeJniLlamaCppBridge(
         var peakRssMb: Double? = null
         activeRequestId = requestId
         return try {
+            logBridge(
+                "PREFIX_CACHE_REQUEST",
+                "requestId=$requestId|cacheKeyLen=${cacheKey?.length ?: 0}|cacheKeyPrefix=${summarizeCacheKey(cacheKey)}|policy=${cachePolicy.name.lowercase()}",
+            )
             val status = runCatching {
                 nativeApi.generateStream(
                     requestId = requestId,
@@ -1189,6 +1193,11 @@ class NativeJniLlamaCppBridge(
     private fun logBridge(tag: String, message: String) {
         // Uses println as a cross-platform fallback; Android Logcat captures stdout.
         println("NativeJniLlamaCppBridge|$tag|$message")
+    }
+
+    private fun summarizeCacheKey(cacheKey: String?): String {
+        val normalized = cacheKey?.takeIf { it.isNotBlank() } ?: return "empty"
+        return normalized.take(12)
     }
 
     private fun isStrictBackendSelection(config: RuntimeGenerationConfig): Boolean {

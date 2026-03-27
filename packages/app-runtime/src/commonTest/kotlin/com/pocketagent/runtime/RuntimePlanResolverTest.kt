@@ -85,7 +85,7 @@ class RuntimePlanResolverTest {
     }
 
     @Test
-    fun `different model versions resolve different session cache identities`() {
+    fun `different model versions keep live prefix cache stable but rotate session cache identities`() {
         val runtimeInferencePorts = buildRuntimeInferencePorts()
         val resolver = RuntimePlanResolver(availableCpuThreads = { 8 })
         val deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8)
@@ -118,14 +118,14 @@ class RuntimePlanResolverTest {
             runtimeInferencePorts = runtimeInferencePorts,
         )
 
-        assertNotEquals(first.prefixCacheSlotId, second.prefixCacheSlotId)
+        assertEquals(first.prefixCacheSlotId, second.prefixCacheSlotId)
         assertNotEquals(first.sessionCacheKey, second.sessionCacheKey)
         assertEquals("q4_0", first.sessionCacheIdentity.modelVersion)
         assertEquals("ud_iq2_xxs", second.sessionCacheIdentity.modelVersion)
     }
 
     @Test
-    fun `load-affecting overrides change prefix cache slot`() {
+    fun `load-affecting overrides keep prefix cache slot stable but rotate session cache key`() {
         val runtimeInferencePorts = buildRuntimeInferencePorts()
         val resolver = RuntimePlanResolver(availableCpuThreads = { 8 })
         val deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8)
@@ -156,7 +156,8 @@ class RuntimePlanResolverTest {
             runtimeInferencePorts = runtimeInferencePorts,
         )
 
-        assertNotEquals(first.prefixCacheSlotId, second.prefixCacheSlotId)
+        assertEquals(first.prefixCacheSlotId, second.prefixCacheSlotId)
+        assertNotEquals(first.sessionCacheKey, second.sessionCacheKey)
     }
 
     @Test

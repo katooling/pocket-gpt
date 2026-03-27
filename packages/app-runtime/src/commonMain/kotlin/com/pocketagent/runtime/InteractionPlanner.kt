@@ -51,7 +51,7 @@ class InteractionPlanner(
             role = InteractionRole.SYSTEM,
             parts = listOf(InteractionContentPart.Text(systemText)),
         )
-        val messagesWithThinkingDirective = applyThinkingDirectiveToLatestUser(
+        val messagesWithThinkingDirective = applyThinkingDirectiveToUserMessages(
             messages = messages,
             thinkingSupport = interactionProfile.thinkingSupport,
             showThinking = showThinking,
@@ -110,6 +110,11 @@ class InteractionPlanner(
                 .firstOrNull { index -> messages[index].role == InteractionRole.ASSISTANT }
             if (previousAssistant != null) {
                 mustKeep += previousAssistant
+                val precedingUser = (previousAssistant - 1 downTo 0)
+                    .firstOrNull { index -> messages[index].role == InteractionRole.USER }
+                if (precedingUser != null) {
+                    mustKeep += precedingUser
+                }
             }
             val nextAssistant = ((latestUserIndex + 1) until messages.size)
                 .firstOrNull { index -> messages[index].role == InteractionRole.ASSISTANT }
@@ -200,7 +205,7 @@ private fun InteractionMessage.removeThinkingFromContext(thinkingSupport: Thinki
     )
 }
 
-private fun applyThinkingDirectiveToLatestUser(
+private fun applyThinkingDirectiveToUserMessages(
     messages: List<InteractionMessage>,
     thinkingSupport: ThinkingSupport,
     showThinking: Boolean?,
@@ -209,15 +214,11 @@ private fun applyThinkingDirectiveToLatestUser(
         return messages
     }
     val directive = if (showThinking) "/think" else "/no_think"
-    val latestUserIndex = messages.indexOfLast { message -> message.role == InteractionRole.USER }
-    if (latestUserIndex < 0) {
-        return messages
-    }
-    return messages.mapIndexed { index, message ->
-        if (index != latestUserIndex) {
-            message
-        } else {
+    return messages.map { message ->
+        if (message.role == InteractionRole.USER) {
             message.withDirectivePrefix(directive)
+        } else {
+            message
         }
     }
 }

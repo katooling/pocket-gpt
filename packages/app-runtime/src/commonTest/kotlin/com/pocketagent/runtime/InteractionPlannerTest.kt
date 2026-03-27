@@ -53,6 +53,39 @@ class InteractionPlannerTest {
     }
 
     @Test
+    fun `planner keeps prior user turn linked to latest assistant under tight budget`() {
+        val planner = InteractionPlanner(
+            interactionRegistry = ModelInteractionRegistry(
+                profileByModelId = mapOf(
+                    "model-1" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.CHATML,
+                        thinkingSupport = ThinkingSupport.THINK_TAGS,
+                        toolCallSupport = ToolCallSupport.NONE,
+                    ),
+                ),
+            ),
+            templateRenderer = EchoTemplateRenderer(),
+        )
+
+        val rendered = planner.buildRenderedPrompt(
+            modelId = "model-1",
+            messages = listOf(
+                message(InteractionRole.USER, "previous question with a longer payload"),
+                message(InteractionRole.ASSISTANT, "previous answer"),
+                message(InteractionRole.USER, "latest question"),
+            ),
+            memorySnippets = emptyList(),
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            promptCharBudget = 128,
+        )
+
+        assertTrue(rendered.prompt.contains("previous question with a longer payload"))
+        assertTrue(rendered.prompt.contains("previous answer"))
+        assertTrue(rendered.prompt.contains("latest question"))
+    }
+
+    @Test
     fun `planner never slices message text mid-template`() {
         val planner = InteractionPlanner(
             interactionRegistry = ModelInteractionRegistry(
@@ -162,7 +195,7 @@ class InteractionPlannerTest {
     }
 
     @Test
-    fun `planner injects think directive into latest user turn only`() {
+    fun `planner injects think directive into all user turns`() {
         val planner = InteractionPlanner(
             interactionRegistry = ModelInteractionRegistry(
                 profileByModelId = mapOf(
@@ -190,8 +223,8 @@ class InteractionPlannerTest {
             showThinking = false,
         )
 
+        assertTrue(rendered.prompt.contains("/no_think\nolder question"))
         assertTrue(rendered.prompt.contains("/no_think\nlatest question"))
-        assertFalse(rendered.prompt.contains("/no_think\nolder question"))
     }
 }
 

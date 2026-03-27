@@ -11,6 +11,8 @@ import com.pocketagent.inference.InferenceRequest
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.InMemoryMemoryModule
+import com.pocketagent.memory.MemoryChunk
+import com.pocketagent.memory.MemoryModule
 import com.pocketagent.nativebridge.CacheAwareGenerationPort
 import com.pocketagent.nativebridge.CachePolicy
 import com.pocketagent.nativebridge.GenerationFinishReason
@@ -353,6 +355,115 @@ class SendMessageUseCaseTest {
         assertEquals(4, response.runtimeStats?.prefixCacheRestoreSuccessCount)
         assertEquals(0, response.runtimeStats?.prefixCacheRestoreFailureCount)
     }
+
+    @Test
+    fun `prompt memory does not echo current user turn`() {
+        val templateRenderer = RecordingTemplateRenderer()
+        val memoryModule = RecordingMemoryModule().apply {
+            saveMemoryChunk(
+                MemoryChunk(
+                    id = "persisted-1",
+                    content = "phoenix launch notes",
+                    createdAtEpochMs = 1L,
+                ),
+            )
+        }
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(),
+            memoryModule = memoryModule,
+            interactionPlanner = InteractionPlanner(
+                interactionRegistry = ModelInteractionRegistry(),
+                templateRenderer = templateRenderer,
+            ),
+        )
+
+        fixture.useCase.execute(
+            fixture.request().copy(
+                userText = "phoenix launch notes today",
+            ),
+        )
+
+        val systemText = templateRenderer.lastSystemText()
+        assertTrue(systemText.contains("memory: phoenix launch notes"))
+        assertTrue(!systemText.contains("memory: phoenix launch notes today"))
+    }
+
+    @Test
+    fun `follow up prompts retain session memory snippets`() {
+        val templateRenderer = RecordingTemplateRenderer()
+        val memoryModule = RecordingMemoryModule().apply {
+            saveMemoryChunk(
+                MemoryChunk(
+                    id = "persisted-1",
+                    content = "rollout checklist fallback plan",
+                    createdAtEpochMs = 1L,
+                ),
+            )
+        }
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(generatedTokens = listOf("status ")),
+            memoryModule = memoryModule,
+            interactionPlanner = InteractionPlanner(
+                interactionRegistry = ModelInteractionRegistry(),
+                templateRenderer = templateRenderer,
+            ),
+        )
+
+        fixture.useCase.execute(
+            fixture.request().copy(
+                sessionId = SessionId("session-follow-up"),
+                userText = "summarize rollout checklist",
+            ),
+        )
+        val firstSystemText = templateRenderer.lastSystemText()
+
+        fixture.useCase.execute(
+            fixture.request().copy(
+                sessionId = SessionId("session-follow-up"),
+                userText = "shorten that summary",
+            ),
+        )
+        val secondSystemText = templateRenderer.lastSystemText()
+
+        assertTrue(firstSystemText.contains("memory: rollout checklist fallback plan"))
+        assertTrue(secondSystemText.contains("memory: rollout checklist fallback plan"))
+    }
+
+    @Test
+    fun `follow up prompts include prior user and assistant turns`() {
+        val templateRenderer = RecordingTemplateRenderer()
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(generatedTokens = listOf("status ")),
+            interactionPlanner = InteractionPlanner(
+                interactionRegistry = ModelInteractionRegistry(),
+                templateRenderer = templateRenderer,
+            ),
+        )
+
+        fixture.useCase.execute(
+            fixture.request().copy(
+                sessionId = SessionId("session-history"),
+                userText = "summarize rollout checklist",
+            ),
+        )
+        fixture.useCase.execute(
+            fixture.request().copy(
+                sessionId = SessionId("session-history"),
+                userText = "shorten that summary",
+            ),
+        )
+
+        val secondPrompt = templateRenderer.lastPrompt
+        assertTrue(secondPrompt.contains("summarize rollout checklist"))
+        assertTrue(secondPrompt.contains("status"))
+        assertTrue(secondPrompt.contains("shorten that summary"))
+    }
 }
 
 private class SendMessageFixture(
@@ -397,6 +508,8 @@ private fun createFixture(
     routingModule: RoutingModule = SendStaticRoutingModule(),
     runtimeInferencePorts: RuntimeInferencePorts = RuntimeInferencePorts(),
     runtimePlanResolver: RuntimePlanResolver = RuntimePlanResolver(),
+    memoryModule: MemoryModule = InMemoryMemoryModule(),
+    interactionPlanner: InteractionPlanner = InteractionPlanner(interactionRegistry = ModelInteractionRegistry()),
 ): SendMessageFixture {
     val modelLifecycle = ModelLifecycleCoordinator(
         inferenceModule = inferenceModule,
@@ -417,11 +530,11 @@ private fun createFixture(
         routingModule = routingModule,
         policyModule = policyModule,
         observabilityModule = observability,
-        memoryModule = InMemoryMemoryModule(),
+        memoryModule = memoryModule,
         inferenceModule = inferenceModule,
         runtimeConfig = runtimeConfig,
         artifactVerifier = ArtifactVerifier(runtimeConfig),
-        interactionPlanner = InteractionPlanner(interactionRegistry = ModelInteractionRegistry()),
+        interactionPlanner = interactionPlanner,
         inferenceExecutor = InferenceExecutor(
             inferenceModule = inferenceModule,
             runtimeConfig = runtimeConfig,
@@ -486,6 +599,64 @@ private class SendRecordingInferenceModule(
         val start = System.currentTimeMillis()
         while ((System.currentTimeMillis() - start) < waitMs) {
             Thread.onSpinWait()
+        }
+    }
+}
+
+private class RecordingMemoryModule : MemoryModule {
+    private val chunks = mutableListOf<MemoryChunk>()
+
+    override fun saveMemoryChunk(chunk: MemoryChunk): Boolean {
+        chunks += chunk
+        return true
+    }
+
+    override fun retrieveRelevantMemory(query: String, limit: Int): List<MemoryChunk> {
+        val queryTokens = query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }.toSet()
+        return chunks
+            .map { chunk ->
+                chunk to chunk.content.lowercase().split(Regex("\\s+")).count { token -> queryTokens.contains(token) }
+            }
+            .sortedByDescending { it.second }
+            .filter { it.second > 0 }
+            .take(limit)
+            .map { it.first }
+    }
+
+    override fun pruneMemory(maxChunks: Int): Int = 0
+}
+
+private class RecordingTemplateRenderer : ChatTemplateRenderer {
+    var lastMessages: List<InteractionMessage> = emptyList()
+        private set
+    var lastPrompt: String = ""
+        private set
+
+    override fun render(
+        messages: List<InteractionMessage>,
+        modelProfile: ModelTemplateProfile,
+    ): RenderedPrompt {
+        lastMessages = messages
+        lastPrompt = messages.joinToString(separator = "\n") { message ->
+            message.parts.joinToString(separator = "") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                }
+            }
+        }
+        return RenderedPrompt(
+            prompt = lastPrompt,
+            stopSequences = emptyList(),
+            templateProfile = modelProfile,
+        )
+    }
+
+    fun lastSystemText(): String {
+        val system = lastMessages.first { it.role == InteractionRole.SYSTEM }
+        return system.parts.joinToString(separator = "") { part ->
+            when (part) {
+                is InteractionContentPart.Text -> part.text
+            }
         }
     }
 }
