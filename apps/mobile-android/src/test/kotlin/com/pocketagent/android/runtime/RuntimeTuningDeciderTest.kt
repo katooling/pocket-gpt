@@ -5,6 +5,7 @@ import com.pocketagent.runtime.RuntimePerformanceProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class RuntimeTuningDeciderTest {
@@ -145,5 +146,107 @@ class RuntimeTuningDeciderTest {
         assertEquals(1, third.promotionCount)
         assertEquals(0, third.benchmarkWinCount)
         assertEquals("promote_gpu_layers", third.lastDecision)
+    }
+
+    @Test
+    fun `storage key distinguishes model identity envelope dimensions`() {
+        val baseEnvelope = RuntimeTuningEnvelopeIdentity(
+            modelVersion = "qwen3.5-0.8b-q4_k_m-v1",
+            quantClass = "q4_k_m",
+            artifactIdentity = "abcd1234abcd1234",
+            contextBucket = "ctx_2049_4096",
+            backendIdentity = "unknown",
+        )
+        val versionKey = buildRuntimeTuningStorageKey(
+            prefix = "runtime_tuning_rec__",
+            deviceKey = "pixel_8",
+            profileName = "FAST",
+            mode = "gpu",
+            modelId = "qwen3.5-0.8b-q4",
+            envelope = baseEnvelope,
+        )
+        val contextKey = buildRuntimeTuningStorageKey(
+            prefix = "runtime_tuning_rec__",
+            deviceKey = "pixel_8",
+            profileName = "FAST",
+            mode = "gpu",
+            modelId = "qwen3.5-0.8b-q4",
+            envelope = baseEnvelope.copy(contextBucket = "ctx_gt_8192"),
+        )
+        val artifactKey = buildRuntimeTuningStorageKey(
+            prefix = "runtime_tuning_rec__",
+            deviceKey = "pixel_8",
+            profileName = "FAST",
+            mode = "gpu",
+            modelId = "qwen3.5-0.8b-q4",
+            envelope = baseEnvelope.copy(
+                modelVersion = "qwen3.5-0.8b-q6_k-v2",
+                quantClass = "q6_k",
+                artifactIdentity = "ffffeeee11112222",
+            ),
+        )
+
+        assertNotEquals(versionKey, contextKey)
+        assertNotEquals(versionKey, artifactKey)
+        assertNotEquals(contextKey, artifactKey)
+    }
+
+    @Test
+    fun `quant class inference prefers model version then path then model id`() {
+        assertEquals(
+            "q6_k",
+            runtimeTuningQuantClass(
+                modelVersion = "manual-q6_k-v2",
+                modelPath = "/models/llama-q4_k_m.gguf",
+                modelId = "llama-3.2-q8_0",
+            ),
+        )
+        assertEquals(
+            "q4_k_m",
+            runtimeTuningQuantClass(
+                modelVersion = null,
+                modelPath = "/models/llama-q4-k-m.gguf",
+                modelId = "llama-3.2-q8_0",
+            ),
+        )
+        assertEquals(
+            "q8_0",
+            runtimeTuningQuantClass(
+                modelVersion = null,
+                modelPath = null,
+                modelId = "llama-3.2-q8_0",
+            ),
+        )
+    }
+
+    @Test
+    fun `artifact identity prefers sha and falls back to stable path hash`() {
+        assertEquals(
+            "abcdef0123456789",
+            runtimeTuningArtifactIdentity(
+                sha256 = "abcdef0123456789fedcba9876543210",
+                absolutePath = "/models/a.gguf",
+            ),
+        )
+
+        val pathIdentity = runtimeTuningArtifactIdentity(
+            sha256 = null,
+            absolutePath = "/models/a.gguf",
+        )
+        assertTrue(pathIdentity.startsWith("path_"))
+        assertEquals(
+            pathIdentity,
+            runtimeTuningArtifactIdentity(
+                sha256 = null,
+                absolutePath = "/models/a.gguf",
+            ),
+        )
+        assertNotEquals(
+            pathIdentity,
+            runtimeTuningArtifactIdentity(
+                sha256 = null,
+                absolutePath = "/models/b.gguf",
+            ),
+        )
     }
 }

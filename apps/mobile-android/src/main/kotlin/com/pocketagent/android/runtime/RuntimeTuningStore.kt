@@ -8,6 +8,7 @@ import com.pocketagent.runtime.ModelRegistry
 import com.pocketagent.nativebridge.KvCacheType
 import com.pocketagent.runtime.MemoryBudgetTracker
 import com.pocketagent.runtime.PerformanceRuntimeConfig
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -91,6 +92,109 @@ data class RuntimeTuningSample(
     val appliedNUbatch: Int,
     val decision: String,
 )
+
+private const val UNKNOWN_TUNING_DIMENSION = "unknown"
+private const val UNKNOWN_CONTEXT_BUCKET = "ctx_unknown"
+private val QUANT_CLASS_PATTERN = Regex("""(q[0-9]+(?:_[a-z0-9]+)*)""")
+private val HEX_ARTIFACT_PATTERN = Regex("^[0-9a-f]{16,64}$")
+
+internal data class RuntimeTuningEnvelopeIdentity(
+    val modelVersion: String = UNKNOWN_TUNING_DIMENSION,
+    val quantClass: String = UNKNOWN_TUNING_DIMENSION,
+    val artifactIdentity: String = UNKNOWN_TUNING_DIMENSION,
+    val contextBucket: String = UNKNOWN_CONTEXT_BUCKET,
+    val backendIdentity: String = UNKNOWN_TUNING_DIMENSION,
+)
+
+internal fun runtimeTuningContextBucket(nCtx: Int): String {
+    val normalized = nCtx.coerceAtLeast(1)
+    return when {
+        normalized <= 1024 -> "ctx_le_1024"
+        normalized <= 2048 -> "ctx_1025_2048"
+        normalized <= 4096 -> "ctx_2049_4096"
+        normalized <= 8192 -> "ctx_4097_8192"
+        else -> "ctx_gt_8192"
+    }
+}
+
+internal fun runtimeTuningQuantClass(
+    modelVersion: String?,
+    modelPath: String?,
+    modelId: String?,
+): String {
+    val candidates = listOf(modelVersion, modelPath, modelId)
+    candidates.forEach { candidate ->
+        val normalized = candidate
+            ?.trim()
+            ?.lowercase()
+            ?.replace("-", "_")
+            ?.takeIf { it.isNotEmpty() }
+            ?: return@forEach
+        val match = QUANT_CLASS_PATTERN.find(normalized) ?: return@forEach
+        return sanitizeKey(match.groupValues[1])
+    }
+    return UNKNOWN_TUNING_DIMENSION
+}
+
+internal fun runtimeTuningArtifactIdentity(sha256: String?, absolutePath: String?): String {
+    val normalizedSha = sha256
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.matches(HEX_ARTIFACT_PATTERN) }
+    if (normalizedSha != null) {
+        return normalizedSha.take(16)
+    }
+    val normalizedPath = absolutePath?.trim()?.takeIf { it.isNotEmpty() } ?: return UNKNOWN_TUNING_DIMENSION
+    val digest = MessageDigest.getInstance("SHA-256").digest(normalizedPath.encodeToByteArray())
+    val pathHash = digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    return "path_${pathHash.take(12)}"
+}
+
+internal fun buildRuntimeTuningLegacyStorageKey(
+    prefix: String,
+    deviceKey: String,
+    profileName: String,
+    mode: String,
+    modelId: String,
+): String {
+    return "$prefix${sanitizeKey(deviceKey)}__${profileName}__${mode}__${sanitizeKey(modelId)}"
+}
+
+internal fun buildRuntimeTuningStorageKey(
+    prefix: String,
+    deviceKey: String,
+    profileName: String,
+    mode: String,
+    modelId: String,
+    envelope: RuntimeTuningEnvelopeIdentity,
+): String {
+    return buildRuntimeTuningStorageKeyPrefix(
+        prefix = prefix,
+        deviceKey = deviceKey,
+        profileName = profileName,
+        mode = mode,
+        modelId = modelId,
+        envelope = envelope,
+    ) + sanitizeKey(envelope.backendIdentity)
+}
+
+internal fun buildRuntimeTuningStorageKeyPrefix(
+    prefix: String,
+    deviceKey: String,
+    profileName: String,
+    mode: String,
+    modelId: String,
+    envelope: RuntimeTuningEnvelopeIdentity,
+): String {
+    return buildString {
+        append(buildRuntimeTuningLegacyStorageKey(prefix, deviceKey, profileName, mode, modelId))
+        append("__mv_").append(sanitizeKey(envelope.modelVersion))
+        append("__qa_").append(sanitizeKey(envelope.quantClass))
+        append("__artifact_").append(sanitizeKey(envelope.artifactIdentity))
+        append("__ctx_").append(sanitizeKey(envelope.contextBucket))
+        append("__backend_")
+    }
+}
 
 class RuntimeTuningDecider(
     private val nowMs: () -> Long = { System.currentTimeMillis() },
@@ -333,7 +437,11 @@ class AndroidRuntimeTuningStore(
         gpuQualifiedLayers: Int,
     ): PerformanceRuntimeConfig {
         val modelId = resolveModelId(modelIdHint) ?: return baseConfig
-        val recommendation = readRecommendation(prefKeyFor(modelId, baseConfig)) ?: return baseConfig
+        val envelope = resolveEnvelope(modelId = modelId, targetConfig = baseConfig)
+        val recommendation = readRecommendation(prefKeyFor(modelId, baseConfig, envelope))
+            ?: readUniqueBackendRecommendation(modelId, baseConfig, envelope)
+            ?: readRecommendation(legacyPrefKeyFor(modelId, baseConfig))
+            ?: return baseConfig
         val speculativeEnabled = recommendation.speculativeEnabled ?: baseConfig.speculativeEnabled
         return baseConfig.copy(
             gpuLayers = if (baseConfig.gpuEnabled) {
@@ -367,9 +475,16 @@ class AndroidRuntimeTuningStore(
         thermalThrottled: Boolean,
     ) {
         val resolvedModelId = resolveModelId(modelId) ?: return
-        val prefKey = prefKeyFor(resolvedModelId, targetConfig)
+        val envelope = resolveEnvelope(
+            modelId = resolvedModelId,
+            targetConfig = targetConfig,
+            backendIdentityHint = runtimeStats?.backendIdentity,
+        )
+        val prefKey = prefKeyFor(resolvedModelId, targetConfig, envelope)
         val next = decider.nextRecommendation(
-            current = readRecommendation(prefKey),
+            current = readRecommendation(prefKey)
+                ?: readUniqueBackendRecommendation(resolvedModelId, targetConfig, envelope)
+                ?: readRecommendation(legacyPrefKeyFor(resolvedModelId, targetConfig)),
             appliedConfig = appliedConfig,
             targetConfig = targetConfig,
             observation = RuntimeTuningObservation(
@@ -380,12 +495,12 @@ class AndroidRuntimeTuningStore(
                 thermalThrottled = thermalThrottled,
             ),
         )
-        writeRecommendation(prefKey, resolvedModelId, targetConfig, next)
+        writeRecommendation(prefKey, resolvedModelId, targetConfig, envelope, next)
         runtimeStats?.peakRssMb?.let { peakRss ->
             memoryBudgetTracker.recordSuccessfulLoad(resolvedModelId, peakRss)
         }
         appendSample(
-            historyKey = historyKeyFor(resolvedModelId, targetConfig),
+            historyKey = historyKeyFor(resolvedModelId, targetConfig, envelope),
             sample = RuntimeTuningSample(
                 timestampEpochMs = nowMs(),
                 success = true,
@@ -416,9 +531,10 @@ class AndroidRuntimeTuningStore(
             return
         }
         val resolvedModelId = resolveModelId(modelId) ?: return
-        val prefKey = prefKeyFor(resolvedModelId, targetConfig)
+        val envelope = resolveEnvelope(modelId = resolvedModelId, targetConfig = targetConfig)
+        val prefKey = prefKeyFor(resolvedModelId, targetConfig, envelope)
         val next = decider.nextRecommendation(
-            current = readRecommendation(prefKey),
+            current = readRecommendation(prefKey) ?: readRecommendation(legacyPrefKeyFor(resolvedModelId, targetConfig)),
             appliedConfig = appliedConfig,
             targetConfig = targetConfig,
             observation = RuntimeTuningObservation(
@@ -427,9 +543,9 @@ class AndroidRuntimeTuningStore(
                 thermalThrottled = thermalThrottled,
             ),
         )
-        writeRecommendation(prefKey, resolvedModelId, targetConfig, next)
+        writeRecommendation(prefKey, resolvedModelId, targetConfig, envelope, next)
         appendSample(
-            historyKey = historyKeyFor(resolvedModelId, targetConfig),
+            historyKey = historyKeyFor(resolvedModelId, targetConfig, envelope),
             sample = RuntimeTuningSample(
                 timestampEpochMs = nowMs(),
                 success = false,
@@ -497,6 +613,11 @@ class AndroidRuntimeTuningStore(
             append("|model=${sanitizeDiagnosticValue(payload.optString("modelId"))}")
             append("|profile=${sanitizeDiagnosticValue(payload.optString("profile"))}")
             append("|mode=${sanitizeDiagnosticValue(payload.optString("mode"))}")
+            append("|model_version=${sanitizeDiagnosticValue(payload.optString("modelVersion", UNKNOWN_TUNING_DIMENSION))}")
+            append("|quant_class=${sanitizeDiagnosticValue(payload.optString("quantClass", UNKNOWN_TUNING_DIMENSION))}")
+            append("|artifact_identity=${sanitizeDiagnosticValue(payload.optString("artifactIdentity", UNKNOWN_TUNING_DIMENSION))}")
+            append("|context_bucket=${sanitizeDiagnosticValue(payload.optString("contextBucket", UNKNOWN_CONTEXT_BUCKET))}")
+            append("|backend_identity=${sanitizeDiagnosticValue(payload.optString("backendIdentity", UNKNOWN_TUNING_DIMENSION))}")
             append("|recommended_gpu_layers=${payload.optIntOrMinusOne("gpuLayers")}")
             append("|target_gpu_layers=${payload.optIntOrMinusOne("targetGpuLayers")}")
             append("|recommended_speculative=${payload.optStringOr("speculativeEnabled", "unknown")}")
@@ -527,6 +648,11 @@ class AndroidRuntimeTuningStore(
             append("|model=${sanitizeDiagnosticValue(payload.optString("modelId"))}")
             append("|profile=${sanitizeDiagnosticValue(payload.optString("profile"))}")
             append("|mode=${sanitizeDiagnosticValue(payload.optString("mode"))}")
+            append("|model_version=${sanitizeDiagnosticValue(payload.optString("modelVersion", UNKNOWN_TUNING_DIMENSION))}")
+            append("|quant_class=${sanitizeDiagnosticValue(payload.optString("quantClass", UNKNOWN_TUNING_DIMENSION))}")
+            append("|artifact_identity=${sanitizeDiagnosticValue(payload.optString("artifactIdentity", UNKNOWN_TUNING_DIMENSION))}")
+            append("|context_bucket=${sanitizeDiagnosticValue(payload.optString("contextBucket", UNKNOWN_CONTEXT_BUCKET))}")
+            append("|backend_identity=${sanitizeDiagnosticValue(payload.optString("backendIdentity", UNKNOWN_TUNING_DIMENSION))}")
             append("|sample_index=$exportIndex")
             append("|success=${sample.optBoolean("success", false)}")
             append("|decision=${sanitizeDiagnosticValue(sample.optString("decision", "unknown"))}")
@@ -549,17 +675,113 @@ class AndroidRuntimeTuningStore(
         val modelId = payload.optString("modelId")
         val profile = payload.optString("profile")
         val mode = payload.optString("mode")
-        return "$HISTORY_KEY_PREFIX${sanitizeKey(deviceKey)}__${profile}__${mode}__${sanitizeKey(modelId)}"
+        val payloadDeviceKey = payload.optString("deviceKey", deviceKey)
+        val hasEnvelopeFields = payload.has("modelVersion") ||
+            payload.has("quantClass") ||
+            payload.has("artifactIdentity") ||
+            payload.has("contextBucket") ||
+            payload.has("backendIdentity")
+        return if (hasEnvelopeFields) {
+            buildRuntimeTuningStorageKey(
+                prefix = HISTORY_KEY_PREFIX,
+                deviceKey = payloadDeviceKey,
+                profileName = profile,
+                mode = mode,
+                modelId = modelId,
+                envelope = RuntimeTuningEnvelopeIdentity(
+                    modelVersion = payload.optString("modelVersion", UNKNOWN_TUNING_DIMENSION),
+                    quantClass = payload.optString("quantClass", UNKNOWN_TUNING_DIMENSION),
+                    artifactIdentity = payload.optString("artifactIdentity", UNKNOWN_TUNING_DIMENSION),
+                    contextBucket = payload.optString("contextBucket", UNKNOWN_CONTEXT_BUCKET),
+                    backendIdentity = payload.optString("backendIdentity", UNKNOWN_TUNING_DIMENSION),
+                ),
+            )
+        } else {
+            buildRuntimeTuningLegacyStorageKey(
+                prefix = HISTORY_KEY_PREFIX,
+                deviceKey = payloadDeviceKey,
+                profileName = profile,
+                mode = mode,
+                modelId = modelId,
+            )
+        }
     }
 
-    private fun prefKeyFor(modelId: String, targetConfig: PerformanceRuntimeConfig): String {
+    private fun prefKeyFor(
+        modelId: String,
+        targetConfig: PerformanceRuntimeConfig,
+        envelope: RuntimeTuningEnvelopeIdentity,
+    ): String {
         val mode = if (targetConfig.gpuEnabled) "gpu" else "cpu"
-        return "$RECOMMENDATION_KEY_PREFIX${sanitizeKey(deviceKey)}__${targetConfig.profile.name}__${mode}__${sanitizeKey(modelId)}"
+        return buildRuntimeTuningStorageKey(
+            prefix = RECOMMENDATION_KEY_PREFIX,
+            deviceKey = deviceKey,
+            profileName = targetConfig.profile.name,
+            mode = mode,
+            modelId = modelId,
+            envelope = envelope,
+        )
     }
 
-    private fun historyKeyFor(modelId: String, targetConfig: PerformanceRuntimeConfig): String {
+    private fun historyKeyFor(
+        modelId: String,
+        targetConfig: PerformanceRuntimeConfig,
+        envelope: RuntimeTuningEnvelopeIdentity,
+    ): String {
         val mode = if (targetConfig.gpuEnabled) "gpu" else "cpu"
-        return "$HISTORY_KEY_PREFIX${sanitizeKey(deviceKey)}__${targetConfig.profile.name}__${mode}__${sanitizeKey(modelId)}"
+        return buildRuntimeTuningStorageKey(
+            prefix = HISTORY_KEY_PREFIX,
+            deviceKey = deviceKey,
+            profileName = targetConfig.profile.name,
+            mode = mode,
+            modelId = modelId,
+            envelope = envelope,
+        )
+    }
+
+    private fun legacyPrefKeyFor(modelId: String, targetConfig: PerformanceRuntimeConfig): String {
+        val mode = if (targetConfig.gpuEnabled) "gpu" else "cpu"
+        return buildRuntimeTuningLegacyStorageKey(
+            prefix = RECOMMENDATION_KEY_PREFIX,
+            deviceKey = deviceKey,
+            profileName = targetConfig.profile.name,
+            mode = mode,
+            modelId = modelId,
+        )
+    }
+
+    private fun legacyHistoryKeyFor(modelId: String, targetConfig: PerformanceRuntimeConfig): String {
+        val mode = if (targetConfig.gpuEnabled) "gpu" else "cpu"
+        return buildRuntimeTuningLegacyStorageKey(
+            prefix = HISTORY_KEY_PREFIX,
+            deviceKey = deviceKey,
+            profileName = targetConfig.profile.name,
+            mode = mode,
+            modelId = modelId,
+        )
+    }
+
+    private fun readUniqueBackendRecommendation(
+        modelId: String,
+        targetConfig: PerformanceRuntimeConfig,
+        envelope: RuntimeTuningEnvelopeIdentity,
+    ): RuntimeTuningRecommendation? {
+        val mode = if (targetConfig.gpuEnabled) "gpu" else "cpu"
+        val keyPrefix = buildRuntimeTuningStorageKeyPrefix(
+            prefix = RECOMMENDATION_KEY_PREFIX,
+            deviceKey = deviceKey,
+            profileName = targetConfig.profile.name,
+            mode = mode,
+            modelId = modelId,
+            envelope = envelope,
+        )
+        val matchingKeys = prefs.all.keys
+            .filter { prefKey -> prefKey.startsWith(keyPrefix) }
+            .sorted()
+        if (matchingKeys.size != 1) {
+            return null
+        }
+        return readRecommendation(matchingKeys.single())
     }
 
     private fun readRecommendation(prefKey: String): RuntimeTuningRecommendation? {
@@ -599,6 +821,7 @@ class AndroidRuntimeTuningStore(
         prefKey: String,
         modelId: String,
         targetConfig: PerformanceRuntimeConfig,
+        envelope: RuntimeTuningEnvelopeIdentity,
         recommendation: RuntimeTuningRecommendation,
     ) {
         val payload = JSONObject().apply {
@@ -606,6 +829,11 @@ class AndroidRuntimeTuningStore(
             put("modelId", modelId)
             put("profile", targetConfig.profile.name)
             put("mode", if (targetConfig.gpuEnabled) "gpu" else "cpu")
+            put("modelVersion", envelope.modelVersion)
+            put("quantClass", envelope.quantClass)
+            put("artifactIdentity", envelope.artifactIdentity)
+            put("contextBucket", envelope.contextBucket)
+            put("backendIdentity", envelope.backendIdentity)
             recommendation.gpuLayers?.let { put("gpuLayers", it) }
             recommendation.kvCacheType?.let { put("kvCacheTypeCode", it.code) }
             recommendation.speculativeEnabled?.let { put("speculativeEnabled", it) }
@@ -652,12 +880,47 @@ class AndroidRuntimeTuningStore(
                 sample.errorCode?.let { put("errorCode", it) }
                 put("appliedGpuLayers", sample.appliedGpuLayers)
                 put("appliedSpeculativeEnabled", sample.appliedSpeculativeEnabled)
+                put("appliedSpeculativeDraftGpuLayers", sample.appliedSpeculativeDraftGpuLayers)
+                put("appliedUseMmap", sample.appliedUseMmap)
                 put("appliedNBatch", sample.appliedNBatch)
                 put("appliedNUbatch", sample.appliedNUbatch)
                 put("decision", sample.decision)
             },
         )
         prefs.edit().putString(historyKey, trimmed.toString()).apply()
+    }
+
+    private fun resolveEnvelope(
+        modelId: String,
+        targetConfig: PerformanceRuntimeConfig,
+        backendIdentityHint: String? = null,
+    ): RuntimeTuningEnvelopeIdentity {
+        val provisionedState = provisioningStore.snapshot().models.firstOrNull { state -> state.modelId == modelId }
+        val activeVersion = provisionedState?.activeVersion
+        val activeDescriptor = provisionedState
+            ?.installedVersions
+            ?.firstOrNull { descriptor -> descriptor.version == activeVersion }
+        val modelVersion = activeDescriptor?.version ?: activeVersion ?: UNKNOWN_TUNING_DIMENSION
+        val modelPath = activeDescriptor?.absolutePath ?: provisionedState?.absolutePath
+        val modelSha = activeDescriptor?.sha256 ?: provisionedState?.sha256
+        return RuntimeTuningEnvelopeIdentity(
+            modelVersion = modelVersion,
+            quantClass = runtimeTuningQuantClass(
+                modelVersion = modelVersion,
+                modelPath = modelPath,
+                modelId = modelId,
+            ),
+            artifactIdentity = runtimeTuningArtifactIdentity(
+                sha256 = modelSha,
+                absolutePath = modelPath,
+            ),
+            contextBucket = runtimeTuningContextBucket(targetConfig.nCtx),
+            backendIdentity = backendIdentityHint
+                ?.trim()
+                ?.lowercase()
+                ?.takeIf { identity -> identity.isNotEmpty() }
+                ?: UNKNOWN_TUNING_DIMENSION,
+        )
     }
 
     private companion object {

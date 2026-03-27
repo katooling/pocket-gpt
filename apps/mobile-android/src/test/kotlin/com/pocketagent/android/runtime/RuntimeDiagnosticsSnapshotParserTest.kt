@@ -3,6 +3,7 @@ package com.pocketagent.android.runtime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class RuntimeDiagnosticsSnapshotParserTest {
     @Test
@@ -10,22 +11,40 @@ class RuntimeDiagnosticsSnapshotParserTest {
         val diagnostics = """
             diag=ok
             GPU_OFFLOAD|runtime_supported=true|device_feature_advisory_supported=true|probe_status=QUALIFIED|probe_layers=8|probe_reason=none|probe_source=runtime_plus_probe|probe_detail=ok
-            GPU_PROBE|status=QUALIFIED|max_layers=8|reason=none|detail=ok|cache_key=abc|native_backend_payload={"compiled_backend":"hexagon,opencl","backend_profile":"opencl","active_backend":"opencl","runtime_supported":true,"strict_accelerator_fail_fast":true,"auto_backend_cpu_fallback":false,"opencl_device_version":"2.0","opencl_adreno_generation":7,"active_model_quantization":"q4_k_m","flash_attn_guard_reason":"opencl_backend","quantized_kv_guard_reason":"opencl_backend"}
+            GPU_PROBE|status=QUALIFIED|max_layers=8|reason=none|detail=ok|cache_key=abc|qualification_state=probe_qualified|compiled_backends=hexagon,opencl|discovered_backends=opencl|active_backend=opencl|flash_attn_feature_state=guarded|quantized_kv_feature_state=guarded|native_backend_payload={"compiled_backend":"hexagon,opencl","backend_profile":"opencl","active_backend":"opencl","runtime_supported":true,"strict_accelerator_fail_fast":true,"auto_backend_cpu_fallback":false,"opencl_device_version":"2.0","opencl_adreno_generation":7,"opencl_device_count":1,"hexagon_device_count":0,"active_model_quantization":"q4_k_m","flash_attn_guard_reason":"opencl_backend","quantized_kv_guard_reason":"opencl_backend"}
         """.trimIndent()
 
         val snapshot = RuntimeDiagnosticsSnapshotParser.parse(diagnostics)
 
         assertEquals("opencl", snapshot.backendProfile)
         assertEquals("hexagon,opencl", snapshot.compiledBackend)
+        assertEquals(listOf("hexagon", "opencl"), snapshot.compiledBackends)
+        assertEquals(listOf("opencl"), snapshot.discoveredBackends)
         assertEquals("opencl", snapshot.activeBackend)
+        assertEquals(BackendQualificationState.PROBE_QUALIFIED, snapshot.backendQualificationState)
         assertEquals(true, snapshot.nativeRuntimeSupported)
         assertEquals(true, snapshot.strictAcceleratorFailFast)
         assertEquals(false, snapshot.autoBackendCpuFallback)
         assertEquals("2.0", snapshot.openclDeviceVersion)
         assertEquals(7, snapshot.openclAdrenoGeneration)
         assertEquals("q4_k_m", snapshot.activeModelQuantization)
+        assertEquals(BackendFeatureQualificationState.GUARDED, snapshot.flashAttnQualificationState)
+        assertEquals(BackendFeatureQualificationState.GUARDED, snapshot.quantizedKvQualificationState)
         assertEquals("opencl_backend", snapshot.flashAttnGuardReason)
         assertEquals("opencl_backend", snapshot.quantizedKvGuardReason)
+        assertEquals(2, snapshot.backendCapabilities.size)
+        assertTrue(snapshot.backendCapabilities.any { capability ->
+            capability.backend == "opencl" &&
+                capability.compiled &&
+                capability.discovered == true &&
+                capability.active
+        })
+        assertTrue(snapshot.backendCapabilities.any { capability ->
+            capability.backend == "hexagon" &&
+                capability.compiled &&
+                capability.discovered == false &&
+                !capability.active
+        })
     }
 
     @Test
@@ -36,5 +55,24 @@ class RuntimeDiagnosticsSnapshotParserTest {
         assertNull(snapshot.compiledBackend)
         assertNull(snapshot.nativeRuntimeSupported)
         assertNull(snapshot.strictAcceleratorFailFast)
+    }
+
+    @Test
+    fun `parser resolves runtime unsupported and unavailable feature states`() {
+        val diagnostics = """
+            diag=ok
+            GPU_OFFLOAD|runtime_supported=false|probe_status=FAILED|probe_reason=RUNTIME_UNSUPPORTED|probe_detail=unsupported
+            GPU_PROBE|status=FAILED|max_layers=0|reason=RUNTIME_UNSUPPORTED|detail=unsupported|cache_key=abc|active_backend=cpu|native_backend_payload={"compiled_backend":"cpu","active_backend":"cpu","runtime_supported":false}
+        """.trimIndent()
+
+        val snapshot = RuntimeDiagnosticsSnapshotParser.parse(diagnostics)
+
+        assertEquals(BackendQualificationState.RUNTIME_UNSUPPORTED, snapshot.backendQualificationState)
+        assertEquals(BackendFeatureQualificationState.UNAVAILABLE, snapshot.flashAttnQualificationState)
+        assertEquals(BackendFeatureQualificationState.UNAVAILABLE, snapshot.quantizedKvQualificationState)
+        assertEquals(listOf("cpu"), snapshot.compiledBackends)
+        assertEquals("cpu", snapshot.activeBackend)
+        assertEquals(1, snapshot.backendCapabilities.size)
+        assertTrue(snapshot.backendCapabilities.single().active)
     }
 }

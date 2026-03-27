@@ -453,6 +453,80 @@ class GpuOffloadQualificationTest {
         assertEquals(12 * 5_000L, testScheduler.currentTime)
         assertFalse(result.detail.isNullOrBlank())
     }
+
+    @Test
+    fun `diagnostics line exposes canonical backend qualification fields`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 8,
+                    detail = "probe_success",
+                )
+            },
+        )
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            diagnosticsReader = NativeBackendDiagnosticsReader(
+                payloadProvider = {
+                    diagnosticsJson(
+                        driverVersion = 1L,
+                        compiledBackend = "opencl",
+                        activeBackend = "opencl",
+                        openclDeviceCount = 1,
+                        flashAttnGuardReason = "opencl_backend",
+                        quantizedKvGuardReason = "opencl_backend",
+                    )
+                },
+            ),
+            scope = TestScope(dispatcher),
+        )
+
+        assertEquals(GpuProbeStatus.PENDING, qualifier.evaluate(runtimeSupported = true).status)
+        advanceUntilIdle()
+        assertEquals(GpuProbeStatus.QUALIFIED, qualifier.evaluate(runtimeSupported = true).status)
+
+        val diagnosticsLine = qualifier.diagnosticsLine()
+        assertTrue(diagnosticsLine.contains("qualification_state=probe_qualified"))
+        assertTrue(diagnosticsLine.contains("compiled_backends=opencl"))
+        assertTrue(diagnosticsLine.contains("discovered_backends=opencl"))
+        assertTrue(diagnosticsLine.contains("active_backend=opencl"))
+        assertTrue(diagnosticsLine.contains("flash_attn_feature_state=guarded"))
+        assertTrue(diagnosticsLine.contains("quantized_kv_feature_state=guarded"))
+    }
+
+    @Test
+    fun `diagnostics line reports runtime unsupported qualification state`() = runTest {
+        val probeClient = RecordingProbeClient(
+            responseForRequest = {
+                GpuProbeResult(
+                    status = GpuProbeStatus.QUALIFIED,
+                    maxStableGpuLayers = 8,
+                )
+            },
+        )
+        val qualifier = buildQualifier(
+            probeClient = probeClient,
+            probeRequestResolver = { testProbeRequest() },
+            diagnosticsReader = NativeBackendDiagnosticsReader(
+                payloadProvider = {
+                    diagnosticsJson(
+                        driverVersion = 1L,
+                        compiledBackend = "cpu",
+                        activeBackend = "cpu",
+                        runtimeSupported = false,
+                    )
+                },
+            ),
+        )
+
+        val result = qualifier.evaluate(runtimeSupported = false)
+
+        assertEquals(GpuProbeStatus.FAILED, result.status)
+        assertTrue(qualifier.diagnosticsLine().contains("qualification_state=runtime_unsupported"))
+    }
 }
 
 private fun buildQualifier(
@@ -494,22 +568,33 @@ private fun testProbeRequest(
 private fun diagnosticsJson(
     driverVersion: Long,
     compiledBackend: String = "opencl",
+    activeBackend: String = compiledBackend,
+    runtimeSupported: Boolean = true,
     shaderFloat16: Boolean = true,
     storageBuffer16BitAccess: Boolean = true,
     selectedDeviceApiVersion: Long = 4202496L,
     deviceLocalHeapBytes: Long = 0L,
+    openclDeviceCount: Int? = if (compiledBackend.contains("opencl")) 1 else 0,
+    hexagonDeviceCount: Int? = if (compiledBackend.contains("hexagon")) 1 else 0,
+    flashAttnGuardReason: String? = null,
+    quantizedKvGuardReason: String? = null,
 ): String {
     return """
         {
           "compiled_backend": "$compiledBackend",
-          "runtime_supported": true,
+          "active_backend": "$activeBackend",
+          "runtime_supported": $runtimeSupported,
           "driver_name": "test-driver",
           "driver_version": $driverVersion,
           "instance_api_version": 4202496,
           "selected_device_api_version": $selectedDeviceApiVersion,
           "device_local_heap_bytes": $deviceLocalHeapBytes,
           "storage_buffer_16bit_access": $storageBuffer16BitAccess,
-          "shader_float16": $shaderFloat16
+          "shader_float16": $shaderFloat16,
+          "opencl_device_count": ${openclDeviceCount ?: "null"},
+          "hexagon_device_count": ${hexagonDeviceCount ?: "null"},
+          "flash_attn_guard_reason": ${flashAttnGuardReason?.let { "\"$it\"" } ?: "null"},
+          "quantized_kv_guard_reason": ${quantizedKvGuardReason?.let { "\"$it\"" } ?: "null"}
         }
     """.trimIndent()
 }

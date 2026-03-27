@@ -248,6 +248,8 @@ internal class InternalAndroidGpuOffloadQualifier(
     @Volatile
     private var inFlightCacheKey: String? = null
     @Volatile
+    private var latestBackendDiagnostics: NativeBackendDiagnostics = NativeBackendDiagnostics()
+    @Volatile
     private var latestBackendDiagnosticsPayload: String = ""
 
     override fun evaluate(runtimeSupported: Boolean): GpuProbeResult {
@@ -270,6 +272,7 @@ internal class InternalAndroidGpuOffloadQualifier(
         }
 
         val nativeDiag = backendDiagnosticsReader.read()
+        latestBackendDiagnostics = nativeDiag
         latestBackendDiagnosticsPayload = nativeDiag.rawPayload
         val cacheKey = computeCacheKey(request = request, nativeDiagnostics = nativeDiag)
         readCachedResult(cacheKey = cacheKey)?.let { cached ->
@@ -340,6 +343,7 @@ internal class InternalAndroidGpuOffloadQualifier(
     ) {
         val request = probeRequestResolver()
         val nativeDiag = backendDiagnosticsReader.read()
+        latestBackendDiagnostics = nativeDiag
         latestBackendDiagnosticsPayload = nativeDiag.rawPayload
         val cacheKey = when {
             request != null -> computeCacheKey(request = request, nativeDiagnostics = nativeDiag)
@@ -519,8 +523,34 @@ internal class InternalAndroidGpuOffloadQualifier(
 
     override fun diagnosticsLine(): String {
         val result = latestResult
+        val nativeDiag = latestBackendDiagnostics
+        val qualificationState = resolveBackendQualificationState(
+            runtimeSupported = nativeDiag.runtimeSupported,
+            probeStatus = result.status,
+            probeReason = result.failureReason,
+        )
+        val compiledBackends = nativeDiag.compiledBackends().joinToString(",")
+        val discoveredBackends = nativeDiag.discoveredAcceleratorBackends().joinToString(",")
+        val activeBackend = nativeDiag.activeBackend.takeIf { value -> value.isNotBlank() } ?: "unknown"
+        val flashAttnFeatureState = resolveBackendFeatureQualificationState(
+            guardReason = nativeDiag.flashAttnGuardReason,
+            activeBackend = nativeDiag.activeBackend,
+            qualificationState = qualificationState,
+            runtimeSupported = nativeDiag.runtimeSupported,
+        )
+        val quantizedKvFeatureState = resolveBackendFeatureQualificationState(
+            guardReason = nativeDiag.quantizedKvGuardReason,
+            activeBackend = nativeDiag.activeBackend,
+            qualificationState = qualificationState,
+            runtimeSupported = nativeDiag.runtimeSupported,
+        )
         return "GPU_PROBE|status=${result.status}|max_layers=${result.maxStableGpuLayers}|reason=${result.failureReason ?: "none"}|" +
-            "detail=${result.detail.orEmpty()}|cache_key=${result.cacheKey.orEmpty()}|native_backend_payload=${latestBackendDiagnosticsPayload}"
+            "detail=${result.detail.orEmpty()}|cache_key=${result.cacheKey.orEmpty()}|" +
+            "qualification_state=${qualificationState.name.lowercase()}|" +
+            "compiled_backends=$compiledBackends|discovered_backends=$discoveredBackends|active_backend=$activeBackend|" +
+            "flash_attn_feature_state=${flashAttnFeatureState.name.lowercase()}|" +
+            "quantized_kv_feature_state=${quantizedKvFeatureState.name.lowercase()}|" +
+            "native_backend_payload=${latestBackendDiagnosticsPayload}"
     }
 
     private fun computeCacheKey(
@@ -591,6 +621,49 @@ internal class InternalAndroidGpuOffloadQualifier(
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
+    private fun resolveBackendQualificationState(
+        runtimeSupported: Boolean,
+        probeStatus: GpuProbeStatus,
+        probeReason: GpuProbeFailureReason?,
+    ): BackendQualificationState {
+        if (!runtimeSupported) {
+            return BackendQualificationState.RUNTIME_UNSUPPORTED
+        }
+        return when (probeStatus) {
+            GpuProbeStatus.QUALIFIED -> BackendQualificationState.PROBE_QUALIFIED
+            GpuProbeStatus.PENDING -> BackendQualificationState.PROBE_PENDING
+            GpuProbeStatus.FAILED -> {
+                if (probeReason == GpuProbeFailureReason.MODEL_UNAVAILABLE) {
+                    BackendQualificationState.MODEL_UNAVAILABLE
+                } else {
+                    BackendQualificationState.PROBE_FAILED
+                }
+            }
+        }
+    }
+
+    private fun resolveBackendFeatureQualificationState(
+        guardReason: String?,
+        activeBackend: String,
+        qualificationState: BackendQualificationState,
+        runtimeSupported: Boolean,
+    ): BackendFeatureQualificationState {
+        if (!guardReason.isNullOrBlank()) {
+            return BackendFeatureQualificationState.GUARDED
+        }
+        val normalizedActiveBackend = activeBackend.trim().lowercase()
+        if (normalizedActiveBackend == "cpu" || !runtimeSupported) {
+            return BackendFeatureQualificationState.UNAVAILABLE
+        }
+        if (
+            qualificationState == BackendQualificationState.PROBE_QUALIFIED &&
+            normalizedActiveBackend in setOf("opencl", "hexagon")
+        ) {
+            return BackendFeatureQualificationState.QUALIFIED
+        }
+        return BackendFeatureQualificationState.UNKNOWN
+    }
+
 }
 
 private class SharedPrefsGpuProbeResultStore(
@@ -607,18 +680,47 @@ private class SharedPrefsGpuProbeResultStore(
 }
 
 data class NativeBackendDiagnostics(
-    val runtimeSupported: Boolean,
-    val compiledBackend: String,
-    val driverName: String,
-    val driverVersion: Long,
-    val instanceApiVersion: Long,
-    val selectedDeviceApiVersion: Long,
-    val deviceLocalHeapBytes: Long,
-    val storageBuffer16BitAccess: Boolean,
-    val shaderFloat16: Boolean,
-    val flashAttnActive: Boolean,
-    val rawPayload: String,
-)
+    val runtimeSupported: Boolean = false,
+    val compiledBackend: String = "",
+    val activeBackend: String = "",
+    val driverName: String = "",
+    val driverVersion: Long = 0L,
+    val instanceApiVersion: Long = 0L,
+    val selectedDeviceApiVersion: Long = 0L,
+    val deviceLocalHeapBytes: Long = 0L,
+    val storageBuffer16BitAccess: Boolean = false,
+    val shaderFloat16: Boolean = false,
+    val flashAttnActive: Boolean = false,
+    val flashAttnGuardReason: String = "",
+    val quantizedKvGuardReason: String = "",
+    val openclDeviceCount: Int = 0,
+    val hexagonDeviceCount: Int = 0,
+    val rawPayload: String = "",
+) {
+    fun compiledBackends(): List<String> {
+        return compiledBackend
+            .split(',')
+            .map { token -> token.trim().lowercase() }
+            .filter { token -> token.isNotEmpty() }
+            .distinct()
+            .sorted()
+    }
+
+    fun discoveredAcceleratorBackends(): List<String> {
+        val discovered = mutableSetOf<String>()
+        if (openclDeviceCount > 0) {
+            discovered += "opencl"
+        }
+        if (hexagonDeviceCount > 0) {
+            discovered += "hexagon"
+        }
+        val normalizedActiveBackend = activeBackend.trim().lowercase()
+        if (normalizedActiveBackend in setOf("opencl", "hexagon")) {
+            discovered += normalizedActiveBackend
+        }
+        return discovered.toList().sorted()
+    }
+}
 
 class NativeBackendDiagnosticsReader(
     private val payloadProvider: () -> String? = { null },
@@ -632,6 +734,7 @@ class NativeBackendDiagnosticsReader(
         return NativeBackendDiagnostics(
             runtimeSupported = root.booleanOrDefault("runtime_supported", false),
             compiledBackend = root.stringOrDefault("compiled_backend", ""),
+            activeBackend = root.stringOrDefault("active_backend", ""),
             driverName = root.stringOrDefault("driver_name", ""),
             driverVersion = root.longOrDefault("driver_version", 0L),
             instanceApiVersion = root.longOrDefault("instance_api_version", 0L),
@@ -640,6 +743,10 @@ class NativeBackendDiagnosticsReader(
             storageBuffer16BitAccess = root.booleanOrDefault("storage_buffer_16bit_access", false),
             shaderFloat16 = root.booleanOrDefault("shader_float16", false),
             flashAttnActive = root.booleanOrDefault("flashAttnActive", false),
+            flashAttnGuardReason = root.stringOrDefault("flash_attn_guard_reason", ""),
+            quantizedKvGuardReason = root.stringOrDefault("quantized_kv_guard_reason", ""),
+            openclDeviceCount = root.intOrDefault("opencl_device_count", 0),
+            hexagonDeviceCount = root.intOrDefault("hexagon_device_count", 0),
             rawPayload = payload,
         )
     }
@@ -651,6 +758,10 @@ private fun JsonObject.stringOrDefault(key: String, defaultValue: String): Strin
 
 private fun JsonObject.longOrDefault(key: String, defaultValue: Long): Long {
     return this[key]?.jsonPrimitive?.longOrNull ?: defaultValue
+}
+
+private fun JsonObject.intOrDefault(key: String, defaultValue: Int): Int {
+    return this[key]?.jsonPrimitive?.intOrNull ?: defaultValue
 }
 
 private fun JsonObject.booleanOrDefault(key: String, defaultValue: Boolean): Boolean {
