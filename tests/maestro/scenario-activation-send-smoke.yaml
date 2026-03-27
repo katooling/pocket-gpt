@@ -29,9 +29,9 @@ tags:
       - back
 - runFlow:
     when:
-      visible: "Refresh runtime checks"
+      visible: "Refresh"
     commands:
-      - tapOn: "Refresh runtime checks"
+      - tapOn: "Refresh"
 - extendedWaitUntil:
     visible: "Runtime: Ready"
     timeout: 180000
