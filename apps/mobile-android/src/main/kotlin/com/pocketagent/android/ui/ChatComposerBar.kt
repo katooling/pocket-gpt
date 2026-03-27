@@ -1,6 +1,9 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +18,8 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -25,16 +30,24 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.animateFloatAsState
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatGatePrimaryAction
 import com.pocketagent.android.ui.state.ChatGateState
@@ -48,6 +61,7 @@ internal fun ComposerBar(
     chatGateState: ChatGateState,
     editingMessageId: String? = null,
     attachedImages: List<String> = emptyList(),
+    activeSessionId: String? = null,
     onTextChanged: (String) -> Unit,
     onSend: () -> Unit,
     onCancelSend: () -> Unit,
@@ -63,6 +77,13 @@ internal fun ComposerBar(
 ) {
     val haptic = LocalHapticFeedback.current
     val isEditing = editingMessageId != null
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(activeSessionId) {
+        if (activeSessionId != null) {
+            focusRequester.requestFocus()
+        }
+    }
     val canTriggerBlockedAction = hasChatGatePrimaryAction(chatGateState)
     val canTriggerUserAction = chatGateState.isReady || canTriggerBlockedAction
     val sendButtonDescription = stringResource(id = R.string.a11y_send_button)
@@ -77,6 +98,7 @@ internal fun ComposerBar(
         modifier = Modifier
             .fillMaxWidth()
             .imePadding()
+            .animateContentSize()
             .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
         if (shouldShowChatGateInlineCard(chatGateState)) {
@@ -94,11 +116,11 @@ internal fun ComposerBar(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                IconButton(onClick = onCancelEdit, modifier = Modifier.size(24.dp)) {
+                IconButton(onClick = onCancelEdit) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Cancel edit",
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
@@ -130,12 +152,11 @@ internal fun ComposerBar(
                             Spacer(modifier = Modifier.size(4.dp))
                             IconButton(
                                 onClick = { onRemoveImage(index) },
-                                modifier = Modifier.size(18.dp),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Remove image",
-                                    modifier = Modifier.size(12.dp),
+                                    modifier = Modifier.size(14.dp),
                                 )
                             }
                         }
@@ -159,10 +180,18 @@ internal fun ComposerBar(
             OutlinedTextField(
                 value = text,
                 onValueChange = onTextChanged,
-                modifier = Modifier.weight(1f).testTag("composer_input"),
+                modifier = Modifier.weight(1f).testTag("composer_input").focusRequester(focusRequester),
                 label = { Text(stringResource(id = R.string.ui_composer_label)) },
                 enabled = !isSending,
                 maxLines = 4,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        if (text.isNotBlank() && chatGateState.isReady && !isSending) {
+                            onSend()
+                        }
+                    },
+                ),
             )
             if (showThinkingToggle) {
                 IconButton(
@@ -170,7 +199,6 @@ internal fun ComposerBar(
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onToggleThinking()
                     },
-                    modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
@@ -184,20 +212,31 @@ internal fun ComposerBar(
                     )
                 }
             }
-            IconButton(onClick = onOpenCompletionSettings, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = onOpenCompletionSettings) {
                 Icon(
                     imageVector = Icons.Default.Tune,
                     contentDescription = "Chat settings",
                     modifier = Modifier.size(20.dp),
                 )
             }
+            val sendInteractionSource = remember { MutableInteractionSource() }
+            val isPressed by sendInteractionSource.collectIsPressedAsState()
+            val sendScale by animateFloatAsState(
+                targetValue = if (isPressed) 0.92f else 1f,
+                label = "send_scale",
+            )
             Button(
                 modifier = Modifier
                     .testTag("send_button")
+                    .graphicsLayer {
+                        scaleX = sendScale
+                        scaleY = sendScale
+                    }
                     .semantics {
                         contentDescription = sendButtonDescription
                         stateDescription = sendStateDescription
                     },
+                interactionSource = sendInteractionSource,
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     when {

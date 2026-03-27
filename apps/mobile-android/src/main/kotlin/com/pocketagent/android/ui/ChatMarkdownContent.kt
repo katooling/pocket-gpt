@@ -79,12 +79,11 @@ internal fun MarkdownMessageContent(
                             if (clipboardManager != null) {
                                 IconButton(
                                     onClick = { clipboardManager.setText(AnnotatedString(codeContent)) },
-                                    modifier = Modifier.size(24.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
                                         contentDescription = "Copy code",
-                                        modifier = Modifier.size(14.dp),
+                                        modifier = Modifier.size(16.dp),
                                     )
                                 }
                             }

@@ -527,6 +527,7 @@ fun PocketAgentApp(
                     chatGateState = chatGateState,
                     editingMessageId = state.composer.editingMessageId,
                     attachedImages = state.composer.attachedImages,
+                    activeSessionId = state.activeSessionId,
                     onTextChanged = viewModel::onComposerChanged,
                     onSend = viewModel::sendMessage,
                     onCancelSend = viewModel::cancelActiveSend,
@@ -559,6 +560,9 @@ fun PocketAgentApp(
                 onRefreshRuntimeChecks = refreshRuntimeChecksAction,
                 onEditMessage = viewModel::editMessage,
                 onRegenerateMessage = viewModel::regenerateResponse,
+                onCopiedToClipboard = {
+                    scope.launch { snackbarHostState.showSnackbar("Copied to clipboard") }
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),

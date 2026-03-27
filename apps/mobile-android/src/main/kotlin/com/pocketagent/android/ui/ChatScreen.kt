@@ -1,17 +1,26 @@
 package com.pocketagent.android.ui
 
+import android.text.format.DateUtils
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +64,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -67,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatSessionUiModel
+import com.pocketagent.android.ui.theme.LocalReduceMotion
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
@@ -91,6 +102,7 @@ internal fun ChatScreenBody(
     onRefreshRuntimeChecks: () -> Unit,
     onEditMessage: (String) -> Unit = {},
     onRegenerateMessage: (String) -> Unit = {},
+    onCopiedToClipboard: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -118,6 +130,7 @@ internal fun ChatScreenBody(
             onSuggestedPrompt = onSuggestedPrompt,
             onEditMessage = onEditMessage,
             onRegenerateMessage = onRegenerateMessage,
+            onCopiedToClipboard = onCopiedToClipboard,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -133,9 +146,11 @@ private fun MessageList(
     onSuggestedPrompt: (String) -> Unit,
     onEditMessage: (String) -> Unit,
     onRegenerateMessage: (String) -> Unit,
+    onCopiedToClipboard: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val reduceMotion = LocalReduceMotion.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val latestMessage = activeSession?.messages?.lastOrNull()
@@ -162,6 +177,18 @@ private fun MessageList(
         val messages = activeSession?.messages ?: return@LaunchedEffect
         if (messages.isNotEmpty() && isNearBottom) {
             listState.animateScrollToItem(index = messages.lastIndex)
+        }
+    }
+
+    // M9: Announce streaming state changes for screen readers
+    val view = LocalView.current
+    LaunchedEffect(latestMessage?.isStreaming) {
+        if (latestMessage?.role == MessageRole.ASSISTANT) {
+            if (latestMessage.isStreaming) {
+                view.announceForAccessibility("Assistant is responding")
+            } else if (latestMessage.content.isNotBlank()) {
+                view.announceForAccessibility("Response complete")
+            }
         }
     }
 
@@ -226,28 +253,88 @@ private fun MessageList(
         return
     }
 
+    val messages = activeSession.messages
     Box(modifier = modifier) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             reverseLayout = false,
             contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp, alignment = Alignment.Top),
+            verticalArrangement = Arrangement.spacedBy(2.dp, alignment = Alignment.Top),
         ) {
-            items(items = activeSession.messages, key = { it.id }, contentType = { it.kind }) { message ->
-                MessageBubble(
-                    message = message,
-                    runtimeStatusDetail = runtimeStatusDetail,
-                    onEditMessage = onEditMessage,
-                    onRegenerateMessage = onRegenerateMessage,
-                    clipboardManager = clipboardManager,
-                )
+            items(
+                count = messages.size,
+                key = { messages[it].id },
+                contentType = { messages[it].kind },
+            ) { index ->
+                val message = messages[index]
+                val prevMessage = messages.getOrNull(index - 1)
+                val nextMessage = messages.getOrNull(index + 1)
+                val isFirstInGroup = prevMessage?.role != message.role
+                val isLastInGroup = nextMessage?.role != message.role
+
+                // M4: Timestamp separator when time gap > 5 min
+                if (isFirstInGroup && message.timestampEpochMs > 0L) {
+                    val showTimestamp = prevMessage == null ||
+                        (message.timestampEpochMs - prevMessage.timestampEpochMs > 5 * 60 * 1000)
+                    if (showTimestamp) {
+                        TimestampSeparator(epochMs = message.timestampEpochMs)
+                    }
+                }
+
+                // M1: Entrance animation (skipped when reduce motion enabled)
+                val bubbleModifier = Modifier
+                    .animateItem()
+                    .padding(
+                        top = if (isFirstInGroup) 6.dp else 0.dp,
+                        bottom = if (isLastInGroup) 6.dp else 0.dp,
+                    )
+
+                if (reduceMotion) {
+                    MessageBubble(
+                        message = message,
+                        runtimeStatusDetail = runtimeStatusDetail,
+                        onEditMessage = onEditMessage,
+                        onRegenerateMessage = onRegenerateMessage,
+                        onCopiedToClipboard = onCopiedToClipboard,
+                        clipboardManager = clipboardManager,
+                        isFirstInGroup = isFirstInGroup,
+                        isLastInGroup = isLastInGroup,
+                        modifier = bubbleModifier,
+                    )
+                } else {
+                    val visibleState = remember { MutableTransitionState(false).apply { targetState = true } }
+                    AnimatedVisibility(
+                        visibleState = visibleState,
+                        enter = fadeIn(tween(300)) + slideInVertically(
+                            initialOffsetY = { it / 4 },
+                            animationSpec = tween(300),
+                        ),
+                    ) {
+                        MessageBubble(
+                            message = message,
+                            runtimeStatusDetail = runtimeStatusDetail,
+                            onEditMessage = onEditMessage,
+                            onRegenerateMessage = onRegenerateMessage,
+                            onCopiedToClipboard = onCopiedToClipboard,
+                            clipboardManager = clipboardManager,
+                            isFirstInGroup = isFirstInGroup,
+                            isLastInGroup = isLastInGroup,
+                            modifier = bubbleModifier,
+                        )
+                    }
+                }
             }
         }
-        if (!isNearBottom) {
+        AnimatedVisibility(
+            visible = !isNearBottom,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+            enter = scaleIn() + fadeIn(),
+            exit = scaleOut() + fadeOut(),
+        ) {
             FloatingActionButton(
                 onClick = { coroutineScope.launch { listState.animateScrollToItem(activeSession.messages.lastIndex) } },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(44.dp),
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.ExpandMore,
@@ -258,20 +345,38 @@ private fun MessageList(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: MessageUiModel,
     runtimeStatusDetail: String?,
     onEditMessage: (String) -> Unit,
     onRegenerateMessage: (String) -> Unit,
+    onCopiedToClipboard: () -> Unit,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    isFirstInGroup: Boolean = true,
+    isLastInGroup: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
     val isUser = message.role == MessageRole.USER
     var showContextMenu by remember { mutableStateOf(false) }
 
+    // M3: Grouped corner radii -- flatten inner corners for consecutive same-role messages
+    val cornerRadius = 12.dp
+    val smallCorner = 4.dp
+    val bubbleShape = when {
+        isFirstInGroup && isLastInGroup -> RoundedCornerShape(cornerRadius)
+        isUser && isFirstInGroup -> RoundedCornerShape(cornerRadius, cornerRadius, smallCorner, cornerRadius)
+        isUser && isLastInGroup -> RoundedCornerShape(cornerRadius, smallCorner, cornerRadius, cornerRadius)
+        isUser -> RoundedCornerShape(cornerRadius, smallCorner, smallCorner, cornerRadius)
+        !isUser && isFirstInGroup -> RoundedCornerShape(cornerRadius, cornerRadius, cornerRadius, smallCorner)
+        !isUser && isLastInGroup -> RoundedCornerShape(smallCorner, cornerRadius, cornerRadius, cornerRadius)
+        else -> RoundedCornerShape(smallCorner, cornerRadius, cornerRadius, smallCorner)
+    }
+
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
         Surface(
@@ -282,12 +387,20 @@ private fun MessageBubble(
                 MessageRole.TOOL -> MaterialTheme.colorScheme.tertiaryContainer
                 MessageRole.SYSTEM -> MaterialTheme.colorScheme.errorContainer
             },
-            modifier = Modifier.clip(MaterialTheme.shapes.medium).fillMaxWidth(0.9f),
+            modifier = Modifier.clip(bubbleShape).fillMaxWidth(0.9f),
         ) {
             Box {
                 Column(
                     modifier = Modifier
-                        .clickable { if (message.content.isNotBlank()) showContextMenu = true }
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = {
+                                if (message.content.isNotBlank()) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showContextMenu = true
+                                }
+                            },
+                        )
                         .padding(12.dp),
                 ) {
                     val attachmentPaths = message.imagePaths.ifEmpty { listOfNotNull(message.imagePath) }
@@ -356,6 +469,39 @@ private fun MessageBubble(
                         }
                     }
 
+                    // M12: Inline retry for failed messages
+                    val isFailed = message.role == MessageRole.ASSISTANT &&
+                        !message.isStreaming &&
+                        message.finishReason?.let {
+                            it.startsWith("failed") || it == "timeout" || it == "cancelled"
+                        } == true
+                    if (isFailed) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            onClick = { onRegenerateMessage(message.id) },
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Retry",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                                Text(
+                                    text = "Retry",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                            }
+                        }
+                    }
+
                     if (message.content.isNotBlank() && !message.isStreaming) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
@@ -367,10 +513,10 @@ private fun MessageBubble(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     clipboardManager.setText(AnnotatedString(message.content))
+                                    onCopiedToClipboard()
                                 },
-                                modifier = Modifier.size(36.dp),
                             ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = stringResource(id = R.string.a11y_copy_message), modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.ContentCopy, contentDescription = stringResource(id = R.string.a11y_copy_message), modifier = Modifier.size(18.dp))
                             }
                             if (message.role == MessageRole.USER) {
                                 IconButton(
@@ -378,9 +524,8 @@ private fun MessageBubble(
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onEditMessage(message.id)
                                     },
-                                    modifier = Modifier.size(36.dp),
                                 ) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Edit message", modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit message", modifier = Modifier.size(18.dp))
                                 }
                             }
                             if (message.role == MessageRole.ASSISTANT) {
@@ -389,9 +534,8 @@ private fun MessageBubble(
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onRegenerateMessage(message.id)
                                     },
-                                    modifier = Modifier.size(36.dp),
                                 ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate response", modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate response", modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
@@ -405,7 +549,9 @@ private fun MessageBubble(
                     androidx.compose.material3.DropdownMenuItem(
                         text = { Text("Copy") },
                         onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             clipboardManager.setText(AnnotatedString(message.content))
+                            onCopiedToClipboard()
                             showContextMenu = false
                         },
                     )
@@ -441,7 +587,7 @@ private fun ThinkingBubble(reasoningContent: String) {
         shape = MaterialTheme.shapes.small,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(modifier = Modifier.animateContentSize().padding(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
@@ -531,12 +677,35 @@ private fun PersistedToolCallStatus?.toReadableSuffix(): String {
 }
 
 @Composable
+private fun TimestampSeparator(epochMs: Long) {
+    val relativeTime = remember(epochMs) {
+        DateUtils.getRelativeTimeSpanString(
+            epochMs,
+            System.currentTimeMillis(),
+            DateUtils.MINUTE_IN_MILLIS,
+            DateUtils.FORMAT_ABBREV_RELATIVE,
+        ).toString()
+    }
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = relativeTime,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun SuggestedPromptCard(
     prompt: String,
     onClick: (String) -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable { onClick(prompt) },
+        onClick = { onClick(prompt) },
+        modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         tonalElevation = 1.dp,
     ) {

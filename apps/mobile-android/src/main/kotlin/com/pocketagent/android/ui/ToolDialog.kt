@@ -1,6 +1,5 @@
 package com.pocketagent.android.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -71,12 +70,11 @@ private fun ToolSuggestionCard(
     onDismiss: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                onUsePrompt(prompt)
-                onDismiss()
-            },
+        onClick = {
+            onUsePrompt(prompt)
+            onDismiss()
+        },
+        modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         tonalElevation = 1.dp,
     ) {
