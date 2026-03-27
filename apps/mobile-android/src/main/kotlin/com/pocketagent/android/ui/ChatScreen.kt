@@ -220,6 +220,7 @@ private fun MessageList(
                             SuggestedPromptCard(prompt = prompt, onClick = onSuggestedPrompt)
                         }
                     }
+                }
             }
         }
         return
