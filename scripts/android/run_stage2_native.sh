@@ -224,6 +224,26 @@ if [[ "${PREFIX_CACHE_STRICT}" != "0" && "${PREFIX_CACHE_STRICT}" != "1" ]]; the
   exit 1
 fi
 
+enforce_minimum_if_needed() {
+  local name="$1"
+  local value="$2"
+  local minimum="$3"
+  if (( value < minimum )); then
+    echo "Closure profile floor applied: ${name}=${value} -> ${minimum}" >&2
+    echo "${minimum}"
+    return
+  fi
+  echo "${value}"
+}
+
+if [[ "${PROFILE}" == "closure" ]]; then
+  RUNS="$(enforce_minimum_if_needed "runs" "${RUNS}" 3)"
+  MAX_TOKENS_A="$(enforce_minimum_if_needed "max-tokens-a" "${MAX_TOKENS_A}" 128)"
+  MAX_TOKENS_B="$(enforce_minimum_if_needed "max-tokens-b" "${MAX_TOKENS_B}" 256)"
+  MIN_TOKENS="$(enforce_minimum_if_needed "min-tokens" "${MIN_TOKENS}" 16)"
+  WARMUP_MAX_TOKENS="$(enforce_minimum_if_needed "warmup-max-tokens" "${WARMUP_MAX_TOKENS}" 8)"
+fi
+
 if [[ -z "${MODEL_0_8B_PATH}" || -z "${MODEL_2B_PATH}" ]]; then
   cat <<'MSG' >&2
 Missing model path(s).
@@ -239,7 +259,7 @@ MODEL_2B_ID="qwen3.5-2b-q4"
 PACKAGE_NAME="com.pocketagent.android"
 TEST_RUNNER="com.pocketagent.android.test/androidx.test.runner.AndroidJUnitRunner"
 TEST_CLASS_SWEEP="com.pocketagent.android.NativeStage2BenchmarkInstrumentationTest#runConfiguredModelSweep"
-CSV_HEADER="date,platform,device_class,device_name,backend,runtime,model,scenario,first_token_ms,decode_tps,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom"
+CSV_HEADER="date,platform,device_class,device_name,backend,runtime,model,scenario,first_token_ms,decode_tps,peak_rss_mb,battery_drop_pct_10m,thermal_note,crash_or_oom,tokens,runs"
 
 SCENARIO_A_CSV="${RUN_DIR}/scenario-a.csv"
 SCENARIO_B_CSV="${RUN_DIR}/scenario-b.csv"
@@ -491,10 +511,12 @@ append_metric_row() {
   local meminfo_case="$5"
   local logcat_case="$6"
 
-  local backend first_token_ms decode_tps pss_kb peak_rss_mb crash_or_oom
+  local backend first_token_ms decode_tps pss_kb peak_rss_mb crash_or_oom tokens runs_reported
   backend="$(metric_value "${metric_line}" "backend")"
   first_token_ms="$(metric_value "${metric_line}" "first_token_ms")"
   decode_tps="$(metric_value "${metric_line}" "decode_tps")"
+  tokens="$(metric_value "${metric_line}" "tokens")"
+  runs_reported="$(metric_value "${metric_line}" "runs")"
   pss_kb="$(metric_value "${metric_line}" "pss_kb")"
   if [[ -z "${pss_kb}" || "${pss_kb}" == "0" ]]; then
     pss_kb="$(extract_pss_kb_from_meminfo "${meminfo_case}")"
@@ -514,9 +536,32 @@ append_metric_row() {
     echo "Invalid metric values for ${model_id}/${scenario}: first_token_ms=${first_token_ms}, decode_tps=${decode_tps}" >&2
     exit 1
   fi
+  if [[ -z "${tokens}" ]]; then
+    case "${scenario}" in
+      A) tokens="${MAX_TOKENS_A}" ;;
+      B) tokens="${MAX_TOKENS_B}" ;;
+      *)
+        echo "Unknown scenario for token attribution: ${scenario}" >&2
+        exit 1
+        ;;
+    esac
+    echo "STAGE2_METRIC tokens missing for ${model_id}/${scenario}; falling back to configured tokens=${tokens}" >&2
+  fi
+  if [[ -z "${runs_reported}" ]]; then
+    runs_reported="${RUNS}"
+    echo "STAGE2_METRIC runs missing for ${model_id}/${scenario}; falling back to configured runs=${runs_reported}" >&2
+  fi
+  if ! awk -v tokens_value="${tokens}" 'BEGIN { exit !(tokens_value > 0) }'; then
+    echo "Invalid STAGE2_METRIC tokens for ${model_id}/${scenario}: ${tokens}" >&2
+    exit 1
+  fi
+  if ! awk -v runs_value="${runs_reported}" 'BEGIN { exit !(runs_value > 0) }'; then
+    echo "Invalid STAGE2_METRIC runs for ${model_id}/${scenario}: ${runs_reported}" >&2
+    exit 1
+  fi
 
   printf '%s\n' \
-"${DATE_VALUE},android,mid,${DEVICE},${backend},llama.cpp-native-jni,${model_id},${scenario},${first_token_ms},${decode_tps},${peak_rss_mb},0,captured,${crash_or_oom}" \
+"${DATE_VALUE},android,mid,${DEVICE},${backend},llama.cpp-native-jni,${model_id},${scenario},${first_token_ms},${decode_tps},${peak_rss_mb},0,captured,${crash_or_oom},${tokens},${runs_reported}" \
     >> "${target_csv}"
 }
 

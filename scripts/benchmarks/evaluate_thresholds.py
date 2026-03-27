@@ -6,6 +6,8 @@ import sys
 
 
 REQUIRED_COLUMNS = {"scenario", "first_token_ms", "decode_tps"}
+SCENARIO_TOKEN_FLOORS = {"A": 128.0, "B": 256.0}
+SCENARIO_RUNS_FLOOR = 3.0
 
 
 def median(values):
@@ -35,21 +37,32 @@ def main(path):
         for row in reader:
             rows.append(row)
 
-    scenario_a = [r for r in rows if r.get("scenario") == "A"]
-    scenario_b = [r for r in rows if r.get("scenario") == "B"]
-    scenario_c = [r for r in rows if r.get("scenario") == "C"]
+    has_tokens = "tokens" in fieldnames
+    has_runs = "runs" in fieldnames
+
+    scenario_a = [r for r in rows if (r.get("scenario") or "").strip().upper() == "A"]
+    scenario_b = [r for r in rows if (r.get("scenario") or "").strip().upper() == "B"]
+    scenario_c = [r for r in rows if (r.get("scenario") or "").strip().upper() == "C"]
 
     a_first = [parse_float(r.get("first_token_ms")) for r in scenario_a]
     a_tps = [parse_float(r.get("decode_tps")) for r in scenario_a]
     b_first = [parse_float(r.get("first_token_ms")) for r in scenario_b]
     b_tps = [parse_float(r.get("decode_tps")) for r in scenario_b]
     c_tps = [parse_float(r.get("decode_tps")) for r in scenario_c]
+    a_tokens = [parse_float(r.get("tokens")) for r in scenario_a] if has_tokens else []
+    b_tokens = [parse_float(r.get("tokens")) for r in scenario_b] if has_tokens else []
+    a_runs = [parse_float(r.get("runs")) for r in scenario_a] if has_runs else []
+    b_runs = [parse_float(r.get("runs")) for r in scenario_b] if has_runs else []
 
     a_first = [x for x in a_first if x is not None]
     a_tps = [x for x in a_tps if x is not None]
     b_first = [x for x in b_first if x is not None]
     b_tps = [x for x in b_tps if x is not None]
     c_tps = [x for x in c_tps if x is not None]
+    a_tokens = [x for x in a_tokens if x is not None]
+    b_tokens = [x for x in b_tokens if x is not None]
+    a_runs = [x for x in a_runs if x is not None]
+    b_runs = [x for x in b_runs if x is not None]
 
     if not scenario_a or not scenario_b:
         print("Data Error")
@@ -63,11 +76,33 @@ def main(path):
         print("Scenario A/B rows must include numeric first_token_ms and decode_tps values.")
         return 1
 
+    if has_tokens and (not a_tokens or not b_tokens):
+        print("Data Error")
+        print("==========")
+        print("CSV has a tokens column, but Scenario A/B rows must include numeric tokens values.")
+        return 1
+
+    if has_runs and (not a_runs or not b_runs):
+        print("Data Error")
+        print("==========")
+        print("CSV has a runs column, but Scenario A/B rows must include numeric runs values.")
+        return 1
+
     checks = []
     checks.append(("Scenario A first-token <= 2500ms", median(a_first) <= 2500))
     checks.append(("Scenario A decode >= 8 tok/s", median(a_tps) >= 8))
     checks.append(("Scenario B first-token <= 2500ms", median(b_first) <= 2500))
     checks.append(("Scenario B decode >= 4 tok/s", median(b_tps) >= 4))
+    if has_tokens:
+        checks.append(
+            (f"Scenario A tokens >= {int(SCENARIO_TOKEN_FLOORS['A'])}", median(a_tokens) >= SCENARIO_TOKEN_FLOORS["A"])
+        )
+        checks.append(
+            (f"Scenario B tokens >= {int(SCENARIO_TOKEN_FLOORS['B'])}", median(b_tokens) >= SCENARIO_TOKEN_FLOORS["B"])
+        )
+    if has_runs:
+        checks.append((f"Scenario A runs >= {int(SCENARIO_RUNS_FLOOR)}", median(a_runs) >= SCENARIO_RUNS_FLOOR))
+        checks.append((f"Scenario B runs >= {int(SCENARIO_RUNS_FLOOR)}", median(b_runs) >= SCENARIO_RUNS_FLOOR))
     if c_tps:
         checks.append(("Scenario C decode >= 4 tok/s", median(c_tps) >= 4))
 
@@ -77,6 +112,12 @@ def main(path):
     print(f"Scenario A median decode: {median(a_tps):.2f} tok/s")
     print(f"Scenario B median first-token: {median(b_first):.2f} ms")
     print(f"Scenario B median decode: {median(b_tps):.2f} tok/s")
+    if has_tokens:
+        print(f"Scenario A median tokens: {median(a_tokens):.2f}")
+        print(f"Scenario B median tokens: {median(b_tokens):.2f}")
+    if has_runs:
+        print(f"Scenario A median runs: {median(a_runs):.2f}")
+        print(f"Scenario B median runs: {median(b_runs):.2f}")
     if c_tps:
         print(f"Scenario C median decode: {median(c_tps):.2f} tok/s")
 

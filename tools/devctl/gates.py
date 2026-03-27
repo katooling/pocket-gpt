@@ -23,6 +23,17 @@ _LIFECYCLE_HIGH_RISK_PATTERNS = (
     "tests/maestro/scenario-first-run-download-chat.yaml",
     ".github/workflows/ci.yml",
 )
+_STAGE2_QUICK_OPTIMIZATION_PATTERNS = (
+    "apps/mobile-android/src/main/kotlin/com/pocketagent/android/runtime/**",
+    "packages/app-runtime/**",
+    "packages/inference-adapters/**",
+    "packages/native-bridge/**",
+    "scripts/android/run_stage2_native.sh",
+    "scripts/benchmarks/**",
+    "config/devctl/stage2.yaml",
+    "tools/devctl/lanes.py",
+    "tools/devctl/lanes_modules/stage2.py",
+)
 _SCREENSHOT_PACK_HARNESS_NOISE_MARKERS = (
     "No compose hierarchies found in the app",
     "Command timed out after",
@@ -79,6 +90,12 @@ def _parse_gate_args(raw_args: Sequence[str]) -> argparse.Namespace:
     _add_common_gate_args(promotion)
     promotion.add_argument("--report-path", type=Path, default=None)
     promotion.add_argument("--include-screenshot-pack", action="store_true")
+    promotion.add_argument(
+        "--risk-label",
+        action="append",
+        default=[],
+        help="Risk labels (repeatable). Stage2 quick is required when matching runtime risk labels.",
+    )
 
     return parser.parse_args(list(raw_args))
 
@@ -122,6 +139,14 @@ def _has_high_risk_path(changed_files: Sequence[str]) -> bool:
     )
 
 
+def _has_stage2_optimization_path(changed_files: Sequence[str]) -> bool:
+    return any(
+        fnmatch.fnmatch(path, pattern)
+        for path in changed_files
+        for pattern in _STAGE2_QUICK_OPTIMIZATION_PATTERNS
+    )
+
+
 def _should_run_lifecycle(
     *,
     event_name: str,
@@ -155,6 +180,18 @@ def _should_run_lifecycle(
     if not reasons:
         reasons.append("low-risk-change")
     return should_run, ",".join(reasons)
+
+
+def _should_run_stage2_quick(*, risk_labels: Sequence[str], changed_files: Sequence[str]) -> tuple[bool, str]:
+    reasons: list[str] = []
+    if _has_stage2_optimization_path(changed_files):
+        reasons.append("optimization-sensitive-path")
+    normalized_labels = {label.strip() for label in risk_labels if label.strip()}
+    if normalized_labels & _RISK_LABELS:
+        reasons.append("risk-label")
+    if not reasons:
+        return False, "low-risk-change"
+    return True, ",".join(reasons)
 
 
 def _resolve_serial(explicit_serial: str) -> str:
@@ -403,6 +440,11 @@ def _run_promotion(parsed: argparse.Namespace) -> None:
     if parsed.serial:
         env["ADB_SERIAL"] = parsed.serial
     env.setdefault("ADB_MDNS_AUTO_CONNECT", "0")
+    changed_files = _collect_changed_files()
+    stage2_quick_required, stage2_quick_reason = _should_run_stage2_quick(
+        risk_labels=parsed.risk_label,
+        changed_files=changed_files,
+    )
 
     steps: list[GateStepResult] = []
     steps.append(
@@ -473,12 +515,53 @@ def _run_promotion(parsed: argparse.Namespace) -> None:
             )
         )
 
+    if stage2_quick_required:
+        steps.append(
+            _run_gate_command(
+                name="stage2-quick",
+                command=[
+                    "python3",
+                    "tools/devctl/main.py",
+                    "lane",
+                    "stage2",
+                    "--profile",
+                    "quick",
+                ],
+                env=env,
+                allow_harness_noise=False,
+            )
+        )
+    else:
+        steps.append(
+            GateStepResult(
+                name="stage2-quick",
+                command=[
+                    "python3",
+                    "tools/devctl/main.py",
+                    "lane",
+                    "stage2",
+                    "--profile",
+                    "quick",
+                ],
+                started_at=datetime.now().isoformat(timespec="seconds"),
+                duration_seconds=0.0,
+                status="skipped",
+                correctness="skipped",
+                blocking=False,
+                reason=stage2_quick_reason,
+            )
+        )
+
     _write_report(
         gate_name=gate_name,
         steps=steps,
         report_path=report_path,
         metadata={
             "include_screenshot_pack": parsed.include_screenshot_pack,
+            "risk_labels": parsed.risk_label,
+            "stage2_quick_required": stage2_quick_required,
+            "stage2_quick_reason": stage2_quick_reason,
+            "changed_files_count": len(changed_files),
         },
     )
 

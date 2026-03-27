@@ -34,6 +34,22 @@ class GatesTest(unittest.TestCase):
         self.assertTrue(should_run)
         self.assertIn("risk-label", reason)
 
+    def test_should_run_stage2_quick_for_optimization_sensitive_path(self) -> None:
+        should_run, reason = gates._should_run_stage2_quick(
+            risk_labels=[],
+            changed_files=["packages/native-bridge/src/commonMain/kotlin/com/pocketagent/nativebridge/NativeJniLlamaCppBridge.kt"],
+        )
+        self.assertTrue(should_run)
+        self.assertIn("optimization-sensitive-path", reason)
+
+    def test_should_skip_stage2_quick_for_low_risk_change(self) -> None:
+        should_run, reason = gates._should_run_stage2_quick(
+            risk_labels=[],
+            changed_files=["docs/README.md"],
+        )
+        self.assertFalse(should_run)
+        self.assertEqual("low-risk-change", reason)
+
     def test_classify_journey_failure_accepts_unknown_qa13_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             report_path = Path(tmp) / "journey-report.json"
@@ -139,6 +155,88 @@ class GatesTest(unittest.TestCase):
             exit_code=1,
         )
         self.assertEqual("DEVICE_ERROR: Instrumentation failed for test class", reason)
+
+    def test_run_promotion_runs_stage2_quick_for_optimization_sensitive_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            parsed = gates._parse_gate_args(["promotion", "--report-path", str(Path(tmp) / "promotion-report.json")])
+            original_collect_changed_files = gates._collect_changed_files
+            original_run_gate_command = gates._run_gate_command
+            original_write_report = gates._write_report
+            captured_steps: list[gates.GateStepResult] = []
+            captured_metadata: dict[str, object] = {}
+            try:
+                gates._collect_changed_files = lambda: ["packages/app-runtime/src/commonMain/kotlin/com/pocketagent/runtime/RuntimePlanResolver.kt"]
+
+                def _fake_run_gate_command(*, name, command, env, allow_harness_noise):  # type: ignore[no-untyped-def]
+                    return gates.GateStepResult(
+                        name=name,
+                        command=list(command),
+                        started_at="2026-03-27T00:00:00",
+                        duration_seconds=0.1,
+                        status="passed",
+                        correctness="pass",
+                        blocking=False,
+                    )
+
+                def _fake_write_report(*, gate_name, steps, report_path, metadata):  # type: ignore[no-untyped-def]
+                    captured_steps.extend(steps)
+                    captured_metadata.update(metadata)
+
+                gates._run_gate_command = _fake_run_gate_command
+                gates._write_report = _fake_write_report
+
+                gates._run_promotion(parsed)
+            finally:
+                gates._collect_changed_files = original_collect_changed_files
+                gates._run_gate_command = original_run_gate_command
+                gates._write_report = original_write_report
+
+            stage2_step = next(step for step in captured_steps if step.name == "stage2-quick")
+            self.assertEqual("passed", stage2_step.status)
+            self.assertTrue(captured_metadata["stage2_quick_required"])
+            self.assertEqual("optimization-sensitive-path", captured_metadata["stage2_quick_reason"])
+
+    def test_run_promotion_skips_stage2_quick_for_low_risk_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            parsed = gates._parse_gate_args(["promotion", "--report-path", str(Path(tmp) / "promotion-report.json")])
+            original_collect_changed_files = gates._collect_changed_files
+            original_run_gate_command = gates._run_gate_command
+            original_write_report = gates._write_report
+            captured_steps: list[gates.GateStepResult] = []
+            captured_metadata: dict[str, object] = {}
+            try:
+                gates._collect_changed_files = lambda: ["docs/testing/test-strategy.md"]
+
+                def _fake_run_gate_command(*, name, command, env, allow_harness_noise):  # type: ignore[no-untyped-def]
+                    return gates.GateStepResult(
+                        name=name,
+                        command=list(command),
+                        started_at="2026-03-27T00:00:00",
+                        duration_seconds=0.1,
+                        status="passed",
+                        correctness="pass",
+                        blocking=False,
+                    )
+
+                def _fake_write_report(*, gate_name, steps, report_path, metadata):  # type: ignore[no-untyped-def]
+                    captured_steps.extend(steps)
+                    captured_metadata.update(metadata)
+
+                gates._run_gate_command = _fake_run_gate_command
+                gates._write_report = _fake_write_report
+
+                gates._run_promotion(parsed)
+            finally:
+                gates._collect_changed_files = original_collect_changed_files
+                gates._run_gate_command = original_run_gate_command
+                gates._write_report = original_write_report
+
+            stage2_step = next(step for step in captured_steps if step.name == "stage2-quick")
+            self.assertEqual("skipped", stage2_step.status)
+            self.assertFalse(stage2_step.blocking)
+            self.assertEqual("low-risk-change", stage2_step.reason)
+            self.assertFalse(captured_metadata["stage2_quick_required"])
+            self.assertEqual("low-risk-change", captured_metadata["stage2_quick_reason"])
 
 
 if __name__ == "__main__":

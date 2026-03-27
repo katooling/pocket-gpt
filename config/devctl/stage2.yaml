@@ -32,6 +32,8 @@ threshold_csv:
     - scenario
     - first_token_ms
     - decode_tps
+    - tokens
+    - runs
 
 summary_json:
   fields:
