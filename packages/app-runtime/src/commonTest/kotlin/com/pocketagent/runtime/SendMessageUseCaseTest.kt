@@ -213,6 +213,32 @@ class SendMessageUseCaseTest {
     }
 
     @Test
+    fun `memory planning rescue keeps request runnable when batch reduction fits`() {
+        val tracker = MemoryBudgetTracker().also {
+            it.recordAvailableMemoryAfterRelease(1600.0)
+        }
+        val inferenceModule = SendRecordingInferenceModule()
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = inferenceModule,
+            runtimeInferencePorts = RuntimeInferencePorts(
+                modelRegistry = SendModelRegistryPort(),
+            ),
+            runtimePlanResolver = RuntimePlanResolver(
+                memoryBudgetTracker = tracker,
+                recommendedGpuLayers = { _, _ -> 4 },
+            ),
+        )
+
+        val response = fixture.useCase.execute(fixture.request())
+
+        assertEquals("hello world", response.text)
+        assertEquals(1, inferenceModule.loadCalls)
+        assertTrue((response.runtimeStats?.estimatedMemoryMb ?: 0.0) > 0.0)
+    }
+
+    @Test
     fun `gemma profile skips thinking and tool-call processing`() {
         val streamedTokens = mutableListOf<String>()
         val fixture = createFixture(

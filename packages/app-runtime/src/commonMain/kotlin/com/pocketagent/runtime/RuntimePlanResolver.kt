@@ -214,13 +214,10 @@ private fun PerformanceRuntimeConfig.applyMemoryEstimate(
     }.distinct()
     val diagnostics = mutableListOf<String>()
     var currentConfig = this
-    var currentEstimate = RuntimeModelMemoryEstimator.estimate(
+    var currentEstimate = estimateMemoryForConfig(
+        config = currentConfig,
         modelFileSizeBytes = modelSizeBytes,
-        metadata = modelMetadata,
-        nCtx = currentConfig.nCtx,
-        kvCacheTypeK = currentConfig.kvCacheTypeK,
-        kvCacheTypeV = currentConfig.kvCacheTypeV,
-        nUbatch = currentConfig.nUbatch,
+        modelMetadata = modelMetadata,
         availableMemoryMb = availableMemoryMb,
     )
     if (currentEstimate.fitsInMemory != false) {
@@ -232,13 +229,10 @@ private fun PerformanceRuntimeConfig.applyMemoryEstimate(
     }
     contextCandidates.drop(1).forEach { candidateCtx ->
         val candidateConfig = currentConfig.copy(nCtx = candidateCtx)
-        val candidateEstimate = RuntimeModelMemoryEstimator.estimate(
+        val candidateEstimate = estimateMemoryForConfig(
+            config = candidateConfig,
             modelFileSizeBytes = modelSizeBytes,
-            metadata = modelMetadata,
-            nCtx = candidateCtx,
-            kvCacheTypeK = candidateConfig.kvCacheTypeK,
-            kvCacheTypeV = candidateConfig.kvCacheTypeV,
-            nUbatch = candidateConfig.nUbatch,
+            modelMetadata = modelMetadata,
             availableMemoryMb = availableMemoryMb,
         )
         if (!diagnostics.contains("layer=memory_estimate")) {
@@ -256,40 +250,90 @@ private fun PerformanceRuntimeConfig.applyMemoryEstimate(
     }
 
     val recommendedLayers = recommendedGpuLayers(currentConfig)
-        if (recommendedLayers != null && currentConfig.gpuEnabled) {
-            val clampedGpuLayers = when {
-                currentConfig.gpuLayers < 0 -> recommendedLayers
-                else -> minOf(currentConfig.gpuLayers, recommendedLayers)
-            }.coerceAtLeast(0)
-            if (clampedGpuLayers != currentConfig.gpuLayers) {
-                currentConfig = currentConfig.copy(
-                    gpuLayers = clampedGpuLayers,
-                    speculativeDraftGpuLayers = minOf(currentConfig.speculativeDraftGpuLayers, clampedGpuLayers),
-                )
+    if (recommendedLayers != null && currentConfig.gpuEnabled) {
+        val clampedGpuLayers = when {
+            currentConfig.gpuLayers < 0 -> recommendedLayers
+            else -> minOf(currentConfig.gpuLayers, recommendedLayers)
+        }.coerceAtLeast(0)
+        if (clampedGpuLayers != currentConfig.gpuLayers) {
+            currentConfig = currentConfig.copy(
+                gpuLayers = clampedGpuLayers,
+                speculativeDraftGpuLayers = minOf(currentConfig.speculativeDraftGpuLayers, clampedGpuLayers),
+            )
             if (!diagnostics.contains("layer=memory_gpu_recommendation")) {
                 diagnostics += "layer=memory_gpu_recommendation"
             }
-            currentEstimate = RuntimeModelMemoryEstimator.estimate(
+            currentEstimate = estimateMemoryForConfig(
+                config = currentConfig,
                 modelFileSizeBytes = modelSizeBytes,
-                metadata = modelMetadata,
-                nCtx = currentConfig.nCtx,
-                kvCacheTypeK = currentConfig.kvCacheTypeK,
-                kvCacheTypeV = currentConfig.kvCacheTypeV,
-                nUbatch = currentConfig.nUbatch,
+                modelMetadata = modelMetadata,
                 availableMemoryMb = availableMemoryMb,
             )
-                if (currentEstimate.fitsInMemory != false) {
-                    return MemoryAdjustmentResult(
-                        config = currentConfig,
-                        estimate = currentEstimate,
-                        diagnostics = diagnostics,
-                    )
-                }
-                if (currentConfig.speculativeDraftGpuLayers > 0) {
-                    currentConfig = currentConfig.copy(speculativeDraftGpuLayers = 0)
-                }
+            if (currentEstimate.fitsInMemory != false) {
+                return MemoryAdjustmentResult(
+                    config = currentConfig,
+                    estimate = currentEstimate,
+                    diagnostics = diagnostics,
+                )
             }
         }
+    }
+
+    if (currentConfig.speculativeEnabled || currentConfig.speculativeDraftGpuLayers > 0) {
+        val speculativeDisabledConfig = currentConfig.copy(
+            speculativeEnabled = false,
+            speculativeDraftModelId = null,
+            speculativeDraftGpuLayers = 0,
+        )
+        if (speculativeDisabledConfig != currentConfig) {
+            if (!diagnostics.contains("layer=memory_speculative_rescue")) {
+                diagnostics += "layer=memory_speculative_rescue"
+            }
+            currentConfig = speculativeDisabledConfig
+            currentEstimate = estimateMemoryForConfig(
+                config = currentConfig,
+                modelFileSizeBytes = modelSizeBytes,
+                modelMetadata = modelMetadata,
+                availableMemoryMb = availableMemoryMb,
+            )
+            if (currentEstimate.fitsInMemory != false) {
+                return MemoryAdjustmentResult(
+                    config = currentConfig,
+                    estimate = currentEstimate,
+                    diagnostics = diagnostics,
+                )
+            }
+        }
+    }
+
+    buildMemoryBatchCandidates(currentConfig.nUbatch).forEach { candidateUbatch ->
+        if (candidateUbatch >= currentConfig.nUbatch) {
+            return@forEach
+        }
+        val candidateBatch = minOf(currentConfig.nBatch, candidateUbatch).coerceAtLeast(candidateUbatch)
+        val candidateConfig = currentConfig.copy(
+            nBatch = candidateBatch,
+            nUbatch = candidateUbatch,
+        )
+        if (!diagnostics.contains("layer=memory_batch_rescue")) {
+            diagnostics += "layer=memory_batch_rescue"
+        }
+        val candidateEstimate = estimateMemoryForConfig(
+            config = candidateConfig,
+            modelFileSizeBytes = modelSizeBytes,
+            modelMetadata = modelMetadata,
+            availableMemoryMb = availableMemoryMb,
+        )
+        currentConfig = candidateConfig
+        currentEstimate = candidateEstimate
+        if (candidateEstimate.fitsInMemory != false) {
+            return MemoryAdjustmentResult(
+                config = currentConfig,
+                estimate = currentEstimate,
+                diagnostics = diagnostics,
+            )
+        }
+    }
 
     val blockedReason = availableMemoryMb?.let { ceilingMb ->
         val estimateMb = currentEstimate.estimatedMb
@@ -307,6 +351,34 @@ private fun PerformanceRuntimeConfig.applyMemoryEstimate(
         diagnostics = diagnostics,
         loadBlockedReason = blockedReason,
     )
+}
+
+private fun estimateMemoryForConfig(
+    config: PerformanceRuntimeConfig,
+    modelFileSizeBytes: Long,
+    modelMetadata: ModelRuntimeMetadata?,
+    availableMemoryMb: Double?,
+): RuntimeMemoryEstimate {
+    return RuntimeModelMemoryEstimator.estimate(
+        modelFileSizeBytes = modelFileSizeBytes,
+        metadata = modelMetadata,
+        nCtx = config.nCtx,
+        kvCacheTypeK = config.kvCacheTypeK,
+        kvCacheTypeV = config.kvCacheTypeV,
+        nUbatch = config.nUbatch,
+        availableMemoryMb = availableMemoryMb,
+    )
+}
+
+private fun buildMemoryBatchCandidates(currentUbatch: Int): List<Int> {
+    return buildList {
+        add((currentUbatch / 2).coerceAtLeast(32))
+        add((currentUbatch / 4).coerceAtLeast(32))
+        add(64)
+        add(32)
+    }.distinct()
+        .filter { candidate -> candidate > 0 }
+        .sortedDescending()
 }
 
 private fun PerformanceRuntimeConfig.applyGpuLayerEstimate(maxGpuLayers: Int?): PerformanceRuntimeConfig {

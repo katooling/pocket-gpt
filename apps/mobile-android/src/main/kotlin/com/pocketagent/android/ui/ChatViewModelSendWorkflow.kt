@@ -197,6 +197,9 @@ internal fun ChatViewModel.sendMessageInternal() {
                 appliedConfig = appliedConfig,
                 targetConfig = targetConfig,
                 errorCode = errorCode ?: terminalReason.removePrefix("failed:"),
+                backendIdentityHint = runCatching {
+                    runtimeFacade.runtimeDiagnosticsSnapshot().activeBackend
+                }.getOrNull() ?: snapshot.runtime.activeBackend,
                 thermalThrottled = deviceState.thermalLevel >= 5,
             )
             _uiState.update { state ->

@@ -350,6 +350,43 @@ class RuntimePlanResolverTest {
     }
 
     @Test
+    fun `resolve uses speculative and batch rescue before blocking model load`() {
+        val runtimeInferencePorts = buildRuntimeInferencePorts()
+        val tracker = MemoryBudgetTracker().also {
+            it.recordAvailableMemoryAfterRelease(1600.0)
+        }
+        val resolver = RuntimePlanResolver(
+            availableCpuThreads = { 8 },
+            memoryBudgetTracker = tracker,
+            recommendedGpuLayers = { _, _ -> 4 },
+        )
+
+        val plan = resolver.resolve(
+            sessionId = "session-1",
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            taskType = "long_text",
+            stopSequences = emptyList(),
+            requestConfig = PerformanceRuntimeConfig.forProfile(
+                profile = RuntimePerformanceProfile.FAST,
+                availableCpuThreads = 8,
+                gpuEnabled = true,
+            ),
+            residencyPolicy = ModelResidencyPolicy(idleUnloadTtlMs = 600_000L),
+            deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
+            runtimeInferencePorts = runtimeInferencePorts,
+        )
+
+        assertNull(plan.loadBlockedReason)
+        assertEquals(1024, plan.effectiveConfig.nCtx)
+        assertFalse(plan.effectiveConfig.speculativeEnabled)
+        assertEquals(0, plan.effectiveConfig.speculativeDraftGpuLayers)
+        assertEquals(64, plan.effectiveConfig.nBatch)
+        assertEquals(64, plan.effectiveConfig.nUbatch)
+        assertTrue(plan.diagnostics.contains("layer=memory_speculative_rescue"))
+        assertTrue(plan.diagnostics.contains("layer=memory_batch_rescue"))
+    }
+
+    @Test
     fun `resolve leaves plan unblocked when memory ceiling is unknown`() {
         val runtimeInferencePorts = buildRuntimeInferencePorts()
         val resolver = RuntimePlanResolver(availableCpuThreads = { 8 })

@@ -32,6 +32,7 @@ interface RuntimeTuning {
         appliedConfig: PerformanceRuntimeConfig,
         targetConfig: PerformanceRuntimeConfig,
         errorCode: String?,
+        backendIdentityHint: String? = null,
         thermalThrottled: Boolean,
     ) = Unit
 
@@ -524,6 +525,7 @@ class AndroidRuntimeTuningStore(
         appliedConfig: PerformanceRuntimeConfig,
         targetConfig: PerformanceRuntimeConfig,
         errorCode: String?,
+        backendIdentityHint: String?,
         thermalThrottled: Boolean,
     ) {
         val normalizedError = errorCode.orEmpty().trim().lowercase()
@@ -531,10 +533,16 @@ class AndroidRuntimeTuningStore(
             return
         }
         val resolvedModelId = resolveModelId(modelId) ?: return
-        val envelope = resolveEnvelope(modelId = resolvedModelId, targetConfig = targetConfig)
+        val envelope = resolveEnvelope(
+            modelId = resolvedModelId,
+            targetConfig = targetConfig,
+            backendIdentityHint = backendIdentityHint,
+        )
         val prefKey = prefKeyFor(resolvedModelId, targetConfig, envelope)
         val next = decider.nextRecommendation(
-            current = readRecommendation(prefKey) ?: readRecommendation(legacyPrefKeyFor(resolvedModelId, targetConfig)),
+            current = readRecommendation(prefKey)
+                ?: readUniqueBackendRecommendation(resolvedModelId, targetConfig, envelope)
+                ?: readRecommendation(legacyPrefKeyFor(resolvedModelId, targetConfig)),
             appliedConfig = appliedConfig,
             targetConfig = targetConfig,
             observation = RuntimeTuningObservation(
