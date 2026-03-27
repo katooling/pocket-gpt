@@ -13,6 +13,10 @@ Canonical ownership by concern:
 9. `devctl gate` wrappers for merge-unblock/promotion policy: `tools/devctl/gates.py`
 10. Runtime tuning debug workflow and diagnostics interpretation: `docs/testing/runtime-tuning-debugging.md`
 11. Pocket-GPT vs PocketPal parity benchmark runbook: `docs/testing/pocketpal-parity-benchmark.md`
+12. Maestro report helpers: `python3 tools/devctl/main.py report journey` / `python3 tools/devctl/main.py report screenshot-pack`
+13. Maestro Android companion CLI: `maestro-android ...`
+14. Companion CLI setup and Pocket-GPT integration: `docs/testing/maestro-android-companion-cli.md`
+15. Repo-local skill for agent/test context: `.claude/skills/maestro-android-cli/SKILL.md`
 
 Consolidation rule:
 

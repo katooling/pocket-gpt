@@ -160,6 +160,29 @@ python3 tools/devctl/main.py lane journey [--repeats N]
 python3 tools/devctl/main.py lane journey --steps instrumentation,send-capture,maestro
 ```
 
+## Report Helpers
+
+```bash
+python3 tools/devctl/main.py report journey
+python3 tools/devctl/main.py report screenshot-pack
+python3 tools/devctl/main.py report journey --open
+```
+
+Use these when you want the nearest Playwright-style "show report" path for Maestro-backed runs without manually locating the latest artifact root.
+
+## Maestro Android Companion CLI
+
+```bash
+pipx install -e /Users/mkamar/Non_Work/Projects/maestro-android
+cp /Users/mkamar/Non_Work/Projects/maestro-android/examples/pocket-gpt/maestro-android.pocket-gpt.yaml .maestro-android.yaml
+maestro-android doctor
+maestro-android lane smoke
+maestro-android scoped --flow tmp/maestro-repro.yaml
+maestro-android report latest
+```
+
+This wraps the repo's existing Maestro/devctl/scoped-repro patterns behind a single Android-focused external CLI. See `docs/testing/maestro-android-companion-cli.md`.
+
 ## Gate Wrappers (Policy)
 
 ```bash
