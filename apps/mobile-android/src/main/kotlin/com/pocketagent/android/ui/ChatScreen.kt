@@ -6,6 +6,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
@@ -44,13 +50,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.pocketagent.android.R
@@ -165,26 +177,49 @@ private fun MessageList(
     if (activeSession.messages.isEmpty()) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             if (!activeSession.messagesLoaded) {
-                Text(
-                    text = "Loading conversation...",
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                ShimmerMessageLoadingPlaceholder()
             } else {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 24.dp),
                 ) {
+                    Icon(
+                        imageVector = Icons.Default.ChatBubbleOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = stringResource(id = R.string.ui_chat_empty_state),
                         textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    SuggestedPromptCard(prompt = stringResource(id = R.string.ui_prompt_quick_answer), onClick = onSuggestedPrompt)
-                    SuggestedPromptCard(prompt = stringResource(id = R.string.ui_prompt_image_help), onClick = onSuggestedPrompt)
-                    SuggestedPromptCard(prompt = stringResource(id = R.string.ui_prompt_local_search), onClick = onSuggestedPrompt)
-                    SuggestedPromptCard(prompt = stringResource(id = R.string.ui_prompt_reminder), onClick = onSuggestedPrompt)
-                }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val prompts = listOf(
+                        stringResource(id = R.string.ui_prompt_quick_answer),
+                        stringResource(id = R.string.ui_prompt_image_help),
+                        stringResource(id = R.string.ui_prompt_local_search),
+                        stringResource(id = R.string.ui_prompt_reminder),
+                    )
+                    prompts.forEachIndexed { index, prompt ->
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn(
+                                animationSpec = spring(stiffness = Spring.StiffnessLow),
+                            ) + slideInVertically(
+                                initialOffsetY = { it / 2 },
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                    stiffness = Spring.StiffnessLow,
+                                ),
+                            ),
+                        ) {
+                            SuggestedPromptCard(prompt = prompt, onClick = onSuggestedPrompt)
+                        }
+                    }
             }
         }
         return
@@ -230,6 +265,7 @@ private fun MessageBubble(
     onRegenerateMessage: (String) -> Unit,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
 ) {
+    val haptic = LocalHapticFeedback.current
     val isUser = message.role == MessageRole.USER
     var showContextMenu by remember { mutableStateOf(false) }
 
@@ -296,6 +332,10 @@ private fun MessageBubble(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    } else if (message.role == MessageRole.ASSISTANT) {
+                        SelectionContainer {
+                            MarkdownMessageContent(content = content, clipboardManager = clipboardManager)
+                        }
                     } else {
                         MarkdownMessageContent(content = content, clipboardManager = clipboardManager)
                     }
@@ -323,18 +363,33 @@ private fun MessageBubble(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             IconButton(
-                                onClick = { clipboardManager.setText(AnnotatedString(message.content)) },
-                                modifier = Modifier.size(28.dp),
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    clipboardManager.setText(AnnotatedString(message.content))
+                                },
+                                modifier = Modifier.size(36.dp),
                             ) {
                                 Icon(Icons.Default.ContentCopy, contentDescription = stringResource(id = R.string.a11y_copy_message), modifier = Modifier.size(16.dp))
                             }
                             if (message.role == MessageRole.USER) {
-                                IconButton(onClick = { onEditMessage(message.id) }, modifier = Modifier.size(28.dp)) {
+                                IconButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onEditMessage(message.id)
+                                    },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
                                     Icon(Icons.Default.Edit, contentDescription = "Edit message", modifier = Modifier.size(16.dp))
                                 }
                             }
                             if (message.role == MessageRole.ASSISTANT) {
-                                IconButton(onClick = { onRegenerateMessage(message.id) }, modifier = Modifier.size(28.dp)) {
+                                IconButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onRegenerateMessage(message.id)
+                                    },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
                                     Icon(Icons.Default.Refresh, contentDescription = "Regenerate response", modifier = Modifier.size(16.dp))
                                 }
                             }
@@ -502,7 +557,10 @@ private fun AttachmentThumbnailRow(
     ) {
         attachmentPaths.take(3).forEach { path ->
             AsyncImage(
-                model = File(path),
+                model = coil.request.ImageRequest.Builder(LocalContext.current)
+                    .data(File(path))
+                    .crossfade(300)
+                    .build(),
                 contentDescription = stringResource(id = R.string.ui_image_message_label, path),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(88.dp).clip(MaterialTheme.shapes.small),
