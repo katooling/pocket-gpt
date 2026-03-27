@@ -210,8 +210,6 @@ data class ChatUiState(
     val composer: ComposerUiState = ComposerUiState(),
     val runtime: RuntimeUiState = RuntimeUiState(),
     val defaultThinkingEnabled: Boolean = false,
-    val isSessionDrawerOpen: Boolean = false,
-    val showOnboarding: Boolean = false,
     val activeSurface: ModalSurface = ModalSurface.None,
     val onboardingPage: Int = 0,
     val firstSessionStage: FirstSessionStage = FirstSessionStage.ONBOARDING,

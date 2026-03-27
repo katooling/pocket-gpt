@@ -46,6 +46,31 @@ class ModelManagementSheetComposeContractTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun productionModelSheetRendersAndDispatchesRefreshEvent() {
+        val events = mutableListOf<ModelSheetEvent>()
+
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = sampleLibraryState(),
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = { events += it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("unified_model_sheet").assertIsDisplayed()
+        composeRule.onNodeWithText("Downloaded models").assertIsDisplayed()
+        composeRule.onNodeWithText("Available models").assertIsDisplayed()
+        composeRule.onNodeWithText("Refresh").performClick()
+        composeRule.runOnIdle {
+            assertTrue(events.contains(ModelSheetEvent.RefreshAll))
+        }
+    }
+
+    @Test
     fun modelLibrarySheetShowsArtifactActionsWithoutRuntimeControls() {
         var openedRuntimeControls = false
 

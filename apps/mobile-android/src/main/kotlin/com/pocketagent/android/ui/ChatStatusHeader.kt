@@ -1,13 +1,18 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -36,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -50,6 +56,7 @@ import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -63,65 +70,103 @@ internal fun OfflineAndStatusHeader(
     onLoadLastUsedModel: () -> Unit,
     activeRuntimeModelLabel: String?,
     onRefresh: () -> Unit,
+    isOffline: Boolean = false,
 ) {
     var showTechnicalDetails by remember(state.runtime.lastErrorTechnicalDetail) {
         mutableStateOf(false)
     }
 
-    val lifecycleChipColors = when (modelLoadingState) {
-        is ModelLoadingState.Loaded -> AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
-        is ModelLoadingState.Loading -> AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-        )
-        is ModelLoadingState.Offloading -> AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
-        is ModelLoadingState.Error -> AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            labelColor = MaterialTheme.colorScheme.onErrorContainer,
-        )
-        is ModelLoadingState.Idle -> AssistChipDefaults.assistChipColors()
-    }
-    val lifecycleIcon = when (modelLoadingState) {
-        is ModelLoadingState.Loaded -> Icons.Filled.CheckCircle
-        is ModelLoadingState.Loading -> Icons.Filled.Sync
-        is ModelLoadingState.Offloading -> Icons.Filled.HourglassEmpty
-        is ModelLoadingState.Error -> Icons.Filled.Error
-        is ModelLoadingState.Idle -> Icons.Filled.RadioButtonUnchecked
-    }
-    val lifecycleLabel = modelLoadingState.readableRuntimeStateLabel()
+    // Task 2.1: Determine if we are in the collapsed "ready" state
+    val isReadyAndClean = modelLoadingState is ModelLoadingState.Loaded
+        && state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
+        && state.runtime.lastErrorUserMessage == null
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .padding(12.dp)
-                .animateContentSize()
-                .semantics {
-                    liveRegion = LiveRegionMode.Polite
-                },
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AssistChip(
-                    onClick = onOpenModels,
-                    colors = lifecycleChipColors,
-                    leadingIcon = {
-                        Icon(
-                            imageVector = lifecycleIcon,
-                            contentDescription = null,
-                        )
+    // Task 2.1: AnimatedContent for smooth transition between collapsed and expanded
+    AnimatedContent(
+        targetState = isReadyAndClean,
+        transitionSpec = {
+            (fadeIn() + expandVertically(expandFrom = Alignment.Top))
+                .togetherWith(fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top))
+        },
+        label = "StatusHeaderCollapse",
+    ) { ready ->
+        if (ready) {
+            // Collapsed: minimal single-line Row with chips only
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = PocketAgentDimensions.cardPadding, vertical = PocketAgentDimensions.sectionSpacing)
+                    .semantics {
+                        liveRegion = LiveRegionMode.Polite
                     },
-                    label = { StatusChipLabel(lifecycleLabel) },
-                )
+                horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (isOffline) {
+                    // Task 3.7: Offline indicator
+                    AssistChip(
+                        onClick = {},
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            labelColor = MaterialTheme.colorScheme.onErrorContainer,
+                        ),
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.CloudOff,
+                                contentDescription = null,
+                            )
+                        },
+                        label = { StatusChipLabel(stringResource(id = R.string.ui_offline_indicator)) },
+                    )
+                }
+                // Task 4.5: AnimatedContent for lifecycle chip
+                AnimatedContent(
+                    targetState = modelLoadingState,
+                    transitionSpec = {
+                        (scaleIn(initialScale = 0.9f) + fadeIn())
+                            .togetherWith(scaleOut(targetScale = 0.9f) + fadeOut())
+                    },
+                    label = "LifecycleChipAnimation",
+                ) { targetLoadingState ->
+                    val targetColors = when (targetLoadingState) {
+                        is ModelLoadingState.Loaded -> AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        is ModelLoadingState.Loading -> AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                        is ModelLoadingState.Offloading -> AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        is ModelLoadingState.Error -> AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            labelColor = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        is ModelLoadingState.Idle -> AssistChipDefaults.assistChipColors()
+                    }
+                    val targetIcon = when (targetLoadingState) {
+                        is ModelLoadingState.Loaded -> Icons.Filled.CheckCircle
+                        is ModelLoadingState.Loading -> Icons.Filled.Sync
+                        is ModelLoadingState.Offloading -> Icons.Filled.HourglassEmpty
+                        is ModelLoadingState.Error -> Icons.Filled.Error
+                        is ModelLoadingState.Idle -> Icons.Filled.RadioButtonUnchecked
+                    }
+                    val targetLabel = targetLoadingState.readableRuntimeStateLabel()
+                    AssistChip(
+                        onClick = onOpenModels,
+                        colors = targetColors,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = targetIcon,
+                                contentDescription = null,
+                            )
+                        },
+                        label = { StatusChipLabel(targetLabel) },
+                    )
+                }
                 if (!activeRuntimeModelLabel.isNullOrBlank()) {
                     AssistChip(
                         onClick = onOpenModels,
@@ -129,145 +174,231 @@ internal fun OfflineAndStatusHeader(
                     )
                 }
             }
-
-            when (modelLoadingState) {
-                is ModelLoadingState.Loading -> {
-                    val progress = modelLoadingState.progress?.coerceIn(0f, 1f)
-                    if (progress != null && progress > 0f) {
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        LinearProgressIndicator(
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    Text(
-                        text = buildString {
-                            append(modelLoadingState.stage)
-                            if (progress != null && progress > 0f) {
-                                append(" ")
-                                append((progress * 100).toInt())
-                                append("%")
-                            }
+        } else {
+            // Expanded: full Card with all content
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .padding(PocketAgentDimensions.cardPadding)
+                        .animateContentSize()
+                        .semantics {
+                            liveRegion = LiveRegionMode.Polite
                         },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                is ModelLoadingState.Offloading -> {
-                    LinearProgressIndicator(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        text = if (modelLoadingState.queued) {
-                            stringResource(id = R.string.ui_model_runtime_offload_queued)
-                        } else {
-                            stringResource(id = R.string.ui_model_runtime_offload_releasing)
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                is ModelLoadingState.Error -> {
-                    Text(
-                        text = modelLoadingState.message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-
-                else -> Unit
-            }
-
-            if (modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onOpenModels) {
-                        Text(stringResource(id = R.string.ui_open_models))
-                    }
-                }
-            } else if (state.runtime.modelRuntimeStatus != ModelRuntimeStatus.READY) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onGetReadyTapped) {
-                        Text(stringResource(id = R.string.ui_get_ready))
-                    }
-                    TextButton(onClick = onOpenModels) {
-                        Text(stringResource(id = R.string.ui_open_models))
-                    }
-                    TextButton(
-                        onClick = onRefresh,
-                        enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
+                        horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
                     ) {
-                        Text(stringResource(id = R.string.ui_refresh_runtime_checks))
-                    }
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = onRefresh,
-                        enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
-                    ) {
-                        Text(stringResource(id = R.string.ui_refresh_runtime_checks))
-                    }
-                }
-            }
-
-            AnimatedVisibility(
-                visible = canLoadLastUsedModel && !lastUsedModelLabel.isNullOrBlank(),
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
-                if (!lastUsedModelLabel.isNullOrBlank()) {
-                    TextButton(onClick = onLoadLastUsedModel) {
-                        Text(stringResource(id = R.string.ui_model_runtime_load_last_used_short, lastUsedModelLabel))
-                    }
-                }
-            }
-
-            AnimatedVisibility(
-                visible = state.runtime.lastErrorUserMessage != null,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
-                state.runtime.lastErrorUserMessage?.let { errorMessage ->
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = MaterialTheme.shapes.medium,
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = errorMessage,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
+                        // Task 3.7: Offline indicator at the start of FlowRow
+                        if (isOffline) {
+                            AssistChip(
+                                onClick = {},
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    labelColor = MaterialTheme.colorScheme.onErrorContainer,
+                                ),
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.CloudOff,
+                                        contentDescription = null,
+                                    )
+                                },
+                                label = { StatusChipLabel(stringResource(id = R.string.ui_offline_indicator)) },
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            TextButton(onClick = { showTechnicalDetails = !showTechnicalDetails }) {
-                                Text(
-                                    if (showTechnicalDetails) {
-                                        stringResource(id = R.string.ui_hide_technical_details)
-                                    } else {
-                                        stringResource(id = R.string.ui_show_technical_details)
-                                    },
+                        }
+                        // Task 4.5: AnimatedContent for lifecycle chip
+                        AnimatedContent(
+                            targetState = modelLoadingState,
+                            transitionSpec = {
+                                (scaleIn(initialScale = 0.9f) + fadeIn())
+                                    .togetherWith(scaleOut(targetScale = 0.9f) + fadeOut())
+                            },
+                            label = "LifecycleChipAnimation",
+                        ) { targetLoadingState ->
+                            val targetColors = when (targetLoadingState) {
+                                is ModelLoadingState.Loaded -> AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                                is ModelLoadingState.Loading -> AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                                is ModelLoadingState.Offloading -> AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                                is ModelLoadingState.Error -> AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    labelColor = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                                is ModelLoadingState.Idle -> AssistChipDefaults.assistChipColors()
+                            }
+                            val targetIcon = when (targetLoadingState) {
+                                is ModelLoadingState.Loaded -> Icons.Filled.CheckCircle
+                                is ModelLoadingState.Loading -> Icons.Filled.Sync
+                                is ModelLoadingState.Offloading -> Icons.Filled.HourglassEmpty
+                                is ModelLoadingState.Error -> Icons.Filled.Error
+                                is ModelLoadingState.Idle -> Icons.Filled.RadioButtonUnchecked
+                            }
+                            val targetLabel = targetLoadingState.readableRuntimeStateLabel()
+                            AssistChip(
+                                onClick = onOpenModels,
+                                colors = targetColors,
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = targetIcon,
+                                        contentDescription = null,
+                                    )
+                                },
+                                label = { StatusChipLabel(targetLabel) },
+                            )
+                        }
+                        if (!activeRuntimeModelLabel.isNullOrBlank()) {
+                            AssistChip(
+                                onClick = onOpenModels,
+                                label = { StatusChipLabel(activeRuntimeModelLabel) },
+                            )
+                        }
+                    }
+
+                    when (modelLoadingState) {
+                        is ModelLoadingState.Loading -> {
+                            val progress = modelLoadingState.progress?.coerceIn(0f, 1f)
+                            if (progress != null && progress > 0f) {
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                             }
-                            if (showTechnicalDetails) {
-                                state.runtime.lastErrorTechnicalDetail?.let { technical ->
+                            Text(
+                                text = buildString {
+                                    append(modelLoadingState.stage)
+                                    if (progress != null && progress > 0f) {
+                                        append(" ")
+                                        append((progress * 100).toInt())
+                                        append("%")
+                                    }
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        is ModelLoadingState.Offloading -> {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text(
+                                text = if (modelLoadingState.queued) {
+                                    stringResource(id = R.string.ui_model_runtime_offload_queued)
+                                } else {
+                                    stringResource(id = R.string.ui_model_runtime_offload_releasing)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        is ModelLoadingState.Error -> {
+                            Text(
+                                text = modelLoadingState.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+
+                        else -> Unit
+                    }
+
+                    // Task 2.5: Remove "Open Models" during Loading/Offloading
+                    // Task 2.2: Remove "Get Ready" from the not-ready branch
+                    if (modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading) {
+                        // No action buttons during loading/offloading
+                    } else if (state.runtime.modelRuntimeStatus != ModelRuntimeStatus.READY) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing)) {
+                            TextButton(onClick = onOpenModels) {
+                                Text(stringResource(id = R.string.ui_open_models))
+                            }
+                            TextButton(
+                                onClick = onRefresh,
+                                enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
+                            ) {
+                                Text(stringResource(id = R.string.ui_refresh_runtime_checks))
+                            }
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing)) {
+                            TextButton(
+                                onClick = onRefresh,
+                                enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
+                            ) {
+                                Text(stringResource(id = R.string.ui_refresh_runtime_checks))
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = canLoadLastUsedModel && !lastUsedModelLabel.isNullOrBlank(),
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically(),
+                    ) {
+                        if (!lastUsedModelLabel.isNullOrBlank()) {
+                            TextButton(onClick = onLoadLastUsedModel) {
+                                Text(stringResource(id = R.string.ui_model_runtime_load_last_used_short, lastUsedModelLabel))
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = state.runtime.lastErrorUserMessage != null,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically(),
+                    ) {
+                        state.runtime.lastErrorUserMessage?.let { errorMessage ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = MaterialTheme.shapes.medium,
+                            ) {
+                                Column(modifier = Modifier.padding(PocketAgentDimensions.cardPadding)) {
                                     Text(
-                                        text = technical,
+                                        text = errorMessage,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    TextButton(onClick = { showTechnicalDetails = !showTechnicalDetails }) {
+                                        Text(
+                                            if (showTechnicalDetails) {
+                                                stringResource(id = R.string.ui_hide_technical_details)
+                                            } else {
+                                                stringResource(id = R.string.ui_show_technical_details)
+                                            },
+                                        )
+                                    }
+                                    if (showTechnicalDetails) {
+                                        state.runtime.lastErrorTechnicalDetail?.let { technical ->
+                                            Text(
+                                                text = technical,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = stringResource(id = state.runtime.recoveryHintTextResId()),
+                                        modifier = Modifier.padding(top = 6.dp),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onErrorContainer,
                                     )
                                 }
                             }
-                            Text(
-                                text = stringResource(id = state.runtime.recoveryHintTextResId()),
-                                modifier = Modifier.padding(top = 6.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
                         }
                     }
                 }

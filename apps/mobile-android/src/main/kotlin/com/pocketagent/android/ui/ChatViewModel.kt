@@ -293,10 +293,6 @@ class ChatViewModel(
         setGpuAccelerationEnabledInternal(enabled)
     }
 
-    fun setSessionDrawerOpen(isOpen: Boolean) {
-        setSessionDrawerOpenInternal(isOpen)
-    }
-
     fun showSurface(surface: ModalSurface) {
         _uiState.update { it.copy(activeSurface = surface) }
     }

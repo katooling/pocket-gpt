@@ -29,11 +29,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.ui.components.SectionHeader
 import com.pocketagent.android.ui.state.CompletionSettings
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import kotlin.math.roundToInt
@@ -91,30 +92,37 @@ internal fun CompletionSettingsSheet(
             .navigationBarsPadding()
             .imePadding()
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = stringResource(id = R.string.ui_completion_settings_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
             TextButton(onClick = { resetDefaults() }) {
                 Text(stringResource(id = R.string.ui_completion_reset_defaults))
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
 
-        // --- Common settings ---
-        Text(
-            text = stringResource(id = R.string.ui_completion_common_section),
-            style = MaterialTheme.typography.labelLarge,
+        SectionHeader(
+            title = stringResource(id = R.string.ui_completion_system_prompt_label),
+            subtitle = stringResource(id = R.string.ui_completion_system_prompt_desc),
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        OutlinedTextField(
+            value = systemPrompt,
+            onValueChange = {
+                systemPrompt = it
+                emitUpdate()
+            },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+            maxLines = 6,
+            placeholder = { Text(stringResource(id = R.string.ui_completion_system_prompt_placeholder)) },
+        )
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = PocketAgentDimensions.sectionSpacing))
+
+        SectionHeader(title = stringResource(id = R.string.ui_completion_common_section))
 
         SliderSetting(
             label = stringResource(id = R.string.ui_completion_temperature_label),
@@ -136,31 +144,29 @@ internal fun CompletionSettingsSheet(
             onValueChangeFinished = { emitUpdate() },
         )
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = PocketAgentDimensions.sectionSpacing))
 
+        // --- Thinking (read-only informational row) ---
         Text(
-            text = stringResource(id = R.string.ui_completion_system_prompt_label),
-            style = MaterialTheme.typography.labelLarge,
+            text = stringResource(
+                id = R.string.ui_completion_thinking_status,
+                if (showThinking) stringResource(id = R.string.ui_completion_thinking_on) else stringResource(id = R.string.ui_completion_thinking_off),
+            ),
+            style = MaterialTheme.typography.bodyMedium,
         )
-        OutlinedTextField(
-            value = systemPrompt,
-            onValueChange = {
-                systemPrompt = it
-                emitUpdate()
-            },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 3,
-            maxLines = 6,
-            placeholder = { Text(stringResource(id = R.string.ui_completion_system_prompt_placeholder)) },
+        Text(
+            text = stringResource(id = R.string.ui_completion_thinking_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = PocketAgentDimensions.sectionSpacing))
 
-        // --- Advanced settings (collapsed by default) ---
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { showAdvanced = !showAdvanced },
+                .clickable { showAdvanced = !showAdvanced }
+                .semantics(mergeDescendants = true) { role = Role.Button },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -176,8 +182,6 @@ internal fun CompletionSettingsSheet(
         }
 
         if (showAdvanced) {
-            Spacer(modifier = Modifier.height(4.dp))
-
             SliderSetting(
                 label = stringResource(id = R.string.ui_completion_top_p_label),
                 description = stringResource(id = R.string.ui_completion_top_p_desc),
@@ -236,7 +240,7 @@ internal fun CompletionSettingsSheet(
         ) {
             Text(stringResource(id = R.string.ui_completion_done))
         }
-        Spacer(modifier = Modifier.height(PocketAgentDimensions.sheetHorizontalPadding))
+        Spacer(modifier = Modifier.height(PocketAgentDimensions.screenPadding))
     }
 }
 
@@ -250,6 +254,11 @@ private fun SliderSetting(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
 ) {
+    val sliderDescription = stringResource(
+        id = R.string.a11y_setting_value,
+        label,
+        valueLabel,
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -277,6 +286,6 @@ private fun SliderSetting(
         valueRange = valueRange,
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "$label: $valueLabel" },
+            .semantics { contentDescription = sliderDescription },
     )
 }

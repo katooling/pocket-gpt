@@ -64,10 +64,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -75,7 +77,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -84,6 +85,7 @@ import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.theme.LocalReduceMotion
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.tickConfirm
 import com.pocketagent.android.ui.theme.tickLight
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
@@ -126,7 +128,7 @@ internal fun ChatScreenBody(
             activeRuntimeModelLabel = activeRuntimeModelLabel,
             onRefresh = onRefresh,
         )
-        Spacer(modifier = Modifier.height(PocketAgentDimensions.sectionSpacing))
+        Spacer(modifier = Modifier.height(PocketAgentDimensions.sectionSpacing).animateContentSize())
         MessageList(
             activeSession = state.activeSession,
             runtimeStatusDetail = state.runtime.modelStatusDetail,
@@ -154,7 +156,9 @@ private fun MessageList(
     onCopiedToClipboard: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
     val clipboardManager = LocalClipboardManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val reduceMotion = LocalReduceMotion.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -185,14 +189,23 @@ private fun MessageList(
         }
     }
 
+    // Dismiss keyboard when user scrolls the chat list
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            keyboardController?.hide()
+        }
+    }
+
     // M9: Announce streaming state changes for screen readers
     val view = LocalView.current
+    val assistantRespondingAnnouncement = stringResource(id = R.string.a11y_assistant_responding)
+    val responseCompleteAnnouncement = stringResource(id = R.string.a11y_response_complete)
     LaunchedEffect(latestMessage?.isStreaming) {
         if (latestMessage?.role == MessageRole.ASSISTANT) {
             if (latestMessage.isStreaming) {
-                view.announceForAccessibility("Assistant is responding")
+                view.announceForAccessibility(assistantRespondingAnnouncement)
             } else if (latestMessage.content.isNotBlank()) {
-                view.announceForAccessibility("Response complete")
+                view.announceForAccessibility(responseCompleteAnnouncement)
             }
         }
     }
@@ -213,8 +226,8 @@ private fun MessageList(
             } else {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                    modifier = Modifier.padding(horizontal = PocketAgentDimensions.screenPadding * 2),
                 ) {
                     Icon(
                         imageVector = Icons.Default.ChatBubbleOutline,
@@ -222,14 +235,14 @@ private fun MessageList(
                         modifier = Modifier.size(48.dp),
                         tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(compactSpacing))
                     Text(
                         text = stringResource(id = R.string.ui_chat_empty_state),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(PocketAgentDimensions.sectionSpacing))
                     val prompts = listOf(
                         stringResource(id = R.string.ui_prompt_quick_answer),
                         stringResource(id = R.string.ui_prompt_image_help),
@@ -252,14 +265,14 @@ private fun MessageList(
                             SuggestedPromptCard(prompt = prompt, onClick = onSuggestedPrompt)
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(compactSpacing))
                     TextButton(onClick = onOpenToolDialog) {
                         Icon(
                             imageVector = Icons.Default.Build,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(compactSpacing))
                         Text(
                             text = stringResource(id = R.string.ui_local_tools_title),
                             style = MaterialTheme.typography.labelMedium,
@@ -277,8 +290,11 @@ private fun MessageList(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             reverseLayout = false,
-            contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp, alignment = Alignment.Top),
+            contentPadding = PaddingValues(
+                top = compactSpacing,
+                bottom = PocketAgentDimensions.screenPadding,
+            ),
+            verticalArrangement = Arrangement.spacedBy(compactSpacing / 2, alignment = Alignment.Top),
         ) {
             items(
                 count = messages.size,
@@ -304,8 +320,8 @@ private fun MessageList(
                 val bubbleModifier = Modifier
                     .animateItem()
                     .padding(
-                        top = if (isFirstInGroup) 6.dp else 0.dp,
-                        bottom = if (isLastInGroup) 6.dp else 0.dp,
+                        top = if (isFirstInGroup) compactSpacing + (compactSpacing / 2) else 0.dp,
+                        bottom = if (isLastInGroup) compactSpacing + (compactSpacing / 2) else 0.dp,
                     )
 
                 if (reduceMotion) {
@@ -380,8 +396,9 @@ private fun MessageBubble(
     var showContextMenu by remember { mutableStateOf(false) }
 
     // M3: Grouped corner radii -- flatten inner corners for consecutive same-role messages
-    val cornerRadius = 12.dp
-    val smallCorner = 4.dp
+    val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
+    val cornerRadius = PocketAgentDimensions.messageBubblePadding
+    val smallCorner = compactSpacing
     val bubbleShape = when {
         isFirstInGroup && isLastInGroup -> RoundedCornerShape(cornerRadius)
         isUser && isFirstInGroup -> RoundedCornerShape(cornerRadius, cornerRadius, smallCorner, cornerRadius)
@@ -417,7 +434,7 @@ private fun MessageBubble(
                             detectTapGestures(
                                 onLongPress = {
                                     if (message.content.isNotBlank()) {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        haptic.tickConfirm()
                                         showContextMenu = true
                                     }
                                 },
@@ -433,9 +450,9 @@ private fun MessageBubble(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(compactSpacing))
                             AttachmentThumbnailRow(attachmentPaths)
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(compactSpacing))
                         }
                         message.toolName != null -> {
                             val statusSuffix = message.interaction?.toolCalls?.firstOrNull()?.status.toReadableSuffix()
@@ -444,16 +461,16 @@ private fun MessageBubble(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(compactSpacing))
                         }
                     }
 
                     if (!message.reasoningContent.isNullOrBlank()) {
                         ThinkingBubble(reasoningContent = message.reasoningContent)
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(compactSpacing + (compactSpacing / 2)))
                     }
 
-                    val content = if (message.content.isBlank() && message.isStreaming) "..." else message.content
+                    val content = message.content
                     if (shouldRenderInThreadLoadingPlaceholder(message)) {
                         if (message.isThinking) {
                             ThinkingInProgressIndicator()
@@ -461,7 +478,7 @@ private fun MessageBubble(
                             LoadingDotsAnimation()
                         }
                         runtimeStatusDetail?.takeIf { it.isNotBlank() }?.let { detail ->
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(compactSpacing))
                             Text(
                                 text = detail,
                                 style = MaterialTheme.typography.bodySmall,
@@ -506,10 +523,10 @@ private fun MessageMetrics(message: MessageUiModel) {
     if (message.role != MessageRole.ASSISTANT || message.isStreaming || message.content.isBlank()) return
     val hasMetadata = message.tokensPerSec != null || message.firstTokenMs != null || message.totalLatencyMs != null
     if (!hasMetadata) return
-    Spacer(modifier = Modifier.height(4.dp))
+    Spacer(modifier = Modifier.height(PocketAgentDimensions.sectionSpacing / 2))
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
     ) {
         val style = MaterialTheme.typography.labelSmall
         val color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -530,16 +547,20 @@ private fun FailedMessageRetry(
             it.startsWith("failed") || it == "timeout" || it == "cancelled"
         } == true
     if (!isFailed) return
-    Spacer(modifier = Modifier.height(4.dp))
+    val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
+    Spacer(modifier = Modifier.height(compactSpacing))
     Surface(
         onClick = { onRegenerateMessage(message.id) },
         color = MaterialTheme.colorScheme.errorContainer,
         shape = MaterialTheme.shapes.small,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(
+                horizontal = PocketAgentDimensions.messageBubblePadding,
+                vertical = PocketAgentDimensions.sectionSpacing,
+            ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(compactSpacing + (compactSpacing / 2)),
         ) {
             Icon(
                 Icons.Default.Refresh,
@@ -566,7 +587,7 @@ private fun MessageActions(
 ) {
     if (message.content.isBlank() || message.isStreaming) return
     val haptic = LocalHapticFeedback.current
-    Spacer(modifier = Modifier.height(4.dp))
+    Spacer(modifier = Modifier.height(PocketAgentDimensions.sectionSpacing / 2))
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
@@ -652,12 +673,17 @@ private fun MessageContextMenu(
 @Composable
 private fun ThinkingBubble(reasoningContent: String) {
     var expanded by remember { mutableStateOf(false) }
+    val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = MaterialTheme.shapes.small,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.animateContentSize().padding(8.dp)) {
+        Column(
+            modifier = Modifier
+                .animateContentSize()
+                .padding(PocketAgentDimensions.sectionSpacing),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
@@ -668,7 +694,7 @@ private fun ThinkingBubble(reasoningContent: String) {
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.size(4.dp))
+                Spacer(modifier = Modifier.size(compactSpacing))
                 Text(
                     text = stringResource(id = R.string.ui_thinking),
                     style = MaterialTheme.typography.labelMedium,
@@ -676,7 +702,7 @@ private fun ThinkingBubble(reasoningContent: String) {
                 )
             }
             if (expanded) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(compactSpacing))
                 Text(
                     text = reasoningContent,
                     style = MaterialTheme.typography.bodySmall,
@@ -684,7 +710,7 @@ private fun ThinkingBubble(reasoningContent: String) {
                 )
             } else {
                 Text(
-                    text = reasoningContent.take(80) + if (reasoningContent.length > 80) "..." else "",
+                    text = reasoningContent,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -698,6 +724,7 @@ private fun ThinkingBubble(reasoningContent: String) {
 @Composable
 private fun LoadingDotsAnimation() {
     val infiniteTransition = rememberInfiniteTransition(label = "loading_dots")
+    val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
     val alpha1 by infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
@@ -716,7 +743,10 @@ private fun LoadingDotsAnimation() {
         animationSpec = infiniteRepeatable(animation = tween(PocketAgentDimensions.animSlow, delayMillis = 400, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
         label = "dot3",
     )
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(compactSpacing),
+        modifier = Modifier.clearAndSetSemantics { },
+    ) {
         val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
         Text("●", color = dotColor.copy(alpha = alpha1), style = MaterialTheme.typography.bodyLarge)
         Text("●", color = dotColor.copy(alpha = alpha2), style = MaterialTheme.typography.bodyLarge)
@@ -726,7 +756,7 @@ private fun LoadingDotsAnimation() {
 
 @Composable
 private fun ThinkingInProgressIndicator() {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing / 2)) {
         LoadingDotsAnimation()
         Text(
             text = stringResource(id = R.string.ui_thinking_in_progress),
@@ -736,12 +766,13 @@ private fun ThinkingInProgressIndicator() {
     }
 }
 
+@Composable
 private fun PersistedToolCallStatus?.toReadableSuffix(): String {
     return when (this) {
-        PersistedToolCallStatus.PENDING -> " (Pending)"
-        PersistedToolCallStatus.RUNNING -> " (Running)"
-        PersistedToolCallStatus.COMPLETED -> " (Completed)"
-        PersistedToolCallStatus.FAILED -> " (Failed)"
+        PersistedToolCallStatus.PENDING -> stringResource(id = R.string.ui_tool_call_status_pending_suffix)
+        PersistedToolCallStatus.RUNNING -> stringResource(id = R.string.ui_tool_call_status_running_suffix)
+        PersistedToolCallStatus.COMPLETED -> stringResource(id = R.string.ui_tool_call_status_completed_suffix)
+        PersistedToolCallStatus.FAILED -> stringResource(id = R.string.ui_tool_call_status_failed_suffix)
         null -> ""
     }
 }
@@ -757,7 +788,7 @@ private fun TimestampSeparator(epochMs: Long) {
         ).toString()
     }
     Box(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = PocketAgentDimensions.sectionSpacing),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -793,7 +824,7 @@ private fun AttachmentThumbnailRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
     ) {
         attachmentPaths.take(3).forEach { path ->
             AsyncImage(

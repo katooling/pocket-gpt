@@ -2,6 +2,7 @@
 
 package com.pocketagent.android.ui
 
+import android.text.format.Formatter
 import androidx.compose.foundation.background
 import androidx.compose.ui.res.stringResource
 import com.pocketagent.android.R
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -38,16 +38,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.pocketagent.android.runtime.ProvisionedModelState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
+import com.pocketagent.android.ui.components.SectionHeader
 import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.activeOrRequestedModel
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import com.pocketagent.core.RoutingMode
 
 @Composable
@@ -79,7 +81,7 @@ internal fun ModelSheet(
     val installedKeys by remember(installedVersions) {
         derivedStateOf {
             installedVersions
-                .map { (model, version) -> versionKey(model.modelId, version.version) }
+                .map { (model, version) -> versionIdentityKey(model.modelId, version.version) }
                 .toSet()
         }
     }
@@ -87,12 +89,12 @@ internal fun ModelSheet(
         derivedStateOf {
             libraryState.manifest.models.flatMap { model ->
                 model.versions.map { version -> model.displayName to version }
-            }.filter { (_, version) ->
-                versionKey(version.modelId, version.version) !in installedKeys &&
+            }.filter { (displayName, version) ->
+                versionIdentityKey(version.modelId, version.version) !in installedKeys &&
                     matchesModelSearch(
                         searchQuery = searchQuery,
                         modelId = version.modelId,
-                        displayName = version.modelId,
+                        displayName = displayName,
                         version = version.version,
                     )
             }
@@ -101,7 +103,7 @@ internal fun ModelSheet(
     val downloadTasksByKey by remember(libraryState) {
         derivedStateOf {
             libraryState.downloads.associateBy { task ->
-                versionKey(task.modelId, task.version)
+                versionIdentityKey(task.modelId, task.version)
             }
         }
     }
@@ -109,28 +111,16 @@ internal fun ModelSheet(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .padding(PocketAgentDimensions.sheetHorizontalPadding)
             .testTag("unified_model_sheet"),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.screenPadding),
     ) {
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Models",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = stringResource(id = R.string.ui_model_sheet_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
                 OutlinedButton(onClick = { onEvent(ModelSheetEvent.RefreshAll) }) {
                     Text(stringResource(id = R.string.ui_refresh))
                 }
@@ -155,7 +145,7 @@ internal fun ModelSheet(
         }
         item { HorizontalDivider() }
         item {
-            SectionTitle(
+            SectionHeader(
                 title = stringResource(id = R.string.ui_downloaded_models),
                 subtitle = stringResource(id = R.string.ui_downloaded_models_subtitle),
             )
@@ -168,7 +158,10 @@ internal fun ModelSheet(
                 )
             }
         } else {
-            items(installedVersions, key = { (model, version) -> versionKey(model.modelId, version.version) }) { (model, version) ->
+            items(
+                installedVersions,
+                key = { (model, version) -> installedVersionItemKey(model.modelId, version.version) },
+            ) { (model, version) ->
                 DownloadedModelCard(
                     model = model,
                     version = version,
@@ -184,7 +177,7 @@ internal fun ModelSheet(
         }
         item { HorizontalDivider() }
         item {
-            SectionTitle(
+            SectionHeader(
                 title = stringResource(id = R.string.ui_available_models),
                 subtitle = stringResource(id = R.string.ui_available_models_subtitle),
             )
@@ -197,11 +190,14 @@ internal fun ModelSheet(
                 )
             }
         } else {
-            items(availableVersions, key = { (_, version) -> versionKey(version.modelId, version.version) }) { (displayName, version) ->
+            items(
+                availableVersions,
+                key = { (_, version) -> downloadVersionItemKey(version.modelId, version.version) },
+            ) { (displayName, version) ->
                 AvailableModelCard(
                     displayName = displayName,
                     version = version,
-                    task = downloadTasksByKey[versionKey(version.modelId, version.version)],
+                    task = downloadTasksByKey[versionIdentityKey(version.modelId, version.version)],
                     isImporting = runtimeState.isImporting,
                     onImportModel = { modelId -> onEvent(ModelSheetEvent.ImportModel(modelId)) },
                     onDownloadVersion = { ver -> onEvent(ModelSheetEvent.DownloadVersion(ver)) },
@@ -268,8 +264,8 @@ private fun ActiveModelSection(
         modelLoadingState !is ModelLoadingState.Offloading
     Card {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(PocketAgentDimensions.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
         ) {
             Text(stringResource(id = R.string.ui_active_model), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             StatusRow(
@@ -331,8 +327,8 @@ private fun ActiveModelSection(
                 else -> Unit
             }
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
             ) {
                 if (canLoadLastUsed) {
                     OutlinedButton(onClick = onLoadLastUsedModel) {
@@ -371,18 +367,25 @@ private fun DownloadedModelCard(
     }
     Card {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(PocketAgentDimensions.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing / 2),
+                ) {
                     Text(model.displayName, style = MaterialTheme.typography.labelLarge)
                     Text(
-                        text = "${model.modelId} • ${version.version}",
+                        text = stringResource(
+                            id = R.string.ui_model_installed_version_row,
+                            model.modelId,
+                            version.version,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -398,8 +401,8 @@ private fun DownloadedModelCard(
                 )
             }
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
             ) {
                 Button(
                     onClick = { onLoadVersion(model.modelId, version.version) },
@@ -437,19 +440,27 @@ private fun AvailableModelCard(
     onRetryDownload: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     Card {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(PocketAgentDimensions.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
         ) {
             Text(displayName, style = MaterialTheme.typography.labelLarge)
             Text(
-                text = "${version.modelId} • ${version.version}",
+                text = stringResource(
+                    id = R.string.ui_model_download_version_label,
+                    version.modelId,
+                    version.version,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = version.fileSizeBytes.formatAsGiB(),
+                text = stringResource(
+                    id = R.string.ui_model_download_expected_size,
+                    Formatter.formatShortFileSize(context, version.fileSizeBytes.coerceAtLeast(0L)),
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -460,14 +471,26 @@ private fun AvailableModelCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    text = "${task.status.name.lowercase().replace('_', ' ')} • ${task.progressPercent}%",
+                    text = stringResource(
+                        id = R.string.ui_model_download_state,
+                        task.readableStateNameLocalized(),
+                        task.progressPercent,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                task.stageWarningChips()
+                if (task.status == DownloadTaskStatus.FAILED || task.status == DownloadTaskStatus.CANCELLED) {
+                    Text(
+                        text = task.failureReasonMessage(version),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
             ) {
                 when (task?.status) {
                     DownloadTaskStatus.DOWNLOADING,
@@ -523,8 +546,8 @@ private fun EmptyStateCard(
 ) {
     Card {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().padding(PocketAgentDimensions.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
         ) {
             Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             Text(
@@ -537,30 +560,22 @@ private fun EmptyStateCard(
 }
 
 @Composable
-private fun SectionTitle(
-    title: String,
-    subtitle: String,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
 private fun StatusRow(
     color: Color,
     label: String,
 ) {
+    val statusDescription = stringResource(
+        id = R.string.cd_model_status_indicator,
+        label,
+    )
     Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatusDot(color = color, statusLabel = label)
+        StatusDot(
+            color = color,
+            statusDescription = statusDescription,
+        )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -570,13 +585,15 @@ private fun StatusRow(
 }
 
 @Composable
-private fun StatusDot(color: Color, statusLabel: String) {
+private fun StatusDot(color: Color, statusDescription: String) {
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
-            .size(10.dp)
+            .size(PocketAgentDimensions.statusDotSize)
             .clip(MaterialTheme.shapes.small)
             .background(color)
-            .semantics { contentDescription = "Model status: $statusLabel" },
+            .semantics {
+                contentDescription = statusDescription
+            },
     )
 }
 
@@ -594,7 +611,7 @@ private fun matchesModelSearch(
         version.contains(searchQuery, ignoreCase = true)
 }
 
-private fun versionKey(modelId: String, version: String): String = "$modelId::$version"
+private fun versionIdentityKey(modelId: String, version: String): String = "$modelId::$version"
 
 @Composable
 internal fun ModelLoadingState.statusHeadline(): String {

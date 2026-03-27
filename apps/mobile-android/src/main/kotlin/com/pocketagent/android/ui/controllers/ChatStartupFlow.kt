@@ -12,6 +12,7 @@ import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.CompletionSettings
 import com.pocketagent.android.ui.state.FirstSessionStage
+import com.pocketagent.android.ui.state.ModalSurface
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.RuntimeKeepAlivePreference
@@ -142,7 +143,11 @@ class ChatStartupFlow(
                 activeSessionId = activeSessionId,
                 runtime = bootstrapRuntimeState,
                 defaultThinkingEnabled = persisted.defaultThinkingEnabled,
-                showOnboarding = !persisted.onboardingCompleted,
+                activeSurface = if (persisted.onboardingCompleted) {
+                    ModalSurface.None
+                } else {
+                    ModalSurface.Onboarding
+                },
                 firstSessionStage = initialFirstSessionStage,
                 advancedUnlocked = restoredAdvancedUnlocked,
                 firstAnswerCompleted = persisted.firstAnswerCompleted,
@@ -212,7 +217,7 @@ class ChatStartupFlow(
         val blocked = outcome.readinessDecision.startupProbeState == StartupProbeState.BLOCKED ||
             outcome.readinessDecision.startupProbeState == StartupProbeState.BLOCKED_TIMEOUT
         val nextStage = when {
-            state.showOnboarding -> FirstSessionStage.ONBOARDING
+            state.activeSurface is ModalSurface.Onboarding -> FirstSessionStage.ONBOARDING
             state.firstAnswerCompleted -> state.firstSessionStage
             sendAllowed -> FirstSessionStage.READY_TO_CHAT
             blocked -> FirstSessionStage.GET_READY

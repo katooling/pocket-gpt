@@ -3,10 +3,11 @@ package com.pocketagent.android.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -18,10 +19,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -30,15 +34,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.GpuProbeFailureReason
 import com.pocketagent.android.runtime.GpuProbeStatus
+import com.pocketagent.android.ui.components.SectionHeader
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import com.pocketagent.android.ui.theme.tickLight
 import com.pocketagent.android.ui.state.ChatUiState
@@ -62,28 +63,81 @@ internal fun AdvancedSettingsSheet(
 ) {
     val haptic = LocalHapticFeedback.current
     val gpuToggleEnabled = state.runtime.gpuAccelerationSupported || state.runtime.gpuManualOverrideAllowed
+    var selectedTab by remember { mutableIntStateOf(0) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
             .padding(PocketAgentDimensions.sheetHorizontalPadding)
             .navigationBarsPadding()
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.screenPadding),
     ) {
-        Text(
-            text = stringResource(id = R.string.ui_advanced_controls_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.semantics { heading() },
-        )
+        TabRow(selectedTabIndex = selectedTab) {
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
+                text = { Text(stringResource(id = R.string.ui_tab_general)) },
+            )
+            Tab(
+                selected = selectedTab == 1,
+                onClick = { selectedTab = 1 },
+                text = { Text(stringResource(id = R.string.ui_tab_model)) },
+            )
+            Tab(
+                selected = selectedTab == 2,
+                onClick = { selectedTab = 2 },
+                text = { Text(stringResource(id = R.string.ui_tab_about)) },
+            )
+        }
 
-        // --- Speed & Battery ---
-        Text(stringResource(id = R.string.ui_speed_battery_title), style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
-        Text(
-            text = stringResource(id = R.string.ui_speed_battery_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Spacer(modifier = Modifier.height(PocketAgentDimensions.compactSpacing))
+
+        when (selectedTab) {
+            0 -> GeneralTabContent(
+                state = state,
+                wifiOnlyDownloadsEnabled = wifiOnlyDownloadsEnabled,
+                haptic = haptic,
+                onPerformanceProfileSelected = onPerformanceProfileSelected,
+                onWifiOnlyDownloadsChanged = onWifiOnlyDownloadsChanged,
+                onDefaultThinkingEnabledChanged = onDefaultThinkingEnabledChanged,
+                onKeepAlivePreferenceSelected = onKeepAlivePreferenceSelected,
+            )
+            1 -> ModelTabContent(
+                state = state,
+                gpuToggleEnabled = gpuToggleEnabled,
+                haptic = haptic,
+                onRoutingModeSelected = onRoutingModeSelected,
+                onGpuAccelerationEnabledChanged = onGpuAccelerationEnabledChanged,
+            )
+            2 -> AboutTabContent(
+                state = state,
+                onExportDiagnostics = onExportDiagnostics,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GeneralTabContent(
+    state: ChatUiState,
+    wifiOnlyDownloadsEnabled: Boolean,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    onPerformanceProfileSelected: (RuntimePerformanceProfile) -> Unit,
+    onWifiOnlyDownloadsChanged: (Boolean) -> Unit,
+    onDefaultThinkingEnabledChanged: (Boolean) -> Unit,
+    onKeepAlivePreferenceSelected: (RuntimeKeepAlivePreference) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = PocketAgentDimensions.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.screenPadding),
+    ) {
+        SectionHeader(
+            title = stringResource(id = R.string.ui_speed_battery_title),
+            subtitle = stringResource(id = R.string.ui_speed_battery_subtitle),
         )
         RuntimePerformanceProfile.entries.forEach { profile ->
             val (label, description) = performanceProfileLabels(profile)
@@ -103,7 +157,7 @@ internal fun AdvancedSettingsSheet(
                     selected = state.runtime.performanceProfile == profile,
                     onClick = null,
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(PocketAgentDimensions.sectionSpacing))
                 Column {
                     Text(label)
                     Text(
@@ -117,12 +171,9 @@ internal fun AdvancedSettingsSheet(
 
         HorizontalDivider()
 
-        // --- Downloads ---
-        Text(stringResource(id = R.string.ui_download_controls_title), style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
-        Text(
-            text = stringResource(id = R.string.ui_download_controls_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        SectionHeader(
+            title = stringResource(id = R.string.ui_download_controls_title),
+            subtitle = stringResource(id = R.string.ui_download_controls_subtitle),
         )
         Row(
             modifier = Modifier
@@ -141,13 +192,39 @@ internal fun AdvancedSettingsSheet(
                 checked = wifiOnlyDownloadsEnabled,
                 onCheckedChange = null,
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(PocketAgentDimensions.sectionSpacing))
             Text(stringResource(id = R.string.ui_download_wifi_only_toggle))
         }
 
         HorizontalDivider()
 
-        Text(stringResource(id = R.string.ui_reasoning_title), style = MaterialTheme.typography.labelLarge)
+        SectionHeader(
+            title = stringResource(id = R.string.ui_keep_alive_title),
+            subtitle = stringResource(id = R.string.ui_keep_alive_subtitle),
+        )
+        RuntimeKeepAlivePreference.entries.forEach { preference ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = state.runtime.keepAlivePreference == preference,
+                        onClick = { onKeepAlivePreferenceSelected(preference) },
+                        role = Role.RadioButton,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = state.runtime.keepAlivePreference == preference,
+                    onClick = null,
+                )
+                Spacer(modifier = Modifier.width(PocketAgentDimensions.sectionSpacing))
+                Text(keepAlivePreferenceLabel(preference))
+            }
+        }
+
+        HorizontalDivider()
+
+        SectionHeader(title = stringResource(id = R.string.ui_reasoning_title))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -165,7 +242,7 @@ internal fun AdvancedSettingsSheet(
                 checked = state.defaultThinkingEnabled,
                 onCheckedChange = null,
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(PocketAgentDimensions.sectionSpacing))
             Column {
                 Text(stringResource(id = R.string.ui_default_thinking_toggle))
                 Text(
@@ -173,42 +250,71 @@ internal fun AdvancedSettingsSheet(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    text = stringResource(id = R.string.ui_default_thinking_scope_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
+    }
+}
 
-        HorizontalDivider()
-
-        // --- Keep-alive ---
-        Text(stringResource(id = R.string.ui_keep_alive_title), style = MaterialTheme.typography.labelLarge)
-        Text(
-            text = stringResource(id = R.string.ui_keep_alive_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+@Composable
+private fun ModelTabContent(
+    state: ChatUiState,
+    gpuToggleEnabled: Boolean,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    onRoutingModeSelected: (RoutingMode) -> Unit,
+    onGpuAccelerationEnabledChanged: (Boolean) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = PocketAgentDimensions.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.screenPadding),
+    ) {
+        SectionHeader(
+            title = stringResource(id = R.string.ui_model_selection_title),
+            subtitle = stringResource(id = R.string.ui_model_selection_subtitle),
         )
-        RuntimeKeepAlivePreference.entries.forEach { preference ->
+
+        supportedRoutingModes().forEach { mode ->
+            val (label, description) = routingModeLabels(mode)
+            val routingDescription = stringResource(id = R.string.a11y_routing_mode, label)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .selectable(
-                        selected = state.runtime.keepAlivePreference == preference,
-                        onClick = { onKeepAlivePreferenceSelected(preference) },
+                        selected = state.runtime.routingMode == mode,
+                        onClick = { onRoutingModeSelected(mode) },
                         role = Role.RadioButton,
-                    ),
+                    )
+                    .semantics { contentDescription = routingDescription },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(
-                    selected = state.runtime.keepAlivePreference == preference,
+                    selected = state.runtime.routingMode == mode,
                     onClick = null,
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(keepAlivePreferenceLabel(preference))
+                Spacer(modifier = Modifier.width(PocketAgentDimensions.sectionSpacing))
+                Column {
+                    Text(label)
+                    if (description.isNotBlank()) {
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
 
         HorizontalDivider()
 
-        // --- GPU acceleration (Experimental) ---
-        Text(stringResource(id = R.string.ui_advanced_experimental_title), style = MaterialTheme.typography.labelLarge)
+        SectionHeader(title = stringResource(id = R.string.ui_advanced_experimental_title))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -228,7 +334,7 @@ internal fun AdvancedSettingsSheet(
                 enabled = gpuToggleEnabled,
                 onCheckedChange = null,
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(PocketAgentDimensions.sectionSpacing))
             Text(
                 text = when {
                     state.runtime.gpuProbeStatus == GpuProbeStatus.PENDING ->
@@ -236,7 +342,7 @@ internal fun AdvancedSettingsSheet(
                     state.runtime.gpuAccelerationSupported ->
                         stringResource(id = R.string.ui_gpu_acceleration_toggle)
                     state.runtime.gpuManualOverrideAllowed ->
-                        "${stringResource(id = R.string.ui_gpu_acceleration_toggle)} (debug override)"
+                        stringResource(id = R.string.ui_gpu_acceleration_toggle_debug_override)
                     else ->
                         stringResource(
                             id = R.string.ui_gpu_acceleration_unavailable_with_reason,
@@ -268,52 +374,21 @@ internal fun AdvancedSettingsSheet(
                 color = MaterialTheme.colorScheme.error,
             )
         }
+    }
+}
 
-        HorizontalDivider()
-
-        // --- Model selection (advanced, rarely changed) ---
-        Text(stringResource(id = R.string.ui_model_selection_title), style = MaterialTheme.typography.labelLarge)
-        Text(
-            text = stringResource(id = R.string.ui_model_selection_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        supportedRoutingModes().forEach { mode ->
-            val (label, description) = routingModeLabels(mode)
-            val routingDescription = stringResource(id = R.string.a11y_routing_mode, label)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .selectable(
-                        selected = state.runtime.routingMode == mode,
-                        onClick = { onRoutingModeSelected(mode) },
-                        role = Role.RadioButton,
-                    )
-                    .semantics { contentDescription = routingDescription },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(
-                    selected = state.runtime.routingMode == mode,
-                    onClick = null,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(label)
-                    if (description.isNotBlank()) {
-                        Text(
-                            text = description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-
-        HorizontalDivider()
-
-        // --- Diagnostics (collapsible) ---
+@Composable
+private fun AboutTabContent(
+    state: ChatUiState,
+    onExportDiagnostics: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = PocketAgentDimensions.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.screenPadding),
+    ) {
         DiagnosticsSection(
             runtime = state.runtime,
             onExportDiagnostics = onExportDiagnostics,
@@ -356,7 +431,7 @@ private fun DiagnosticsSection(
         ) {
             Column(
                 modifier = Modifier.padding(PocketAgentDimensions.cardPadding),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.compactSpacing),
             ) {
                 DiagnosticLine(
                     label = stringResource(id = R.string.ui_diag_runtime),
@@ -435,7 +510,7 @@ private fun PrivacySection() {
         )
     }
     if (expanded) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.tightSpacing)) {
             Text(stringResource(id = R.string.ui_privacy_item_1), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(id = R.string.ui_privacy_item_2), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(id = R.string.ui_privacy_item_3), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -513,6 +588,8 @@ private fun keepAlivePreferenceLabel(preference: RuntimeKeepAlivePreference): St
     }
 }
 
+// --- GPU Quantization Compatibility Utilities ---
+
 private fun shouldShowOpenClQuantizationWarning(state: ChatUiState): Boolean {
     return shouldShowOpenClQuantizationWarning(runtime = state.runtime)
 }
@@ -546,12 +623,12 @@ internal fun shouldShowOpenClQuantizationWarning(runtime: RuntimeUiState): Boole
     return OPENCL_UNSUPPORTED_QUANT_MODEL_REGEX.containsMatchIn(quantSource)
 }
 
-private val OPENCL_SAFE_QUANT_MODEL_REGEX = Regex(
+internal val OPENCL_SAFE_QUANT_MODEL_REGEX = Regex(
     """(?:^|[._-])(q4[._-]?0|q6[._-]?k|q8[._-]?0|f16|f32|fp16|fp32|mxfp4(?:[._-]moe)?)(?:[._-]|$)""",
     RegexOption.IGNORE_CASE,
 )
 
-private val OPENCL_UNSUPPORTED_QUANT_MODEL_REGEX = Regex(
+internal val OPENCL_UNSUPPORTED_QUANT_MODEL_REGEX = Regex(
     """(?:^|[._-])(q(?:[2-8][._-](?:k|[0-9])[._-]?[a-z0-9_]*|5|8)|iq[1-4](?:[._-][a-z]+)?)(?:[._-]|$)""",
     RegexOption.IGNORE_CASE,
 )

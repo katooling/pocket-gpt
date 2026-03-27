@@ -98,10 +98,6 @@ internal fun ChatViewModel.setGpuAccelerationEnabledInternal(enabled: Boolean) {
     persistState()
 }
 
-internal fun ChatViewModel.setSessionDrawerOpenInternal(isOpen: Boolean) {
-    _uiState.update { it.copy(isSessionDrawerOpen = isOpen) }
-}
-
 internal fun ChatViewModel.prefillComposerInternal(text: String) {
     _uiState.update { state ->
         state.copy(
@@ -120,7 +116,7 @@ internal fun ChatViewModel.nextOnboardingPageInternal() {
 internal fun ChatViewModel.completeOnboardingInternal() {
     _uiState.update { state ->
         state.copy(
-            showOnboarding = false,
+            activeSurface = ModalSurface.None,
             onboardingPage = ONBOARDING_LAST_PAGE,
             firstSessionStage = if (sendFlow.isRuntimeReadyForSend(state.runtime)) {
                 FirstSessionStage.READY_TO_CHAT

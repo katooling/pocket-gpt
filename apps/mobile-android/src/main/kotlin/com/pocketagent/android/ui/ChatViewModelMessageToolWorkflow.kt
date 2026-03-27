@@ -191,7 +191,7 @@ internal fun ChatViewModel.createMessageInternal(
 
 internal fun ChatViewModel.maybeAdvanceAfterAssistantResponseInternal() {
     val snapshot = _uiState.value
-    if (snapshot.showOnboarding) {
+    if (snapshot.activeSurface is com.pocketagent.android.ui.state.ModalSurface.Onboarding) {
         return
     }
     if (!snapshot.firstAnswerCompleted) {
@@ -208,10 +208,13 @@ internal fun ChatViewModel.maybeAdvanceAfterAssistantResponseInternal() {
 
 internal fun ChatViewModel.ensureSimpleFirstEnteredTelemetryIfNeededInternal() {
     val state = _uiState.value
-    if (state.showOnboarding && state.firstSessionTelemetryEvents.any { it.eventName == TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED }) {
+    if (
+        state.activeSurface is com.pocketagent.android.ui.state.ModalSurface.Onboarding &&
+        state.firstSessionTelemetryEvents.any { it.eventName == TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED }
+    ) {
         return
     }
-    if (!state.showOnboarding) {
+    if (state.activeSurface !is com.pocketagent.android.ui.state.ModalSurface.Onboarding) {
         recordFirstSessionEventOnce(TELEMETRY_EVENT_SIMPLE_FIRST_ENTERED)
     }
 }

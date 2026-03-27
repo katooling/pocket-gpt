@@ -6,6 +6,7 @@ import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.CompletionSettings
 import com.pocketagent.android.ui.state.ComposerUiState
 import com.pocketagent.android.ui.state.MessageUiModel
+import com.pocketagent.android.ui.state.ModalSurface
 import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.UiError
 import com.pocketagent.android.ui.withUiError
@@ -169,7 +170,11 @@ class AndroidChatConversationService(
                     }
                 },
                 activeSessionId = mutation.activeSessionId,
-                isSessionDrawerOpen = false,
+                activeSurface = if (state.activeSurface is ModalSurface.SessionDrawer) {
+                    ModalSurface.None
+                } else {
+                    state.activeSurface
+                },
             ),
             shouldPersist = true,
             hydrateSessionId = mutation.hydrateSessionId,
@@ -189,7 +194,11 @@ class AndroidChatConversationService(
             state = state.copy(
                 sessions = mutation.sessions,
                 activeSessionId = mutation.activeSessionId,
-                isSessionDrawerOpen = false,
+                activeSurface = if (state.activeSurface is ModalSurface.SessionDrawer) {
+                    ModalSurface.None
+                } else {
+                    state.activeSurface
+                },
             ),
             shouldPersist = mutation.shouldPersist,
             hydrateSessionId = mutation.hydrateSessionId,

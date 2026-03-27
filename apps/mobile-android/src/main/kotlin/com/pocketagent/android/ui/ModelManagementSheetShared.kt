@@ -8,7 +8,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.ModelPathOrigin
 import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
@@ -17,10 +16,12 @@ import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ManifestSource
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 
+// Legacy plain-text helper retained for JVM unit tests and non-Compose callers.
 internal fun DownloadTaskState.readableStateName(): String {
     return when (status) {
         DownloadTaskStatus.QUEUED -> "Queued"
@@ -123,7 +124,7 @@ internal fun DownloadTaskState.stageWarningChips() {
     }
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
     ) {
         chips.forEach { warning ->
             AssistChip(
@@ -201,18 +202,6 @@ internal fun ManifestSource.readableNameRes(): Int {
         ManifestSource.BUNDLED_AND_REMOTE -> R.string.ui_model_catalog_source_bundled_and_remote
     }
 }
-
-internal fun modelDownloadVersionLabel(modelId: String, version: String): String =
-    "Download version $modelId $version"
-
-internal fun modelDownloadStartLabel(modelId: String, version: String): String =
-    "Start download $modelId $version"
-
-internal fun modelInstalledVersionLabel(modelId: String, version: String): String =
-    "Installed version $modelId $version"
-
-internal fun modelActivateVersionLabel(modelId: String, version: String): String =
-    "Activate version $modelId $version"
 
 internal fun Long.formatAsTimestamp(): String {
     return runCatching {

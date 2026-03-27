@@ -19,7 +19,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
@@ -37,6 +36,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -55,6 +56,7 @@ import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
+import com.pocketagent.android.ui.components.AppBottomSheet
 import com.pocketagent.android.ui.components.ConfirmDialog
 import com.pocketagent.android.ui.state.ChatGatePrimaryAction
 import com.pocketagent.android.ui.state.ModalSurface
@@ -67,6 +69,10 @@ import com.pocketagent.runtime.ModelInteractionRegistry
 import com.pocketagent.runtime.ThinkingSupport
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -89,9 +95,8 @@ fun PocketAgentApp(
     val activeRuntimeModelLabel = modelLoadingState.loadedModel?.let { model ->
         "${model.modelId} ${model.modelVersion.orEmpty()}".trim()
     }
-    val drawerState = rememberDrawerState(
-        initialValue = if (state.isSessionDrawerOpen) DrawerValue.Open else DrawerValue.Closed,
-    )
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val currentActiveSurface by rememberUpdatedState(state.activeSurface)
     val interactionRegistry = remember { ModelInteractionRegistry() }
     val thinkingToggleModelId = modelLoadingState.loadedModel?.modelId ?: state.runtime.activeModelId
     val showThinkingToggle = thinkingToggleModelId?.let { modelId ->
@@ -431,12 +436,24 @@ fun PocketAgentApp(
         provisioningViewModel.refreshManifest()
     }
 
-    LaunchedEffect(state.isSessionDrawerOpen) {
-        if (state.isSessionDrawerOpen) {
+    LaunchedEffect(state.activeSurface) {
+        if (state.activeSurface is ModalSurface.SessionDrawer) {
             drawerState.open()
         } else {
             drawerState.close()
         }
+    }
+
+    LaunchedEffect(drawerState) {
+        snapshotFlow { drawerState.currentValue }
+            .map { it == DrawerValue.Closed }
+            .distinctUntilChanged()
+            .filter { it }
+            .collectLatest {
+                if (currentActiveSurface is ModalSurface.SessionDrawer) {
+                    viewModel.dismissSurface()
+                }
+            }
     }
 
     ModalNavigationDrawer(
@@ -448,10 +465,13 @@ fun PocketAgentApp(
             ModalDrawerSheet(modifier = Modifier.fillMaxHeight()) {
                 SessionDrawer(
                     state = state,
-                    onCreateSession = viewModel::createSession,
+                    onCreateSession = {
+                        viewModel.createSession()
+                        viewModel.dismissSurface()
+                    },
                     onSwitchSession = { id ->
                         viewModel.switchSession(id)
-                        viewModel.setSessionDrawerOpen(false)
+                        viewModel.dismissSurface()
                     },
                     onDeleteSession = viewModel::deleteSession,
                 )
@@ -472,8 +492,7 @@ fun PocketAgentApp(
                         IconButton(
                             modifier = Modifier.testTag("session_drawer_button"),
                             onClick = {
-                                viewModel.setSessionDrawerOpen(true)
-                                scope.launch { drawerState.open() }
+                                viewModel.showSurface(ModalSurface.SessionDrawer)
                             },
                         ) {
                             Icon(
@@ -536,7 +555,7 @@ fun PocketAgentApp(
                 onEditMessage = viewModel::editMessage,
                 onRegenerateMessage = viewModel::regenerateResponse,
                 onCopiedToClipboard = {
-                    scope.launch { snackbarHostState.showSnackbar("Copied to clipboard") }
+                    scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.ui_copied_to_clipboard)) }
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -554,9 +573,10 @@ fun PocketAgentApp(
 
     if (state.activeSurface is ModalSurface.AdvancedSettings) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { viewModel.dismissSurface() },
+        AppBottomSheet(
+            title = stringResource(id = R.string.ui_advanced_controls_title),
             sheetState = sheetState,
+            onDismiss = { viewModel.dismissSurface() },
         ) {
             AdvancedSettingsSheet(
                 state = state,
@@ -595,9 +615,10 @@ fun PocketAgentApp(
 
     if (state.activeSurface is ModalSurface.CompletionSettings) {
         val completionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { viewModel.dismissSurface() },
+        AppBottomSheet(
+            title = stringResource(id = R.string.ui_completion_settings_title),
             sheetState = completionSheetState,
+            onDismiss = { viewModel.dismissSurface() },
         ) {
             CompletionSettingsSheet(
                 settings = state.activeSession?.completionSettings ?: com.pocketagent.android.ui.state.CompletionSettings(),
@@ -609,9 +630,10 @@ fun PocketAgentApp(
 
     if (state.activeSurface is ModalSurface.ModelLibrary) {
         val runtimeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { viewModel.dismissSurface() },
+        AppBottomSheet(
+            title = stringResource(id = R.string.ui_model_library_title),
             sheetState = runtimeSheetState,
+            onDismiss = { viewModel.dismissSurface() },
         ) {
             ModelSheet(
                 libraryState = modelLibraryState,
@@ -724,7 +746,7 @@ fun PocketAgentApp(
         },
     )
 
-    if (state.showOnboarding) {
+    if (state.activeSurface is ModalSurface.Onboarding) {
         OnboardingOverlay(
             page = state.onboardingPage,
             onNext = viewModel::nextOnboardingPage,

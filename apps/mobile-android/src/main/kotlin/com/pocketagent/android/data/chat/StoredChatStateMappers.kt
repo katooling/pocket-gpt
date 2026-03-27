@@ -3,6 +3,7 @@ package com.pocketagent.android.data.chat
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.state.MessageUiModel
+import com.pocketagent.android.ui.state.ModalSurface
 
 internal fun ChatUiState.toStoredChatState(): StoredChatState {
     return StoredChatState(
@@ -13,7 +14,7 @@ internal fun ChatUiState.toStoredChatState(): StoredChatState {
         keepAlivePreference = runtime.keepAlivePreference.name,
         gpuAccelerationEnabled = runtime.gpuAccelerationEnabled,
         defaultThinkingEnabled = defaultThinkingEnabled,
-        onboardingCompleted = !showOnboarding,
+        onboardingCompleted = activeSurface !is ModalSurface.Onboarding,
         firstSessionStage = firstSessionStage.name,
         advancedUnlocked = advancedUnlocked,
         firstAnswerCompleted = firstAnswerCompleted,

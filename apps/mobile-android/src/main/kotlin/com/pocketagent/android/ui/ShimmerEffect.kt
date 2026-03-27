@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
 
 @Composable
 internal fun shimmerBrush(): Brush {
@@ -84,9 +85,9 @@ internal fun ShimmerMessageBubble(
                 .fillMaxWidth(0.9f)
                 .clip(MaterialTheme.shapes.medium)
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                .padding(12.dp),
+                .padding(PocketAgentDimensions.cardPadding),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing)) {
                 repeat(lineCount) { index ->
                     val widthFraction = when (index) {
                         0 -> 0.85f
@@ -105,13 +106,65 @@ internal fun ShimmerMessageLoadingPlaceholder() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(
+                horizontal = PocketAgentDimensions.screenPadding,
+                vertical = PocketAgentDimensions.sectionSpacing,
+            )
             .clearAndSetSemantics { },
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.cardPadding),
     ) {
         ShimmerMessageBubble(alignEnd = true, lineCount = 1)
         ShimmerMessageBubble(alignEnd = false, lineCount = 3)
         ShimmerMessageBubble(alignEnd = true, lineCount = 2)
         ShimmerMessageBubble(alignEnd = false, lineCount = 2)
+    }
+}
+
+@Composable
+private fun ShimmerLine(
+    modifier: Modifier = Modifier,
+) {
+    val brush = shimmerBrush()
+    Box(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.small)
+            .background(brush),
+    )
+}
+
+@Composable
+internal fun ShimmerSessionRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = PocketAgentDimensions.sheetHorizontalPadding,
+                vertical = PocketAgentDimensions.screenPadding,
+            ),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing / 2),
+        ) {
+            ShimmerLine(
+                modifier = Modifier.fillMaxWidth(0.6f).height(14.dp),
+            )
+            ShimmerLine(
+                modifier = Modifier.fillMaxWidth(0.3f).height(10.dp),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ShimmerSessionListPlaceholder(count: Int = 5) {
+    Column(
+        modifier = Modifier.clearAndSetSemantics { },
+    ) {
+        repeat(count) {
+            ShimmerSessionRow()
+        }
     }
 }

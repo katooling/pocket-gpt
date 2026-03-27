@@ -4,6 +4,8 @@ import androidx.compose.ui.unit.dp
 
 object PocketAgentDimensions {
     // Layout
+    val compactSpacing = 4.dp
+    val tightSpacing = 6.dp
     val screenPadding = 12.dp
     val messageBubblePadding = 12.dp
     val sectionSpacing = 8.dp

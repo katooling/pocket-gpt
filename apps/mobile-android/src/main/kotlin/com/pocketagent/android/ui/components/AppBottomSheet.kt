@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui.components
 
+import com.pocketagent.android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -22,7 +23,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pocketagent.android.ui.theme.PocketAgentDimensions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,7 +48,10 @@ fun AppBottomSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(
+                        horizontal = PocketAgentDimensions.sheetHorizontalPadding,
+                        vertical = PocketAgentDimensions.screenPadding,
+                    ),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -57,7 +62,7 @@ fun AppBottomSheet(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(id = R.string.ui_close),
                     )
                 }
             }

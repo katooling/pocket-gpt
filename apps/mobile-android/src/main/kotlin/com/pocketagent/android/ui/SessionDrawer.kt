@@ -1,24 +1,30 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -33,9 +39,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -49,13 +55,13 @@ import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
-private enum class SessionDateGroup(val label: String) {
-    TODAY("Today"),
-    YESTERDAY("Yesterday"),
-    THIS_WEEK("This Week"),
-    LAST_WEEK("Last Week"),
-    THIS_MONTH("This Month"),
-    OLDER("Older"),
+private enum class SessionDateGroup(val labelRes: Int) {
+    TODAY(R.string.ui_session_group_today),
+    YESTERDAY(R.string.ui_session_group_yesterday),
+    THIS_WEEK(R.string.ui_session_group_this_week),
+    LAST_WEEK(R.string.ui_session_group_last_week),
+    THIS_MONTH(R.string.ui_session_group_this_month),
+    OLDER(R.string.ui_session_group_older),
 }
 
 private fun classifyDateGroup(timestampMs: Long, nowMs: Long): SessionDateGroup {
@@ -103,7 +109,7 @@ private fun groupSessionsByDate(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 internal fun SessionDrawer(
     state: ChatUiState,
@@ -112,8 +118,16 @@ internal fun SessionDrawer(
     onDeleteSession: (String) -> Unit,
 ) {
     val createSessionDescription = stringResource(id = R.string.a11y_create_session)
-    val groupedSessions by remember(state.sessions) {
-        derivedStateOf { groupSessionsByDate(state.sessions) }
+    var searchQuery by remember { mutableStateOf("") }
+    val groupedSessions by remember(state.sessions, searchQuery) {
+        derivedStateOf {
+            val filtered = if (searchQuery.isBlank()) {
+                state.sessions
+            } else {
+                state.sessions.filter { it.title.contains(searchQuery, ignoreCase = true) }
+            }
+            groupSessionsByDate(filtered)
+        }
     }
     var pendingDeleteSession by remember { mutableStateOf<ChatSessionUiModel?>(null) }
 
@@ -143,11 +157,14 @@ internal fun SessionDrawer(
         )
     }
 
-    LazyColumn {
+    LazyColumn(
+        modifier = Modifier.navigationBarsPadding(),
+    ) {
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(horizontal = PocketAgentDimensions.sheetHorizontalPadding, vertical = PocketAgentDimensions.screenPadding),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
@@ -164,11 +181,41 @@ internal fun SessionDrawer(
             HorizontalDivider()
         }
 
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = PocketAgentDimensions.sheetHorizontalPadding, vertical = PocketAgentDimensions.sectionSpacing),
+                placeholder = { Text(stringResource(id = R.string.ui_session_search_placeholder)) },
+                singleLine = true,
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = stringResource(id = R.string.ui_session_search_clear))
+                        }
+                    }
+                },
+            )
+        }
+
         if (state.sessions.isEmpty()) {
             item {
                 Text(
                     text = stringResource(id = R.string.ui_no_sessions_yet),
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(PocketAgentDimensions.sheetHorizontalPadding),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else if (searchQuery.isNotBlank() && groupedSessions.isEmpty()) {
+            item {
+                Text(
+                    text = stringResource(id = R.string.ui_session_search_no_results),
+                    modifier = Modifier.padding(PocketAgentDimensions.sheetHorizontalPadding),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -177,7 +224,7 @@ internal fun SessionDrawer(
         groupedSessions.forEach { (group, sessions) ->
             item(key = "header-${group.name}") {
                 Text(
-                    text = group.label,
+                    text = stringResource(id = group.labelRes),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -200,7 +247,7 @@ internal fun SessionDrawer(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(MaterialTheme.colorScheme.errorContainer)
-                                .padding(horizontal = 20.dp),
+                                .padding(horizontal = PocketAgentDimensions.sheetHorizontalPadding),
                             contentAlignment = androidx.compose.ui.Alignment.CenterEnd,
                         ) {
                             Icon(
@@ -224,6 +271,7 @@ internal fun SessionDrawer(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionRow(
     session: ChatSessionUiModel,
@@ -240,13 +288,13 @@ private fun SessionRow(
         id = R.string.a11y_switch_session,
         session.title,
     )
-    val deleteSessionDescription = stringResource(
-        id = R.string.a11y_delete_session,
-        session.title,
-    )
     val deleteSessionActionLabel = stringResource(id = R.string.cd_session_delete)
     val subtitle = if (session.messageCount > 0) {
-        "${session.messageCount} messages"
+        pluralStringResource(
+            id = R.plurals.ui_session_message_count,
+            count = session.messageCount,
+            session.messageCount,
+        )
     } else {
         stringResource(id = R.string.ui_session_no_messages)
     }
@@ -254,22 +302,21 @@ private fun SessionRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (isActive) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-            .clickable { onSwitchSession(session.id) }
+            .combinedClickable(
+                onClickLabel = switchSessionDescription,
+                onLongClickLabel = deleteSessionActionLabel,
+                onLongClick = { onDeleteSession(session.id) },
+                onClick = { onSwitchSession(session.id) },
+            )
             .semantics {
                 selected = isActive
                 stateDescription = activeStateDescription
                 contentDescription = switchSessionDescription
-                onLongClick(label = deleteSessionActionLabel) {
-                    onDeleteSession(session.id)
-                    true
-                }
             }
             .padding(horizontal = PocketAgentDimensions.sheetHorizontalPadding, vertical = PocketAgentDimensions.screenPadding),
-        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
-            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
@@ -286,18 +333,6 @@ private fun SessionRow(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        IconButton(
-            modifier = Modifier.semantics {
-                contentDescription = deleteSessionDescription
-            },
-            onClick = { onDeleteSession(session.id) },
-        ) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

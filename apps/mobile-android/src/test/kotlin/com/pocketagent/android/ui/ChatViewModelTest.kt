@@ -148,13 +148,13 @@ class ChatViewModelTest {
         )
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.showOnboarding)
+        assertTrue(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.Onboarding)
         assertEquals(FirstSessionStage.ONBOARDING, viewModel.uiState.value.firstSessionStage)
 
         viewModel.completeOnboarding()
         advanceUntilIdle()
 
-        assertFalse(viewModel.uiState.value.showOnboarding)
+        assertFalse(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.Onboarding)
         assertEquals(FirstSessionStage.READY_TO_CHAT, viewModel.uiState.value.firstSessionStage)
         assertTrue(persistence.savedStates.last().onboardingCompleted)
     }
@@ -174,6 +174,41 @@ class ChatViewModelTest {
 
         viewModel.showSurface(com.pocketagent.android.ui.state.ModalSurface.ToolSuggestions)
         assertTrue(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.ToolSuggestions)
+
+        viewModel.dismissSurface()
+        assertTrue(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.None)
+    }
+
+    @Test
+    fun `prefill composer clears active surface`() = runTest(dispatcher) {
+        val viewModel = ChatViewModel(
+            runtimeFacade = RecordingRuntimeFacade(),
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.showSurface(com.pocketagent.android.ui.state.ModalSurface.CompletionSettings)
+        viewModel.prefillComposer("hello")
+
+        assertEquals("hello", viewModel.uiState.value.composer.text)
+        assertTrue(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.None)
+    }
+
+    @Test
+    fun `session drawer and model library surfaces can be opened`() = runTest(dispatcher) {
+        val viewModel = ChatViewModel(
+            runtimeFacade = RecordingRuntimeFacade(),
+            sessionPersistence = RecordingPersistence(),
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.showSurface(com.pocketagent.android.ui.state.ModalSurface.SessionDrawer)
+        assertTrue(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.SessionDrawer)
+
+        viewModel.showSurface(com.pocketagent.android.ui.state.ModalSurface.ModelLibrary)
+        assertTrue(viewModel.uiState.value.activeSurface is com.pocketagent.android.ui.state.ModalSurface.ModelLibrary)
     }
 
     @Test
