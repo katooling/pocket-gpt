@@ -173,8 +173,8 @@ Use these when you want the nearest Playwright-style "show report" path for Maes
 ## Maestro Android Companion CLI
 
 ```bash
-pipx install -e /Users/mkamar/Non_Work/Projects/maestro-android
-cp /Users/mkamar/Non_Work/Projects/maestro-android/examples/pocket-gpt/maestro-android.pocket-gpt.yaml .maestro-android.yaml
+pipx install -e /path/to/maestro-android
+cp /path/to/maestro-android/examples/pocket-gpt/maestro-android.pocket-gpt.yaml .maestro-android.yaml
 maestro-android doctor
 maestro-android lane smoke
 maestro-android scoped --flow tmp/maestro-repro.yaml

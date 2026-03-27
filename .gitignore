@@ -3,7 +3,11 @@
 *.log
 !docs/operations/evidence/**/*.log
 tmp/
-.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/maestro-android-cli/
+!.claude/skills/maestro-android-cli/**
 .kotlin/
 .idea/
 .vscode/

@@ -12,6 +12,7 @@ This repo follows engineering excellence:
    - `bash scripts/dev/test.sh fast|merge`
    - `python3 tools/devctl/main.py lane android-instrumented|maestro|journey|screenshot-pack`
 2. Use scoped on-demand device flows only for targeted debugging (single crash/hang/regression path), not as a replacement for merge/release gates.
+3. For Android testing context, read `.claude/skills/maestro-android-cli/SKILL.md` and `docs/testing/maestro-android-companion-cli.md` before making changes to test workflows.
 
 ## Scoped On-Demand Device Flow (When And How)
 

@@ -1,13 +1,13 @@
 # Maestro Android Companion CLI
 
-`maestro-android` is now treated as an external companion CLI instead of an in-repo tool. The standalone project lives at `/Users/mkamar/Non_Work/Projects/maestro-android` until it is pushed to GitHub.
+`maestro-android` is now treated as an external companion CLI instead of an in-repo tool. Keep the standalone checkout in a separate path and install from that checkout until you switch to the GitHub release/tag flow.
 
 ## Local install on this machine
 
 ```bash
 python3 -m pip install --user pipx
 pipx ensurepath
-pipx install -e /Users/mkamar/Non_Work/Projects/maestro-android
+pipx install -e /path/to/maestro-android
 ```
 
 For a released tag from GitHub:
@@ -30,7 +30,7 @@ This repo keeps the PocketGPT-specific skill at `.claude/skills/maestro-android-
 From the Pocket-GPT repo root:
 
 ```bash
-cp /Users/mkamar/Non_Work/Projects/maestro-android/examples/pocket-gpt/maestro-android.pocket-gpt.yaml .maestro-android.yaml
+cp /path/to/maestro-android/examples/pocket-gpt/maestro-android.pocket-gpt.yaml .maestro-android.yaml
 maestro-android doctor
 ```
 
@@ -62,8 +62,8 @@ maestro-android cloud status label:upload-id
 After the standalone project is pushed to GitHub, prefer a tag-driven release:
 
 ```bash
-git -C /Users/mkamar/Non_Work/Projects/maestro-android tag vX.Y.Z
-git -C /Users/mkamar/Non_Work/Projects/maestro-android push origin vX.Y.Z
+git -C /path/to/maestro-android tag vX.Y.Z
+git -C /path/to/maestro-android push origin vX.Y.Z
 ```
 
 GitHub Actions will build and attach the wheel/sdist to the release automatically. Other machines can then install with `pipx install git+https://github.com/Mohamad-Kamar/maestro-android.git@vX.Y.Z`.
