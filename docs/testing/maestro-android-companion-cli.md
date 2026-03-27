@@ -14,7 +14,7 @@ maestro-android init
 For a released tag from GitHub:
 
 ```bash
-pipx install git+https://github.com/Mohamad-Kamar/maestro-android.git@vX.Y.Z
+pipx install git+https://github.com/kalibraring/maestro-android.git@vX.Y.Z
 ```
 
 ## Skill placement
@@ -71,6 +71,6 @@ git -C /path/to/maestro-android tag vX.Y.Z
 git -C /path/to/maestro-android push origin vX.Y.Z
 ```
 
-GitHub Actions will build and attach the wheel/sdist to the release automatically. Other machines can then install with `pipx install git+https://github.com/Mohamad-Kamar/maestro-android.git@vX.Y.Z`.
+GitHub Actions will build and attach the wheel/sdist to the release automatically. Other machines can then install with `pipx install git+https://github.com/kalibraring/maestro-android.git@vX.Y.Z`.
 
 Use this companion CLI for local Android/Maestro orchestration and report lookup. Continue using the canonical repo lanes and gate wrappers for merge and release evidence.
