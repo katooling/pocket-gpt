@@ -26,8 +26,10 @@ import com.pocketagent.android.runtime.RuntimeBootstrapper
 import com.pocketagent.runtime.PolicyAwareNetworkClient
 import com.pocketagent.runtime.ModelResidencyPolicy
 import com.pocketagent.runtime.PerformanceRuntimeConfig
+import com.pocketagent.runtime.SamplingOverrides
 import com.pocketagent.runtime.RuntimeConfig
 import com.pocketagent.runtime.RuntimeOrchestrator
+import com.pocketagent.runtime.RuntimeRequestContext
 import com.pocketagent.tools.SafeLocalToolRuntime
 import com.pocketagent.tools.ToolModule
 
@@ -143,20 +145,24 @@ class AndroidMvpContainer(
         requestTimeoutMs: Long = DEFAULT_REQUEST_TIMEOUT_MS,
         requestId: String = "legacy",
         performanceConfig: PerformanceRuntimeConfig = PerformanceRuntimeConfig.default(),
+        samplingOverrides: SamplingOverrides? = null,
         onToken: (String) -> Unit,
     ): ChatResponse {
         return orchestrator.sendUserMessage(
             sessionId = sessionId,
             userText = userText,
             taskType = taskType,
-            deviceState = deviceState,
-            maxTokens = maxTokens,
+            context = RuntimeRequestContext(
+                deviceState = deviceState,
+                maxTokens = maxTokens,
+                keepModelLoaded = keepModelLoaded,
+                requestTimeoutMs = requestTimeoutMs,
+                requestId = requestId,
+                performanceConfig = performanceConfig,
+                residencyPolicy = ModelResidencyPolicy(),
+                samplingOverrides = samplingOverrides,
+            ),
             onToken = onToken,
-            keepModelLoaded = keepModelLoaded,
-            requestTimeoutMs = requestTimeoutMs,
-            requestId = requestId,
-            performanceConfig = performanceConfig,
-            residencyPolicy = ModelResidencyPolicy(),
         )
     }
 

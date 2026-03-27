@@ -12,6 +12,7 @@ import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.nativebridge.FlashAttnMode
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimePerformanceProfile
+import com.pocketagent.runtime.SamplingOverrides
 import com.pocketagent.tools.ToolCall
 import com.pocketagent.tools.ToolModule
 import com.pocketagent.tools.ToolResult
@@ -208,6 +209,11 @@ class NativeStage2BenchmarkInstrumentationTest {
         val prefixCacheReusedTokenSamples = mutableListOf<Int>()
         val prefixCacheHitRateSamples = mutableListOf<Double>()
         val reloadReasons = mutableListOf<String>()
+        val sharedSession = if (sessionMode == BenchmarkSessionMode.SHARED) {
+            container.createSession()
+        } else {
+            null
+        }
 
         repeat(runs) { index ->
             var attempt = 0
@@ -215,7 +221,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             var streamedTokens: MutableList<String>? = null
             while (attempt < MAX_ATTEMPTS_PER_RUN) {
                 attempt += 1
-                val session = container.createSession()
+                val session = sharedSession ?: container.createSession()
                 val localStreamedTokens = mutableListOf<String>()
                 val attemptMaxTokens = benchmarkMaxTokensForAttempt(maxTokens = maxTokens, attempt = attempt)
                 val outcome = runCatching {
@@ -264,6 +270,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                                     promptKind = BenchmarkPromptKind.PRIMER,
                                 ),
                                 performanceConfig = runtimeOptions.performanceConfig,
+                                samplingOverrides = SamplingOverrides(showThinking = runtimeOptions.showThinking),
                                 onToken = {},
                             )
                             container.sendUserMessage(
@@ -285,6 +292,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                                     promptKind = BenchmarkPromptKind.FOLLOW_UP,
                                 ),
                                 performanceConfig = runtimeOptions.performanceConfig,
+                                samplingOverrides = SamplingOverrides(showThinking = runtimeOptions.showThinking),
                                 onToken = { token -> localStreamedTokens.add(token) },
                             )
                         }
@@ -379,6 +387,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             qualificationState = diagnosticsSnapshot.backendQualificationState.name.lowercase(),
             appliedConfig = runtimeOptions.performanceConfig,
             toolsDisabled = runtimeOptions.disableTools,
+            showThinking = runtimeOptions.showThinking,
             sessionMode = sessionMode,
         )
     }
@@ -560,6 +569,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         qualificationState: String,
         appliedConfig: PerformanceRuntimeConfig,
         toolsDisabled: Boolean,
+        showThinking: Boolean,
         sessionMode: BenchmarkSessionMode,
     ): String {
         val warmVsColdDelta = coldFirstTokenMs - warmFirstTokenMs
@@ -598,6 +608,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             append("|config_n_threads_batch=").append(appliedConfig.nThreadsBatch)
             append("|config_flash_attn=").append(appliedConfig.flashAttnMode.name.lowercase())
             append("|config_tools_disabled=").append(if (toolsDisabled) 1 else 0)
+            append("|config_show_thinking=").append(if (showThinking) 1 else 0)
         }
     }
 
@@ -628,6 +639,7 @@ class NativeStage2BenchmarkInstrumentationTest {
                 flashAttnMode = flashAttnMode,
             ),
             disableTools = parseBooleanArg(args, ARG_DISABLE_TOOLS, defaultValue = false),
+            showThinking = parseBooleanArg(args, ARG_SHOW_THINKING, defaultValue = true),
         )
     }
 
@@ -791,6 +803,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val ARG_N_THREADS_BATCH = "stage2_n_threads_batch"
         private const val ARG_FLASH_ATTN_MODE = "stage2_flash_attn_mode"
         private const val ARG_DISABLE_TOOLS = "stage2_disable_tools"
+        private const val ARG_SHOW_THINKING = "stage2_show_thinking"
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
         private const val ARG_MODEL_PATH_SMOLLM3_Q4 = "stage2_model_smol_360m_path"
@@ -819,6 +832,7 @@ class NativeStage2BenchmarkInstrumentationTest {
 private data class BenchmarkRuntimeOptions(
     val performanceConfig: PerformanceRuntimeConfig,
     val disableTools: Boolean,
+    val showThinking: Boolean,
 )
 
 private enum class BenchmarkSessionMode(val wireValue: String) {
