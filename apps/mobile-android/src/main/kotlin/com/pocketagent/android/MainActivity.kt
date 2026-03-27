@@ -1,11 +1,16 @@
 package com.pocketagent.android
 
 import android.app.ActivityManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.material3.Surface
 import com.pocketagent.android.runtime.AndroidGpuOffloadQualifier
@@ -56,6 +61,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
             PocketAgentTheme {
@@ -67,11 +74,33 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        createNotificationChannels()
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 RuntimeBootstrapper.installProductionRuntime(applicationContext)
             }
             viewModel.refreshRuntimeReadiness()
+        }
+    }
+
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+            val downloadChannel = NotificationChannel(
+                CHANNEL_MODEL_DOWNLOADS,
+                "Model Downloads",
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = "Progress and status of model downloads"
+            }
+            val runtimeChannel = NotificationChannel(
+                CHANNEL_RUNTIME_STATUS,
+                "Runtime Status",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "Model loading and runtime status updates"
+            }
+            manager.createNotificationChannels(listOf(downloadChannel, runtimeChannel))
         }
     }
 
@@ -131,7 +160,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private companion object {
+    companion object {
+        const val CHANNEL_MODEL_DOWNLOADS = "model_downloads"
+        const val CHANNEL_RUNTIME_STATUS = "runtime_status"
         private const val TRIM_MEMORY_RUNNING_MODERATE_LEVEL = 5
         private const val TRIM_MEMORY_RUNNING_LOW_LEVEL = 10
         private const val TRIM_MEMORY_RUNNING_CRITICAL_LEVEL = 15
