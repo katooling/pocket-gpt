@@ -73,6 +73,76 @@ static inline float tq_dequantize_4bit(uint8_t idx, float scale) {
     }
 }
 
+// 3-bit Lloyd-Max centroids for N(0,1), 8 levels, symmetric
+// 4 positive centroids, mirrored for negative.
+#define TQ_LEVELS_3BIT 4
+
+static const float TQ_CENTROID_3BIT_POS[4] = {
+    0.2451f, 0.7560f, 1.3440f, 2.1520f,
+};
+
+static const float TQ_BOUNDARY_3BIT_POS[3] = {
+    0.5006f, 1.0500f, 1.7480f,
+};
+
+static inline uint8_t tq_quantize_3bit(float x, float inv_scale) {
+    float v = x * inv_scale;
+    if (v < 0.0f) {
+        float av = -v;
+        uint8_t idx = 0;
+        for (int i = 0; i < 3; i++) {
+            if (av >= TQ_BOUNDARY_3BIT_POS[i]) idx = (uint8_t)(i + 1);
+        }
+        return 3 - idx; // map: most negative = 0, zero-crossing = 3
+    } else {
+        uint8_t idx = 0;
+        for (int i = 0; i < 3; i++) {
+            if (v >= TQ_BOUNDARY_3BIT_POS[i]) idx = (uint8_t)(i + 1);
+        }
+        return 4 + idx; // map: zero-crossing = 4, most positive = 7
+    }
+}
+
+static inline float tq_dequantize_3bit(uint8_t idx, float scale) {
+    if (idx < 4) {
+        return -TQ_CENTROID_3BIT_POS[3 - idx] * scale;
+    } else {
+        return TQ_CENTROID_3BIT_POS[idx - 4] * scale;
+    }
+}
+
+// 2-bit Lloyd-Max centroids for N(0,1), 4 levels, symmetric
+// 2 positive centroids, mirrored for negative.
+#define TQ_LEVELS_2BIT 2
+
+static const float TQ_CENTROID_2BIT_POS[2] = {
+    0.4528f, 1.5104f,
+};
+
+static const float TQ_BOUNDARY_2BIT_POS[1] = {
+    0.9816f,
+};
+
+static inline uint8_t tq_quantize_2bit(float x, float inv_scale) {
+    float v = x * inv_scale;
+    if (v < 0.0f) {
+        float av = -v;
+        uint8_t idx = (av >= TQ_BOUNDARY_2BIT_POS[0]) ? 1 : 0;
+        return 1 - idx; // map: most negative = 0, zero-crossing = 1
+    } else {
+        uint8_t idx = (v >= TQ_BOUNDARY_2BIT_POS[0]) ? 1 : 0;
+        return 2 + idx; // map: zero-crossing = 2, most positive = 3
+    }
+}
+
+static inline float tq_dequantize_2bit(uint8_t idx, float scale) {
+    if (idx < 2) {
+        return -TQ_CENTROID_2BIT_POS[1 - idx] * scale;
+    } else {
+        return TQ_CENTROID_2BIT_POS[idx - 2] * scale;
+    }
+}
+
 #ifdef __cplusplus
 }
 #endif

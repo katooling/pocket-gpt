@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cstring>
 #include "turboquant.h"
+#include "turboquant_codebooks.h"
 
 static bool approx_equal(float a, float b, float tol = 1e-4f) {
     return fabsf(a - b) < tol;
@@ -217,6 +218,60 @@ static void test_inplace_rotation() {
     printf("PASS\n");
 }
 
+// Test 8: 3-bit codebook roundtrip
+void test_3bit_codebook_roundtrip() {
+    printf("test_3bit_codebook_roundtrip... ");
+    float scale = 1.5f;
+    float inv_scale = 1.0f / scale;
+    // Test all 8 levels round-trip to expected centroids
+    for (int i = 0; i < 8; i++) {
+        float expected;
+        if (i < 4) {
+            expected = -TQ_CENTROID_3BIT_POS[3 - i] * scale;
+        } else {
+            expected = TQ_CENTROID_3BIT_POS[i - 4] * scale;
+        }
+        float reconstructed = tq_dequantize_3bit(i, scale);
+        float err = fabsf(reconstructed - expected);
+        assert(err < 1e-4f);
+    }
+    // Test quantize + dequantize roundtrip for known values
+    float test_vals[] = {-3.0f, -1.0f, -0.3f, 0.0f, 0.3f, 1.0f, 3.0f};
+    for (int i = 0; i < 7; i++) {
+        uint8_t q = tq_quantize_3bit(test_vals[i], inv_scale);
+        assert(q < 8);
+        float recon = tq_dequantize_3bit(q, scale);
+        assert(fabsf(recon) <= 4.0f * scale);
+    }
+    printf("PASS\n");
+}
+
+// Test 9: 2-bit codebook roundtrip
+void test_2bit_codebook_roundtrip() {
+    printf("test_2bit_codebook_roundtrip... ");
+    float scale = 2.0f;
+    float inv_scale = 1.0f / scale;
+    // Test all 4 levels
+    for (int i = 0; i < 4; i++) {
+        float expected;
+        if (i < 2) {
+            expected = -TQ_CENTROID_2BIT_POS[1 - i] * scale;
+        } else {
+            expected = TQ_CENTROID_2BIT_POS[i - 2] * scale;
+        }
+        float reconstructed = tq_dequantize_2bit(i, scale);
+        float err = fabsf(reconstructed - expected);
+        assert(err < 1e-4f);
+    }
+    // Test quantize + dequantize roundtrip
+    float test_vals[] = {-3.0f, -0.5f, 0.5f, 3.0f};
+    for (int i = 0; i < 4; i++) {
+        uint8_t q = tq_quantize_2bit(test_vals[i], inv_scale);
+        assert(q < 4);
+    }
+    printf("PASS\n");
+}
+
 int main() {
     printf("=== TurboQuant WHT Tests ===\n");
     test_rotation_roundtrip();
@@ -226,6 +281,8 @@ int main() {
     test_deterministic_rotation();
     test_different_seeds();
     test_inplace_rotation();
-    printf("=== All %d tests passed ===\n", 7);
+    test_3bit_codebook_roundtrip();
+    test_2bit_codebook_roundtrip();
+    printf("=== All %d tests passed ===\n", 9);
     return 0;
 }
