@@ -272,6 +272,68 @@ void test_2bit_codebook_roundtrip() {
     printf("PASS\n");
 }
 
+// Test 10: WHT rotation drives high-kurtosis vectors toward Gaussian (kurtosis ≈ 3)
+static void test_rotation_gaussianity() {
+    printf("  test_rotation_gaussianity... ");
+    const int dim = 128;
+    const uint64_t seed = 42;
+
+    tq_layer_ctx * ctx = tq_layer_ctx_create(dim, seed);
+    assert(ctx);
+
+    // Create a high-kurtosis input: sparse vector with a few large entries.
+    // (Pure one-hot maps to a constant under WHT, giving zero variance.)
+    float input[128];
+    for (int i = 0; i < dim; i++) input[i] = 0.01f * (i % 3 == 0 ? 1.0f : 0.0f);
+    input[0] = 10.0f;
+    input[7] = -5.0f;
+    input[42] = 7.0f;  // Sparse/peaky: kurtosis >> 3
+
+    // Compute pre-rotation kurtosis = E[x^4] / (E[x^2])^2
+    double mean = 0, var = 0, kurt_num = 0;
+    for (int i = 0; i < dim; i++) mean += input[i];
+    mean /= dim;
+    for (int i = 0; i < dim; i++) {
+        double d = input[i] - mean;
+        var += d * d;
+    }
+    var /= dim;
+    for (int i = 0; i < dim; i++) {
+        double d = input[i] - mean;
+        kurt_num += d * d * d * d;
+    }
+    double pre_kurtosis = (kurt_num / dim) / (var * var);
+
+    // Apply forward rotation
+    float rotated[128];
+    tq_rotate_forward(ctx, input, rotated, dim);
+
+    // Compute post-rotation kurtosis
+    mean = 0; var = 0; kurt_num = 0;
+    for (int i = 0; i < dim; i++) mean += rotated[i];
+    mean /= dim;
+    for (int i = 0; i < dim; i++) {
+        double d = rotated[i] - mean;
+        var += d * d;
+    }
+    var /= dim;
+    for (int i = 0; i < dim; i++) {
+        double d = rotated[i] - mean;
+        kurt_num += d * d * d * d;
+    }
+    double post_kurtosis = (kurt_num / dim) / (var * var);
+
+    printf("pre=%.1f post=%.2f ", pre_kurtosis, post_kurtosis);
+
+    // Pre-rotation should have very high kurtosis (one-hot)
+    assert(pre_kurtosis > 50.0);
+    // Post-rotation should be near Gaussian (kurtosis ~3.0, allow up to 5.0)
+    assert(post_kurtosis < 5.0);
+
+    tq_layer_ctx_free(ctx);
+    printf("PASS\n");
+}
+
 int main() {
     printf("=== TurboQuant WHT Tests ===\n");
     test_rotation_roundtrip();
@@ -283,6 +345,7 @@ int main() {
     test_inplace_rotation();
     test_3bit_codebook_roundtrip();
     test_2bit_codebook_roundtrip();
-    printf("=== All %d tests passed ===\n", 9);
+    test_rotation_gaussianity();
+    printf("=== All %d tests passed ===\n", 10);
     return 0;
 }
