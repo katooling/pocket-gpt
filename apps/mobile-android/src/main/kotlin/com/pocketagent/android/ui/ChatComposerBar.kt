@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui
 
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,7 +58,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.animation.core.animateFloatAsState
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.pocketagent.android.R
@@ -65,6 +66,7 @@ import com.pocketagent.android.ui.state.ChatGateState
 import com.pocketagent.android.ui.state.ChatGateStatus
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import com.pocketagent.android.ui.theme.tickLight
+import java.io.File
 
 @Composable
 internal fun ComposerBar(
@@ -78,15 +80,15 @@ internal fun ComposerBar(
     onTextChanged: (String) -> Unit,
     onSend: () -> Unit,
     onCancelSend: () -> Unit,
-    onSubmitEdit: () -> Unit = {},
-    onCancelEdit: () -> Unit = {},
+    onSubmitEdit: () -> Unit,
+    onCancelEdit: () -> Unit,
     onAttachImage: () -> Unit,
-    onRemoveImage: (Int) -> Unit = {},
-    onOpenToolDialog: () -> Unit = {},
+    onRemoveImage: (Int) -> Unit,
+    onOpenToolDialog: () -> Unit,
     showThinkingToggle: Boolean = false,
     thinkingEnabled: Boolean = false,
-    onToggleThinking: () -> Unit = {},
-    onOpenCompletionSettings: () -> Unit = {},
+    onToggleThinking: () -> Unit,
+    onOpenCompletionSettings: () -> Unit,
     onBlockedAction: (ChatGatePrimaryAction) -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -100,7 +102,12 @@ internal fun ComposerBar(
         }
     }
     val canTriggerBlockedAction = hasChatGatePrimaryAction(chatGateState)
-    val canTriggerUserAction = chatGateState.isReady || canTriggerBlockedAction
+    val sendButtonEnabled = when {
+        isSending -> !isCancelling
+        isEditing -> text.isNotBlank()
+        chatGateState.isReady -> text.isNotBlank()
+        else -> canTriggerBlockedAction
+    }
     val sendButtonDescription = stringResource(id = R.string.a11y_send_button)
     val sendStateDescription = when {
         isSending && isCancelling -> stringResource(id = R.string.a11y_send_state_cancelling)
@@ -108,6 +115,14 @@ internal fun ComposerBar(
         !chatGateState.isReady -> stringResource(id = R.string.a11y_send_state_runtime_not_ready)
         text.isBlank() -> stringResource(id = R.string.a11y_send_state_disabled)
         else -> stringResource(id = R.string.a11y_send_state_enabled)
+    }
+    val handlePrimaryComposerAction: () -> Unit = {
+        when {
+            isSending && !isCancelling -> onCancelSend()
+            isEditing -> onSubmitEdit()
+            chatGateState.isReady && text.isNotBlank() -> onSend()
+            !chatGateState.isReady -> onBlockedAction(chatGateState.primaryAction)
+        }
     }
     val verticalPadding = if (isLandscape) {
         PocketAgentDimensions.sectionSpacing / 2
@@ -130,7 +145,9 @@ internal fun ComposerBar(
         }
         if (isEditing) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = compactSpacing),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = compactSpacing),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -157,6 +174,9 @@ internal fun ComposerBar(
                 horizontalArrangement = Arrangement.spacedBy(compactSpacing),
             ) {
                 attachedImages.forEachIndexed { index, path ->
+                    val attachmentLabel = Uri.parse(path).lastPathSegment
+                        ?.takeIf { it.isNotBlank() }
+                        ?: File(path).name.ifBlank { path }
                     Box(
                         modifier = Modifier.size(48.dp),
                     ) {
@@ -165,7 +185,10 @@ internal fun ComposerBar(
                                 .data(path)
                                 .crossfade(true)
                                 .build(),
-                            contentDescription = stringResource(id = R.string.a11y_attached_image_thumbnail),
+                            contentDescription = stringResource(
+                                id = R.string.a11y_attached_image_thumbnail,
+                                attachmentLabel,
+                            ),
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .size(48.dp)
@@ -211,18 +234,15 @@ internal fun ComposerBar(
             OutlinedTextField(
                 value = text,
                 onValueChange = onTextChanged,
-                modifier = Modifier.weight(1f).testTag("composer_input").focusRequester(focusRequester),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("composer_input")
+                    .focusRequester(focusRequester),
                 label = { Text(stringResource(id = R.string.ui_composer_label)) },
                 enabled = !isSending,
                 maxLines = if (isLandscape) 2 else 4,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(
-                    onSend = {
-                        if (text.isNotBlank() && chatGateState.isReady && !isSending) {
-                            onSend()
-                        }
-                    },
-                ),
+                keyboardActions = KeyboardActions(onSend = { handlePrimaryComposerAction() }),
             )
             if (showThinkingToggle) {
                 IconButton(
@@ -272,14 +292,9 @@ internal fun ComposerBar(
                 interactionSource = sendInteractionSource,
                 onClick = {
                     haptic.tickLight()
-                    when {
-                        isSending && !isCancelling -> onCancelSend()
-                        isEditing -> onSubmitEdit()
-                        chatGateState.isReady -> onSend()
-                        else -> onBlockedAction(chatGateState.primaryAction)
-                    }
+                    handlePrimaryComposerAction()
                 },
-                enabled = if (isSending) !isCancelling else text.isNotBlank() && canTriggerUserAction,
+                enabled = sendButtonEnabled,
             ) {
                 if (isLoadingModel) {
                     CircularProgressIndicator(

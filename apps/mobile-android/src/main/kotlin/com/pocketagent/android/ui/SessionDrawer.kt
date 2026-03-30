@@ -25,14 +25,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -115,46 +113,19 @@ internal fun SessionDrawer(
     state: ChatUiState,
     onCreateSession: () -> Unit,
     onSwitchSession: (String) -> Unit,
-    onDeleteSession: (String) -> Unit,
+    onDeleteSession: (ChatSessionUiModel) -> Unit,
+    hiddenSessionIds: Set<String> = emptySet(),
 ) {
     val createSessionDescription = stringResource(id = R.string.a11y_create_session)
     var searchQuery by remember { mutableStateOf("") }
-    val groupedSessions by remember(state.sessions, searchQuery) {
-        derivedStateOf {
-            val filtered = if (searchQuery.isBlank()) {
-                state.sessions
-            } else {
-                state.sessions.filter { it.title.contains(searchQuery, ignoreCase = true) }
-            }
-            groupSessionsByDate(filtered)
+    val visibleSessions = state.sessions.filterNot { it.id in hiddenSessionIds }
+    val groupedSessions = remember(state.sessions, searchQuery, hiddenSessionIds) {
+        val filtered = if (searchQuery.isBlank()) {
+            visibleSessions
+        } else {
+            visibleSessions.filter { it.title.contains(searchQuery, ignoreCase = true) }
         }
-    }
-    var pendingDeleteSession by remember { mutableStateOf<ChatSessionUiModel?>(null) }
-
-    pendingDeleteSession?.let { session ->
-        AlertDialog(
-            onDismissRequest = { pendingDeleteSession = null },
-            title = { Text(text = stringResource(id = R.string.ui_session_delete_title)) },
-            text = { Text(text = stringResource(id = R.string.ui_session_delete_body, session.title)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingDeleteSession = null
-                        onDeleteSession(session.id)
-                    },
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.ui_session_delete_confirm),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDeleteSession = null }) {
-                    Text(text = stringResource(id = R.string.ui_session_delete_cancel))
-                }
-            },
-        )
+        groupSessionsByDate(filtered)
     }
 
     LazyColumn(
@@ -174,7 +145,10 @@ internal fun SessionDrawer(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                IconButton(onClick = onCreateSession) {
+                IconButton(
+                    onClick = onCreateSession,
+                    modifier = Modifier.testTag("create_session_button"),
+                ) {
                     Icon(Icons.Default.Add, contentDescription = createSessionDescription)
                 }
             }
@@ -203,7 +177,7 @@ internal fun SessionDrawer(
             )
         }
 
-        if (state.sessions.isEmpty()) {
+        if (visibleSessions.isEmpty()) {
             item {
                 Text(
                     text = stringResource(id = R.string.ui_no_sessions_yet),
@@ -235,7 +209,7 @@ internal fun SessionDrawer(
                 val dismissState = rememberSwipeToDismissBoxState(
                     confirmValueChange = { value ->
                         if (value == SwipeToDismissBoxValue.EndToStart) {
-                            pendingDeleteSession = session
+                            onDeleteSession(session)
                         }
                         false
                     },
@@ -263,7 +237,7 @@ internal fun SessionDrawer(
                         session = session,
                         isActive = session.id == state.activeSessionId,
                         onSwitchSession = onSwitchSession,
-                        onDeleteSession = { pendingDeleteSession = session },
+                        onDeleteSession = onDeleteSession,
                     )
                 }
             }
@@ -277,7 +251,7 @@ private fun SessionRow(
     session: ChatSessionUiModel,
     isActive: Boolean,
     onSwitchSession: (String) -> Unit,
-    onDeleteSession: (String) -> Unit,
+    onDeleteSession: (ChatSessionUiModel) -> Unit,
 ) {
     val activeStateDescription = if (isActive) {
         stringResource(id = R.string.a11y_session_active)
@@ -305,7 +279,7 @@ private fun SessionRow(
             .combinedClickable(
                 onClickLabel = switchSessionDescription,
                 onLongClickLabel = deleteSessionActionLabel,
-                onLongClick = { onDeleteSession(session.id) },
+                onLongClick = { onDeleteSession(session) },
                 onClick = { onSwitchSession(session.id) },
             )
             .semantics {

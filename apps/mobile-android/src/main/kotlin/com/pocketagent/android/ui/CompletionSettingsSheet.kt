@@ -53,7 +53,6 @@ internal fun CompletionSettingsSheet(
     var frequencyPenalty by remember(settings) { mutableFloatStateOf(settings.frequencyPenalty) }
     var presencePenalty by remember(settings) { mutableFloatStateOf(settings.presencePenalty) }
     var systemPrompt by remember(settings) { mutableStateOf(settings.systemPrompt) }
-    var showThinking by remember(settings) { mutableStateOf(settings.showThinking) }
     var showAdvanced by remember { mutableStateOf(false) }
 
     fun emitUpdate() {
@@ -67,13 +66,13 @@ internal fun CompletionSettingsSheet(
                 frequencyPenalty = frequencyPenalty,
                 presencePenalty = presencePenalty,
                 systemPrompt = systemPrompt,
-                showThinking = showThinking,
+                showThinking = settings.showThinking,
             ),
         )
     }
 
     fun resetDefaults() {
-        val defaults = CompletionSettings(showThinking = showThinking)
+        val defaults = CompletionSettings(showThinking = settings.showThinking)
         temperature = defaults.temperature
         topP = defaults.topP
         topK = defaults.topK
@@ -150,7 +149,7 @@ internal fun CompletionSettingsSheet(
         Text(
             text = stringResource(
                 id = R.string.ui_completion_thinking_status,
-                if (showThinking) stringResource(id = R.string.ui_completion_thinking_on) else stringResource(id = R.string.ui_completion_thinking_off),
+                if (settings.showThinking) stringResource(id = R.string.ui_completion_thinking_on) else stringResource(id = R.string.ui_completion_thinking_off),
             ),
             style = MaterialTheme.typography.bodyMedium,
         )

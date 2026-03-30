@@ -202,7 +202,7 @@ private fun GeneralTabContent(
             title = stringResource(id = R.string.ui_keep_alive_title),
             subtitle = stringResource(id = R.string.ui_keep_alive_subtitle),
         )
-        RuntimeKeepAlivePreference.entries.forEach { preference ->
+        KEEP_ALIVE_UI_OPTIONS.forEach { preference ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -389,9 +389,18 @@ private fun AboutTabContent(
             .padding(bottom = PocketAgentDimensions.screenPadding),
         verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.screenPadding),
     ) {
+        SectionHeader(
+            title = stringResource(id = R.string.ui_diagnostics_section_title),
+            subtitle = stringResource(id = R.string.ui_diagnostics_export_hint),
+        )
+        TextButton(onClick = onExportDiagnostics) {
+            Text(stringResource(id = R.string.ui_export_diagnostics))
+        }
+
+        HorizontalDivider()
+
         DiagnosticsSection(
             runtime = state.runtime,
-            onExportDiagnostics = onExportDiagnostics,
         )
 
         HorizontalDivider()
@@ -404,7 +413,6 @@ private fun AboutTabContent(
 @Composable
 private fun DiagnosticsSection(
     runtime: RuntimeUiState,
-    onExportDiagnostics: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Row(
@@ -478,14 +486,6 @@ private fun DiagnosticsSection(
                 }
             }
         }
-        TextButton(onClick = onExportDiagnostics) {
-            Text(stringResource(id = R.string.ui_export_diagnostics))
-        }
-        Text(
-            text = stringResource(id = R.string.ui_diagnostics_export_hint),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -575,6 +575,13 @@ private fun gpuProbeFailureReasonLabel(reason: String?): String {
         else -> reason.lowercase().replace('_', ' ')
     }
 }
+
+private val KEEP_ALIVE_UI_OPTIONS = listOf(
+    RuntimeKeepAlivePreference.AUTO,
+    RuntimeKeepAlivePreference.ALWAYS,
+    RuntimeKeepAlivePreference.FIVE_MINUTES,
+    RuntimeKeepAlivePreference.UNLOAD_IMMEDIATELY,
+)
 
 @Composable
 private fun keepAlivePreferenceLabel(preference: RuntimeKeepAlivePreference): String {
