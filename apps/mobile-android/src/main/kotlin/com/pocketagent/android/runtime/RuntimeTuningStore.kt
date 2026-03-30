@@ -507,7 +507,9 @@ class RuntimeTuningDecider(
         return when (current) {
             KvCacheMethodPreset.SAFE -> KvCacheMethodPreset.BALANCED
             KvCacheMethodPreset.BALANCED -> KvCacheMethodPreset.AGGRESSIVE
-            KvCacheMethodPreset.AGGRESSIVE -> KvCacheMethodPreset.AGGRESSIVE
+            KvCacheMethodPreset.AGGRESSIVE -> KvCacheMethodPreset.ULTRA
+            KvCacheMethodPreset.ULTRA -> KvCacheMethodPreset.EXTREME
+            KvCacheMethodPreset.EXTREME -> KvCacheMethodPreset.EXTREME
         }
     }
 
@@ -557,6 +559,8 @@ class RuntimeTuningDecider(
             KvCacheMethodPreset.SAFE,
             KvCacheMethodPreset.BALANCED,
             KvCacheMethodPreset.AGGRESSIVE,
+            KvCacheMethodPreset.ULTRA,
+            KvCacheMethodPreset.EXTREME,
         )
         private const val HIGH_PEAK_RSS_MB = 2800.0
         private const val PROMOTION_SAFE_PEAK_RSS_MB = 2200.0
@@ -1134,6 +1138,8 @@ class AndroidRuntimeTuningStore(
             KvCacheMethodPreset.SAFE,
             KvCacheMethodPreset.BALANCED,
             KvCacheMethodPreset.AGGRESSIVE,
+            KvCacheMethodPreset.ULTRA,
+            KvCacheMethodPreset.EXTREME,
         )
 
         private fun defaultDeviceKey(): String {

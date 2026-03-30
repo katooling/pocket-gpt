@@ -34,7 +34,7 @@ class RuntimeTuningDeciderTest {
         assertEquals(128, next.nBatch)
         assertEquals(128, next.nUbatch)
         assertEquals(1, next.speculativeDraftGpuLayers)
-        assertEquals(KvCacheMethodPreset.AGGRESSIVE, next.kvCacheMethodPreset)
+        assertEquals(KvCacheMethodPreset.ULTRA, next.kvCacheMethodPreset)
         assertEquals(42L, next.updatedAtEpochMs)
         assertEquals("demote_memory_pressure", next.lastDecision)
     }
@@ -368,5 +368,113 @@ class RuntimeTuningDeciderTest {
                 absolutePath = "/models/b.gguf",
             ),
         )
+    }
+
+    @Test
+    fun `memory pressure demotes ULTRA to EXTREME`() {
+        val decider = RuntimeTuningDecider()
+        val targetConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.FAST,
+            availableCpuThreads = 8,
+            gpuEnabled = true,
+            gpuLayers = 16,
+        )
+        val appliedConfig = targetConfig.copy(kvCacheMethodPreset = KvCacheMethodPreset.ULTRA)
+        val next = decider.nextRecommendation(
+            current = RuntimeTuningRecommendation(
+                gpuLayers = 16,
+                kvCacheMethodPreset = KvCacheMethodPreset.ULTRA,
+                speculativeEnabled = true,
+                speculativeDraftGpuLayers = 2,
+                useMmap = true,
+                nThreads = 8,
+                nThreadsBatch = 12,
+                nBatch = 768,
+                nUbatch = 768,
+                nCtx = 8192,
+            ),
+            appliedConfig = appliedConfig,
+            targetConfig = targetConfig,
+            observation = RuntimeTuningObservation(success = false, errorCode = "out_of_memory"),
+        )
+        assertEquals(KvCacheMethodPreset.EXTREME, next.kvCacheMethodPreset)
+        assertEquals("demote_memory_pressure", next.lastDecision)
+    }
+
+    @Test
+    fun `EXTREME stays at EXTREME on memory pressure`() {
+        val decider = RuntimeTuningDecider()
+        val targetConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.FAST,
+            availableCpuThreads = 8,
+            gpuEnabled = true,
+            gpuLayers = 16,
+        )
+        val appliedConfig = targetConfig.copy(kvCacheMethodPreset = KvCacheMethodPreset.EXTREME)
+        val next = decider.nextRecommendation(
+            current = RuntimeTuningRecommendation(
+                gpuLayers = 16,
+                kvCacheMethodPreset = KvCacheMethodPreset.EXTREME,
+                speculativeEnabled = true,
+                speculativeDraftGpuLayers = 2,
+                useMmap = true,
+                nThreads = 8,
+                nThreadsBatch = 12,
+                nBatch = 768,
+                nUbatch = 768,
+                nCtx = 8192,
+            ),
+            appliedConfig = appliedConfig,
+            targetConfig = targetConfig,
+            observation = RuntimeTuningObservation(success = false, errorCode = "out_of_memory"),
+        )
+        assertEquals(KvCacheMethodPreset.EXTREME, next.kvCacheMethodPreset)
+    }
+
+    @Test
+    fun `promotion climbs from EXTREME to ULTRA`() {
+        val decider = RuntimeTuningDecider(nowMs = { 100L })
+        val targetConfig = PerformanceRuntimeConfig.forProfile(
+            profile = RuntimePerformanceProfile.FAST,
+            availableCpuThreads = 8,
+            gpuEnabled = true,
+            gpuLayers = 16,
+        )
+        val appliedConfig = targetConfig.copy(kvCacheMethodPreset = KvCacheMethodPreset.EXTREME)
+        var rec = RuntimeTuningRecommendation(
+            gpuLayers = 16,
+            kvCacheMethodPreset = KvCacheMethodPreset.EXTREME,
+            speculativeEnabled = true,
+            speculativeDraftGpuLayers = 2,
+            useMmap = true,
+            nThreads = 8,
+            nThreadsBatch = 12,
+            nBatch = 768,
+            nUbatch = 768,
+            nCtx = 8192,
+            targetGpuLayers = 16,
+            targetSpeculativeEnabled = true,
+            targetSpeculativeDraftGpuLayers = 2,
+            targetUseMmap = true,
+            targetNThreads = 8,
+            targetNThreadsBatch = 12,
+            targetNBatch = 768,
+            targetNUbatch = 768,
+            targetNCtx = 8192,
+            benchmarkWinCount = 2,
+        )
+        rec = decider.nextRecommendation(
+            current = rec,
+            appliedConfig = appliedConfig,
+            targetConfig = targetConfig,
+            observation = RuntimeTuningObservation(
+                success = true,
+                firstTokenMs = 500,
+                tokensPerSec = 20.0,
+                peakRssMb = 1500.0,
+            ),
+        )
+        assertEquals(KvCacheMethodPreset.ULTRA, rec.kvCacheMethodPreset)
+        assertEquals("promote_kv_method_preset", rec.lastDecision)
     }
 }
