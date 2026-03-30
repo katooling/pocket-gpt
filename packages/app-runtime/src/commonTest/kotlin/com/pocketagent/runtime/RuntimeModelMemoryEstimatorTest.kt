@@ -4,6 +4,7 @@ import com.pocketagent.nativebridge.KvCacheMethod
 import com.pocketagent.nativebridge.KvCacheMethodPreset
 import com.pocketagent.nativebridge.ModelRuntimeMetadata
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class RuntimeModelMemoryEstimatorTest {
@@ -105,5 +106,55 @@ class RuntimeModelMemoryEstimatorTest {
         )
         assertTrue(ultra.estimatedBytes < safe.estimatedBytes,
             "ULTRA total (${ultra.estimatedBytes}) should be less than SAFE total (${safe.estimatedBytes})")
+    }
+
+    @Test
+    fun `small model ULTRA estimate matches BALANCED due to safety clamp`() {
+        val smallModelSize = 1_000_000_000L // 1GB
+        val ultra = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = smallModelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.ULTRA, nUbatch = 512,
+        )
+        val balanced = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = smallModelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.BALANCED, nUbatch = 512,
+        )
+        assertEquals(balanced.kvCacheBytes, ultra.kvCacheBytes,
+            "Small model ULTRA should clamp to BALANCED rates (Q8_0/Q8_0)")
+    }
+
+    @Test
+    fun `small model EXTREME estimate matches AGGRESSIVE due to safety clamp`() {
+        val smallModelSize = 1_000_000_000L
+        val extreme = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = smallModelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.EXTREME, nUbatch = 512,
+        )
+        val aggressive = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = smallModelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.AGGRESSIVE, nUbatch = 512,
+        )
+        assertEquals(aggressive.kvCacheBytes, extreme.kvCacheBytes,
+            "Small model EXTREME should clamp to AGGRESSIVE rates (Q8_0/Q4_0)")
+    }
+
+    @Test
+    fun `large model ULTRA is less than AGGRESSIVE`() {
+        val largeModelSize = 4_000_000_000L
+        val ultra = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = largeModelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.ULTRA, nUbatch = 512,
+        )
+        val aggressive = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = largeModelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.AGGRESSIVE, nUbatch = 512,
+        )
+        assertTrue(ultra.kvCacheBytes < aggressive.kvCacheBytes)
     }
 }

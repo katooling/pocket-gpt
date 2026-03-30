@@ -50,13 +50,15 @@ object RuntimeModelMemoryEstimator {
 
         // Asymmetric K/V: keys get more precision than values (KIVI principle).
         // AGGRESSIVE: keys Q8_0, values Q4_0. BALANCED: both Q8_0. SAFE: both F16.
+        // Small models (<2GB) get clamped: ULTRA->BALANCED, EXTREME->AGGRESSIVE (mirrors C++).
+        val (effectivePresetK, effectivePresetV) = effectiveKvPresets(kvCacheMethodPreset, modelFileSizeBytes)
         val kvCacheBytes = (
             layerCount.toLong() *
                 effectiveCtx.toLong() *
                 headCountKv.toLong() *
                 (
-                    keyLength.toDouble() * bytesPerElementK(kvCacheMethod, kvCacheMethodPreset) +
-                        valueLength.toDouble() * bytesPerElementV(kvCacheMethod, kvCacheMethodPreset)
+                    keyLength.toDouble() * bytesPerElementK(kvCacheMethod, effectivePresetK) +
+                        valueLength.toDouble() * bytesPerElementV(kvCacheMethod, effectivePresetV)
                     )
             ).toLong()
         val computeBufferBytes = (vocabSize.toLong() + embeddingSize.toLong()) * nUbatch.coerceAtLeast(1).toLong() * 4L
@@ -120,6 +122,23 @@ object RuntimeModelMemoryEstimator {
                 KvCacheMethodPreset.ULTRA -> 0.4297      // Q3_K (~3.4375 bpw)
                 KvCacheMethodPreset.EXTREME -> 0.3281    // Q2_K (~2.625 bpw)
             }
+        }
+    }
+
+    private const val SMALL_MODEL_THRESHOLD_BYTES = 2L * 1024 * 1024 * 1024
+
+    // Mirror the C++ resolve_turboquant_kv_types small-model safety clamp.
+    // Returns effective (K preset, V preset) after small-model demotion.
+    private fun effectiveKvPresets(
+        preset: KvCacheMethodPreset,
+        modelFileSizeBytes: Long,
+    ): Pair<KvCacheMethodPreset, KvCacheMethodPreset> {
+        val smallModel = modelFileSizeBytes in 1 until SMALL_MODEL_THRESHOLD_BYTES
+        if (!smallModel) return preset to preset
+        return when (preset) {
+            KvCacheMethodPreset.EXTREME -> KvCacheMethodPreset.BALANCED to KvCacheMethodPreset.AGGRESSIVE
+            KvCacheMethodPreset.ULTRA -> KvCacheMethodPreset.BALANCED to KvCacheMethodPreset.BALANCED
+            else -> preset to preset
         }
     }
 
