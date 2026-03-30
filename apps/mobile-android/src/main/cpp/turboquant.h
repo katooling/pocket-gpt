@@ -69,6 +69,14 @@ const tq_layer_ctx *  tq_session_get_layer(const tq_session * session,
                                             int layer_idx);
 size_t                tq_session_memory_bytes(const tq_session * session);
 
+// Pre-allocate scratch buffer for batch rotate+quantize/dequantize functions.
+// Call once after session creation with the model's n_embd.
+// Returns false on allocation failure.
+bool tq_session_set_max_embd(tq_session * session, int max_n_embd);
+
+// Get pre-allocated scratch buffer (NULL if not set).
+float * tq_session_get_scratch(const tq_session * session);
+
 #ifdef __cplusplus
 }
 #endif

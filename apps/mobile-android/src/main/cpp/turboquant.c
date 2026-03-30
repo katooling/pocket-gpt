@@ -465,6 +465,8 @@ struct tq_session {
     int              n_layers;
     int              head_dim;
     tq_layer_ctx **  layers;
+    int              max_n_embd;
+    float *          scratch;
 };
 
 tq_session * tq_session_create(int n_layers, int head_dim, uint64_t base_seed) {
@@ -506,6 +508,7 @@ void tq_session_free(tq_session * session) {
         tq_layer_ctx_free(session->layers[i]);
     }
     free(session->layers);
+    free(session->scratch);
     free(session);
 }
 
@@ -523,5 +526,23 @@ size_t tq_session_memory_bytes(const tq_session * session) {
     // Each layer: struct + head_dim floats for sign vector
     size_t per_layer = sizeof(tq_layer_ctx) + (size_t)session->head_dim * sizeof(float);
     size_t overhead  = sizeof(tq_session) + (size_t)session->n_layers * sizeof(tq_layer_ctx *);
-    return overhead + (size_t)session->n_layers * per_layer;
+    size_t scratch   = session->scratch ? (size_t)session->max_n_embd * sizeof(float) : 0;
+    return overhead + (size_t)session->n_layers * per_layer + scratch;
+}
+
+bool tq_session_set_max_embd(tq_session * session, int max_n_embd) {
+    if (!session || max_n_embd <= 0) return false;
+    free(session->scratch);  // free previous if any
+    session->scratch = (float *)malloc((size_t)max_n_embd * sizeof(float));
+    if (!session->scratch) {
+        session->max_n_embd = 0;
+        return false;
+    }
+    session->max_n_embd = max_n_embd;
+    return true;
+}
+
+float * tq_session_get_scratch(const tq_session * session) {
+    if (!session) return NULL;
+    return session->scratch;
 }
