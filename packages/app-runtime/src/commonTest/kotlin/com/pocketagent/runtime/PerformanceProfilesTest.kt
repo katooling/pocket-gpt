@@ -146,4 +146,24 @@ class PerformanceProfilesTest {
     fun `default residency policy allows low pressure devices to keep models resident for fifteen minutes`() {
         assertEquals(DEFAULT_MAX_IDLE_MODEL_UNLOAD_TTL_MS, ModelResidencyPolicy().idleUnloadTtlMs)
     }
+
+    @Test
+    fun `no profile defaults to ULTRA or EXTREME`() {
+        val profiles = RuntimePerformanceProfile.entries
+        profiles.forEach { profile ->
+            val config = PerformanceRuntimeConfig.forProfile(
+                profile = profile,
+                availableCpuThreads = 4,
+                gpuEnabled = false,
+            )
+            assertTrue(
+                config.kvCacheMethodPreset in listOf(
+                    KvCacheMethodPreset.SAFE,
+                    KvCacheMethodPreset.BALANCED,
+                    KvCacheMethodPreset.AGGRESSIVE,
+                ),
+                "Profile ${profile.name} should not default to ${config.kvCacheMethodPreset.name}"
+            )
+        }
+    }
 }
