@@ -27,6 +27,7 @@
 
 #include "llama.h"
 #include "ggml-backend.h"
+#include "turboquant.h"
 
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
@@ -149,6 +150,10 @@ int32_t g_speculative_max_draft_tokens = 6;
 int32_t g_speculative_min_draft_tokens = 2;
 uint64_t g_context_shift_count = 0;
 uint64_t g_context_rebuild_count = 0;
+
+// TurboQuant rotation session (per-model WHT sign vectors)
+tq_session * g_tq_session = nullptr;
+bool g_tq_rotation_enabled = false;
 
 struct LoadProgressContext {
     JNIEnv * env = nullptr;
@@ -1437,6 +1442,12 @@ void release_runtime_locked() {
     if (g_draft_sampler != nullptr) {
         llama_sampler_free(g_draft_sampler);
         g_draft_sampler = nullptr;
+    }
+    // Free TurboQuant rotation session
+    if (g_tq_session) {
+        tq_session_free(g_tq_session);
+        g_tq_session = nullptr;
+        g_tq_rotation_enabled = false;
     }
     if (g_context != nullptr) {
         llama_free(g_context);
@@ -3213,6 +3224,37 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             context_params.n_ctx,
             context_params.n_batch,
             context_params.n_ubatch);
+
+        // ── TurboQuant rotation session ──────────────────────────────────
+        if (g_tq_session) {
+            tq_session_free(g_tq_session);
+            g_tq_session = nullptr;
+        }
+        g_tq_rotation_enabled = false;
+
+        if (uses_turboquant_kv_cache(kvCacheMethodCode) && quantized_kv_enabled) {
+            const int n_layer = llama_model_n_layer(g_model);
+            // head_dim must be power of 2 for WHT
+            const int n_embd_head_k = llama_model_n_embd_head_k(g_model);
+
+            if (n_embd_head_k > 0 && (n_embd_head_k & (n_embd_head_k - 1)) == 0) {
+                g_tq_session = tq_session_create(n_layer, n_embd_head_k, g_model_size_bytes);
+                if (g_tq_session) {
+                    g_tq_rotation_enabled = true;
+                    __android_log_print(ANDROID_LOG_INFO, TAG,
+                        "TURBOQUANT|rotation_enabled=true|layers=%d|head_dim=%d|memory_kb=%.1f",
+                        n_layer, n_embd_head_k,
+                        tq_session_memory_bytes(g_tq_session) / 1024.0);
+                } else {
+                    __android_log_print(ANDROID_LOG_WARN, TAG,
+                        "TURBOQUANT|rotation_enabled=false|reason=session_alloc_failed");
+                }
+            } else {
+                __android_log_print(ANDROID_LOG_WARN, TAG,
+                    "TURBOQUANT|rotation_enabled=false|head_dim=%d|reason=not_power_of_2",
+                    n_embd_head_k);
+            }
+        }
 
         {
             llama_set_warmup(g_context, true);
