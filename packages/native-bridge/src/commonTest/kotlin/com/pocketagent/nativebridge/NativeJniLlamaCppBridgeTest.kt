@@ -902,6 +902,20 @@ class NativeJniLlamaCppBridgeTest {
         assertNotNull(error)
         assertEquals(ModelLifecycleErrorCode.OUT_OF_MEMORY, error.code)
     }
+
+    @Test
+    fun `resolveKvCacheMethod with ULTRA preset passes through`() {
+        val result = resolveKvCacheMethod(KvCacheMethod.AUTO, KvCacheMethodPreset.ULTRA)
+        assertEquals(KvCacheMethod.TURBOQUANT, result.effectiveMethod)
+        assertEquals(KvCacheMethodPreset.ULTRA, result.preset)
+    }
+
+    @Test
+    fun `resolveKvCacheMethod with EXTREME preset passes through`() {
+        val result = resolveKvCacheMethod(KvCacheMethod.AUTO, KvCacheMethodPreset.EXTREME)
+        assertEquals(KvCacheMethod.TURBOQUANT, result.effectiveMethod)
+        assertEquals(KvCacheMethodPreset.EXTREME, result.preset)
+    }
 }
 
 private fun waitForLifecycleStates(

@@ -84,4 +84,26 @@ class RuntimeModelMemoryEstimatorTest {
             assertTrue(a > b, "${presets[i].name} KV ($a) should be > ${presets[i+1].name} KV ($b)")
         }
     }
+
+    @Test
+    fun `ULTRA has rotation overhead but lower total than SAFE`() {
+        val safe = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelSize,
+            metadata = metadata,
+            nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.SAFE,
+            nUbatch = 512,
+        )
+        val ultra = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelSize,
+            metadata = metadata,
+            nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.ULTRA,
+            nUbatch = 512,
+        )
+        assertTrue(ultra.estimatedBytes < safe.estimatedBytes,
+            "ULTRA total (${ultra.estimatedBytes}) should be less than SAFE total (${safe.estimatedBytes})")
+    }
 }
