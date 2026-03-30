@@ -45,7 +45,9 @@ enum class KvCacheMethod(val code: Int) {
 enum class KvCacheMethodPreset(val code: Int) {
     SAFE(0),
     BALANCED(1),
-    AGGRESSIVE(2);
+    AGGRESSIVE(2),
+    ULTRA(3),
+    EXTREME(4);
 
     companion object {
         fun fromCode(code: Int): KvCacheMethodPreset = entries.firstOrNull { it.code == code } ?: SAFE
