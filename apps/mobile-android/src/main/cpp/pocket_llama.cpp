@@ -810,6 +810,12 @@ struct kv_type_pair { ggml_type type_k; ggml_type type_v; };
 kv_type_pair resolve_turboquant_kv_types(jint preset_code, uint64_t model_size_bytes) {
     const bool small_model = model_size_bytes > 0 && model_size_bytes < 2ULL * 1024 * 1024 * 1024;
     switch (preset_code) {
+        case 4:  // EXTREME — keys Q4_0, values Q2_K (asymmetric, ~2.5 bpw effective)
+            if (small_model) return { GGML_TYPE_Q8_0, GGML_TYPE_Q4_0 };
+            return { GGML_TYPE_Q4_0, GGML_TYPE_Q2_K };
+        case 3:  // ULTRA — keys Q8_0, values Q3_K (asymmetric, ~3.5 bpw effective)
+            if (small_model) return { GGML_TYPE_Q8_0, GGML_TYPE_Q8_0 };
+            return { GGML_TYPE_Q8_0, GGML_TYPE_Q3_K };
         case 2:  // AGGRESSIVE — keys Q8_0, values Q4_0 (asymmetric)
             if (small_model) return { GGML_TYPE_Q8_0, GGML_TYPE_Q8_0 };
             return { GGML_TYPE_Q8_0, GGML_TYPE_Q4_0 };
