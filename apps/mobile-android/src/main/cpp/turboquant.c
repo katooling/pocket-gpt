@@ -306,15 +306,18 @@ void tq_rotate_quantize_q8_0(
 
 // Q4_0 block layout (18 bytes): fp16 scale (2 bytes) + 16 bytes nibbles (32 values)
 static void quantize_q4_0_block(const float * src, uint8_t * dst) {
-    // Find absmax for block scaling
-    float amax = 0.0f;
+    // Compute standard deviation as scale factor for Lloyd-Max codebook.
+    // After WHT rotation, coordinates are ~N(0, sigma) where sigma = ||x||/sqrt(d).
+    // The codebook is optimized for N(0,1), so dividing by sigma normalizes correctly.
+    // Outliers beyond the codebook range (~2.73 sigma) map to the outermost centroid.
+    float sum_sq = 0.0f;
     for (int i = 0; i < TQ_Q4_0_BLOCK_SIZE; i++) {
-        float av = fabsf(src[i]);
-        if (av > amax) amax = av;
+        sum_sq += src[i] * src[i];
     }
+    float sigma = sqrtf(sum_sq / TQ_Q4_0_BLOCK_SIZE);
 
-    float scale     = amax;
-    float inv_scale = (amax > 0.0f) ? 1.0f / amax : 0.0f;
+    float scale     = sigma;
+    float inv_scale = (sigma > 1e-10f) ? 1.0f / sigma : 0.0f;
 
     // Write fp16 scale
     uint16_t h = fp32_to_fp16(scale);
