@@ -242,6 +242,7 @@ endfunction()
 function(add_pocket_llama_variant target_name march_flag linked_llama_target)
     add_library(${target_name} SHARED
         pocket_llama.cpp
+        turboquant.c
     )
     target_include_directories(${target_name} PRIVATE
         "${LLAMA_CPP_ROOT}/include"
