@@ -724,14 +724,25 @@ bool contains_quant_token(const std::string & normalized_filename, const std::st
     return false;
 }
 
-ggml_type resolve_kv_cache_type(jint code) {
+bool uses_turboquant_kv_cache(jint code) {
     switch (code) {
-        case 0: return GGML_TYPE_F16;
-        case 1: return GGML_TYPE_Q8_0;
-        case 2: return GGML_TYPE_Q4_0;
-        case 3: return GGML_TYPE_Q4_1;
-        case 4: return GGML_TYPE_Q5_0;
-        case 5: return GGML_TYPE_Q5_1;
+        case 0:  // AUTO
+        case 1:  // TURBOQUANT
+            return true;
+        default:
+            return false;
+    }
+}
+
+ggml_type resolve_turboquant_compat_kv_type(jint preset_code, uint64_t model_size_bytes) {
+    // Q4_0 KV cache causes garbled output on small models (< 2 GB / ~1B params).
+    // Clamp AGGRESSIVE to BALANCED (Q8_0) when the model is too small.
+    const bool small_model = model_size_bytes > 0 && model_size_bytes < 2ULL * 1024 * 1024 * 1024;
+    switch (preset_code) {
+        case 2:  // AGGRESSIVE
+            return small_model ? GGML_TYPE_Q8_0 : GGML_TYPE_Q4_0;
+        case 1: return GGML_TYPE_Q8_0;  // BALANCED
+        case 0:  // SAFE
         default: return GGML_TYPE_F16;
     }
 }
@@ -2977,10 +2988,8 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
     jint nCtx,
     jint nGpuLayers,
     jint flashAttnCode,
-    jint kvCacheTypeCode,
-    jint kvCacheTypeKCode,
-    jint kvCacheTypeVCode,
-    jboolean kvUnified,
+    jint kvCacheMethodCode,
+    jint kvCacheMethodPresetCode,
     jfloat temperature,
     jint topK,
     jfloat topP,
@@ -3142,13 +3151,14 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         context_params.op_offload = use_gpu_ops;
         const bool is_opencl_backend = (g_active_backend == "opencl");
         const bool opencl_flash_guard_applied = use_gpu_ops && is_opencl_backend;
-        context_params.kv_unified = kvUnified == JNI_TRUE;
+        context_params.kv_unified = uses_turboquant_kv_cache(kvCacheMethodCode);
         context_params.flash_attn_type = resolve_flash_attn_type(flashAttnCode, opencl_flash_guard_applied);
-        const ggml_type requested_kv_type_k = resolve_kv_cache_type(kvCacheTypeKCode);
-        const ggml_type requested_kv_type_v = resolve_kv_cache_type(kvCacheTypeVCode);
+        const ggml_type requested_kv_type = resolve_turboquant_compat_kv_type(kvCacheMethodPresetCode, g_model_size_bytes);
+        const ggml_type requested_kv_type_k = requested_kv_type;
+        const ggml_type requested_kv_type_v = requested_kv_type;
         const bool quantized_kv_requested =
-            requested_kv_type_k != GGML_TYPE_F16 ||
-                requested_kv_type_v != GGML_TYPE_F16;
+            uses_turboquant_kv_cache(kvCacheMethodCode) &&
+                (requested_kv_type_k != GGML_TYPE_F16 || requested_kv_type_v != GGML_TYPE_F16);
         const bool quantized_kv_enabled =
             quantized_kv_requested &&
                 !is_opencl_backend &&
@@ -3585,10 +3595,8 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     jint nCtx,
     jint nGpuLayers,
     jint flashAttnCode,
-    jint kvCacheTypeCode,
-    jint kvCacheTypeKCode,
-    jint kvCacheTypeVCode,
-    jboolean kvUnified,
+    jint kvCacheMethodCode,
+    jint kvCacheMethodPresetCode,
     jfloat temperature,
     jint topK,
     jfloat topP,
@@ -3625,10 +3633,8 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
         nCtx,
         nGpuLayers,
         flashAttnCode,
-        kvCacheTypeCode,
-        kvCacheTypeKCode,
-        kvCacheTypeVCode,
-        kvUnified,
+        kvCacheMethodCode,
+        kvCacheMethodPresetCode,
         temperature,
         topK,
         topP,
