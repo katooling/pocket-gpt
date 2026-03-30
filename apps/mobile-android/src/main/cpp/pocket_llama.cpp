@@ -28,6 +28,7 @@
 #include "llama.h"
 #include "ggml-backend.h"
 #include "turboquant.h"
+#include "llama-kv-cache.h"
 
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
@@ -154,6 +155,17 @@ uint64_t g_context_rebuild_count = 0;
 // TurboQuant rotation session (per-model WHT sign vectors)
 tq_session * g_tq_session = nullptr;
 bool g_tq_rotation_enabled = false;
+
+// Per-layer hook contexts for the KV cache rotation callback.
+// Each entry stores a {tq_session*, layer_idx, head_dim} triple so the
+// callback knows which layer's sign vector to use.
+struct TqHookCtx {
+    tq_session * session;
+    int layer_idx;
+    int head_dim;
+};
+TqHookCtx * g_tq_hook_ctxs = nullptr;
+void ** g_tq_hook_userdata = nullptr; // void* array pointing into g_tq_hook_ctxs
 
 struct LoadProgressContext {
     JNIEnv * env = nullptr;
@@ -736,6 +748,46 @@ bool uses_turboquant_kv_cache(jint code) {
             return true;
         default:
             return false;
+    }
+}
+
+// TurboQuant rotation callback for ggml_map_custom1.
+// Applied to K/V tensors before they are written to the KV cache.
+// Each layer gets its own sign vector via per-layer userdata.
+static void turboquant_rotation_callback(
+    struct ggml_tensor * dst,
+    const struct ggml_tensor * src,
+    int ith,
+    int nth,
+    void * userdata)
+{
+    if (!userdata || !src || !dst) return;
+    const auto * hook = static_cast<const TqHookCtx *>(userdata);
+    if (!hook->session) return;
+
+    const tq_layer_ctx * layer = tq_session_get_layer(hook->session, hook->layer_idx);
+    if (!layer) return;
+
+    const int64_t n_embd_gqa = src->ne[0];
+    const int64_t n_tokens   = src->ne[1];
+    const int head_dim = hook->head_dim;
+    const int n_heads = (int)(n_embd_gqa / head_dim);
+
+    // Parallel over tokens
+    const int64_t row_start = (ith * n_tokens) / nth;
+    const int64_t row_end   = ((ith + 1) * n_tokens) / nth;
+
+    for (int64_t r = row_start; r < row_end; r++) {
+        const float * src_row = (const float *)((const char *)src->data + r * src->nb[1]);
+        float * dst_row = (float *)((char *)dst->data + r * dst->nb[1]);
+
+        // Rotate each head independently
+        for (int h = 0; h < n_heads; h++) {
+            tq_rotate_forward(layer,
+                src_row + h * head_dim,
+                dst_row + h * head_dim,
+                head_dim);
+        }
     }
 }
 
@@ -1443,12 +1495,16 @@ void release_runtime_locked() {
         llama_sampler_free(g_draft_sampler);
         g_draft_sampler = nullptr;
     }
-    // Free TurboQuant rotation session
+    // Free TurboQuant rotation session and hook contexts
     if (g_tq_session) {
         tq_session_free(g_tq_session);
         g_tq_session = nullptr;
         g_tq_rotation_enabled = false;
     }
+    delete[] g_tq_hook_ctxs;
+    g_tq_hook_ctxs = nullptr;
+    delete[] g_tq_hook_userdata;
+    g_tq_hook_userdata = nullptr;
     if (g_context != nullptr) {
         llama_free(g_context);
         g_context = nullptr;
@@ -3235,7 +3291,9 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         if (uses_turboquant_kv_cache(kvCacheMethodCode) && quantized_kv_enabled) {
             const int n_layer = llama_model_n_layer(g_model);
             // head_dim must be power of 2 for WHT
-            const int n_embd_head_k = llama_model_n_embd_head_k(g_model);
+            const int n_embd = llama_model_n_embd(g_model);
+            const int n_head = llama_model_n_head(g_model);
+            const int n_embd_head_k = (n_head > 0) ? (n_embd / n_head) : 0;
 
             if (n_embd_head_k > 0 && (n_embd_head_k & (n_embd_head_k - 1)) == 0) {
                 g_tq_session = tq_session_create(n_layer, n_embd_head_k, g_model_size_bytes);
@@ -3245,6 +3303,27 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                         "TURBOQUANT|rotation_enabled=true|layers=%d|head_dim=%d|memory_kb=%.1f",
                         n_layer, n_embd_head_k,
                         tq_session_memory_bytes(g_tq_session) / 1024.0);
+
+                    // Allocate per-layer hook contexts
+                    delete[] g_tq_hook_ctxs;
+                    delete[] g_tq_hook_userdata;
+                    g_tq_hook_ctxs = new TqHookCtx[n_layer];
+                    g_tq_hook_userdata = new void*[n_layer];
+                    for (int i = 0; i < n_layer; i++) {
+                        g_tq_hook_ctxs[i] = { g_tq_session, i, n_embd_head_k };
+                        g_tq_hook_userdata[i] = &g_tq_hook_ctxs[i];
+                    }
+
+                    // Register rotation hook with the KV cache
+                    auto * memory = llama_get_memory(g_context);
+                    if (memory) {
+                        auto * kv_cache = dynamic_cast<llama_kv_cache *>(memory);
+                        if (kv_cache) {
+                            kv_cache->set_kv_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
+                            __android_log_print(ANDROID_LOG_INFO, TAG,
+                                "TURBOQUANT|hook_registered=true|n_layer=%d", n_layer);
+                        }
+                    }
                 } else {
                     __android_log_print(ANDROID_LOG_WARN, TAG,
                         "TURBOQUANT|rotation_enabled=false|reason=session_alloc_failed");
