@@ -13,6 +13,9 @@ This repo follows engineering excellence:
    - `python3 tools/devctl/main.py lane android-instrumented|maestro|journey|screenshot-pack`
 2. Use scoped on-demand device flows only for targeted debugging (single crash/hang/regression path), not as a replacement for merge/release gates.
 3. For Android testing context, read `.claude/skills/maestro-android-cli/SKILL.md`, `.claude/skills/maestro-android-cli/references/testing-map.md`, and `docs/testing/maestro-android-companion-cli.md` before making changes to test workflows.
+4. For build/compile failures, use the global `code-health` skill and the Kotlin quality gate before treating the issue as a Maestro/testing problem.
+5. After UI selector changes, run `maestro-android lint` or `maestro-android audit-selectors` before widening to full lanes.
+6. For Compose UI refactors, read `.claude/skills/android-compose-ui-audit/SKILL.md` before changing shell/leaf ownership, undo flows, resource migrations, or accessibility semantics.
 
 ## Scoped On-Demand Device Flow (When And How)
 

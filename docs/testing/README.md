@@ -14,7 +14,7 @@ Canonical ownership by concern:
 10. Runtime tuning debug workflow and diagnostics interpretation: `docs/testing/runtime-tuning-debugging.md`
 11. Pocket-GPT vs PocketPal parity benchmark runbook: `docs/testing/pocketpal-parity-benchmark.md`
 12. Maestro report helpers: `python3 tools/devctl/main.py report journey` / `python3 tools/devctl/main.py report screenshot-pack`
-13. Maestro Android companion CLI: `maestro-android init|doctor|lane|scoped|report|trace|cloud ...`
+13. Maestro Android companion CLI: `maestro-android init|doctor|lane|scoped|lint|audit-selectors|clean|report|trace|cloud ...`
 14. Companion CLI setup and Pocket-GPT integration: `docs/testing/maestro-android-companion-cli.md`
 15. Repo-local skill for agent/test context: `.claude/skills/maestro-android-cli/SKILL.md`
 16. Repo-local testing ladder: `.claude/skills/maestro-android-cli/references/testing-map.md`

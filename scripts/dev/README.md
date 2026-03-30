@@ -216,6 +216,9 @@ maestro-android lane journey
 maestro-android lane screenshot-pack
 maestro-android lane lifecycle
 maestro-android scoped --flow tmp/maestro-repro.yaml
+maestro-android lint
+maestro-android audit-selectors
+maestro-android clean --stale-flows --confirm
 maestro-android report latest
 maestro-android trace latest
 maestro-android cloud smoke
@@ -223,7 +226,7 @@ maestro-android cloud benchmark
 maestro-android cloud status label:upload-id
 ```
 
-This wraps the repo's existing Maestro/devctl/scoped-repro patterns behind a single Android-focused external CLI. See `docs/testing/maestro-android-companion-cli.md`.
+This wraps the repo's existing Maestro/devctl/scoped-repro patterns behind a single Android-focused external CLI. Use `lint` and `audit-selectors` for flow-health maintenance, and `clean --stale-flows` to prune old tmp flows. See `docs/testing/maestro-android-companion-cli.md`.
 
 ## Gate Wrappers (Policy)
 
