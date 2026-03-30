@@ -163,6 +163,7 @@ struct TqHookCtx {
     tq_session * session;
     int layer_idx;
     int head_dim;
+    bool skip_rotation; // layer-adaptive: true for first/last N layers
 };
 TqHookCtx * g_tq_hook_ctxs = nullptr;
 void ** g_tq_hook_userdata = nullptr; // void* array pointing into g_tq_hook_ctxs
@@ -765,6 +766,16 @@ static void turboquant_rotation_callback(
     const auto * hook = static_cast<const TqHookCtx *>(userdata);
     if (!hook->session) return;
 
+    // Layer-adaptive: skip rotation for protected first/last layers.
+    // These layers store in the quantized format without rotation — still compressed,
+    // but without the distributional assumption that rotation enables.
+    if (hook->skip_rotation) {
+        if (src->data != dst->data) {
+            memcpy(dst->data, src->data, ggml_nbytes(src));
+        }
+        return;
+    }
+
     const tq_layer_ctx * layer = tq_session_get_layer(hook->session, hook->layer_idx);
     if (!layer) return;
 
@@ -791,16 +802,22 @@ static void turboquant_rotation_callback(
     }
 }
 
-ggml_type resolve_turboquant_compat_kv_type(jint preset_code, uint64_t model_size_bytes) {
-    // Q4_0 KV cache causes garbled output on small models (< 2 GB / ~1B params).
-    // Clamp AGGRESSIVE to BALANCED (Q8_0) when the model is too small.
+// Asymmetric K/V type resolution following KIVI principle:
+// Keys drive attention weights and need more precision than values.
+// Returns {type_k, type_v} pair.
+struct kv_type_pair { ggml_type type_k; ggml_type type_v; };
+
+kv_type_pair resolve_turboquant_kv_types(jint preset_code, uint64_t model_size_bytes) {
     const bool small_model = model_size_bytes > 0 && model_size_bytes < 2ULL * 1024 * 1024 * 1024;
     switch (preset_code) {
-        case 2:  // AGGRESSIVE
-            return small_model ? GGML_TYPE_Q8_0 : GGML_TYPE_Q4_0;
-        case 1: return GGML_TYPE_Q8_0;  // BALANCED
+        case 2:  // AGGRESSIVE — keys Q8_0, values Q4_0 (asymmetric)
+            if (small_model) return { GGML_TYPE_Q8_0, GGML_TYPE_Q8_0 };
+            return { GGML_TYPE_Q8_0, GGML_TYPE_Q4_0 };
+        case 1:  // BALANCED — keys Q8_0, values Q8_0
+            return { GGML_TYPE_Q8_0, GGML_TYPE_Q8_0 };
         case 0:  // SAFE
-        default: return GGML_TYPE_F16;
+        default:
+            return { GGML_TYPE_F16, GGML_TYPE_F16 };
     }
 }
 
@@ -3220,9 +3237,9 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         const bool opencl_flash_guard_applied = use_gpu_ops && is_opencl_backend;
         context_params.kv_unified = uses_turboquant_kv_cache(kvCacheMethodCode);
         context_params.flash_attn_type = resolve_flash_attn_type(flashAttnCode, opencl_flash_guard_applied);
-        const ggml_type requested_kv_type = resolve_turboquant_compat_kv_type(kvCacheMethodPresetCode, g_model_size_bytes);
-        const ggml_type requested_kv_type_k = requested_kv_type;
-        const ggml_type requested_kv_type_v = requested_kv_type;
+        const auto kv_types = resolve_turboquant_kv_types(kvCacheMethodPresetCode, g_model_size_bytes);
+        const ggml_type requested_kv_type_k = kv_types.type_k;
+        const ggml_type requested_kv_type_v = kv_types.type_v;
         const bool quantized_kv_requested =
             uses_turboquant_kv_cache(kvCacheMethodCode) &&
                 (requested_kv_type_k != GGML_TYPE_F16 || requested_kv_type_v != GGML_TYPE_F16);
@@ -3304,14 +3321,21 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                         n_layer, n_embd_head_k,
                         tq_session_memory_bytes(g_tq_session) / 1024.0);
 
-                    // Allocate per-layer hook contexts
+                    // Allocate per-layer hook contexts with layer-adaptive protection.
+                    // First/last PROTECT_N_LAYERS layers skip rotation — they are most
+                    // sensitive to quantization error (embedding/output projections).
+                    constexpr int PROTECT_N_LAYERS = 2;
                     delete[] g_tq_hook_ctxs;
                     delete[] g_tq_hook_userdata;
                     g_tq_hook_ctxs = new TqHookCtx[n_layer];
                     g_tq_hook_userdata = new void*[n_layer];
+                    int protected_count = 0;
                     for (int i = 0; i < n_layer; i++) {
-                        g_tq_hook_ctxs[i] = { g_tq_session, i, n_embd_head_k };
+                        const bool protect = (i < PROTECT_N_LAYERS) ||
+                                             (i >= n_layer - PROTECT_N_LAYERS);
+                        g_tq_hook_ctxs[i] = { g_tq_session, i, n_embd_head_k, protect };
                         g_tq_hook_userdata[i] = &g_tq_hook_ctxs[i];
+                        if (protect) protected_count++;
                     }
 
                     // Register rotation hook with the KV cache
@@ -3321,7 +3345,10 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                         if (kv_cache) {
                             kv_cache->set_kv_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
                             __android_log_print(ANDROID_LOG_INFO, TAG,
-                                "TURBOQUANT|hook_registered=true|n_layer=%d", n_layer);
+                                "TURBOQUANT|hook_registered=true|n_layer=%d|protected=%d|type_k=%s|type_v=%s",
+                                n_layer, protected_count,
+                                ggml_type_name(context_params.type_k),
+                                ggml_type_name(context_params.type_v));
                         }
                     }
                 } else {

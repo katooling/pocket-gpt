@@ -48,13 +48,15 @@ object RuntimeModelMemoryEstimator {
         val vocabSize = validMetadata.vocabSize ?: 0
         val embeddingSize = validMetadata.embeddingSize ?: 0
 
+        // Asymmetric K/V: keys get more precision than values (KIVI principle).
+        // AGGRESSIVE: keys Q8_0, values Q4_0. BALANCED: both Q8_0. SAFE: both F16.
         val kvCacheBytes = (
             layerCount.toLong() *
                 effectiveCtx.toLong() *
                 headCountKv.toLong() *
                 (
-                    keyLength.toDouble() * bytesPerElement(kvCacheMethod, kvCacheMethodPreset) +
-                        valueLength.toDouble() * bytesPerElement(kvCacheMethod, kvCacheMethodPreset)
+                    keyLength.toDouble() * bytesPerElementK(kvCacheMethod, kvCacheMethodPreset) +
+                        valueLength.toDouble() * bytesPerElementV(kvCacheMethod, kvCacheMethodPreset)
                     )
             ).toLong()
         val computeBufferBytes = (vocabSize.toLong() + embeddingSize.toLong()) * nUbatch.coerceAtLeast(1).toLong() * 4L
@@ -91,14 +93,28 @@ object RuntimeModelMemoryEstimator {
         )
     }
 
-    private fun bytesPerElement(method: KvCacheMethod, preset: KvCacheMethodPreset): Double {
+    // Asymmetric K/V bytes-per-element following KIVI principle:
+    // Keys need more precision than values since they drive attention weights.
+    private fun bytesPerElementK(method: KvCacheMethod, preset: KvCacheMethodPreset): Double {
         return when (method) {
             KvCacheMethod.AUTO,
             KvCacheMethod.TURBOQUANT,
             -> when (preset) {
                 KvCacheMethodPreset.SAFE -> 2.0          // F16
                 KvCacheMethodPreset.BALANCED -> 1.0625   // Q8_0
-                KvCacheMethodPreset.AGGRESSIVE -> 0.5625 // Q4_0
+                KvCacheMethodPreset.AGGRESSIVE -> 1.0625 // Q8_0 (keys get more bits)
+            }
+        }
+    }
+
+    private fun bytesPerElementV(method: KvCacheMethod, preset: KvCacheMethodPreset): Double {
+        return when (method) {
+            KvCacheMethod.AUTO,
+            KvCacheMethod.TURBOQUANT,
+            -> when (preset) {
+                KvCacheMethodPreset.SAFE -> 2.0          // F16
+                KvCacheMethodPreset.BALANCED -> 1.0625   // Q8_0
+                KvCacheMethodPreset.AGGRESSIVE -> 0.5625 // Q4_0 (values can be more compressed)
             }
         }
     }
