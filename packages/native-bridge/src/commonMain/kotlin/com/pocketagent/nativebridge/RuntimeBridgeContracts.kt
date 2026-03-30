@@ -33,17 +33,22 @@ enum class CachePolicy(val code: Int) {
     PREFIX_KV_REUSE_STRICT(2),
 }
 
-enum class KvCacheType(val code: Int) {
-    F16(0),
-    Q8_0(1),
-    Q4_0(2),
-    Q4_1(3),
-    Q5_0(4),
-    Q5_1(5);
+enum class KvCacheMethod(val code: Int) {
+    AUTO(0),
+    TURBOQUANT(1);
 
     companion object {
-        fun fromCode(code: Int): KvCacheType = entries.firstOrNull { it.code == code } ?: F16
-        fun fromBoolean(quantized: Boolean): KvCacheType = if (quantized) Q8_0 else F16
+        fun fromCode(code: Int): KvCacheMethod = entries.firstOrNull { it.code == code } ?: AUTO
+    }
+}
+
+enum class KvCacheMethodPreset(val code: Int) {
+    SAFE(0),
+    BALANCED(1),
+    AGGRESSIVE(2);
+
+    companion object {
+        fun fromCode(code: Int): KvCacheMethodPreset = entries.firstOrNull { it.code == code } ?: SAFE
     }
 }
 
@@ -76,13 +81,8 @@ data class RuntimeLoadConfig(
     val gpuBackend: GpuExecutionBackend = GpuExecutionBackend.AUTO,
     val flashAttnMode: FlashAttnMode = FlashAttnMode.AUTO,
     val strictGpuOffload: Boolean = true,
-    @Deprecated("Use kvCacheTypeK and kvCacheTypeV.")
-    val kvCacheType: KvCacheType = KvCacheType.Q8_0,
-    @Suppress("DEPRECATION")
-    val kvCacheTypeK: KvCacheType = kvCacheType,
-    @Suppress("DEPRECATION")
-    val kvCacheTypeV: KvCacheType = kvCacheType,
-    val kvUnified: Boolean = true,
+    val kvCacheMethod: KvCacheMethod = KvCacheMethod.AUTO,
+    val kvCacheMethodPreset: KvCacheMethodPreset = KvCacheMethodPreset.SAFE,
     val speculativeEnabled: Boolean = false,
     val speculativeDraftModelId: String? = null,
     val speculativeDraftModelPath: String? = null,
@@ -104,13 +104,8 @@ data class RuntimeGenerationConfig(
     val gpuBackend: GpuExecutionBackend = GpuExecutionBackend.AUTO,
     val flashAttnMode: FlashAttnMode = FlashAttnMode.AUTO,
     val strictGpuOffload: Boolean = true,
-    @Deprecated("Use kvCacheTypeK and kvCacheTypeV.")
-    val kvCacheType: KvCacheType = KvCacheType.Q8_0,
-    @Suppress("DEPRECATION")
-    val kvCacheTypeK: KvCacheType = kvCacheType,
-    @Suppress("DEPRECATION")
-    val kvCacheTypeV: KvCacheType = kvCacheType,
-    val kvUnified: Boolean = true,
+    val kvCacheMethod: KvCacheMethod = KvCacheMethod.AUTO,
+    val kvCacheMethodPreset: KvCacheMethodPreset = KvCacheMethodPreset.SAFE,
     val sampling: RuntimeSamplingConfig = RuntimeSamplingConfig(),
     val speculativeEnabled: Boolean = false,
     val speculativeDraftModelId: String? = null,
@@ -140,9 +135,8 @@ data class RuntimeGenerationConfig(
             gpuBackend = gpuBackend,
             flashAttnMode = flashAttnMode,
             strictGpuOffload = strictGpuOffload,
-            kvCacheTypeK = kvCacheTypeK,
-            kvCacheTypeV = kvCacheTypeV,
-            kvUnified = kvUnified,
+            kvCacheMethod = kvCacheMethod,
+            kvCacheMethodPreset = kvCacheMethodPreset,
             speculativeEnabled = speculativeEnabled,
             speculativeDraftModelId = speculativeDraftModelId,
             speculativeDraftModelPath = speculativeDraftModelPath,
@@ -273,6 +267,10 @@ data class GenerationResult(
     val tokensPerSec: Double? = null,
     val peakRssMb: Double? = null,
     val errorCode: String? = null,
+    val requestedKvCacheMethod: KvCacheMethod? = null,
+    val effectiveKvCacheMethod: KvCacheMethod? = null,
+    val kvCacheMethodPreset: KvCacheMethodPreset? = null,
+    val kvCacheMethodDemotionReason: String? = null,
 ) {
     val success: Boolean
         get() = finishReason == GenerationFinishReason.COMPLETED || finishReason == GenerationFinishReason.MAX_TOKENS
@@ -299,6 +297,32 @@ internal fun resolveActiveBackendIdentity(diagnosticsPayload: String?): String? 
         .distinct()
     return compiledBackends.singleOrNull()
         ?.takeIf { backend -> backend != "auto" }
+}
+
+internal data class KvCacheMethodResolution(
+    val requestedMethod: KvCacheMethod,
+    val effectiveMethod: KvCacheMethod,
+    val preset: KvCacheMethodPreset,
+    val demotionReason: String? = null,
+)
+
+internal fun resolveKvCacheMethod(
+    requestedMethod: KvCacheMethod,
+    preset: KvCacheMethodPreset,
+): KvCacheMethodResolution {
+    return when (requestedMethod) {
+        KvCacheMethod.AUTO -> KvCacheMethodResolution(
+            requestedMethod = requestedMethod,
+            effectiveMethod = KvCacheMethod.TURBOQUANT,
+            preset = preset,
+        )
+
+        KvCacheMethod.TURBOQUANT -> KvCacheMethodResolution(
+            requestedMethod = requestedMethod,
+            effectiveMethod = KvCacheMethod.TURBOQUANT,
+            preset = preset,
+        )
+    }
 }
 
 interface LlamaCppRuntimeBridge {
