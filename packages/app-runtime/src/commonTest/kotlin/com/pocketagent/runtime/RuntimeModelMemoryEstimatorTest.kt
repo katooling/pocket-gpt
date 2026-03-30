@@ -157,4 +157,83 @@ class RuntimeModelMemoryEstimatorTest {
         )
         assertTrue(ultra.kvCacheBytes < aggressive.kvCacheBytes)
     }
+
+    @Test
+    fun `experimental types ULTRA uses TQ_Q3_LM byte rate`() {
+        val standard = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.ULTRA, nUbatch = 512,
+            experimentalTypes = false,
+        )
+        val experimental = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.ULTRA, nUbatch = 512,
+            experimentalTypes = true,
+        )
+        // TQ_Q3_LM (14/32 = 0.4375) vs Q3_K (0.4297): experimental is slightly larger
+        assertTrue(experimental.kvCacheBytes > standard.kvCacheBytes,
+            "Experimental ULTRA V (TQ_Q3_LM 0.4375) should be slightly larger than standard (Q3_K 0.4297)")
+    }
+
+    @Test
+    fun `experimental types EXTREME uses TQ_Q2_LM byte rate`() {
+        val standard = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.EXTREME, nUbatch = 512,
+            experimentalTypes = false,
+        )
+        val experimental = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = modelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.EXTREME, nUbatch = 512,
+            experimentalTypes = true,
+        )
+        // TQ_Q2_LM (10/32 = 0.3125) vs Q2_K (0.3281): experimental is slightly smaller
+        assertTrue(experimental.kvCacheBytes < standard.kvCacheBytes,
+            "Experimental EXTREME V (TQ_Q2_LM 0.3125) should be slightly smaller than standard (Q2_K 0.3281)")
+    }
+
+    @Test
+    fun `experimental types monotonic ordering preserved`() {
+        val presets = listOf(
+            KvCacheMethodPreset.SAFE,
+            KvCacheMethodPreset.BALANCED,
+            KvCacheMethodPreset.AGGRESSIVE,
+            KvCacheMethodPreset.ULTRA,
+            KvCacheMethodPreset.EXTREME,
+        )
+        val estimates = presets.map { preset ->
+            RuntimeModelMemoryEstimator.estimate(
+                modelFileSizeBytes = modelSize, metadata = metadata, nCtx = 2048,
+                kvCacheMethod = KvCacheMethod.TURBOQUANT,
+                kvCacheMethodPreset = preset, nUbatch = 512,
+                experimentalTypes = true,
+            ).kvCacheBytes
+        }
+        estimates.zipWithNext().forEachIndexed { i, (a, b) ->
+            assertTrue(a > b, "Experimental: ${presets[i].name} KV ($a) should be > ${presets[i+1].name} KV ($b)")
+        }
+    }
+
+    @Test
+    fun `experimental types do not affect small model clamp`() {
+        val smallModelSize = 1_000_000_000L
+        val ultra = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = smallModelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.ULTRA, nUbatch = 512,
+            experimentalTypes = true,
+        )
+        val balanced = RuntimeModelMemoryEstimator.estimate(
+            modelFileSizeBytes = smallModelSize, metadata = metadata, nCtx = 2048,
+            kvCacheMethod = KvCacheMethod.TURBOQUANT,
+            kvCacheMethodPreset = KvCacheMethodPreset.BALANCED, nUbatch = 512,
+            experimentalTypes = true,
+        )
+        assertEquals(balanced.kvCacheBytes, ultra.kvCacheBytes,
+            "Small model ULTRA with experimental types should still clamp to BALANCED rates")
+    }
 }

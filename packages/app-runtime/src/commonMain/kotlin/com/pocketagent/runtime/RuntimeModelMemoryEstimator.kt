@@ -24,6 +24,7 @@ object RuntimeModelMemoryEstimator {
         kvCacheMethodPreset: KvCacheMethodPreset,
         nUbatch: Int,
         availableMemoryMb: Double? = null,
+        experimentalTypes: Boolean = false,
     ): RuntimeMemoryEstimate {
         val validMetadata: ModelRuntimeMetadata = metadata?.takeIf { candidate ->
             (candidate.layerCount ?: 0) > 0 &&
@@ -58,7 +59,7 @@ object RuntimeModelMemoryEstimator {
                 headCountKv.toLong() *
                 (
                     keyLength.toDouble() * bytesPerElementK(kvCacheMethod, effectivePresetK) +
-                        valueLength.toDouble() * bytesPerElementV(kvCacheMethod, effectivePresetV)
+                        valueLength.toDouble() * bytesPerElementV(kvCacheMethod, effectivePresetV, experimentalTypes)
                     )
             ).toLong()
         val computeBufferBytes = (vocabSize.toLong() + embeddingSize.toLong()) * nUbatch.coerceAtLeast(1).toLong() * 4L
@@ -111,7 +112,11 @@ object RuntimeModelMemoryEstimator {
         }
     }
 
-    private fun bytesPerElementV(method: KvCacheMethod, preset: KvCacheMethodPreset): Double {
+    private fun bytesPerElementV(
+        method: KvCacheMethod,
+        preset: KvCacheMethodPreset,
+        experimentalTypes: Boolean = false,
+    ): Double {
         return when (method) {
             KvCacheMethod.AUTO,
             KvCacheMethod.TURBOQUANT,
@@ -119,8 +124,12 @@ object RuntimeModelMemoryEstimator {
                 KvCacheMethodPreset.SAFE -> 2.0          // F16
                 KvCacheMethodPreset.BALANCED -> 1.0625   // Q8_0
                 KvCacheMethodPreset.AGGRESSIVE -> 0.5625 // Q4_0
-                KvCacheMethodPreset.ULTRA -> 0.4297      // Q3_K (~3.4375 bpw)
-                KvCacheMethodPreset.EXTREME -> 0.3281    // Q2_K (~2.625 bpw)
+                KvCacheMethodPreset.ULTRA ->
+                    if (experimentalTypes) 0.4375         // TQ_Q3_LM (14/32)
+                    else 0.4297                           // Q3_K (~3.4375 bpw)
+                KvCacheMethodPreset.EXTREME ->
+                    if (experimentalTypes) 0.3125         // TQ_Q2_LM (10/32)
+                    else 0.3281                           // Q2_K (~2.625 bpw)
             }
         }
     }
