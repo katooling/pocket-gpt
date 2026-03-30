@@ -309,6 +309,10 @@ class ChatViewModel(
         nextOnboardingPageInternal()
     }
 
+    fun setOnboardingPage(page: Int) {
+        setOnboardingPageInternal(page)
+    }
+
     fun completeOnboarding() {
         completeOnboardingInternal()
     }

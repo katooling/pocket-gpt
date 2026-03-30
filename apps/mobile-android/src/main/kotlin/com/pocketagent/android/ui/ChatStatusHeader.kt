@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -48,6 +49,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
@@ -63,7 +65,6 @@ import com.pocketagent.android.ui.theme.PocketAgentDimensions
 internal fun OfflineAndStatusHeader(
     state: ChatUiState,
     modelLoadingState: ModelLoadingState,
-    onGetReadyTapped: () -> Unit,
     onOpenModels: () -> Unit,
     canLoadLastUsedModel: Boolean,
     lastUsedModelLabel: String?,
@@ -80,6 +81,7 @@ internal fun OfflineAndStatusHeader(
     val isReadyAndClean = modelLoadingState is ModelLoadingState.Loaded
         && state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
         && state.runtime.lastErrorUserMessage == null
+    val lifecycleAnimationKey = modelLoadingState.visualStateKey()
 
     // Task 2.1: AnimatedContent for smooth transition between collapsed and expanded
     AnimatedContent(
@@ -103,31 +105,18 @@ internal fun OfflineAndStatusHeader(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (isOffline) {
-                    // Task 3.7: Offline indicator
-                    AssistChip(
-                        onClick = {},
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            labelColor = MaterialTheme.colorScheme.onErrorContainer,
-                        ),
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.CloudOff,
-                                contentDescription = null,
-                            )
-                        },
-                        label = { StatusChipLabel(stringResource(id = R.string.ui_offline_indicator)) },
-                    )
+                    OfflineStatusChip()
                 }
                 // Task 4.5: AnimatedContent for lifecycle chip
                 AnimatedContent(
-                    targetState = modelLoadingState,
+                    targetState = lifecycleAnimationKey,
                     transitionSpec = {
                         (scaleIn(initialScale = 0.9f) + fadeIn())
                             .togetherWith(scaleOut(targetScale = 0.9f) + fadeOut())
                     },
                     label = "LifecycleChipAnimation",
-                ) { targetLoadingState ->
+                ) {
+                    val targetLoadingState = modelLoadingState
                     val targetColors = when (targetLoadingState) {
                         is ModelLoadingState.Loaded -> AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -193,30 +182,18 @@ internal fun OfflineAndStatusHeader(
                     ) {
                         // Task 3.7: Offline indicator at the start of FlowRow
                         if (isOffline) {
-                            AssistChip(
-                                onClick = {},
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                    labelColor = MaterialTheme.colorScheme.onErrorContainer,
-                                ),
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.CloudOff,
-                                        contentDescription = null,
-                                    )
-                                },
-                                label = { StatusChipLabel(stringResource(id = R.string.ui_offline_indicator)) },
-                            )
+                            OfflineStatusChip()
                         }
                         // Task 4.5: AnimatedContent for lifecycle chip
                         AnimatedContent(
-                            targetState = modelLoadingState,
+                            targetState = lifecycleAnimationKey,
                             transitionSpec = {
                                 (scaleIn(initialScale = 0.9f) + fadeIn())
                                     .togetherWith(scaleOut(targetScale = 0.9f) + fadeOut())
                             },
                             label = "LifecycleChipAnimation",
-                        ) { targetLoadingState ->
+                        ) {
+                            val targetLoadingState = modelLoadingState
                             val targetColors = when (targetLoadingState) {
                                 is ModelLoadingState.Loaded -> AssistChipDefaults.assistChipColors(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -323,11 +300,15 @@ internal fun OfflineAndStatusHeader(
                         // No action buttons during loading/offloading
                     } else if (state.runtime.modelRuntimeStatus != ModelRuntimeStatus.READY) {
                         Row(horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing)) {
-                            TextButton(onClick = onOpenModels) {
+                            TextButton(
+                                onClick = onOpenModels,
+                                modifier = Modifier.testTag("open_models_button"),
+                            ) {
                                 Text(stringResource(id = R.string.ui_open_models))
                             }
                             TextButton(
                                 onClick = onRefresh,
+                                modifier = Modifier.testTag("refresh_button"),
                                 enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
                             ) {
                                 Text(stringResource(id = R.string.ui_refresh_runtime_checks))
@@ -337,6 +318,7 @@ internal fun OfflineAndStatusHeader(
                         Row(horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing)) {
                             TextButton(
                                 onClick = onRefresh,
+                                modifier = Modifier.testTag("refresh_button"),
                                 enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
                             ) {
                                 Text(stringResource(id = R.string.ui_refresh_runtime_checks))
@@ -449,4 +431,36 @@ internal fun StatusChipLabel(text: String) {
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.widthIn(max = 220.dp),
     )
+}
+
+@Composable
+private fun OfflineStatusChip() {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.CloudOff,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            StatusChipLabel(stringResource(id = R.string.ui_offline_indicator))
+        }
+    }
+}
+
+private fun ModelLoadingState.visualStateKey(): String {
+    return when (this) {
+        is ModelLoadingState.Idle -> "idle"
+        is ModelLoadingState.Loading -> "loading"
+        is ModelLoadingState.Loaded -> "loaded:${model.modelId}:${model.modelVersion.orEmpty()}"
+        is ModelLoadingState.Offloading -> "offloading"
+        is ModelLoadingState.Error -> "error"
+    }
 }

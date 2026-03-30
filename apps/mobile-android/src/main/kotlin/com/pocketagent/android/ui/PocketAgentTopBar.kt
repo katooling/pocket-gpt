@@ -1,0 +1,118 @@
+package com.pocketagent.android.ui
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import com.pocketagent.android.R
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PocketAgentTopBar(
+    activeRuntimeModelLabel: String?,
+    lastUsedModelLabel: String?,
+    modelLibraryState: ModelLibraryUiState,
+    onOpenSessionDrawer: () -> Unit,
+    onLoadModelVersion: (String, String) -> Unit,
+    onOpenModelLibrary: () -> Unit,
+    onOpenAdvancedSettings: () -> Unit,
+) {
+    var showModelMenu by remember { mutableStateOf(false) }
+    val installedModels = remember(modelLibraryState) {
+        modelLibraryState.snapshot.models.flatMap { model ->
+            model.installedVersions.map { version -> model to version }
+        }
+    }
+
+    TopAppBar(
+        title = {
+            Text(
+                text = stringResource(id = R.string.ui_app_title),
+                modifier = Modifier.semantics { heading() },
+            )
+        },
+        navigationIcon = {
+            IconButton(
+                modifier = Modifier.testTag("session_drawer_button"),
+                onClick = onOpenSessionDrawer,
+            ) {
+                Icon(
+                    Icons.Default.Menu,
+                    contentDescription = stringResource(id = R.string.a11y_session_drawer_open),
+                )
+            }
+        },
+        actions = {
+            Box {
+                AssistChip(
+                    onClick = {
+                        if (installedModels.isEmpty()) {
+                            onOpenModelLibrary()
+                        } else {
+                            showModelMenu = true
+                        }
+                    },
+                    label = {
+                        Text(
+                            text = activeRuntimeModelLabel
+                                ?: lastUsedModelLabel
+                                ?: stringResource(id = R.string.ui_models_title),
+                        )
+                    },
+                )
+                DropdownMenu(
+                    expanded = showModelMenu,
+                    onDismissRequest = { showModelMenu = false },
+                ) {
+                    installedModels.forEach { (model, version) ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "${model.displayName} ${version.version}".trim(),
+                                )
+                            },
+                            onClick = {
+                                showModelMenu = false
+                                onLoadModelVersion(model.modelId, version.version)
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(text = stringResource(id = R.string.ui_more_models)) },
+                        onClick = {
+                            showModelMenu = false
+                            onOpenModelLibrary()
+                        },
+                    )
+                }
+            }
+            IconButton(
+                modifier = Modifier.testTag("advanced_sheet_button"),
+                onClick = onOpenAdvancedSettings,
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = stringResource(id = R.string.a11y_advanced_controls_open),
+                )
+            }
+        },
+    )
+}

@@ -1,5 +1,6 @@
 package com.pocketagent.android.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -11,8 +12,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -29,53 +32,44 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import com.pocketagent.android.ui.theme.PocketTheme
+import com.pocketagent.android.R
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private data class OnboardingPageData(
+    @StringRes val headlineRes: Int,
+    @StringRes val bodyRes: Int,
     val icon: ImageVector,
-    val headline: String,
-    val body: String,
 )
-
-// TODO: extract to strings.xml
-// onboarding_welcome_headline = "Your AI, On Your Device"
-// onboarding_welcome_body = "PocketGPT runs powerful language models entirely on your phone. No cloud, no subscriptions -- just you and your AI assistant."
-// onboarding_privacy_headline = "100% Private, 100% Offline"
-// onboarding_privacy_body = "Your conversations never leave your device. No data is sent to any server. Your privacy is guaranteed by design."
-// onboarding_download_headline = "Download Your First Model"
-// onboarding_download_body = "To get started, download a compact AI model optimized for your device. This is a one-time setup."
-// onboarding_skip = "Skip"
-// onboarding_next = "Next"
-// onboarding_get_started = "Get Started"
-// onboarding_downloading = "Downloading..."
-// onboarding_download_model = "Download Recommended Model"
 
 private val onboardingPages = listOf(
     OnboardingPageData(
+        headlineRes = R.string.ui_onboarding_welcome_headline,
+        bodyRes = R.string.ui_onboarding_welcome_body,
         icon = Icons.Filled.PhoneAndroid,
-        headline = "Your AI, On Your Device", // TODO: extract to strings.xml
-        body = "PocketGPT runs powerful language models entirely on your phone. " +
-            "No cloud, no subscriptions \u2014 just you and your AI assistant.", // TODO: extract to strings.xml
     ),
     OnboardingPageData(
+        headlineRes = R.string.ui_onboarding_privacy_headline,
+        bodyRes = R.string.ui_onboarding_privacy_body,
         icon = Icons.Filled.Shield,
-        headline = "100% Private, 100% Offline", // TODO: extract to strings.xml
-        body = "Your conversations never leave your device. No data is sent to any server. " +
-            "Your privacy is guaranteed by design.", // TODO: extract to strings.xml
     ),
     OnboardingPageData(
+        headlineRes = R.string.ui_onboarding_download_headline,
+        bodyRes = R.string.ui_onboarding_download_body,
         icon = Icons.Filled.CloudDownload,
-        headline = "Download Your First Model", // TODO: extract to strings.xml
-        body = "To get started, download a compact AI model optimized for your device. " +
-            "This is a one-time setup.", // TODO: extract to strings.xml
     ),
 )
 
@@ -91,12 +85,13 @@ private const val PAGE_COUNT = 3
 @Composable
 fun OnboardingScreen(
     currentPage: Int,
+    onPageChanged: (Int) -> Unit,
     onNextPage: () -> Unit,
     onSkip: () -> Unit,
     onFinish: () -> Unit,
     isDownloading: Boolean = false,
     downloadProgress: Float? = null,
-    onStartDownload: () -> Unit = {},
+    onStartDownload: () -> Unit,
 ) {
     val pagerState = rememberPagerState(
         initialPage = currentPage.coerceIn(0, PAGE_COUNT - 1),
@@ -111,6 +106,12 @@ fun OnboardingScreen(
         }
     }
 
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }
+            .distinctUntilChanged()
+            .collect { page -> onPageChanged(page) }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -121,14 +122,16 @@ fun OnboardingScreen(
             TextButton(
                 onClick = onSkip,
                 modifier = Modifier
+                    .testTag("onboarding_skip")
                     .align(Alignment.TopEnd)
+                    .statusBarsPadding()
                     .padding(
                         top = PocketTheme.spacing.lg,
                         end = PocketAgentDimensions.screenPadding,
                     ),
             ) {
                 Text(
-                    text = "Skip", // TODO: extract to strings.xml
+                    text = stringResource(id = R.string.ui_onboarding_skip),
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
@@ -165,13 +168,13 @@ fun OnboardingScreen(
 
             // Bottom navigation button
             BottomNavigation(
-                currentPage = pagerState.currentPage,
                 isLastPage = pagerState.currentPage == PAGE_COUNT - 1,
                 isDownloading = isDownloading,
                 onNext = onNextPage,
                 onFinish = onFinish,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(
                         horizontal = PocketTheme.spacing.xl,
                         vertical = PocketTheme.spacing.lg,
@@ -208,7 +211,7 @@ private fun OnboardingPage(
         Spacer(modifier = Modifier.height(PocketTheme.spacing.xl))
 
         Text(
-            text = data.headline,
+            text = stringResource(id = data.headlineRes),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground,
@@ -217,7 +220,7 @@ private fun OnboardingPage(
         Spacer(modifier = Modifier.height(PocketTheme.spacing.md))
 
         Text(
-            text = data.body,
+            text = stringResource(id = data.bodyRes),
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -244,7 +247,7 @@ private fun OnboardingPage(
             } else {
                 Button(onClick = onStartDownload) {
                     Text(
-                        text = "Download Recommended Model", // TODO: extract to strings.xml
+                        text = stringResource(id = R.string.ui_onboarding_download_model),
                     )
                 }
             }
@@ -258,8 +261,15 @@ private fun PageIndicator(
     currentPage: Int,
     modifier: Modifier = Modifier,
 ) {
+    val pageCounterDescription = stringResource(
+        id = R.string.ui_onboarding_page_counter,
+        currentPage + 1,
+        pageCount,
+    )
     Row(
-        modifier = modifier,
+        modifier = modifier.semantics {
+            contentDescription = pageCounterDescription
+        },
         horizontalArrangement = Arrangement.spacedBy(PocketTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -285,7 +295,6 @@ private fun PageIndicator(
 
 @Composable
 private fun BottomNavigation(
-    currentPage: Int,
     isLastPage: Boolean,
     isDownloading: Boolean,
     onNext: () -> Unit,
@@ -294,14 +303,14 @@ private fun BottomNavigation(
 ) {
     Button(
         onClick = if (isLastPage) onFinish else onNext,
-        modifier = modifier,
+        modifier = modifier.testTag(if (isLastPage) "onboarding_get_started" else "onboarding_next"),
         enabled = !isDownloading || !isLastPage,
     ) {
         Text(
             text = when {
-                isLastPage && isDownloading -> "Downloading\u2026" // TODO: extract to strings.xml
-                isLastPage -> "Get Started" // TODO: extract to strings.xml
-                else -> "Next" // TODO: extract to strings.xml
+                isLastPage && isDownloading -> stringResource(id = R.string.ui_onboarding_downloading)
+                isLastPage -> stringResource(id = R.string.ui_onboarding_get_started)
+                else -> stringResource(id = R.string.ui_onboarding_next)
             },
         )
     }
@@ -313,9 +322,11 @@ private fun OnboardingScreenPreview() {
     PocketAgentTheme {
         OnboardingScreen(
             currentPage = 0,
+            onPageChanged = {},
             onNextPage = {},
             onSkip = {},
             onFinish = {},
+            onStartDownload = {},
         )
     }
 }
@@ -326,11 +337,13 @@ private fun OnboardingScreenDownloadPreview() {
     PocketAgentTheme {
         OnboardingScreen(
             currentPage = 2,
+            onPageChanged = {},
             onNextPage = {},
             onSkip = {},
             onFinish = {},
             isDownloading = true,
             downloadProgress = 0.45f,
+            onStartDownload = {},
         )
     }
 }

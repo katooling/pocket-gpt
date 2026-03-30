@@ -113,6 +113,16 @@ internal fun ChatViewModel.nextOnboardingPageInternal() {
     }
 }
 
+internal fun ChatViewModel.setOnboardingPageInternal(page: Int) {
+    val clamped = page.coerceIn(0, ONBOARDING_LAST_PAGE)
+    if (_uiState.value.onboardingPage == clamped) {
+        return
+    }
+    _uiState.update { state ->
+        state.copy(onboardingPage = clamped)
+    }
+}
+
 internal fun ChatViewModel.completeOnboardingInternal() {
     _uiState.update { state ->
         state.copy(
