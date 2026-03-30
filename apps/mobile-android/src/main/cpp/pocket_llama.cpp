@@ -802,6 +802,50 @@ static void turboquant_rotation_callback(
     }
 }
 
+// TurboQuant inverse rotation callback for ggml_map_custom1.
+// Applied to attention output before W_o projection to undo the WHT rotation.
+static void turboquant_inverse_rotation_callback(
+    struct ggml_tensor * dst,
+    const struct ggml_tensor * src,
+    int ith,
+    int nth,
+    void * userdata)
+{
+    if (!userdata || !src || !dst) return;
+    const auto * hook = static_cast<const TqHookCtx *>(userdata);
+    if (!hook->session) return;
+
+    if (hook->skip_rotation) {
+        if (src->data != dst->data) {
+            memcpy(dst->data, src->data, ggml_nbytes(src));
+        }
+        return;
+    }
+
+    const tq_layer_ctx * layer = tq_session_get_layer(hook->session, hook->layer_idx);
+    if (!layer) return;
+
+    const int64_t n_embd_gqa = src->ne[0];
+    const int64_t n_tokens   = src->ne[1];
+    const int head_dim = hook->head_dim;
+    const int n_heads = (int)(n_embd_gqa / head_dim);
+
+    const int64_t row_start = (ith * n_tokens) / nth;
+    const int64_t row_end   = ((ith + 1) * n_tokens) / nth;
+
+    for (int64_t r = row_start; r < row_end; r++) {
+        const float * src_row = (const float *)((const char *)src->data + r * src->nb[1]);
+        float * dst_row = (float *)((char *)dst->data + r * dst->nb[1]);
+
+        for (int h = 0; h < n_heads; h++) {
+            tq_rotate_inverse(layer,
+                src_row + h * head_dim,
+                dst_row + h * head_dim,
+                head_dim);
+        }
+    }
+}
+
 // Asymmetric K/V type resolution following KIVI principle:
 // Keys drive attention weights and need more precision than values.
 // Returns {type_k, type_v} pair.
@@ -3375,6 +3419,8 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                 auto * kv_cache = dynamic_cast<llama_kv_cache *>(memory);
                 if (kv_cache) {
                     kv_cache->set_kv_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
+                    kv_cache->set_q_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
+                    kv_cache->set_inverse_rotation_hook(turboquant_inverse_rotation_callback, g_tq_hook_userdata);
                     hook_registered = true;
                     __android_log_print(ANDROID_LOG_INFO, TAG,
                         "TURBOQUANT|hook_registered=true|n_layer=%d|protected=%d|type_k=%s|type_v=%s",
