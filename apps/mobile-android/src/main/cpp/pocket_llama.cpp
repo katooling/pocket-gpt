@@ -3273,6 +3273,47 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             context_params.op_offload ? "true" : "false",
             static_cast<int>(context_params.flash_attn_type),
             quantized_kv_enabled ? "true" : "false");
+        // ── TurboQuant rotation session (pre-context) ───────────────────
+        // Attempt rotation session creation BEFORE llama_init_from_model so
+        // we can fall back to F16 KV types if rotation won't work. The model
+        // metadata functions only need g_model which is already loaded.
+        if (g_tq_session) {
+            tq_session_free(g_tq_session);
+            g_tq_session = nullptr;
+        }
+        g_tq_rotation_enabled = false;
+
+        if (quantized_kv_enabled) {
+            const int n_layer = llama_model_n_layer(g_model);
+            const int n_embd = llama_model_n_embd(g_model);
+            const int n_head = llama_model_n_head(g_model);
+            const int n_embd_head_k = (n_head > 0) ? (n_embd / n_head) : 0;
+
+            if (n_embd_head_k > 0 && (n_embd_head_k & (n_embd_head_k - 1)) == 0) {
+                g_tq_session = tq_session_create(n_layer, n_embd_head_k, g_model_size_bytes);
+                if (g_tq_session) {
+                    g_tq_rotation_enabled = true;
+                    __android_log_print(ANDROID_LOG_INFO, TAG,
+                        "TURBOQUANT|rotation_enabled=true|layers=%d|head_dim=%d|memory_kb=%.1f",
+                        n_layer, n_embd_head_k,
+                        tq_session_memory_bytes(g_tq_session) / 1024.0);
+                } else {
+                    // Rotation alloc failed — demote to F16 to avoid uncompensated quantization
+                    context_params.type_k = GGML_TYPE_F16;
+                    context_params.type_v = GGML_TYPE_F16;
+                    __android_log_print(ANDROID_LOG_WARN, TAG,
+                        "TURBOQUANT|rotation_fallback=f16|reason=session_alloc_failed");
+                }
+            } else {
+                // Non-power-of-2 head_dim — WHT rotation impossible, demote to F16
+                context_params.type_k = GGML_TYPE_F16;
+                context_params.type_v = GGML_TYPE_F16;
+                __android_log_print(ANDROID_LOG_WARN, TAG,
+                    "TURBOQUANT|rotation_fallback=f16|head_dim=%d|reason=not_power_of_2",
+                    n_embd_head_k);
+            }
+        }
+
         errno = 0;
         g_context = llama_init_from_model(g_model, context_params);
         const int context_init_errno = errno;
@@ -3304,67 +3345,42 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             context_params.n_batch,
             context_params.n_ubatch);
 
-        // ── TurboQuant rotation session ──────────────────────────────────
-        if (g_tq_session) {
-            tq_session_free(g_tq_session);
-            g_tq_session = nullptr;
-        }
-        g_tq_rotation_enabled = false;
-
-        if (uses_turboquant_kv_cache(kvCacheMethodCode) && quantized_kv_enabled) {
+        // ── TurboQuant rotation hook registration (post-context) ────────
+        if (g_tq_rotation_enabled && g_tq_session) {
             const int n_layer = llama_model_n_layer(g_model);
-            // head_dim must be power of 2 for WHT
             const int n_embd = llama_model_n_embd(g_model);
             const int n_head = llama_model_n_head(g_model);
             const int n_embd_head_k = (n_head > 0) ? (n_embd / n_head) : 0;
 
-            if (n_embd_head_k > 0 && (n_embd_head_k & (n_embd_head_k - 1)) == 0) {
-                g_tq_session = tq_session_create(n_layer, n_embd_head_k, g_model_size_bytes);
-                if (g_tq_session) {
-                    g_tq_rotation_enabled = true;
+            // Allocate per-layer hook contexts with layer-adaptive protection.
+            // First/last PROTECT_N_LAYERS layers skip rotation — they are most
+            // sensitive to quantization error (embedding/output projections).
+            constexpr int PROTECT_N_LAYERS = 2;
+            delete[] g_tq_hook_ctxs;
+            delete[] g_tq_hook_userdata;
+            g_tq_hook_ctxs = new TqHookCtx[n_layer];
+            g_tq_hook_userdata = new void*[n_layer];
+            int protected_count = 0;
+            for (int i = 0; i < n_layer; i++) {
+                const bool protect = (i < PROTECT_N_LAYERS) ||
+                                     (i >= n_layer - PROTECT_N_LAYERS);
+                g_tq_hook_ctxs[i] = { g_tq_session, i, n_embd_head_k, protect };
+                g_tq_hook_userdata[i] = &g_tq_hook_ctxs[i];
+                if (protect) protected_count++;
+            }
+
+            // Register rotation hook with the KV cache
+            auto * memory = llama_get_memory(g_context);
+            if (memory) {
+                auto * kv_cache = dynamic_cast<llama_kv_cache *>(memory);
+                if (kv_cache) {
+                    kv_cache->set_kv_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
                     __android_log_print(ANDROID_LOG_INFO, TAG,
-                        "TURBOQUANT|rotation_enabled=true|layers=%d|head_dim=%d|memory_kb=%.1f",
-                        n_layer, n_embd_head_k,
-                        tq_session_memory_bytes(g_tq_session) / 1024.0);
-
-                    // Allocate per-layer hook contexts with layer-adaptive protection.
-                    // First/last PROTECT_N_LAYERS layers skip rotation — they are most
-                    // sensitive to quantization error (embedding/output projections).
-                    constexpr int PROTECT_N_LAYERS = 2;
-                    delete[] g_tq_hook_ctxs;
-                    delete[] g_tq_hook_userdata;
-                    g_tq_hook_ctxs = new TqHookCtx[n_layer];
-                    g_tq_hook_userdata = new void*[n_layer];
-                    int protected_count = 0;
-                    for (int i = 0; i < n_layer; i++) {
-                        const bool protect = (i < PROTECT_N_LAYERS) ||
-                                             (i >= n_layer - PROTECT_N_LAYERS);
-                        g_tq_hook_ctxs[i] = { g_tq_session, i, n_embd_head_k, protect };
-                        g_tq_hook_userdata[i] = &g_tq_hook_ctxs[i];
-                        if (protect) protected_count++;
-                    }
-
-                    // Register rotation hook with the KV cache
-                    auto * memory = llama_get_memory(g_context);
-                    if (memory) {
-                        auto * kv_cache = dynamic_cast<llama_kv_cache *>(memory);
-                        if (kv_cache) {
-                            kv_cache->set_kv_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
-                            __android_log_print(ANDROID_LOG_INFO, TAG,
-                                "TURBOQUANT|hook_registered=true|n_layer=%d|protected=%d|type_k=%s|type_v=%s",
-                                n_layer, protected_count,
-                                ggml_type_name(context_params.type_k),
-                                ggml_type_name(context_params.type_v));
-                        }
-                    }
-                } else {
-                    __android_log_print(ANDROID_LOG_WARN, TAG,
-                        "TURBOQUANT|rotation_enabled=false|reason=session_alloc_failed");
+                        "TURBOQUANT|hook_registered=true|n_layer=%d|protected=%d|type_k=%s|type_v=%s",
+                        n_layer, protected_count,
+                        ggml_type_name(context_params.type_k),
+                        ggml_type_name(context_params.type_v));
                 }
-            } else {
-                __android_log_print(ANDROID_LOG_WARN, TAG,
-                    "TURBOQUANT|rotation_enabled=false|head_dim=%d|reason=not_power_of_2",
-                    n_embd_head_k);
             }
         }
 
