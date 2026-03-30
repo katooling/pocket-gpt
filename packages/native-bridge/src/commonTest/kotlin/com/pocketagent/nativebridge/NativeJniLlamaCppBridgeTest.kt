@@ -117,7 +117,7 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
-    fun `opencl policy forces flash attention off and f16 kv cache types on native load`() {
+    fun `opencl policy forces flash attention off and safe turboquant preset on native load`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
             loadOk = true,
@@ -136,20 +136,54 @@ class NativeJniLlamaCppBridgeTest {
             RuntimeGenerationConfig.default().copy(
                 gpuEnabled = true,
                 gpuLayers = 16,
-                flashAttnMode = FlashAttnMode.OFF,
-                kvUnified = false,
-                kvCacheTypeK = KvCacheType.Q8_0,
-                kvCacheTypeV = KvCacheType.Q4_0,
+                flashAttnMode = FlashAttnMode.ON,
+                kvCacheMethod = KvCacheMethod.TURBOQUANT,
+                kvCacheMethodPreset = KvCacheMethodPreset.AGGRESSIVE,
             ),
         )
 
         assertTrue(bridge.isReady())
         assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
         assertEquals(listOf(FlashAttnMode.OFF.code), nativeApi.loadFlashAttnCodes)
-        assertEquals(listOf(false), nativeApi.loadKvUnified)
-        assertEquals(listOf(KvCacheType.F16.code), nativeApi.loadKvCacheTypeCodes)
-        assertEquals(listOf(KvCacheType.F16.code), nativeApi.loadKvCacheTypeKCodes)
-        assertEquals(listOf(KvCacheType.F16.code), nativeApi.loadKvCacheTypeVCodes)
+        assertEquals(listOf(KvCacheMethod.TURBOQUANT.code), nativeApi.loadKvCacheMethodCodes)
+        assertEquals(listOf(KvCacheMethodPreset.SAFE.code), nativeApi.loadKvCacheMethodPresetCodes)
+    }
+
+    @Test
+    fun `turboquant requests preserve turboquant metadata`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                kvCacheMethod = KvCacheMethod.TURBOQUANT,
+                kvCacheMethodPreset = KvCacheMethodPreset.BALANCED,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        val result = bridge.generate(
+            requestId = "req-kv-method-1",
+            prompt = "prompt",
+            maxTokens = 8,
+            cacheKey = null,
+            cachePolicy = CachePolicy.OFF,
+        ) {}
+
+        assertTrue(result.success)
+        assertEquals(KvCacheMethod.TURBOQUANT, result.requestedKvCacheMethod)
+        assertEquals(KvCacheMethod.TURBOQUANT, result.effectiveKvCacheMethod)
+        assertEquals(KvCacheMethodPreset.BALANCED, result.kvCacheMethodPreset)
+        assertEquals(null, result.kvCacheMethodDemotionReason)
     }
 
     @Test
@@ -925,10 +959,8 @@ private class FakeNativeApi(
     var lastSamplingNKeep: Int? = null
     val loadGpuLayers = mutableListOf<Int>()
     val loadFlashAttnCodes = mutableListOf<Int>()
-    val loadKvCacheTypeCodes = mutableListOf<Int>()
-    val loadKvCacheTypeKCodes = mutableListOf<Int>()
-    val loadKvCacheTypeVCodes = mutableListOf<Int>()
-    val loadKvUnified = mutableListOf<Boolean>()
+    val loadKvCacheMethodCodes = mutableListOf<Int>()
+    val loadKvCacheMethodPresetCodes = mutableListOf<Int>()
     val loadDraftGpuLayers = mutableListOf<Int>()
     val loadUseMmap = mutableListOf<Boolean>()
     val loadUseMlock = mutableListOf<Boolean>()
@@ -983,10 +1015,8 @@ private class FakeNativeApi(
         nCtx: Int,
         nGpuLayers: Int,
         flashAttnCode: Int,
-        kvCacheTypeCode: Int,
-        kvCacheTypeKCode: Int,
-        kvCacheTypeVCode: Int,
-        kvUnified: Boolean,
+        kvCacheMethodCode: Int,
+        kvCacheMethodPresetCode: Int,
         temperature: Float,
         topK: Int,
         topP: Float,
@@ -1018,10 +1048,8 @@ private class FakeNativeApi(
         loadCalled = true
         loadGpuLayers += nGpuLayers
         loadFlashAttnCodes += flashAttnCode
-        loadKvCacheTypeCodes += kvCacheTypeCode
-        loadKvCacheTypeKCodes += kvCacheTypeKCode
-        loadKvCacheTypeVCodes += kvCacheTypeVCode
-        loadKvUnified += kvUnified
+        loadKvCacheMethodCodes += kvCacheMethodCode
+        loadKvCacheMethodPresetCodes += kvCacheMethodPresetCode
         loadDraftGpuLayers += speculativeDraftGpuLayers
         loadUseMmap += useMmap
         loadUseMlock += useMlock

@@ -2,6 +2,7 @@ package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 data class BridgeError(
@@ -51,6 +52,13 @@ class NativeJniLlamaCppBridge(
     private var lastGpuLoadRetryCount: Int? = null
     @Volatile
     private var loadedNativeLibraryName: String? = null
+    private val kvCacheMethodState: AtomicReference<KvCacheMethodResolution> = AtomicReference(
+        KvCacheMethodResolution(
+            requestedMethod = RuntimeGenerationConfig.default().kvCacheMethod,
+            effectiveMethod = RuntimeGenerationConfig.default().kvCacheMethod,
+            preset = RuntimeGenerationConfig.default().kvCacheMethodPreset,
+        ),
+    )
 
     init {
         ensureLifecycleDispatcherStarted()
@@ -65,6 +73,7 @@ class NativeJniLlamaCppBridge(
 
     override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) {
         runtimeGenerationConfig = config
+        updateKvCacheMethodState(resolveKvCacheMethod(config.kvCacheMethod, config.kvCacheMethodPreset))
         if (usingFallback) {
             fallbackBridge.setRuntimeGenerationConfig(config)
             return
@@ -390,6 +399,17 @@ class NativeJniLlamaCppBridge(
         val preferredBackend = resolvePreferredBackend(baseConfig)
         applyPreferredBackend(preferredBackend)
         val config = sanitizeRuntimeConfigForBackend(baseConfig, preferredBackend)
+        val kvMethodResolution = resolveKvCacheMethod(
+            requestedMethod = config.kvCacheMethod,
+            preset = config.kvCacheMethodPreset,
+        )
+        updateKvCacheMethodState(kvMethodResolution)
+        kvMethodResolution.demotionReason?.let { reason ->
+            logBridge(
+                "KV_METHOD_DEMOTE",
+                "model=$normalizedModelPath|model_id=$modelId|requested=${kvMethodResolution.requestedMethod.name.lowercase()}|effective=${kvMethodResolution.effectiveMethod.name.lowercase()}|preset=${kvMethodResolution.preset.name.lowercase()}|reason=$reason",
+            )
+        }
         val cpuOnlyBackend = baseConfig.gpuBackend == GpuExecutionBackend.CPU
         val gpuEnabledRequested = config.gpuEnabled && !cpuOnlyBackend
         val preferredBackendAvailable = preferredBackendAvailable(preferredBackend)
@@ -480,10 +500,8 @@ class NativeJniLlamaCppBridge(
                     nCtx = config.nCtx,
                     nGpuLayers = attempt.targetGpuLayers,
                     flashAttnCode = config.flashAttnMode.code,
-                    kvCacheTypeCode = compatibilityKvCacheType(config).code,
-                    kvCacheTypeKCode = config.kvCacheTypeK.code,
-                    kvCacheTypeVCode = config.kvCacheTypeV.code,
-                    kvUnified = config.kvUnified,
+                    kvCacheMethodCode = kvMethodResolution.effectiveMethod.code,
+                    kvCacheMethodPresetCode = kvMethodResolution.preset.code,
                     temperature = config.sampling.temperature,
                     topK = config.sampling.topK,
                     topP = config.sampling.topP,
@@ -568,7 +586,7 @@ class NativeJniLlamaCppBridge(
         val startedMs = System.currentTimeMillis()
         ensureRuntimeInitialized()
         if (!runtimeReady) {
-            return GenerationResult(
+            return currentKvMethodGenerationResult(
                 finishReason = GenerationFinishReason.ERROR,
                 tokenCount = 0,
                 firstTokenMs = -1L,
@@ -614,7 +632,7 @@ class NativeJniLlamaCppBridge(
             }.onFailure { error ->
                 recordBridgeError("JNI_GENERATE_EXCEPTION", error)
             }.getOrElse {
-                return GenerationResult(
+                return currentKvMethodGenerationResult(
                     finishReason = GenerationFinishReason.ERROR,
                     tokenCount = tokenCount,
                     firstTokenMs = firstTokenMs,
@@ -638,7 +656,7 @@ class NativeJniLlamaCppBridge(
             } else if (finishReason != GenerationFinishReason.CANCELLED) {
                 clearBridgeError()
             }
-            GenerationResult(
+            currentKvMethodGenerationResult(
                 finishReason = finishReason,
                 tokenCount = tokenCount,
                 firstTokenMs = firstTokenMs,
@@ -1008,8 +1026,7 @@ class NativeJniLlamaCppBridge(
         }
         return config.copy(
             flashAttnMode = FlashAttnMode.OFF,
-            kvCacheTypeK = KvCacheType.F16,
-            kvCacheTypeV = KvCacheType.F16,
+            kvCacheMethodPreset = KvCacheMethodPreset.SAFE,
         )
     }
 
@@ -1195,6 +1212,41 @@ class NativeJniLlamaCppBridge(
         println("NativeJniLlamaCppBridge|$tag|$message")
     }
 
+    private fun updateKvCacheMethodState(resolution: KvCacheMethodResolution) {
+        kvCacheMethodState.set(resolution)
+    }
+
+    private fun currentKvMethodGenerationResult(
+        finishReason: GenerationFinishReason,
+        tokenCount: Int,
+        firstTokenMs: Long,
+        totalMs: Long,
+        cancelled: Boolean,
+        prefillMs: Long? = null,
+        decodeMs: Long? = null,
+        tokensPerSec: Double? = null,
+        peakRssMb: Double? = null,
+        errorCode: String? = null,
+    ): GenerationResult {
+        val kvState = kvCacheMethodState.get()
+        return GenerationResult(
+            finishReason = finishReason,
+            tokenCount = tokenCount,
+            firstTokenMs = firstTokenMs,
+            totalMs = totalMs,
+            cancelled = cancelled,
+            prefillMs = prefillMs,
+            decodeMs = decodeMs,
+            tokensPerSec = tokensPerSec,
+            peakRssMb = peakRssMb,
+            errorCode = errorCode,
+            requestedKvCacheMethod = kvState.requestedMethod,
+            effectiveKvCacheMethod = kvState.effectiveMethod,
+            kvCacheMethodPreset = kvState.preset,
+            kvCacheMethodDemotionReason = kvState.demotionReason,
+        )
+    }
+
     private fun summarizeCacheKey(cacheKey: String?): String {
         val normalized = cacheKey?.takeIf { it.isNotBlank() } ?: return "empty"
         return normalized.take(12)
@@ -1239,10 +1291,8 @@ class NativeJniLlamaCppBridge(
             nCtx: Int,
             nGpuLayers: Int,
             flashAttnCode: Int,
-            kvCacheTypeCode: Int,
-            kvCacheTypeKCode: Int,
-            kvCacheTypeVCode: Int,
-            kvUnified: Boolean,
+            kvCacheMethodCode: Int,
+            kvCacheMethodPresetCode: Int,
             temperature: Float,
             topK: Int,
             topP: Float,
@@ -1323,10 +1373,8 @@ class NativeJniLlamaCppBridge(
             nCtx: Int,
             nGpuLayers: Int,
             flashAttnCode: Int,
-            kvCacheTypeCode: Int,
-            kvCacheTypeKCode: Int,
-            kvCacheTypeVCode: Int,
-            kvUnified: Boolean,
+            kvCacheMethodCode: Int,
+            kvCacheMethodPresetCode: Int,
             temperature: Float,
             topK: Int,
             topP: Float,
@@ -1406,10 +1454,8 @@ class NativeJniLlamaCppBridge(
             nCtx: Int,
             nGpuLayers: Int,
             flashAttnCode: Int,
-            kvCacheTypeCode: Int,
-            kvCacheTypeKCode: Int,
-            kvCacheTypeVCode: Int,
-            kvUnified: Boolean,
+            kvCacheMethodCode: Int,
+            kvCacheMethodPresetCode: Int,
             temperature: Float,
             topK: Int,
             topP: Float,
@@ -1445,10 +1491,8 @@ class NativeJniLlamaCppBridge(
                 nCtx,
                 nGpuLayers,
                 flashAttnCode,
-                kvCacheTypeCode,
-                kvCacheTypeKCode,
-                kvCacheTypeVCode,
-                kvUnified,
+                kvCacheMethodCode,
+                kvCacheMethodPresetCode,
                 temperature,
                 topK,
                 topP,
@@ -1670,12 +1714,5 @@ class NativeJniLlamaCppBridge(
                 ModelLoadingStage.COMPLETED -> "Loaded"
             }
         }
-    }
-}
-
-private fun compatibilityKvCacheType(config: RuntimeGenerationConfig): KvCacheType {
-    return when {
-        config.kvCacheTypeK == config.kvCacheTypeV -> config.kvCacheTypeK
-        else -> config.kvCacheTypeV
     }
 }
