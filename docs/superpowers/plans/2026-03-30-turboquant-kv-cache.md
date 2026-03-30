@@ -1218,6 +1218,28 @@ If any compilation issues arose, fix and commit.
 
 ---
 
+## Phase 3 Status (2026-03-30)
+
+Phase 3 addressed correctness fixes, quality improvements, and test gaps identified during expert review.
+
+### Completed
+- **T1** (CRITICAL): Fixed read-path rotation — added Q rotation and output inverse rotation for mathematically correct attention
+- **T2** (CRITICAL): Added F16 fallback when rotation session creation fails
+- **T3** (IMPORTANT): Switched Q4_0 to sigma-based scaling for Lloyd-Max codebook alignment
+- **T4** (IMPORTANT): Memory estimator now mirrors C++ small-model safety clamp
+- **T5** (MODERATE): Added inner product distortion tests validating attention metric preservation
+- **T6** (MODERATE): Added kurtosis validation test confirming WHT produces near-Gaussian coordinates
+- **T7** (LOW): Pre-allocated scratch buffers in session API
+- **T8** (LOW): Updated KIVI assessment and plan docs
+
+### Deferred to Phase 4
+- QJL two-stage quantizer (MSE at b-1 bits + QJL residual at 1 bit)
+- 2/3-bit Lloyd-Max codebook wiring for batch functions (after QJL)
+- NEON intrinsics for WHT butterfly (performance optimization)
+- Multiple SRHT rounds for better concentration bounds
+
+---
+
 ## Future Improvements (Not In Scope)
 
 - [ ] Per-layer rotation matrices with layer index passed through tensor metadata

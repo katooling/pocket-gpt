@@ -18,9 +18,17 @@ differences that motivate KIVI's axis choice.
 
 ### Post-rotation (our implementation)
 - WHT rotation normalizes all key dimensions to approximately equal variance
-- Empirically verified: kurtosis drops from ~900 to ~2.9 after rotation
+- Empirically verified in test suite (test_rotation_gaussianity): kurtosis drops from >50 to <5 after rotation, confirming near-Gaussian coordinates
 - Per-channel scale factors provide no benefit when all channels have the same distribution
 - Standard block-based quantization (groups of 32 elements) is already near-optimal
+
+### Note on SRHT vs Haar-random rotation
+Our implementation uses a Signed Randomized Hadamard Transform (SRHT): D * H where D
+is a random diagonal +/-1 matrix and H is the Hadamard matrix. This is O(d log d) compute
+and O(d) storage, versus O(d^2) for a true Haar-random orthogonal matrix. The coordinate
+distribution after SRHT is not exactly Beta(d/2, d/2) as the paper's Lemma 1 assumes, but
+for d=128 the practical degradation is within 5-10% of the theoretical optimum. Multiple
+SRHT rounds (D2 * H * D1 * H) could close this gap if needed.
 
 ### What we implement instead
 - **Block-based quantization** (Q8_0, Q4_0, Q3_K, Q2_K) applied uniformly
