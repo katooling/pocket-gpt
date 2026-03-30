@@ -43,6 +43,10 @@ internal class InferenceExecutor(
         var decodeMs: Long? = null
         var tokensPerSec: Double? = null
         var peakRssMb: Double? = null
+        var requestedKvCacheMethod: String? = null
+        var effectiveKvCacheMethod: String? = null
+        var kvCacheMethodPreset: String? = null
+        var kvCacheMethodDemotionReason: String? = null
         val startedAtMs = System.currentTimeMillis()
         try {
             if (nativeInference != null) {
@@ -69,6 +73,10 @@ internal class InferenceExecutor(
                 decodeMs = result.decodeMs
                 tokensPerSec = result.tokensPerSec
                 peakRssMb = result.peakRssMb
+                requestedKvCacheMethod = result.requestedKvCacheMethod?.name
+                effectiveKvCacheMethod = result.effectiveKvCacheMethod?.name
+                kvCacheMethodPreset = result.kvCacheMethodPreset?.name
+                kvCacheMethodDemotionReason = result.kvCacheMethodDemotionReason
                 finishReason = result.finishReason.name.lowercase()
                 bridgeErrorCode = result.errorCode
                 if (!result.success) {
@@ -137,6 +145,10 @@ internal class InferenceExecutor(
                 decodeMs = decodeMs,
                 tokensPerSec = tokensPerSec,
                 peakRssMb = peakRssMb,
+                requestedKvCacheMethod = requestedKvCacheMethod,
+                effectiveKvCacheMethod = effectiveKvCacheMethod,
+                kvCacheMethodPreset = kvCacheMethodPreset,
+                kvCacheMethodDemotionReason = kvCacheMethodDemotionReason,
             )
         } finally {
             activeByRequestId.remove(requestId)
@@ -234,6 +246,10 @@ data class InferenceExecutionResult(
     val decodeMs: Long?,
     val tokensPerSec: Double?,
     val peakRssMb: Double?,
+    val requestedKvCacheMethod: String? = null,
+    val effectiveKvCacheMethod: String? = null,
+    val kvCacheMethodPreset: String? = null,
+    val kvCacheMethodDemotionReason: String? = null,
 )
 
 data class CancellationResult(

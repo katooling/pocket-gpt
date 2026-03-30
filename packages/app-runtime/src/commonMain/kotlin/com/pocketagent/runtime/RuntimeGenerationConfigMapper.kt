@@ -13,9 +13,8 @@ internal fun PerformanceRuntimeConfig.toRuntimeGenerationConfig(): RuntimeGenera
         gpuEnabled = gpuEnabled,
         gpuLayers = gpuLayers,
         flashAttnMode = flashAttnMode,
-        kvUnified = kvUnified,
-        kvCacheTypeK = kvCacheTypeK,
-        kvCacheTypeV = kvCacheTypeV,
+        kvCacheMethod = kvCacheMethod,
+        kvCacheMethodPreset = kvCacheMethodPreset,
         sampling = RuntimeSamplingConfig(
             temperature = temperature,
             topK = topK,

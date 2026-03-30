@@ -1,6 +1,7 @@
 package com.pocketagent.runtime
 
-import com.pocketagent.nativebridge.KvCacheType
+import com.pocketagent.nativebridge.KvCacheMethod
+import com.pocketagent.nativebridge.KvCacheMethodPreset
 import com.pocketagent.nativebridge.ModelRuntimeMetadata
 
 data class RuntimeMemoryEstimate(
@@ -19,8 +20,8 @@ object RuntimeModelMemoryEstimator {
         modelFileSizeBytes: Long,
         metadata: ModelRuntimeMetadata?,
         nCtx: Int,
-        kvCacheTypeK: KvCacheType,
-        kvCacheTypeV: KvCacheType,
+        kvCacheMethod: KvCacheMethod,
+        kvCacheMethodPreset: KvCacheMethodPreset,
         nUbatch: Int,
         availableMemoryMb: Double? = null,
     ): RuntimeMemoryEstimate {
@@ -52,8 +53,8 @@ object RuntimeModelMemoryEstimator {
                 effectiveCtx.toLong() *
                 headCountKv.toLong() *
                 (
-                    keyLength.toDouble() * bytesPerElement(kvCacheTypeK) +
-                        valueLength.toDouble() * bytesPerElement(kvCacheTypeV)
+                    keyLength.toDouble() * bytesPerElement(kvCacheMethod, kvCacheMethodPreset) +
+                        valueLength.toDouble() * bytesPerElement(kvCacheMethod, kvCacheMethodPreset)
                     )
             ).toLong()
         val computeBufferBytes = (vocabSize.toLong() + embeddingSize.toLong()) * nUbatch.coerceAtLeast(1).toLong() * 4L
@@ -84,14 +85,15 @@ object RuntimeModelMemoryEstimator {
         )
     }
 
-    private fun bytesPerElement(type: KvCacheType): Double {
-        return when (type) {
-            KvCacheType.F16 -> 2.0
-            KvCacheType.Q8_0 -> 1.0625
-            KvCacheType.Q4_0 -> 0.5625
-            KvCacheType.Q4_1 -> 0.625
-            KvCacheType.Q5_0 -> 0.6875
-            KvCacheType.Q5_1 -> 0.75
+    private fun bytesPerElement(method: KvCacheMethod, preset: KvCacheMethodPreset): Double {
+        return when (method) {
+            KvCacheMethod.AUTO,
+            KvCacheMethod.TURBOQUANT,
+            -> when (preset) {
+                KvCacheMethodPreset.SAFE -> 2.0          // F16
+                KvCacheMethodPreset.BALANCED -> 1.0625   // Q8_0
+                KvCacheMethodPreset.AGGRESSIVE -> 0.5625 // Q4_0
+            }
         }
     }
 

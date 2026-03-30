@@ -3,6 +3,8 @@ package com.pocketagent.runtime
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.nativebridge.FlashAttnMode
+import com.pocketagent.nativebridge.KvCacheMethod
+import com.pocketagent.nativebridge.KvCacheMethodPreset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,8 +54,8 @@ class PerformanceProfilesTest {
         assertEquals(0.05f, balancedGpu.minP)
         assertEquals(64, balancedGpu.repeatLastN)
         assertEquals(1.05f, balancedGpu.repeatPenalty)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, balancedGpu.kvCacheTypeK)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, balancedGpu.kvCacheTypeV)
+        assertEquals(KvCacheMethod.AUTO, balancedGpu.kvCacheMethod)
+        assertEquals(KvCacheMethodPreset.BALANCED, balancedGpu.kvCacheMethodPreset)
         assertEquals(true, balancedGpu.useMmap)
         assertEquals(false, balancedGpu.useMlock)
         assertEquals(128, balancedGpu.nKeep)
@@ -65,8 +67,8 @@ class PerformanceProfilesTest {
         assertEquals(0.05f, fastGpu.minP)
         assertEquals(64, fastGpu.repeatLastN)
         assertEquals(1.05f, fastGpu.repeatPenalty)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, fastGpu.kvCacheTypeK)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, fastGpu.kvCacheTypeV)
+        assertEquals(KvCacheMethod.AUTO, fastGpu.kvCacheMethod)
+        assertEquals(KvCacheMethodPreset.AGGRESSIVE, fastGpu.kvCacheMethodPreset)
         assertEquals(true, fastGpu.useMmap)
         assertEquals(false, fastGpu.useMlock)
         assertEquals(256, fastGpu.nKeep)

@@ -3,7 +3,8 @@ package com.pocketagent.runtime
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.nativebridge.FlashAttnMode
-import com.pocketagent.nativebridge.KvCacheType
+import com.pocketagent.nativebridge.KvCacheMethod
+import com.pocketagent.nativebridge.KvCacheMethodPreset
 
 enum class RuntimePerformanceProfile {
     BATTERY,
@@ -25,11 +26,8 @@ data class PerformanceRuntimeConfig(
     val gpuEnabled: Boolean,
     val gpuLayers: Int,
     val flashAttnMode: FlashAttnMode,
-    val kvUnified: Boolean,
-    @Deprecated("Use kvCacheTypeK and kvCacheTypeV.")
-    val kvCacheType: KvCacheType,
-    val kvCacheTypeK: KvCacheType,
-    val kvCacheTypeV: KvCacheType,
+    val kvCacheMethod: KvCacheMethod,
+    val kvCacheMethodPreset: KvCacheMethodPreset,
     val temperature: Float,
     val topK: Int,
     val topP: Float,
@@ -107,7 +105,6 @@ data class PerformanceRuntimeConfig(
                 )
             }
 
-            @Suppress("DEPRECATION")
             return PerformanceRuntimeConfig(
                 profile = profile,
                 requestTimeoutMs = profilePreset.timeoutMs,
@@ -126,15 +123,17 @@ data class PerformanceRuntimeConfig(
                 nCtx = profilePreset.nCtx,
                 gpuEnabled = effectiveGpuEnabled,
                 gpuLayers = effectiveGpuLayers,
-                kvCacheType = KvCacheType.Q8_0,
                 flashAttnMode = if (profile == RuntimePerformanceProfile.BATTERY) {
                     FlashAttnMode.OFF
                 } else {
                     FlashAttnMode.AUTO
                 },
-                kvUnified = true,
-                kvCacheTypeK = KvCacheType.Q8_0,
-                kvCacheTypeV = KvCacheType.Q8_0,
+                kvCacheMethod = KvCacheMethod.AUTO,
+                kvCacheMethodPreset = when (profile) {
+                    RuntimePerformanceProfile.BATTERY -> KvCacheMethodPreset.SAFE
+                    RuntimePerformanceProfile.BALANCED -> KvCacheMethodPreset.BALANCED
+                    RuntimePerformanceProfile.FAST -> KvCacheMethodPreset.AGGRESSIVE
+                },
                 temperature = 0.6f,
                 topK = if (profile == RuntimePerformanceProfile.BATTERY) 24 else 40,
                 topP = if (profile == RuntimePerformanceProfile.BATTERY) 0.92f else 0.95f,
