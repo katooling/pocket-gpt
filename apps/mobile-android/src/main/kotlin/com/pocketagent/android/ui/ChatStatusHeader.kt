@@ -93,74 +93,18 @@ internal fun OfflineAndStatusHeader(
         label = "StatusHeaderCollapse",
     ) { ready ->
         if (ready) {
-            // Collapsed: minimal single-line Row with chips only
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = PocketAgentDimensions.cardPadding, vertical = PocketAgentDimensions.sectionSpacing)
-                    .semantics {
-                        liveRegion = LiveRegionMode.Polite
-                    },
-                horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (isOffline) {
-                    OfflineStatusChip()
-                }
-                // Task 4.5: AnimatedContent for lifecycle chip
-                AnimatedContent(
-                    targetState = lifecycleAnimationKey,
-                    transitionSpec = {
-                        (scaleIn(initialScale = 0.9f) + fadeIn())
-                            .togetherWith(scaleOut(targetScale = 0.9f) + fadeOut())
-                    },
-                    label = "LifecycleChipAnimation",
+            // Collapsed: model is ready and info is already shown in the top bar chip.
+            // Only show something if we're offline.
+            if (isOffline) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = PocketAgentDimensions.cardPadding, vertical = PocketAgentDimensions.sectionSpacing)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val targetLoadingState = modelLoadingState
-                    val targetColors = when (targetLoadingState) {
-                        is ModelLoadingState.Loaded -> AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        is ModelLoadingState.Loading -> AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                        )
-                        is ModelLoadingState.Offloading -> AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        is ModelLoadingState.Error -> AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            labelColor = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                        is ModelLoadingState.Idle -> AssistChipDefaults.assistChipColors()
-                    }
-                    val targetIcon = when (targetLoadingState) {
-                        is ModelLoadingState.Loaded -> Icons.Filled.CheckCircle
-                        is ModelLoadingState.Loading -> Icons.Filled.Sync
-                        is ModelLoadingState.Offloading -> Icons.Filled.HourglassEmpty
-                        is ModelLoadingState.Error -> Icons.Filled.Error
-                        is ModelLoadingState.Idle -> Icons.Filled.RadioButtonUnchecked
-                    }
-                    val targetLabel = targetLoadingState.readableRuntimeStateLabel()
-                    AssistChip(
-                        onClick = onOpenModels,
-                        colors = targetColors,
-                        leadingIcon = {
-                            Icon(
-                                imageVector = targetIcon,
-                                contentDescription = null,
-                            )
-                        },
-                        label = { StatusChipLabel(targetLabel) },
-                    )
-                }
-                if (!activeRuntimeModelLabel.isNullOrBlank()) {
-                    AssistChip(
-                        onClick = onOpenModels,
-                        label = { StatusChipLabel(activeRuntimeModelLabel) },
-                    )
+                    OfflineStatusChip()
                 }
             }
         } else {

@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
@@ -22,6 +23,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +49,8 @@ internal fun PocketAgentTopBar(
         title = {
             Text(
                 text = stringResource(id = R.string.ui_app_title),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.semantics { heading() },
             )
         },
@@ -70,11 +75,14 @@ internal fun PocketAgentTopBar(
                             showModelMenu = true
                         }
                     },
+                    modifier = Modifier.widthIn(max = 120.dp),
                     label = {
                         Text(
                             text = activeRuntimeModelLabel
                                 ?: lastUsedModelLabel
                                 ?: stringResource(id = R.string.ui_models_title),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     },
                 )

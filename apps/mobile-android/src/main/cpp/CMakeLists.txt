@@ -247,6 +247,7 @@ function(add_pocket_llama_variant target_name march_flag linked_llama_target)
     target_include_directories(${target_name} PRIVATE
         "${LLAMA_CPP_ROOT}/include"
         "${LLAMA_CPP_ROOT}/ggml/include"
+        "${LLAMA_CPP_ROOT}/src"
     )
     target_link_libraries(${target_name}
         ${linked_llama_target}

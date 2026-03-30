@@ -210,10 +210,10 @@ internal fun ComposerBar(
                 }
             }
         }
+        // Action strip: secondary controls above the input row
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(
                 onClick = onAttachImage,
@@ -231,19 +231,6 @@ internal fun ComposerBar(
                     modifier = Modifier.size(20.dp),
                 )
             }
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChanged,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("composer_input")
-                    .focusRequester(focusRequester),
-                label = { Text(stringResource(id = R.string.ui_composer_label)) },
-                enabled = !isSending,
-                maxLines = if (isLandscape) 2 else 4,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { handlePrimaryComposerAction() }),
-            )
             if (showThinkingToggle) {
                 IconButton(
                     onClick = {
@@ -263,6 +250,7 @@ internal fun ComposerBar(
                     )
                 }
             }
+            Spacer(modifier = Modifier.weight(1f))
             IconButton(onClick = onOpenCompletionSettings) {
                 Icon(
                     imageVector = Icons.Default.Tune,
@@ -270,6 +258,26 @@ internal fun ComposerBar(
                     modifier = Modifier.size(20.dp),
                 )
             }
+        }
+        // Input row: full-width text field + send button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(compactSpacing),
+        ) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = onTextChanged,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("composer_input")
+                    .focusRequester(focusRequester),
+                label = { Text(stringResource(id = R.string.ui_composer_label)) },
+                enabled = !isSending,
+                maxLines = if (isLandscape) 2 else 4,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { handlePrimaryComposerAction() }),
+            )
             val sendInteractionSource = remember { MutableInteractionSource() }
             val isPressed by sendInteractionSource.collectIsPressedAsState()
             val sendScale by animateFloatAsState(
