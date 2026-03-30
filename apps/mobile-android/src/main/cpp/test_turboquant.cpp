@@ -334,6 +334,181 @@ static void test_rotation_gaussianity() {
     printf("PASS\n");
 }
 
+// Simple PRNG for test random numbers
+static uint32_t test_rand_state = 12345;
+static float test_randf() {
+    test_rand_state = test_rand_state * 1664525 + 1013904223;
+    return ((float)(test_rand_state >> 8) / 16777216.0f) * 2.0f - 1.0f; // uniform(-1, 1)
+}
+
+// Helper: compute dot product
+static float dot_product(const float* a, const float* b, int n) {
+    float sum = 0.0f;
+    for (int i = 0; i < n; i++) {
+        sum += a[i] * b[i];
+    }
+    return sum;
+}
+
+// Test 11: Inner product preservation through rotation+quantization roundtrip
+static void test_inner_product_preservation() {
+    printf("test_inner_product_preservation... ");
+    const int dim = 128;
+    const int n_pairs = 100;
+    tq_layer_ctx * ctx = tq_layer_ctx_create(dim, 1337);
+    assert(ctx);
+
+    float max_abs_err_q8 = 0.0f;
+    float max_abs_err_q4 = 0.0f;
+    float sum_abs_err_q8 = 0.0f;
+    float sum_abs_err_q4 = 0.0f;
+
+    test_rand_state = 54321; // Reset PRNG state for reproducibility
+
+    for (int pair = 0; pair < n_pairs; pair++) {
+        // Generate random query and key vectors, then normalize
+        // (Normalized vectors are realistic for attention: Q and K matrices have norm ~1)
+        float query[128], key[128];
+        float query_norm = 0.0f, key_norm = 0.0f;
+        for (int i = 0; i < dim; i++) {
+            query[i] = test_randf();
+            key[i] = test_randf();
+            query_norm += query[i] * query[i];
+            key_norm += key[i] * key[i];
+        }
+        query_norm = sqrtf(query_norm);
+        key_norm = sqrtf(key_norm);
+        for (int i = 0; i < dim; i++) {
+            query[i] /= query_norm;
+            key[i] /= key_norm;
+        }
+
+        // True inner product (for unit-norm vectors, this is in [-1, 1])
+        float true_dot = dot_product(query, key, dim);
+
+        // Q8_0 path: roundtrip key through quantize+dequantize
+        unsigned char quantized_q8[4 * 34]; // 4 blocks * 34 bytes
+        tq_rotate_quantize_q8_0(ctx, key, quantized_q8, 1, dim);
+        float recovered_key_q8[128];
+        tq_dequantize_rotate_q8_0(ctx, quantized_q8, recovered_key_q8, 1, dim);
+        float approx_dot_q8 = dot_product(query, recovered_key_q8, dim);
+        float abs_err_q8 = fabsf(approx_dot_q8 - true_dot);
+        if (abs_err_q8 > max_abs_err_q8) max_abs_err_q8 = abs_err_q8;
+        sum_abs_err_q8 += abs_err_q8;
+
+        // Q4_0 path: roundtrip key through quantize+dequantize
+        unsigned char quantized_q4[4 * 18]; // 4 blocks * 18 bytes
+        tq_rotate_quantize_q4_0(ctx, key, quantized_q4, 1, dim);
+        float recovered_key_q4[128];
+        tq_dequantize_rotate_q4_0(ctx, quantized_q4, recovered_key_q4, 1, dim);
+        float approx_dot_q4 = dot_product(query, recovered_key_q4, dim);
+        float abs_err_q4 = fabsf(approx_dot_q4 - true_dot);
+        if (abs_err_q4 > max_abs_err_q4) max_abs_err_q4 = abs_err_q4;
+        sum_abs_err_q4 += abs_err_q4;
+    }
+
+    float avg_abs_err_q8 = sum_abs_err_q8 / n_pairs;
+    float avg_abs_err_q4 = sum_abs_err_q4 / n_pairs;
+
+    printf("Q8_0: max_abs=%.4f avg_abs=%.4f | Q4_0: max_abs=%.4f avg_abs=%.4f ",
+           max_abs_err_q8, avg_abs_err_q8, max_abs_err_q4, avg_abs_err_q4);
+
+    // For normalized vectors, dot products are in [-1, 1]
+    // Q8_0 should have max absolute error < 0.05 (5% of range)
+    // Q4_0 should have max absolute error < 0.20 (20% of range)
+    assert(max_abs_err_q8 < 0.05f);
+    assert(max_abs_err_q4 < 0.20f);
+
+    tq_layer_ctx_free(ctx);
+    printf("PASS\n");
+}
+
+// Test 12: Inner product with Q-rotation (validates Task 1 approach)
+// Tests that <Rq, Rk'> ≈ <q, k'> where k' = roundtrip(k) and R is orthogonal
+// This verifies that rotating the query forward before computing attention
+// produces the same result as computing attention in the original domain
+static void test_inner_product_with_q_rotation() {
+    printf("test_inner_product_with_q_rotation... ");
+    const int dim = 128;
+    const int n_pairs = 100;
+    tq_layer_ctx * ctx = tq_layer_ctx_create(dim, 7777);
+    assert(ctx);
+
+    float max_abs_err_q8 = 0.0f;
+    float max_abs_err_q4 = 0.0f;
+
+    test_rand_state = 99999; // Reset PRNG state
+
+    for (int pair = 0; pair < n_pairs; pair++) {
+        // Generate random query and key vectors, then normalize
+        float query[128], key[128];
+        float query_norm = 0.0f, key_norm = 0.0f;
+        for (int i = 0; i < dim; i++) {
+            query[i] = test_randf();
+            key[i] = test_randf();
+            query_norm += query[i] * query[i];
+            key_norm += key[i] * key[i];
+        }
+        query_norm = sqrtf(query_norm);
+        key_norm = sqrtf(key_norm);
+        for (int i = 0; i < dim; i++) {
+            query[i] /= query_norm;
+            key[i] /= key_norm;
+        }
+
+        // Rotate query forward to get Rq
+        float rotated_query[128];
+        tq_rotate_forward(ctx, query, rotated_query, dim);
+
+        // Q8_0 path
+        unsigned char quantized_q8[4 * 34];
+        tq_rotate_quantize_q8_0(ctx, key, quantized_q8, 1, dim);
+        float recovered_key_q8[128];
+        tq_dequantize_rotate_q8_0(ctx, quantized_q8, recovered_key_q8, 1, dim);
+
+        // Compute <q, k'> (standard inner product after roundtrip)
+        float dot_standard_q8 = dot_product(query, recovered_key_q8, dim);
+
+        // Rotate recovered key forward to get R(k')
+        float rotated_recovered_q8[128];
+        tq_rotate_forward(ctx, recovered_key_q8, rotated_recovered_q8, dim);
+
+        // Compute <Rq, Rk'> (inner product in rotated domain)
+        float dot_rotated_q8 = dot_product(rotated_query, rotated_recovered_q8, dim);
+
+        // By orthogonality of R: <Rq, Rk'> should equal <q, k'> exactly
+        // (any difference is due to numerical precision, not quantization)
+        float abs_err_q8 = fabsf(dot_rotated_q8 - dot_standard_q8);
+        if (abs_err_q8 > max_abs_err_q8) max_abs_err_q8 = abs_err_q8;
+
+        // Q4_0 path
+        unsigned char quantized_q4[4 * 18];
+        tq_rotate_quantize_q4_0(ctx, key, quantized_q4, 1, dim);
+        float recovered_key_q4[128];
+        tq_dequantize_rotate_q4_0(ctx, quantized_q4, recovered_key_q4, 1, dim);
+
+        float dot_standard_q4 = dot_product(query, recovered_key_q4, dim);
+
+        float rotated_recovered_q4[128];
+        tq_rotate_forward(ctx, recovered_key_q4, rotated_recovered_q4, dim);
+        float dot_rotated_q4 = dot_product(rotated_query, rotated_recovered_q4, dim);
+
+        float abs_err_q4 = fabsf(dot_rotated_q4 - dot_standard_q4);
+        if (abs_err_q4 > max_abs_err_q4) max_abs_err_q4 = abs_err_q4;
+    }
+
+    printf("Q8_0_max_abs_err=%.6f Q4_0_max_abs_err=%.6f ",
+           max_abs_err_q8, max_abs_err_q4);
+
+    // Orthogonality should be exact (modulo floating point precision)
+    // Allow 1e-5 tolerance for numerical errors in the WHT butterfly ops
+    assert(max_abs_err_q8 < 1e-5f);
+    assert(max_abs_err_q4 < 1e-5f);
+
+    tq_layer_ctx_free(ctx);
+    printf("PASS\n");
+}
+
 int main() {
     printf("=== TurboQuant WHT Tests ===\n");
     test_rotation_roundtrip();
@@ -346,6 +521,8 @@ int main() {
     test_3bit_codebook_roundtrip();
     test_2bit_codebook_roundtrip();
     test_rotation_gaussianity();
-    printf("=== All %d tests passed ===\n", 10);
+    test_inner_product_preservation();
+    test_inner_product_with_q_rotation();
+    printf("=== All %d tests passed ===\n", 12);
     return 0;
 }
