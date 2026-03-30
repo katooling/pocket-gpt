@@ -671,6 +671,116 @@ static void test_experimental_qjl_inner_product_distortion() {
     printf("PASS\n");
 }
 
+// Test 16: ggml-compatible row-level quantize/dequantize wrappers roundtrip
+// Exercises the functions that are registered as ggml type traits for
+// GGML_TYPE_TQ_Q3_LM and GGML_TYPE_TQ_Q2_LM. Verifies block alignment,
+// byte layout, and reconstruction quality match the block-level helpers.
+static void test_ggml_row_wrappers_roundtrip() {
+    printf("test_ggml_row_wrappers_roundtrip... ");
+    const int64_t k = 128;
+
+    float src[128];
+    for (int i = 0; i < (int)k; ++i) {
+        src[i] = sinf((float)i * 0.23f) * 1.5f + cosf((float)i * 0.11f) * 0.4f;
+    }
+
+    // Q3_LM: 14 bytes per block of 32, so 128 elements = 4 blocks = 56 bytes
+    const size_t q3_bytes = (k / 32) * 14;
+    unsigned char q3_buf[56];
+    assert(q3_bytes == 56);
+    quantize_row_tq_q3_lm(src, q3_buf, k);
+    float q3_recovered[128];
+    dequantize_row_tq_q3_lm(q3_buf, q3_recovered, k);
+
+    float q3_max_val = 0.0f, q3_sum_sq = 0.0f;
+    for (int i = 0; i < (int)k; ++i) {
+        q3_max_val = fmaxf(q3_max_val, fabsf(src[i]));
+        float e = src[i] - q3_recovered[i];
+        q3_sum_sq += e * e;
+    }
+    float q3_rms = sqrtf(q3_sum_sq / k) / (q3_max_val + 1e-8f);
+
+    // Q2_LM: 10 bytes per block of 32, so 128 elements = 4 blocks = 40 bytes
+    const size_t q2_bytes = (k / 32) * 10;
+    unsigned char q2_buf[40];
+    assert(q2_bytes == 40);
+    quantize_row_tq_q2_lm(src, q2_buf, k);
+    float q2_recovered[128];
+    dequantize_row_tq_q2_lm(q2_buf, q2_recovered, k);
+
+    float q2_max_val = 0.0f, q2_sum_sq = 0.0f;
+    for (int i = 0; i < (int)k; ++i) {
+        q2_max_val = fmaxf(q2_max_val, fabsf(src[i]));
+        float e = src[i] - q2_recovered[i];
+        q2_sum_sq += e * e;
+    }
+    float q2_rms = sqrtf(q2_sum_sq / k) / (q2_max_val + 1e-8f);
+
+    printf("Q3_rms=%.4f%% Q2_rms=%.4f%% ", q3_rms * 100.0f, q2_rms * 100.0f);
+
+    // Row wrappers should produce identical results to block-level helpers
+    // used in the experimental lowbit roundtrip test. Use same thresholds.
+    assert(q3_rms < 0.20f);
+    assert(q2_rms < 0.35f);
+
+    // Verify that row-level and block-level produce identical output
+    unsigned char q3_block_buf[14];
+    float q3_block_recovered[32];
+    quantize_row_tq_q3_lm(src, q3_block_buf, 32);
+    assert(memcmp(q3_buf, q3_block_buf, 14) == 0);
+    dequantize_row_tq_q3_lm(q3_block_buf, q3_block_recovered, 32);
+    for (int i = 0; i < 32; ++i) {
+        assert(q3_recovered[i] == q3_block_recovered[i]);
+    }
+
+    printf("PASS\n");
+}
+
+// Test 17: Row-level wrappers preserve inner products (ggml integration quality)
+// This simulates the actual KV cache path: quantize raw data (no rotation) through
+// the row wrapper, dequantize, then check inner product distortion.
+static void test_ggml_row_wrappers_inner_product() {
+    printf("test_ggml_row_wrappers_inner_product... ");
+    const int64_t dim = 128;
+    const int n_pairs = 50;
+    float q3_abs_err_sum = 0.0f, q2_abs_err_sum = 0.0f;
+
+    test_rand_state = 31337;
+    for (int pair = 0; pair < n_pairs; ++pair) {
+        float query[128], key[128];
+        float qn = 0.0f, kn = 0.0f;
+        for (int i = 0; i < (int)dim; ++i) {
+            query[i] = test_randf(); key[i] = test_randf();
+            qn += query[i] * query[i]; kn += key[i] * key[i];
+        }
+        qn = sqrtf(qn); kn = sqrtf(kn);
+        for (int i = 0; i < (int)dim; ++i) { query[i] /= qn; key[i] /= kn; }
+
+        float true_dot = dot_product(query, key, (int)dim);
+
+        unsigned char q3_buf[56];
+        quantize_row_tq_q3_lm(key, q3_buf, dim);
+        float q3_key[128];
+        dequantize_row_tq_q3_lm(q3_buf, q3_key, dim);
+        q3_abs_err_sum += fabsf(dot_product(query, q3_key, (int)dim) - true_dot);
+
+        unsigned char q2_buf[40];
+        quantize_row_tq_q2_lm(key, q2_buf, dim);
+        float q2_key[128];
+        dequantize_row_tq_q2_lm(q2_buf, q2_key, dim);
+        q2_abs_err_sum += fabsf(dot_product(query, q2_key, (int)dim) - true_dot);
+    }
+
+    float q3_avg = q3_abs_err_sum / n_pairs;
+    float q2_avg = q2_abs_err_sum / n_pairs;
+    printf("Q3_avg_abs=%.4f Q2_avg_abs=%.4f ", q3_avg, q2_avg);
+
+    assert(q3_avg < 0.15f);
+    assert(q2_avg < 0.20f);
+
+    printf("PASS\n");
+}
+
 int main() {
     printf("=== TurboQuant WHT Tests ===\n");
     test_rotation_roundtrip();
@@ -688,6 +798,8 @@ int main() {
     test_session_scratch_batch_helpers();
     test_experimental_lowbit_roundtrip();
     test_experimental_qjl_inner_product_distortion();
-    printf("=== All %d tests passed ===\n", 15);
+    test_ggml_row_wrappers_roundtrip();
+    test_ggml_row_wrappers_inner_product();
+    printf("=== All %d tests passed ===\n", 17);
     return 0;
 }

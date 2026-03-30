@@ -1027,3 +1027,47 @@ void tq_session_dequantize_rotate_q4_0(
     float * scratch = session->max_n_embd >= n_embd ? session->scratch : NULL;
     tq_dequantize_rotate_q4_0_impl(layer, src, dst, n_tokens, n_embd, scratch);
 }
+
+// ggml-compatible row-level quantize/dequantize wrappers.
+// These operate on raw blocks without rotation — rotation is applied
+// separately by the KV cache rotation hooks.
+
+void dequantize_row_tq_q3_lm(const void * x, float * y, int64_t k) {
+    assert(k % TQ_Q3_LM_BLOCK_SIZE == 0);
+    const int64_t n_blocks = k / TQ_Q3_LM_BLOCK_SIZE;
+    const uint8_t * src = (const uint8_t *)x;
+    for (int64_t b = 0; b < n_blocks; ++b) {
+        dequantize_q3_lm_block(src + b * TQ_Q3_LM_BYTES_PER_BLOCK,
+                               y + b * TQ_Q3_LM_BLOCK_SIZE);
+    }
+}
+
+void quantize_row_tq_q3_lm(const float * x, void * y, int64_t k) {
+    assert(k % TQ_Q3_LM_BLOCK_SIZE == 0);
+    const int64_t n_blocks = k / TQ_Q3_LM_BLOCK_SIZE;
+    uint8_t * dst = (uint8_t *)y;
+    for (int64_t b = 0; b < n_blocks; ++b) {
+        quantize_q3_lm_block(x + b * TQ_Q3_LM_BLOCK_SIZE,
+                             dst + b * TQ_Q3_LM_BYTES_PER_BLOCK);
+    }
+}
+
+void dequantize_row_tq_q2_lm(const void * x, float * y, int64_t k) {
+    assert(k % TQ_Q2_LM_BLOCK_SIZE == 0);
+    const int64_t n_blocks = k / TQ_Q2_LM_BLOCK_SIZE;
+    const uint8_t * src = (const uint8_t *)x;
+    for (int64_t b = 0; b < n_blocks; ++b) {
+        dequantize_q2_lm_block(src + b * TQ_Q2_LM_BYTES_PER_BLOCK,
+                               y + b * TQ_Q2_LM_BLOCK_SIZE);
+    }
+}
+
+void quantize_row_tq_q2_lm(const float * x, void * y, int64_t k) {
+    assert(k % TQ_Q2_LM_BLOCK_SIZE == 0);
+    const int64_t n_blocks = k / TQ_Q2_LM_BLOCK_SIZE;
+    uint8_t * dst = (uint8_t *)y;
+    for (int64_t b = 0; b < n_blocks; ++b) {
+        quantize_q2_lm_block(x + b * TQ_Q2_LM_BLOCK_SIZE,
+                             dst + b * TQ_Q2_LM_BYTES_PER_BLOCK);
+    }
+}

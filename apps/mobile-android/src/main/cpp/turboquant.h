@@ -132,6 +132,15 @@ void tq_dequantize_rotate_q2_qjl(
     const tq_layer_ctx * ctx, const void * src, float * dst,
     int n_tokens, int n_embd);
 
+// ggml-compatible row-level quantize/dequantize for custom TurboQuant types.
+// These operate on raw blocks (no rotation) and match the ggml_to_float_t /
+// ggml_from_float_t signatures so they can be registered via
+// ggml_set_type_trait_fns().
+void dequantize_row_tq_q3_lm(const void * x, float * y, int64_t k);
+void quantize_row_tq_q3_lm(const float * x, void * y, int64_t k);
+void dequantize_row_tq_q2_lm(const void * x, float * y, int64_t k);
+void quantize_row_tq_q2_lm(const float * x, void * y, int64_t k);
+
 #ifdef __cplusplus
 }
 #endif

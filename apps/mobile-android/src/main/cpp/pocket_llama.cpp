@@ -703,6 +703,10 @@ bool turboquant_force_rotation_unsupported() {
     return env_flag_enabled("POCKETGPT_TURBOQUANT_FORCE_ROTATION_UNSUPPORTED");
 }
 
+bool turboquant_experimental_types_enabled() {
+    return env_flag_enabled("POCKETGPT_TURBOQUANT_EXPERIMENTAL_TYPES");
+}
+
 int parse_adreno_generation(const std::string & text) {
     const std::string lower = lowercase_copy(text);
     size_t marker = lower.find("adreno");
@@ -876,13 +880,14 @@ struct kv_type_pair { ggml_type type_k; ggml_type type_v; };
 
 kv_type_pair resolve_turboquant_kv_types(jint preset_code, uint64_t model_size_bytes) {
     const bool small_model = model_size_bytes > 0 && model_size_bytes < 2ULL * 1024 * 1024 * 1024;
+    const bool experimental = turboquant_experimental_types_enabled();
     switch (preset_code) {
-        case 4:  // EXTREME — keys Q4_0, values Q2_K (asymmetric, ~2.5 bpw effective)
+        case 4:  // EXTREME — keys Q4_0, values Q2_K/TQ_Q2_LM (asymmetric, ~2.5 bpw effective)
             if (small_model) return { GGML_TYPE_Q8_0, GGML_TYPE_Q4_0 };
-            return { GGML_TYPE_Q4_0, GGML_TYPE_Q2_K };
-        case 3:  // ULTRA — keys Q8_0, values Q3_K (asymmetric, ~3.5 bpw effective)
+            return { GGML_TYPE_Q4_0, experimental ? GGML_TYPE_TQ_Q2_LM : GGML_TYPE_Q2_K };
+        case 3:  // ULTRA — keys Q8_0, values Q3_K/TQ_Q3_LM (asymmetric, ~3.5 bpw effective)
             if (small_model) return { GGML_TYPE_Q8_0, GGML_TYPE_Q8_0 };
-            return { GGML_TYPE_Q8_0, GGML_TYPE_Q3_K };
+            return { GGML_TYPE_Q8_0, experimental ? GGML_TYPE_TQ_Q3_LM : GGML_TYPE_Q3_K };
         case 2:  // AGGRESSIVE — keys Q8_0, values Q4_0 (asymmetric)
             if (small_model) return { GGML_TYPE_Q8_0, GGML_TYPE_Q8_0 };
             return { GGML_TYPE_Q8_0, GGML_TYPE_Q4_0 };
@@ -1269,6 +1274,7 @@ std::string backend_diagnostics_json() {
         << "\"flashAttnActive\":" << (g_last_flash_attn_active ? "true" : "false") << ","
         << "\"turboquant_mode\":\"" << json_escape(g_last_turboquant_mode) << "\","
         << "\"turboquant_fallback_reason\":\"" << json_escape(g_last_turboquant_fallback_reason) << "\","
+        << "\"turboquant_experimental_types\":" << (turboquant_experimental_types_enabled() ? "true" : "false") << ","
         << "\"flash_attn_guard_reason\":\"" << json_escape(flash_attn_guard_reason) << "\","
         << "\"quantized_kv_guard_reason\":\"" << json_escape(quantized_kv_guard_reason) << "\","
         << "\"last_mmap_readahead_label\":\"" << json_escape(g_mmap_telemetry.last_label) << "\","
@@ -3437,6 +3443,20 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                     tq_n_embd_head_k,
                     g_last_turboquant_fallback_reason.c_str());
             }
+        }
+
+        if (turboquant_experimental_types_enabled()) {
+            ggml_set_type_trait_fns(
+                GGML_TYPE_TQ_Q3_LM,
+                (ggml_to_float_t)   dequantize_row_tq_q3_lm,
+                (ggml_from_float_t) quantize_row_tq_q3_lm);
+            ggml_set_type_trait_fns(
+                GGML_TYPE_TQ_Q2_LM,
+                (ggml_to_float_t)   dequantize_row_tq_q2_lm,
+                (ggml_from_float_t) quantize_row_tq_q2_lm);
+            __android_log_print(ANDROID_LOG_INFO, TAG,
+                "TURBOQUANT|experimental_types_registered=true|tq_q3_lm=%d|tq_q2_lm=%d",
+                GGML_TYPE_TQ_Q3_LM, GGML_TYPE_TQ_Q2_LM);
         }
 
         int context_init_errno = 0;
