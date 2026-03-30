@@ -77,6 +77,61 @@ bool tq_session_set_max_embd(tq_session * session, int max_n_embd);
 // Get pre-allocated scratch buffer (NULL if not set).
 float * tq_session_get_scratch(const tq_session * session);
 
+// Session-backed batch helpers that reuse the pre-allocated scratch buffer
+// when available. These are intended for tests and future runtime paths that
+// need batched rotate+quantize/dequantize operations without per-call malloc.
+void tq_session_rotate_quantize_q8_0(
+    const tq_session * session, int layer_idx, const float * src, void * dst,
+    int n_tokens, int n_embd);
+
+void tq_session_rotate_quantize_q4_0(
+    const tq_session * session, int layer_idx, const float * src, void * dst,
+    int n_tokens, int n_embd);
+
+void tq_session_dequantize_rotate_q8_0(
+    const tq_session * session, int layer_idx, const void * src, float * dst,
+    int n_tokens, int n_embd);
+
+void tq_session_dequantize_rotate_q4_0(
+    const tq_session * session, int layer_idx, const void * src, float * dst,
+    int n_tokens, int n_embd);
+
+// Experimental paper-faithful helpers. These are not wired into the shipping
+// ggml KV cache path yet, but they provide the custom low-bit Lloyd-Max and
+// QJL building blocks needed for runtime integration and benchmarking.
+size_t tq_q3_lm_row_bytes(int n_embd);
+size_t tq_q2_lm_row_bytes(int n_embd);
+size_t tq_q3_qjl_row_bytes(int n_embd);
+size_t tq_q2_qjl_row_bytes(int n_embd);
+
+void tq_rotate_quantize_q3_lm(
+    const tq_layer_ctx * ctx, const float * src, void * dst,
+    int n_tokens, int n_embd);
+void tq_dequantize_rotate_q3_lm(
+    const tq_layer_ctx * ctx, const void * src, float * dst,
+    int n_tokens, int n_embd);
+
+void tq_rotate_quantize_q2_lm(
+    const tq_layer_ctx * ctx, const float * src, void * dst,
+    int n_tokens, int n_embd);
+void tq_dequantize_rotate_q2_lm(
+    const tq_layer_ctx * ctx, const void * src, float * dst,
+    int n_tokens, int n_embd);
+
+void tq_rotate_quantize_q3_qjl(
+    const tq_layer_ctx * ctx, const float * src, void * dst,
+    int n_tokens, int n_embd);
+void tq_dequantize_rotate_q3_qjl(
+    const tq_layer_ctx * ctx, const void * src, float * dst,
+    int n_tokens, int n_embd);
+
+void tq_rotate_quantize_q2_qjl(
+    const tq_layer_ctx * ctx, const float * src, void * dst,
+    int n_tokens, int n_embd);
+void tq_dequantize_rotate_q2_qjl(
+    const tq_layer_ctx * ctx, const void * src, float * dst,
+    int n_tokens, int n_embd);
+
 #ifdef __cplusplus
 }
 #endif

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cassert>
 #include <cstring>
+#include <vector>
 #include "turboquant.h"
 #include "turboquant_codebooks.h"
 
@@ -509,6 +510,167 @@ static void test_inner_product_with_q_rotation() {
     printf("PASS\n");
 }
 
+// Test 13: Session scratch buffers are provisioned and used by batch helpers
+static void test_session_scratch_batch_helpers() {
+    printf("test_session_scratch_batch_helpers... ");
+    const int dim = 128;
+    const int n_tokens = 3;
+    tq_session * session = tq_session_create(4, dim, 2026);
+    assert(session);
+    assert(tq_session_set_max_embd(session, dim));
+    assert(tq_session_get_scratch(session) != nullptr);
+
+    const size_t min_memory = 4UL * dim * sizeof(float) + (size_t)dim * sizeof(float);
+    assert(tq_session_memory_bytes(session) >= min_memory);
+
+    float src[n_tokens * dim];
+    for (int i = 0; i < n_tokens * dim; ++i) {
+        src[i] = cosf((float)i * 0.17f) * 1.25f;
+    }
+
+    unsigned char session_q8[n_tokens * (dim / 32) * 34];
+    unsigned char direct_q8[n_tokens * (dim / 32) * 34];
+    tq_session_rotate_quantize_q8_0(session, 1, src, session_q8, n_tokens, dim);
+    tq_rotate_quantize_q8_0(tq_session_get_layer(session, 1), src, direct_q8, n_tokens, dim);
+    assert(memcmp(session_q8, direct_q8, sizeof(session_q8)) == 0);
+
+    float recovered_session_q8[n_tokens * dim];
+    float recovered_direct_q8[n_tokens * dim];
+    tq_session_dequantize_rotate_q8_0(session, 1, session_q8, recovered_session_q8, n_tokens, dim);
+    tq_dequantize_rotate_q8_0(tq_session_get_layer(session, 1), direct_q8, recovered_direct_q8, n_tokens, dim);
+    for (int i = 0; i < n_tokens * dim; ++i) {
+        assert(approx_equal(recovered_session_q8[i], recovered_direct_q8[i], 1e-6f));
+    }
+
+    unsigned char session_q4[n_tokens * (dim / 32) * 18];
+    unsigned char direct_q4[n_tokens * (dim / 32) * 18];
+    tq_session_rotate_quantize_q4_0(session, 2, src, session_q4, n_tokens, dim);
+    tq_rotate_quantize_q4_0(tq_session_get_layer(session, 2), src, direct_q4, n_tokens, dim);
+    assert(memcmp(session_q4, direct_q4, sizeof(session_q4)) == 0);
+
+    float recovered_session_q4[n_tokens * dim];
+    float recovered_direct_q4[n_tokens * dim];
+    tq_session_dequantize_rotate_q4_0(session, 2, session_q4, recovered_session_q4, n_tokens, dim);
+    tq_dequantize_rotate_q4_0(tq_session_get_layer(session, 2), direct_q4, recovered_direct_q4, n_tokens, dim);
+    for (int i = 0; i < n_tokens * dim; ++i) {
+        assert(approx_equal(recovered_session_q4[i], recovered_direct_q4[i], 1e-6f));
+    }
+
+    tq_session_free(session);
+    printf("PASS\n");
+}
+
+// Test 14: Experimental low-bit Lloyd-Max helpers roundtrip cleanly
+static void test_experimental_lowbit_roundtrip() {
+    printf("test_experimental_lowbit_roundtrip... ");
+    const int dim = 128;
+    const int n_tokens = 2;
+    tq_layer_ctx * ctx = tq_layer_ctx_create(dim, 2468);
+    assert(ctx);
+
+    std::vector<float> src(n_tokens * dim);
+    for (int i = 0; i < n_tokens * dim; ++i) {
+        src[i] = sinf((float)i * 0.11f) * 1.1f + cosf((float)i * 0.07f) * 0.35f;
+    }
+
+    std::vector<unsigned char> q3(tq_q3_lm_row_bytes(dim) * n_tokens);
+    std::vector<unsigned char> q2(tq_q2_lm_row_bytes(dim) * n_tokens);
+    std::vector<float> recovered_q3(n_tokens * dim);
+    std::vector<float> recovered_q2(n_tokens * dim);
+
+    tq_rotate_quantize_q3_lm(ctx, src.data(), q3.data(), n_tokens, dim);
+    tq_dequantize_rotate_q3_lm(ctx, q3.data(), recovered_q3.data(), n_tokens, dim);
+    tq_rotate_quantize_q2_lm(ctx, src.data(), q2.data(), n_tokens, dim);
+    tq_dequantize_rotate_q2_lm(ctx, q2.data(), recovered_q2.data(), n_tokens, dim);
+
+    float max_val = 0.0f;
+    float q3_sum_sq = 0.0f;
+    float q2_sum_sq = 0.0f;
+    for (int i = 0; i < n_tokens * dim; ++i) {
+        max_val = fmaxf(max_val, fabsf(src[i]));
+        q3_sum_sq += (src[i] - recovered_q3[i]) * (src[i] - recovered_q3[i]);
+        q2_sum_sq += (src[i] - recovered_q2[i]) * (src[i] - recovered_q2[i]);
+    }
+    const float q3_rms = sqrtf(q3_sum_sq / (n_tokens * dim)) / (max_val + 1e-8f);
+    const float q2_rms = sqrtf(q2_sum_sq / (n_tokens * dim)) / (max_val + 1e-8f);
+    printf("Q3_rms=%.4f%% Q2_rms=%.4f%% ", q3_rms * 100.0f, q2_rms * 100.0f);
+    assert(q3_rms < 0.14f);
+    assert(q2_rms < 0.24f);
+
+    tq_layer_ctx_free(ctx);
+    printf("PASS\n");
+}
+
+// Test 15: Experimental QJL residual keeps low-bit inner-product distortion bounded
+static void test_experimental_qjl_inner_product_distortion() {
+    printf("test_experimental_qjl_inner_product_distortion... ");
+    const int dim = 128;
+    const int n_pairs = 48;
+    tq_layer_ctx * ctx = tq_layer_ctx_create(dim, 5150);
+    assert(ctx);
+
+    float q3_qjl_signed_err = 0.0f;
+    float q2_qjl_signed_err = 0.0f;
+    float q3_qjl_abs_err = 0.0f;
+    float q2_qjl_abs_err = 0.0f;
+    test_rand_state = 8080;
+
+    for (int pair = 0; pair < n_pairs; ++pair) {
+        float query[128], key[128];
+        float query_norm = 0.0f;
+        float key_norm = 0.0f;
+        for (int i = 0; i < dim; ++i) {
+            query[i] = test_randf();
+            key[i] = test_randf();
+            query_norm += query[i] * query[i];
+            key_norm += key[i] * key[i];
+        }
+        query_norm = sqrtf(query_norm);
+        key_norm = sqrtf(key_norm);
+        for (int i = 0; i < dim; ++i) {
+            query[i] /= query_norm;
+            key[i] /= key_norm;
+        }
+
+        const float true_dot = dot_product(query, key, dim);
+
+        std::vector<unsigned char> q3_qjl(tq_q3_qjl_row_bytes(dim));
+        std::vector<unsigned char> q2_qjl(tq_q2_qjl_row_bytes(dim));
+        float recovered_q3[128];
+        float recovered_q2[128];
+
+        tq_rotate_quantize_q3_qjl(ctx, key, q3_qjl.data(), 1, dim);
+        tq_dequantize_rotate_q3_qjl(ctx, q3_qjl.data(), recovered_q3, 1, dim);
+        tq_rotate_quantize_q2_qjl(ctx, key, q2_qjl.data(), 1, dim);
+        tq_dequantize_rotate_q2_qjl(ctx, q2_qjl.data(), recovered_q2, 1, dim);
+
+        const float q3_err = dot_product(query, recovered_q3, dim) - true_dot;
+        const float q2_err = dot_product(query, recovered_q2, dim) - true_dot;
+        q3_qjl_signed_err += q3_err;
+        q2_qjl_signed_err += q2_err;
+        q3_qjl_abs_err += fabsf(q3_err);
+        q2_qjl_abs_err += fabsf(q2_err);
+    }
+
+    const float q3_mean_signed = q3_qjl_signed_err / n_pairs;
+    const float q2_mean_signed = q2_qjl_signed_err / n_pairs;
+    const float q3_mean_abs = q3_qjl_abs_err / n_pairs;
+    const float q2_mean_abs = q2_qjl_abs_err / n_pairs;
+    printf(
+        "Q3_QJL mean_signed=%.4f mean_abs=%.4f | Q2_QJL mean_signed=%.4f mean_abs=%.4f ",
+        q3_mean_signed,
+        q3_mean_abs,
+        q2_mean_signed,
+        q2_mean_abs);
+    assert(fabsf(q3_mean_signed) < 0.05f);
+    assert(fabsf(q2_mean_signed) < 0.04f);
+    assert(q3_mean_abs < 0.11f);
+    assert(q2_mean_abs < 0.11f);
+
+    tq_layer_ctx_free(ctx);
+    printf("PASS\n");
+}
+
 int main() {
     printf("=== TurboQuant WHT Tests ===\n");
     test_rotation_roundtrip();
@@ -523,6 +685,9 @@ int main() {
     test_rotation_gaussianity();
     test_inner_product_preservation();
     test_inner_product_with_q_rotation();
-    printf("=== All %d tests passed ===\n", 12);
+    test_session_scratch_batch_helpers();
+    test_experimental_lowbit_roundtrip();
+    test_experimental_qjl_inner_product_distortion();
+    printf("=== All %d tests passed ===\n", 15);
     return 0;
 }

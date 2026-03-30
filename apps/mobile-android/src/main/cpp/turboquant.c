@@ -17,8 +17,12 @@
 
 #define TQ_Q8_0_BLOCK_SIZE  32
 #define TQ_Q4_0_BLOCK_SIZE  32
+#define TQ_Q3_LM_BLOCK_SIZE 32
+#define TQ_Q2_LM_BLOCK_SIZE 32
 #define TQ_Q8_0_BYTES_PER_BLOCK  (2 + TQ_Q8_0_BLOCK_SIZE)  // 34
 #define TQ_Q4_0_BYTES_PER_BLOCK  (2 + TQ_Q4_0_BLOCK_SIZE / 2)  // 18
+#define TQ_Q3_LM_BYTES_PER_BLOCK (2 + 12)  // fp16 scale + 32x3-bit payload
+#define TQ_Q2_LM_BYTES_PER_BLOCK (2 + 8)   // fp16 scale + 32x2-bit payload
 
 // Stack buffer threshold: vectors up to this size use stack scratch space.
 #define TQ_STACK_MAX  1024
@@ -114,6 +118,39 @@ static inline float fp16_to_fp32(uint16_t h) {
     return result;
 }
 
+static float block_sigma(const float * src, int n) {
+    float sum_sq = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        sum_sq += src[i] * src[i];
+    }
+    return sqrtf(sum_sq / (float)n);
+}
+
+static uint64_t hash64(uint64_t x) {
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return x;
+}
+
+static float uniform01_from_u64(uint64_t value) {
+    const uint64_t mantissa = (value >> 11) & ((1ULL << 53) - 1);
+    return (float)((double)mantissa / (double)(1ULL << 53));
+}
+
+static float qjl_gaussian(uint64_t seed, int row, int col) {
+    const uint64_t mixed_a = hash64(seed ^ ((uint64_t)row * TQ_GOLDEN) ^ ((uint64_t)col << 1));
+    const uint64_t mixed_b = hash64(seed ^ ((uint64_t)col * TQ_GOLDEN) ^ ((uint64_t)row << 1) ^ 0xA5A5A5A5A5A5A5A5ULL);
+    float u1 = uniform01_from_u64(mixed_a);
+    float u2 = uniform01_from_u64(mixed_b);
+    if (u1 < 1e-7f) u1 = 1e-7f;
+    const float radius = sqrtf(-2.0f * logf(u1));
+    const float theta = 6.2831853071795864769f * u2;
+    return radius * cosf(theta);
+}
+
 // ---------------------------------------------------------------------------
 // Fast Walsh-Hadamard Transform (in-place, iterative butterfly)
 // ---------------------------------------------------------------------------
@@ -137,6 +174,7 @@ static void wht_inplace(float * data, int n) {
 
 struct tq_layer_ctx {
     int     head_dim;
+    uint64_t seed;
     float   inv_sqrt_dim;   // 1.0f / sqrtf(head_dim)
     float * sign;           // +1.0f / -1.0f array, length = head_dim
 };
@@ -154,6 +192,7 @@ tq_layer_ctx * tq_layer_ctx_create(int head_dim, uint64_t seed) {
     if (!ctx) return NULL;
 
     ctx->head_dim     = head_dim;
+    ctx->seed         = seed;
     ctx->inv_sqrt_dim = 1.0f / sqrtf((float)head_dim);
 
     ctx->sign = (float *)malloc((size_t)head_dim * sizeof(float));
@@ -268,17 +307,32 @@ static void quantize_q8_0_block(const float * src, uint8_t * dst) {
     }
 }
 
-void tq_rotate_quantize_q8_0(
+static float * tq_acquire_batch_scratch(float * scratch, int n_embd, bool * owned) {
+    if (scratch) {
+        *owned = false;
+        return scratch;
+    }
+    *owned = true;
+    return (float *)malloc((size_t)n_embd * sizeof(float));
+}
+
+static void tq_release_batch_scratch(float * scratch, bool owned) {
+    if (owned) {
+        free(scratch);
+    }
+}
+
+static void tq_rotate_quantize_q8_0_impl(
     const tq_layer_ctx * ctx, const float * src, void * dst,
-    int n_tokens, int n_embd)
+    int n_tokens, int n_embd, float * scratch)
 {
     assert(ctx);
     int head_dim   = ctx->head_dim;
     int n_blocks   = n_embd / TQ_Q8_0_BLOCK_SIZE;
     uint8_t * out  = (uint8_t *)dst;
 
-    // Scratch for one rotated vector
-    float * rot = (float *)malloc((size_t)n_embd * sizeof(float));
+    bool owned = false;
+    float * rot = tq_acquire_batch_scratch(scratch, n_embd, &owned);
     if (!rot) return;
 
     for (int t = 0; t < n_tokens; t++) {
@@ -297,7 +351,14 @@ void tq_rotate_quantize_q8_0(
         }
     }
 
-    free(rot);
+    tq_release_batch_scratch(rot, owned);
+}
+
+void tq_rotate_quantize_q8_0(
+    const tq_layer_ctx * ctx, const float * src, void * dst,
+    int n_tokens, int n_embd)
+{
+    tq_rotate_quantize_q8_0_impl(ctx, src, dst, n_tokens, n_embd, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -334,16 +395,17 @@ static void quantize_q4_0_block(const float * src, uint8_t * dst) {
     }
 }
 
-void tq_rotate_quantize_q4_0(
+static void tq_rotate_quantize_q4_0_impl(
     const tq_layer_ctx * ctx, const float * src, void * dst,
-    int n_tokens, int n_embd)
+    int n_tokens, int n_embd, float * scratch)
 {
     assert(ctx);
     int head_dim   = ctx->head_dim;
     int n_blocks   = n_embd / TQ_Q4_0_BLOCK_SIZE;
     uint8_t * out  = (uint8_t *)dst;
 
-    float * rot = (float *)malloc((size_t)n_embd * sizeof(float));
+    bool owned = false;
+    float * rot = tq_acquire_batch_scratch(scratch, n_embd, &owned);
     if (!rot) return;
 
     for (int t = 0; t < n_tokens; t++) {
@@ -360,7 +422,14 @@ void tq_rotate_quantize_q4_0(
         }
     }
 
-    free(rot);
+    tq_release_batch_scratch(rot, owned);
+}
+
+void tq_rotate_quantize_q4_0(
+    const tq_layer_ctx * ctx, const float * src, void * dst,
+    int n_tokens, int n_embd)
+{
+    tq_rotate_quantize_q4_0_impl(ctx, src, dst, n_tokens, n_embd, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -378,16 +447,17 @@ static void dequantize_q8_0_block(const uint8_t * src, float * dst) {
     }
 }
 
-void tq_dequantize_rotate_q8_0(
+static void tq_dequantize_rotate_q8_0_impl(
     const tq_layer_ctx * ctx, const void * src, float * dst,
-    int n_tokens, int n_embd)
+    int n_tokens, int n_embd, float * scratch)
 {
     assert(ctx);
     int head_dim       = ctx->head_dim;
     int n_blocks       = n_embd / TQ_Q8_0_BLOCK_SIZE;
     const uint8_t * in = (const uint8_t *)src;
 
-    float * tmp = (float *)malloc((size_t)n_embd * sizeof(float));
+    bool owned = false;
+    float * tmp = tq_acquire_batch_scratch(scratch, n_embd, &owned);
     if (!tmp) return;
 
     for (int t = 0; t < n_tokens; t++) {
@@ -406,7 +476,14 @@ void tq_dequantize_rotate_q8_0(
         }
     }
 
-    free(tmp);
+    tq_release_batch_scratch(tmp, owned);
+}
+
+void tq_dequantize_rotate_q8_0(
+    const tq_layer_ctx * ctx, const void * src, float * dst,
+    int n_tokens, int n_embd)
+{
+    tq_dequantize_rotate_q8_0_impl(ctx, src, dst, n_tokens, n_embd, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -428,16 +505,17 @@ static void dequantize_q4_0_block(const uint8_t * src, float * dst) {
     }
 }
 
-void tq_dequantize_rotate_q4_0(
+static void tq_dequantize_rotate_q4_0_impl(
     const tq_layer_ctx * ctx, const void * src, float * dst,
-    int n_tokens, int n_embd)
+    int n_tokens, int n_embd, float * scratch)
 {
     assert(ctx);
     int head_dim       = ctx->head_dim;
     int n_blocks       = n_embd / TQ_Q4_0_BLOCK_SIZE;
     const uint8_t * in = (const uint8_t *)src;
 
-    float * tmp = (float *)malloc((size_t)n_embd * sizeof(float));
+    bool owned = false;
+    float * tmp = tq_acquire_batch_scratch(scratch, n_embd, &owned);
     if (!tmp) return;
 
     for (int t = 0; t < n_tokens; t++) {
@@ -454,7 +532,366 @@ void tq_dequantize_rotate_q4_0(
         }
     }
 
+    tq_release_batch_scratch(tmp, owned);
+}
+
+void tq_dequantize_rotate_q4_0(
+    const tq_layer_ctx * ctx, const void * src, float * dst,
+    int n_tokens, int n_embd)
+{
+    tq_dequantize_rotate_q4_0_impl(ctx, src, dst, n_tokens, n_embd, NULL);
+}
+
+// ---------------------------------------------------------------------------
+// Experimental paper-faithful helpers: custom low-bit Lloyd-Max + QJL
+// ---------------------------------------------------------------------------
+
+size_t tq_q3_lm_row_bytes(int n_embd) {
+    return (size_t)(n_embd / TQ_Q3_LM_BLOCK_SIZE) * TQ_Q3_LM_BYTES_PER_BLOCK;
+}
+
+size_t tq_q2_lm_row_bytes(int n_embd) {
+    return (size_t)(n_embd / TQ_Q2_LM_BLOCK_SIZE) * TQ_Q2_LM_BYTES_PER_BLOCK;
+}
+
+size_t tq_q3_qjl_row_bytes(int n_embd) {
+    return tq_q3_lm_row_bytes(n_embd) + (size_t)n_embd / 8;
+}
+
+size_t tq_q2_qjl_row_bytes(int n_embd) {
+    return tq_q2_lm_row_bytes(n_embd) + (size_t)n_embd / 8;
+}
+
+static void pack_bits(uint8_t * dst, int payload_bytes, int index, int bits, uint8_t value) {
+    const uint32_t mask = ((uint32_t)1 << bits) - 1U;
+    const int bit_offset = index * bits;
+    const int byte_offset = bit_offset / 8;
+    const int shift = bit_offset % 8;
+    uint32_t raw = 0;
+    for (int i = 0; i < 3 && byte_offset + i < payload_bytes; ++i) {
+        raw |= (uint32_t)dst[byte_offset + i] << (i * 8);
+    }
+    raw &= ~(mask << shift);
+    raw |= ((uint32_t)value & mask) << shift;
+    for (int i = 0; i < 3 && byte_offset + i < payload_bytes; ++i) {
+        dst[byte_offset + i] = (uint8_t)((raw >> (i * 8)) & 0xFF);
+    }
+}
+
+static uint8_t unpack_bits(const uint8_t * src, int payload_bytes, int index, int bits) {
+    const uint32_t mask = ((uint32_t)1 << bits) - 1U;
+    const int bit_offset = index * bits;
+    const int byte_offset = bit_offset / 8;
+    const int shift = bit_offset % 8;
+    uint32_t raw = 0;
+    for (int i = 0; i < 3 && byte_offset + i < payload_bytes; ++i) {
+        raw |= (uint32_t)src[byte_offset + i] << (i * 8);
+    }
+    return (uint8_t)((raw >> shift) & mask);
+}
+
+static void quantize_q3_lm_block(const float * src, uint8_t * dst) {
+    const float sigma = block_sigma(src, TQ_Q3_LM_BLOCK_SIZE);
+    const float scale = sigma;
+    const float inv_scale = (sigma > 1e-10f) ? 1.0f / sigma : 0.0f;
+    const uint16_t h = fp32_to_fp16(scale);
+    memcpy(dst, &h, 2);
+    uint8_t * payload = dst + 2;
+    memset(payload, 0, 12);
+    for (int i = 0; i < TQ_Q3_LM_BLOCK_SIZE; ++i) {
+        pack_bits(payload, 12, i, 3, tq_quantize_3bit(src[i], inv_scale));
+    }
+}
+
+static void dequantize_q3_lm_block(const uint8_t * src, float * dst) {
+    uint16_t h;
+    memcpy(&h, src, 2);
+    const float scale = fp16_to_fp32(h);
+    const uint8_t * payload = src + 2;
+    for (int i = 0; i < TQ_Q3_LM_BLOCK_SIZE; ++i) {
+        dst[i] = tq_dequantize_3bit(unpack_bits(payload, 12, i, 3), scale);
+    }
+}
+
+static void quantize_q2_lm_block(const float * src, uint8_t * dst) {
+    const float sigma = block_sigma(src, TQ_Q2_LM_BLOCK_SIZE);
+    const float scale = sigma;
+    const float inv_scale = (sigma > 1e-10f) ? 1.0f / sigma : 0.0f;
+    const uint16_t h = fp32_to_fp16(scale);
+    memcpy(dst, &h, 2);
+    uint8_t * payload = dst + 2;
+    memset(payload, 0, 8);
+    for (int i = 0; i < TQ_Q2_LM_BLOCK_SIZE; ++i) {
+        pack_bits(payload, 8, i, 2, tq_quantize_2bit(src[i], inv_scale));
+    }
+}
+
+static void dequantize_q2_lm_block(const uint8_t * src, float * dst) {
+    uint16_t h;
+    memcpy(&h, src, 2);
+    const float scale = fp16_to_fp32(h);
+    const uint8_t * payload = src + 2;
+    for (int i = 0; i < TQ_Q2_LM_BLOCK_SIZE; ++i) {
+        dst[i] = tq_dequantize_2bit(unpack_bits(payload, 8, i, 2), scale);
+    }
+}
+
+static void qjl_encode_vector(const tq_layer_ctx * ctx, const float * residual, int n_embd, uint8_t * dst) {
+    memset(dst, 0, (size_t)n_embd / 8);
+    const uint64_t qjl_seed = ctx->seed ^ 0xC0DEC0DEC0DEC0DEULL;
+    for (int row = 0; row < n_embd; ++row) {
+        float projection = 0.0f;
+        for (int col = 0; col < n_embd; ++col) {
+            projection += qjl_gaussian(qjl_seed, row, col) * residual[col];
+        }
+        if (projection >= 0.0f) {
+            dst[row / 8] |= (uint8_t)(1u << (row % 8));
+        }
+    }
+}
+
+static void qjl_decode_vector(const tq_layer_ctx * ctx, const uint8_t * src, int n_embd, float * dst) {
+    const uint64_t qjl_seed = ctx->seed ^ 0xC0DEC0DEC0DEC0DEULL;
+    const float scale = sqrtf(1.5707963267948966192f) / (float)n_embd;
+    for (int col = 0; col < n_embd; ++col) {
+        float accum = 0.0f;
+        for (int row = 0; row < n_embd; ++row) {
+            const float sign = ((src[row / 8] >> (row % 8)) & 1u) ? 1.0f : -1.0f;
+            accum += qjl_gaussian(qjl_seed, row, col) * sign;
+        }
+        dst[col] = accum * scale;
+    }
+}
+
+static void tq_rotate_quantize_q3_lm_impl(
+    const tq_layer_ctx * ctx, const float * src, void * dst, int n_tokens, int n_embd)
+{
+    assert(ctx);
+    const int head_dim = ctx->head_dim;
+    const int n_blocks = n_embd / TQ_Q3_LM_BLOCK_SIZE;
+    const size_t row_bytes = tq_q3_lm_row_bytes(n_embd);
+    uint8_t * out = (uint8_t *)dst;
+    float * rot = (float *)malloc((size_t)n_embd * sizeof(float));
+    if (!rot) return;
+    for (int t = 0; t < n_tokens; ++t) {
+        const float * vec = src + (size_t)t * n_embd;
+        uint8_t * row_out = out + (size_t)t * row_bytes;
+        for (int off = 0; off < n_embd; off += head_dim) {
+            tq_rotate_forward(ctx, vec + off, rot + off, head_dim);
+        }
+        for (int b = 0; b < n_blocks; ++b) {
+            quantize_q3_lm_block(rot + b * TQ_Q3_LM_BLOCK_SIZE, row_out + (size_t)b * TQ_Q3_LM_BYTES_PER_BLOCK);
+        }
+    }
+    free(rot);
+}
+
+static void tq_dequantize_rotate_q3_lm_impl(
+    const tq_layer_ctx * ctx, const void * src, float * dst, int n_tokens, int n_embd)
+{
+    assert(ctx);
+    const int head_dim = ctx->head_dim;
+    const int n_blocks = n_embd / TQ_Q3_LM_BLOCK_SIZE;
+    const size_t row_bytes = tq_q3_lm_row_bytes(n_embd);
+    const uint8_t * in = (const uint8_t *)src;
+    float * tmp = (float *)malloc((size_t)n_embd * sizeof(float));
+    if (!tmp) return;
+    for (int t = 0; t < n_tokens; ++t) {
+        const uint8_t * row_in = in + (size_t)t * row_bytes;
+        float * row_dst = dst + (size_t)t * n_embd;
+        for (int b = 0; b < n_blocks; ++b) {
+            dequantize_q3_lm_block(row_in + (size_t)b * TQ_Q3_LM_BYTES_PER_BLOCK, tmp + b * TQ_Q3_LM_BLOCK_SIZE);
+        }
+        for (int off = 0; off < n_embd; off += head_dim) {
+            tq_rotate_inverse(ctx, tmp + off, row_dst + off, head_dim);
+        }
+    }
     free(tmp);
+}
+
+static void tq_rotate_quantize_q2_lm_impl(
+    const tq_layer_ctx * ctx, const float * src, void * dst, int n_tokens, int n_embd)
+{
+    assert(ctx);
+    const int head_dim = ctx->head_dim;
+    const int n_blocks = n_embd / TQ_Q2_LM_BLOCK_SIZE;
+    const size_t row_bytes = tq_q2_lm_row_bytes(n_embd);
+    uint8_t * out = (uint8_t *)dst;
+    float * rot = (float *)malloc((size_t)n_embd * sizeof(float));
+    if (!rot) return;
+    for (int t = 0; t < n_tokens; ++t) {
+        const float * vec = src + (size_t)t * n_embd;
+        uint8_t * row_out = out + (size_t)t * row_bytes;
+        for (int off = 0; off < n_embd; off += head_dim) {
+            tq_rotate_forward(ctx, vec + off, rot + off, head_dim);
+        }
+        for (int b = 0; b < n_blocks; ++b) {
+            quantize_q2_lm_block(rot + b * TQ_Q2_LM_BLOCK_SIZE, row_out + (size_t)b * TQ_Q2_LM_BYTES_PER_BLOCK);
+        }
+    }
+    free(rot);
+}
+
+static void tq_dequantize_rotate_q2_lm_impl(
+    const tq_layer_ctx * ctx, const void * src, float * dst, int n_tokens, int n_embd)
+{
+    assert(ctx);
+    const int head_dim = ctx->head_dim;
+    const int n_blocks = n_embd / TQ_Q2_LM_BLOCK_SIZE;
+    const size_t row_bytes = tq_q2_lm_row_bytes(n_embd);
+    const uint8_t * in = (const uint8_t *)src;
+    float * tmp = (float *)malloc((size_t)n_embd * sizeof(float));
+    if (!tmp) return;
+    for (int t = 0; t < n_tokens; ++t) {
+        const uint8_t * row_in = in + (size_t)t * row_bytes;
+        float * row_dst = dst + (size_t)t * n_embd;
+        for (int b = 0; b < n_blocks; ++b) {
+            dequantize_q2_lm_block(row_in + (size_t)b * TQ_Q2_LM_BYTES_PER_BLOCK, tmp + b * TQ_Q2_LM_BLOCK_SIZE);
+        }
+        for (int off = 0; off < n_embd; off += head_dim) {
+            tq_rotate_inverse(ctx, tmp + off, row_dst + off, head_dim);
+        }
+    }
+    free(tmp);
+}
+
+static void tq_rotate_quantize_qjl_impl(
+    const tq_layer_ctx * ctx,
+    const float * src,
+    void * dst,
+    int n_tokens,
+    int n_embd,
+    size_t main_row_bytes,
+    void (*quantize_main_block)(const float *, uint8_t *),
+    void (*dequantize_main_block)(const uint8_t *, float *),
+    int block_size,
+    size_t block_bytes)
+{
+    assert(ctx);
+    const int head_dim = ctx->head_dim;
+    const int n_blocks = n_embd / block_size;
+    uint8_t * out = (uint8_t *)dst;
+    float * work = (float *)malloc((size_t)n_embd * sizeof(float) * 3);
+    if (!work) return;
+    float * rot = work;
+    float * approx = work + n_embd;
+    float * residual = work + n_embd * 2;
+    for (int t = 0; t < n_tokens; ++t) {
+        const float * vec = src + (size_t)t * n_embd;
+        uint8_t * row_out = out + (size_t)t * (main_row_bytes + (size_t)n_embd / 8);
+        uint8_t * qjl_out = row_out + main_row_bytes;
+        for (int off = 0; off < n_embd; off += head_dim) {
+            tq_rotate_forward(ctx, vec + off, rot + off, head_dim);
+        }
+        for (int b = 0; b < n_blocks; ++b) {
+            uint8_t * block_ptr = row_out + (size_t)b * block_bytes;
+            quantize_main_block(rot + b * block_size, block_ptr);
+            dequantize_main_block(block_ptr, approx + b * block_size);
+        }
+        for (int i = 0; i < n_embd; ++i) {
+            residual[i] = rot[i] - approx[i];
+        }
+        qjl_encode_vector(ctx, residual, n_embd, qjl_out);
+    }
+    free(work);
+}
+
+static void tq_dequantize_rotate_qjl_impl(
+    const tq_layer_ctx * ctx,
+    const void * src,
+    float * dst,
+    int n_tokens,
+    int n_embd,
+    size_t main_row_bytes,
+    void (*dequantize_main_block)(const uint8_t *, float *),
+    int block_size,
+    size_t block_bytes)
+{
+    assert(ctx);
+    const int head_dim = ctx->head_dim;
+    const int n_blocks = n_embd / block_size;
+    const uint8_t * in = (const uint8_t *)src;
+    float * work = (float *)malloc((size_t)n_embd * sizeof(float) * 3);
+    if (!work) return;
+    float * main_rot = work;
+    float * qjl_residual = work + n_embd;
+    float * combined = work + n_embd * 2;
+    for (int t = 0; t < n_tokens; ++t) {
+        const uint8_t * row_in = in + (size_t)t * (main_row_bytes + (size_t)n_embd / 8);
+        const uint8_t * qjl_in = row_in + main_row_bytes;
+        float * row_dst = dst + (size_t)t * n_embd;
+        for (int b = 0; b < n_blocks; ++b) {
+            dequantize_main_block(row_in + (size_t)b * block_bytes, main_rot + b * block_size);
+        }
+        qjl_decode_vector(ctx, qjl_in, n_embd, qjl_residual);
+        for (int i = 0; i < n_embd; ++i) {
+            combined[i] = main_rot[i] + qjl_residual[i];
+        }
+        for (int off = 0; off < n_embd; off += head_dim) {
+            tq_rotate_inverse(ctx, combined + off, row_dst + off, head_dim);
+        }
+    }
+    free(work);
+}
+
+void tq_rotate_quantize_q3_lm(
+    const tq_layer_ctx * ctx, const float * src, void * dst, int n_tokens, int n_embd)
+{
+    tq_rotate_quantize_q3_lm_impl(ctx, src, dst, n_tokens, n_embd);
+}
+
+void tq_dequantize_rotate_q3_lm(
+    const tq_layer_ctx * ctx, const void * src, float * dst, int n_tokens, int n_embd)
+{
+    tq_dequantize_rotate_q3_lm_impl(ctx, src, dst, n_tokens, n_embd);
+}
+
+void tq_rotate_quantize_q2_lm(
+    const tq_layer_ctx * ctx, const float * src, void * dst, int n_tokens, int n_embd)
+{
+    tq_rotate_quantize_q2_lm_impl(ctx, src, dst, n_tokens, n_embd);
+}
+
+void tq_dequantize_rotate_q2_lm(
+    const tq_layer_ctx * ctx, const void * src, float * dst, int n_tokens, int n_embd)
+{
+    tq_dequantize_rotate_q2_lm_impl(ctx, src, dst, n_tokens, n_embd);
+}
+
+void tq_rotate_quantize_q3_qjl(
+    const tq_layer_ctx * ctx, const float * src, void * dst, int n_tokens, int n_embd)
+{
+    tq_rotate_quantize_qjl_impl(
+        ctx, src, dst, n_tokens, n_embd, tq_q3_lm_row_bytes(n_embd),
+        quantize_q3_lm_block, dequantize_q3_lm_block,
+        TQ_Q3_LM_BLOCK_SIZE, TQ_Q3_LM_BYTES_PER_BLOCK);
+}
+
+void tq_dequantize_rotate_q3_qjl(
+    const tq_layer_ctx * ctx, const void * src, float * dst, int n_tokens, int n_embd)
+{
+    tq_dequantize_rotate_qjl_impl(
+        ctx, src, dst, n_tokens, n_embd, tq_q3_lm_row_bytes(n_embd),
+        dequantize_q3_lm_block,
+        TQ_Q3_LM_BLOCK_SIZE, TQ_Q3_LM_BYTES_PER_BLOCK);
+}
+
+void tq_rotate_quantize_q2_qjl(
+    const tq_layer_ctx * ctx, const float * src, void * dst, int n_tokens, int n_embd)
+{
+    tq_rotate_quantize_qjl_impl(
+        ctx, src, dst, n_tokens, n_embd, tq_q2_lm_row_bytes(n_embd),
+        quantize_q2_lm_block, dequantize_q2_lm_block,
+        TQ_Q2_LM_BLOCK_SIZE, TQ_Q2_LM_BYTES_PER_BLOCK);
+}
+
+void tq_dequantize_rotate_q2_qjl(
+    const tq_layer_ctx * ctx, const void * src, float * dst, int n_tokens, int n_embd)
+{
+    tq_dequantize_rotate_qjl_impl(
+        ctx, src, dst, n_tokens, n_embd, tq_q2_lm_row_bytes(n_embd),
+        dequantize_q2_lm_block,
+        TQ_Q2_LM_BLOCK_SIZE, TQ_Q2_LM_BYTES_PER_BLOCK);
 }
 
 // ---------------------------------------------------------------------------
@@ -545,4 +982,48 @@ bool tq_session_set_max_embd(tq_session * session, int max_n_embd) {
 float * tq_session_get_scratch(const tq_session * session) {
     if (!session) return NULL;
     return session->scratch;
+}
+
+void tq_session_rotate_quantize_q8_0(
+    const tq_session * session, int layer_idx, const float * src, void * dst,
+    int n_tokens, int n_embd)
+{
+    if (!session) return;
+    const tq_layer_ctx * layer = tq_session_get_layer(session, layer_idx);
+    if (!layer) return;
+    float * scratch = session->max_n_embd >= n_embd ? session->scratch : NULL;
+    tq_rotate_quantize_q8_0_impl(layer, src, dst, n_tokens, n_embd, scratch);
+}
+
+void tq_session_rotate_quantize_q4_0(
+    const tq_session * session, int layer_idx, const float * src, void * dst,
+    int n_tokens, int n_embd)
+{
+    if (!session) return;
+    const tq_layer_ctx * layer = tq_session_get_layer(session, layer_idx);
+    if (!layer) return;
+    float * scratch = session->max_n_embd >= n_embd ? session->scratch : NULL;
+    tq_rotate_quantize_q4_0_impl(layer, src, dst, n_tokens, n_embd, scratch);
+}
+
+void tq_session_dequantize_rotate_q8_0(
+    const tq_session * session, int layer_idx, const void * src, float * dst,
+    int n_tokens, int n_embd)
+{
+    if (!session) return;
+    const tq_layer_ctx * layer = tq_session_get_layer(session, layer_idx);
+    if (!layer) return;
+    float * scratch = session->max_n_embd >= n_embd ? session->scratch : NULL;
+    tq_dequantize_rotate_q8_0_impl(layer, src, dst, n_tokens, n_embd, scratch);
+}
+
+void tq_session_dequantize_rotate_q4_0(
+    const tq_session * session, int layer_idx, const void * src, float * dst,
+    int n_tokens, int n_embd)
+{
+    if (!session) return;
+    const tq_layer_ctx * layer = tq_session_get_layer(session, layer_idx);
+    if (!layer) return;
+    float * scratch = session->max_n_embd >= n_embd ? session->scratch : NULL;
+    tq_dequantize_rotate_q4_0_impl(layer, src, dst, n_tokens, n_embd, scratch);
 }

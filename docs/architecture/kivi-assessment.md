@@ -5,9 +5,9 @@
 KIVI (arXiv 2402.02750) recommends quantizing keys per-channel and values per-token
 because key channels have heterogeneous variance while value tokens are more uniform.
 
-**After WHT rotation, this distinction is unnecessary.** The Walsh-Hadamard Transform
-makes all coordinates approximately i.i.d. Gaussian, eliminating the per-channel variance
-differences that motivate KIVI's axis choice.
+After WHT rotation, the original motivation for per-channel key scaling is reduced in
+our implementation. The Walsh-Hadamard Transform makes coordinates more Gaussian-like
+and less axis-dependent, so a simpler blockwise path becomes much more defensible.
 
 ## Analysis
 
@@ -19,7 +19,7 @@ differences that motivate KIVI's axis choice.
 ### Post-rotation (our implementation)
 - WHT rotation normalizes all key dimensions to approximately equal variance
 - Empirically verified in test suite (test_rotation_gaussianity): kurtosis drops from >50 to <5 after rotation, confirming near-Gaussian coordinates
-- Per-channel scale factors provide no benefit when all channels have the same distribution
+- Per-channel scale factors are less clearly justified once the rotated coordinates look substantially more homogeneous
 - Standard block-based quantization (groups of 32 elements) is already near-optimal
 
 ### Note on SRHT vs Haar-random rotation
@@ -27,8 +27,9 @@ Our implementation uses a Signed Randomized Hadamard Transform (SRHT): D * H whe
 is a random diagonal +/-1 matrix and H is the Hadamard matrix. This is O(d log d) compute
 and O(d) storage, versus O(d^2) for a true Haar-random orthogonal matrix. The coordinate
 distribution after SRHT is not exactly Beta(d/2, d/2) as the paper's Lemma 1 assumes, but
-for d=128 the practical degradation is within 5-10% of the theoretical optimum. Multiple
-SRHT rounds (D2 * H * D1 * H) could close this gap if needed.
+it is a practical engineering approximation rather than a theorem-equivalent substitute for
+Haar-random rotation. Multiple SRHT rounds (D2 * H * D1 * H) could be explored later if
+stronger concentration is needed.
 
 ### What we implement instead
 - **Block-based quantization** (Q8_0, Q4_0, Q3_K, Q2_K) applied uniformly

@@ -134,6 +134,8 @@ bool g_last_flash_attn_requested = false;
 bool g_last_flash_attn_gpu_ops = false;
 bool g_last_flash_attn_active = false;
 bool g_last_quantized_kv_cache = false;
+std::string g_last_turboquant_mode = "disabled";
+std::string g_last_turboquant_fallback_reason;
 bool g_last_opencl_flash_guard_applied = false;
 bool g_last_opencl_quant_kv_guard_applied = false;
 std::string g_last_model_quantization = "unknown";
@@ -678,6 +680,27 @@ std::string lowercase_copy(const std::string & value) {
 
 std::string safe_string(const char * value) {
     return value != nullptr ? value : "";
+}
+
+bool env_flag_enabled(const char * name) {
+    const char * raw = std::getenv(name);
+    if (raw == nullptr) {
+        return false;
+    }
+    const std::string value = lowercase_copy(raw);
+    return value == "1" || value == "true" || value == "yes" || value == "on";
+}
+
+bool turboquant_force_session_alloc_failure() {
+    return env_flag_enabled("POCKETGPT_TURBOQUANT_FORCE_SESSION_ALLOC_FAIL");
+}
+
+bool turboquant_force_hook_registration_failure() {
+    return env_flag_enabled("POCKETGPT_TURBOQUANT_FORCE_HOOK_REG_FAIL");
+}
+
+bool turboquant_force_rotation_unsupported() {
+    return env_flag_enabled("POCKETGPT_TURBOQUANT_FORCE_ROTATION_UNSUPPORTED");
 }
 
 int parse_adreno_generation(const std::string & text) {
@@ -1244,6 +1267,8 @@ std::string backend_diagnostics_json() {
         << "\"model_memory_mode\":\"" << json_escape(model_memory_mode_label()) << "\","
         << "\"prefix_cache_mode\":\"" << json_escape(prefix_cache_mode_label()) << "\","
         << "\"flashAttnActive\":" << (g_last_flash_attn_active ? "true" : "false") << ","
+        << "\"turboquant_mode\":\"" << json_escape(g_last_turboquant_mode) << "\","
+        << "\"turboquant_fallback_reason\":\"" << json_escape(g_last_turboquant_fallback_reason) << "\","
         << "\"flash_attn_guard_reason\":\"" << json_escape(flash_attn_guard_reason) << "\","
         << "\"quantized_kv_guard_reason\":\"" << json_escape(quantized_kv_guard_reason) << "\","
         << "\"last_mmap_readahead_label\":\"" << json_escape(g_mmap_telemetry.last_label) << "\","
@@ -1615,6 +1640,8 @@ void release_runtime_locked() {
     g_last_flash_attn_gpu_ops = false;
     g_last_flash_attn_active = false;
     g_last_quantized_kv_cache = false;
+    g_last_turboquant_mode = "disabled";
+    g_last_turboquant_fallback_reason.clear();
     g_last_opencl_flash_guard_applied = false;
     g_last_opencl_quant_kv_guard_applied = false;
     g_last_model_quantization = "unknown";
@@ -3309,6 +3336,16 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         g_last_opencl_flash_guard_applied = opencl_flash_guard_applied;
         g_last_opencl_quant_kv_guard_applied = quantized_kv_requested && is_opencl_backend;
         g_last_quantized_kv_cache = quantized_kv_enabled;
+        g_last_turboquant_fallback_reason.clear();
+        if (quantized_kv_enabled) {
+            g_last_turboquant_mode = "rotation_pending";
+        } else if (quantized_kv_requested) {
+            g_last_turboquant_mode = "f16_guarded";
+            g_last_turboquant_fallback_reason =
+                is_opencl_backend ? "opencl_backend" : "flash_attention_disabled";
+        } else {
+            g_last_turboquant_mode = "disabled";
+        }
         __android_log_print(
             ANDROID_LOG_INFO,
             TAG,
@@ -3317,6 +3354,33 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             context_params.op_offload ? "true" : "false",
             static_cast<int>(context_params.flash_attn_type),
             quantized_kv_enabled ? "true" : "false");
+        auto apply_turboquant_f16_fallback = [&](const std::string & reason) {
+            context_params.type_k = GGML_TYPE_F16;
+            context_params.type_v = GGML_TYPE_F16;
+            g_last_quantized_kv_cache = false;
+            g_last_turboquant_mode = "f16_fallback";
+            g_last_turboquant_fallback_reason = reason;
+        };
+        auto init_target_context = [&](const char * stage, int * init_errno) -> bool {
+            errno = 0;
+            g_context = llama_init_from_model(g_model, context_params);
+            *init_errno = errno;
+            if (g_context != nullptr) {
+                return true;
+            }
+            if (is_out_of_memory_errno(*init_errno)) {
+                set_backend_error_locked(
+                    "OUT_OF_MEMORY",
+                    std::string("stage=") + stage + "|errno=" + std::to_string(*init_errno) +
+                        "|detail=" + std::strerror(*init_errno));
+            } else {
+                set_backend_error_locked(
+                    "GPU_CONTEXT_INIT_FAILED",
+                    std::string("stage=") + stage + "|profile=" + g_backend_profile +
+                        "|selected_backend=" + g_active_backend);
+            }
+            return false;
+        };
         // ── TurboQuant rotation session (pre-context) ───────────────────
         // Attempt rotation session creation BEFORE llama_init_from_model so
         // we can fall back to F16 KV types if rotation won't work. The model
@@ -3335,63 +3399,52 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         const int tq_n_embd_head_k = (tq_n_head > 0) ? (tq_n_embd / tq_n_head) : 0;
 
         if (quantized_kv_enabled) {
-            if (tq_n_embd_head_k > 0 && (tq_n_embd_head_k & (tq_n_embd_head_k - 1)) == 0) {
-                g_tq_session = tq_session_create(tq_n_layer, tq_n_embd_head_k, g_model_size_bytes);
+            const bool head_dim_supported =
+                tq_n_embd_head_k > 0 &&
+                (tq_n_embd_head_k & (tq_n_embd_head_k - 1)) == 0 &&
+                !turboquant_force_rotation_unsupported();
+            if (head_dim_supported) {
+                if (!turboquant_force_session_alloc_failure()) {
+                    g_tq_session = tq_session_create(tq_n_layer, tq_n_embd_head_k, g_model_size_bytes);
+                }
                 if (g_tq_session) {
+                    const bool scratch_ready = tq_session_set_max_embd(g_tq_session, tq_n_embd);
                     g_tq_rotation_enabled = true;
                     __android_log_print(ANDROID_LOG_INFO, TAG,
-                        "TURBOQUANT|rotation_enabled=true|layers=%d|head_dim=%d|memory_kb=%.1f",
+                        "TURBOQUANT|rotation_enabled=true|layers=%d|head_dim=%d|memory_kb=%.1f|scratch=%s",
                         tq_n_layer, tq_n_embd_head_k,
-                        tq_session_memory_bytes(g_tq_session) / 1024.0);
+                        tq_session_memory_bytes(g_tq_session) / 1024.0,
+                        scratch_ready ? "true" : "false");
+                    g_last_turboquant_mode = "rotation_enabled";
                 } else {
-                    // Rotation alloc failed — demote to F16 to avoid uncompensated quantization
-                    context_params.type_k = GGML_TYPE_F16;
-                    context_params.type_v = GGML_TYPE_F16;
-                    g_last_quantized_kv_cache = false;
+                    // Rotation alloc failed — demote to F16 to avoid uncompensated quantization.
+                    apply_turboquant_f16_fallback(
+                        turboquant_force_session_alloc_failure()
+                            ? "session_alloc_failpoint"
+                            : "session_alloc_failed");
                     __android_log_print(ANDROID_LOG_WARN, TAG,
-                        "TURBOQUANT|rotation_fallback=f16|reason=session_alloc_failed");
+                        "TURBOQUANT|rotation_fallback=f16|reason=%s",
+                        g_last_turboquant_fallback_reason.c_str());
                 }
             } else {
-                // Non-power-of-2 head_dim — WHT rotation impossible, demote to F16
-                context_params.type_k = GGML_TYPE_F16;
-                context_params.type_v = GGML_TYPE_F16;
-                g_last_quantized_kv_cache = false;
+                // Non-power-of-2 head_dim — WHT rotation impossible, demote to F16.
+                apply_turboquant_f16_fallback(
+                    turboquant_force_rotation_unsupported()
+                        ? "rotation_unsupported_failpoint"
+                        : "not_power_of_2");
                 __android_log_print(ANDROID_LOG_WARN, TAG,
-                    "TURBOQUANT|rotation_fallback=f16|head_dim=%d|reason=not_power_of_2",
-                    tq_n_embd_head_k);
+                    "TURBOQUANT|rotation_fallback=f16|head_dim=%d|reason=%s",
+                    tq_n_embd_head_k,
+                    g_last_turboquant_fallback_reason.c_str());
             }
         }
 
-        errno = 0;
-        g_context = llama_init_from_model(g_model, context_params);
-        const int context_init_errno = errno;
-        if (g_context == nullptr) {
-            if (is_out_of_memory_errno(context_init_errno)) {
-                set_backend_error_locked(
-                    "OUT_OF_MEMORY",
-                    std::string("stage=context_init|errno=") + std::to_string(context_init_errno) + "|detail=" + std::strerror(context_init_errno));
-            } else {
-                set_backend_error_locked(
-                    "GPU_CONTEXT_INIT_FAILED",
-                    std::string("profile=") + g_backend_profile + "|selected_backend=" + g_active_backend);
-            }
+        int context_init_errno = 0;
+        if (!init_target_context("context_init", &context_init_errno)) {
             log_error("nativeLoadModel failed: llama_init_from_model returned null");
             release_runtime_locked();
             return JNI_FALSE;
         }
-        g_last_flash_attn_active = context_params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
-        __android_log_print(
-            ANDROID_LOG_INFO,
-            TAG,
-            "FLASH_ATTN|requested=%s|type=%s|gpu_ops=%s|type_k=%s|type_v=%s|n_ctx=%u|n_batch=%u|n_ubatch=%u",
-            g_last_flash_attn_requested ? "true" : "false",
-            llama_flash_attn_type_name(context_params.flash_attn_type),
-            g_last_flash_attn_gpu_ops ? "true" : "false",
-            ggml_type_name(context_params.type_k),
-            ggml_type_name(context_params.type_v),
-            context_params.n_ctx,
-            context_params.n_batch,
-            context_params.n_ubatch);
 
         // ── TurboQuant rotation hook registration (post-context) ────────
         if (g_tq_rotation_enabled && g_tq_session) {
@@ -3414,14 +3467,16 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
 
             // Register rotation hook with the KV cache
             bool hook_registered = false;
+            const bool hook_failpoint = turboquant_force_hook_registration_failure();
             auto * memory = llama_get_memory(g_context);
-            if (memory) {
+            if (!hook_failpoint && memory) {
                 auto * kv_cache = dynamic_cast<llama_kv_cache *>(memory);
                 if (kv_cache) {
                     kv_cache->set_kv_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
                     kv_cache->set_q_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
                     kv_cache->set_inverse_rotation_hook(turboquant_inverse_rotation_callback, g_tq_hook_userdata);
                     hook_registered = true;
+                    g_last_turboquant_mode = "rotation_active";
                     __android_log_print(ANDROID_LOG_INFO, TAG,
                         "TURBOQUANT|hook_registered=true|n_layer=%d|protected=%d|type_k=%s|type_v=%s",
                         tq_n_layer, protected_count,
@@ -3431,16 +3486,46 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             }
             if (!hook_registered) {
                 g_tq_rotation_enabled = false;
+                g_last_quantized_kv_cache = false;
                 tq_session_free(g_tq_session);
                 g_tq_session = nullptr;
                 delete[] g_tq_hook_ctxs;
                 g_tq_hook_ctxs = nullptr;
                 delete[] g_tq_hook_userdata;
                 g_tq_hook_userdata = nullptr;
+                if (g_context != nullptr) {
+                    llama_free(g_context);
+                    g_context = nullptr;
+                }
+                apply_turboquant_f16_fallback(
+                    hook_failpoint ? "hook_registration_failpoint" : "hook_registration_failed");
                 __android_log_print(ANDROID_LOG_WARN, TAG,
-                    "TURBOQUANT|rotation_fallback=f16|reason=hook_registration_failed");
+                    "TURBOQUANT|rotation_fallback=f16|reason=%s",
+                    g_last_turboquant_fallback_reason.c_str());
+                int recovery_errno = 0;
+                if (!init_target_context("context_reinit_f16_after_hook_failure", &recovery_errno)) {
+                    log_error("nativeLoadModel failed: llama_init_from_model F16 recovery returned null");
+                    release_runtime_locked();
+                    return JNI_FALSE;
+                }
+                g_last_turboquant_mode = "f16_recovery";
             }
         }
+        g_last_flash_attn_active = context_params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "FLASH_ATTN|requested=%s|type=%s|gpu_ops=%s|type_k=%s|type_v=%s|n_ctx=%u|n_batch=%u|n_ubatch=%u|turboquant_mode=%s|fallback_reason=%s",
+            g_last_flash_attn_requested ? "true" : "false",
+            llama_flash_attn_type_name(context_params.flash_attn_type),
+            g_last_flash_attn_gpu_ops ? "true" : "false",
+            ggml_type_name(context_params.type_k),
+            ggml_type_name(context_params.type_v),
+            context_params.n_ctx,
+            context_params.n_batch,
+            context_params.n_ubatch,
+            g_last_turboquant_mode.c_str(),
+            g_last_turboquant_fallback_reason.c_str());
 
         {
             llama_set_warmup(g_context, true);

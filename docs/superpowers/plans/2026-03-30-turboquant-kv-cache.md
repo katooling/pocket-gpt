@@ -7,7 +7,9 @@
 | Phase 1 | WHT rotation, Q8_0/Q4_0 quantization, session management | COMPLETE |
 | Phase 1.5 | Asymmetric K/V (KIVI principle), layer-adaptive protection | COMPLETE |
 | Phase 2 | ULTRA/EXTREME presets (Q3_K/Q2_K), 2/3-bit codebooks, KIVI assessment | COMPLETE |
-| Phase 3 | Custom Lloyd-Max quantize in rotation callback (replace ggml types) | FUTURE |
+| Phase 3 | Correctness fixes, fallback safety, quality tests, estimator alignment | COMPLETE |
+| Phase 4A | Deterministic F16 recovery, scratch wiring, diagnostics hardening | COMPLETE |
+| Phase 4B | Experimental custom low-bit Lloyd-Max + QJL helper path | IN PROGRESS |
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1229,12 +1231,18 @@ Phase 3 addressed correctness fixes, quality improvements, and test gaps identif
 - **T4** (IMPORTANT): Memory estimator now mirrors C++ small-model safety clamp
 - **T5** (MODERATE): Added inner product distortion tests validating attention metric preservation
 - **T6** (MODERATE): Added kurtosis validation test confirming WHT produces near-Gaussian coordinates
-- **T7** (LOW): Pre-allocated scratch buffers in session API
+- **T7** (LOW): Pre-allocated scratch buffers are now wired into session-backed batch helpers
 - **T8** (LOW): Updated KIVI assessment and plan docs
 
-### Deferred to Phase 4
-- QJL two-stage quantizer (MSE at b-1 bits + QJL residual at 1 bit)
-- 2/3-bit Lloyd-Max codebook wiring for batch functions (after QJL)
+### Phase 4 Progress
+- Hook-registration failure now destroys the partially initialized quantized context and retries exactly once with F16 KV types
+- TurboQuant diagnostics now surface the effective mode and fallback reason in backend diagnostics JSON
+- Test-only failpoints were added for session allocation failure, unsupported rotation, and hook registration failure via environment flags
+- Experimental custom 3-bit and 2-bit Lloyd-Max batch helpers now exist beside the stable ggml-backed production presets
+- Experimental QJL residual encode/decode helpers now exist for benchmarking and future runtime wiring, but they are not yet part of the shipping ggml KV cache path
+
+### Deferred to Later Runtime Integration
+- Wire the experimental low-bit Lloyd-Max and QJL helpers into a live custom KV storage path
 - NEON intrinsics for WHT butterfly (performance optimization)
 - Multiple SRHT rounds for better concentration bounds
 
