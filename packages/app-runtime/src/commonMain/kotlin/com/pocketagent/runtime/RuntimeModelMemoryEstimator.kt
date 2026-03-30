@@ -103,6 +103,8 @@ object RuntimeModelMemoryEstimator {
                 KvCacheMethodPreset.SAFE -> 2.0          // F16
                 KvCacheMethodPreset.BALANCED -> 1.0625   // Q8_0
                 KvCacheMethodPreset.AGGRESSIVE -> 1.0625 // Q8_0 (keys get more bits)
+                KvCacheMethodPreset.ULTRA -> 1.0625      // Q8_0 (keys still Q8_0)
+                KvCacheMethodPreset.EXTREME -> 0.5625    // Q4_0 (keys finally reduced)
             }
         }
     }
@@ -114,7 +116,9 @@ object RuntimeModelMemoryEstimator {
             -> when (preset) {
                 KvCacheMethodPreset.SAFE -> 2.0          // F16
                 KvCacheMethodPreset.BALANCED -> 1.0625   // Q8_0
-                KvCacheMethodPreset.AGGRESSIVE -> 0.5625 // Q4_0 (values can be more compressed)
+                KvCacheMethodPreset.AGGRESSIVE -> 0.5625 // Q4_0
+                KvCacheMethodPreset.ULTRA -> 0.4297      // Q3_K (~3.4375 bpw)
+                KvCacheMethodPreset.EXTREME -> 0.3281    // Q2_K (~2.625 bpw)
             }
         }
     }
