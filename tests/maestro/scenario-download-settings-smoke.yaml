@@ -10,20 +10,24 @@ tags:
     when:
       visible: "Welcome to Pocket GPT"
     commands:
-      - tapOn: "Next"
+      - tapOn:
+          id: "onboarding_next"
       - extendedWaitUntil:
           visible: "Step 2 of 3"
           timeout: 20000
-      - tapOn: "Next"
+      - tapOn:
+          id: "onboarding_next"
       - extendedWaitUntil:
           visible: "Step 3 of 3"
           timeout: 20000
-      - tapOn: "Get started"
+      - tapOn:
+          id: "onboarding_get_started"
 - runFlow:
     when:
       visible: "Skip"
     commands:
-      - tapOn: "Skip"
+      - tapOn:
+          id: "onboarding_skip"
 - assertVisible: "Offline-first"
 - tapOn: "Advanced"
 - extendedWaitUntil:

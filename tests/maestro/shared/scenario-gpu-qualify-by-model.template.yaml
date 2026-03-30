@@ -6,12 +6,14 @@ appId: com.pocketagent.android
     when:
       visible: "Skip"
     commands:
-      - tapOn: "Skip"
+      - tapOn:
+          id: "onboarding_skip"
 - runFlow:
     when:
       visible: "Get started"
     commands:
-      - tapOn: "Get started"
+      - tapOn:
+          id: "onboarding_get_started"
 - assertVisible: "Offline-first"
 - runFlow:
     when:

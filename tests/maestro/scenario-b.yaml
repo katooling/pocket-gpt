@@ -15,10 +15,12 @@ tags:
     visible: "Runtime: Ready"
     timeout: 180000
 - takeScreenshot: "scenario-b-03-after-diagnostics"
-- tapOn: "Message"
+- tapOn:
+    id: "composer_input"
 - eraseText
 - inputText: "Reply with exactly: CORE_B_OK"
-- tapOn: "Send"
+- tapOn:
+    id: "send_button"
 - assertVisible: "Reply with exactly: CORE_B_OK"
 - extendedWaitUntil:
     visible: "CORE_B_OK"

@@ -10,12 +10,14 @@ tags:
     when:
       visible: "Skip"
     commands:
-      - tapOn: "Skip"
+      - tapOn:
+          id: "onboarding_skip"
 - runFlow:
     when:
       visible: "Get started"
     commands:
-      - tapOn: "Get started"
+      - tapOn:
+          id: "onboarding_get_started"
 - assertVisible: "Offline-first"
 - runFlow:
     when:
@@ -92,10 +94,12 @@ tags:
           visible: "Runtime: Ready"
           timeout: 900000
 - assertNotVisible: "Runtime: Error"
-- tapOn: "Message"
+- tapOn:
+    id: "composer_input"
 - eraseText
 - inputText: "download flow smoke"
-- tapOn: "Send"
+- tapOn:
+    id: "send_button"
 - assertVisible: "download flow smoke"
 - extendedWaitUntil:
     notVisible: "Cancel"
