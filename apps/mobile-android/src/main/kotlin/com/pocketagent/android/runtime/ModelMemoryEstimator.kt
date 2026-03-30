@@ -1,7 +1,8 @@
 package com.pocketagent.android.runtime
 
 import android.util.Log
-import com.pocketagent.nativebridge.KvCacheType
+import com.pocketagent.nativebridge.KvCacheMethod
+import com.pocketagent.nativebridge.KvCacheMethodPreset
 import com.pocketagent.nativebridge.ModelRuntimeMetadata
 import com.pocketagent.runtime.RuntimeModelMemoryEstimator
 import org.json.JSONObject
@@ -40,14 +41,16 @@ object ModelMemoryEstimator {
      *
      * @param modelFilePath absolute path to the .gguf file
      * @param nCtx context length to use (from RuntimeGenerationConfig)
-     * @param kvCacheType KV cache quantization type
+     * @param kvCacheMethod KV cache method
+     * @param kvCacheMethodPreset KV cache preset
      * @param nUbatch micro-batch size for compute buffer estimation
      * @param availableMemoryBytes optional current available device memory in bytes
      */
     fun estimate(
         modelFilePath: String,
         nCtx: Int = 2048,
-        kvCacheType: KvCacheType = KvCacheType.Q8_0,
+        kvCacheMethod: KvCacheMethod = KvCacheMethod.AUTO,
+        kvCacheMethodPreset: KvCacheMethodPreset = KvCacheMethodPreset.SAFE,
         nUbatch: Int = 512,
         availableMemoryBytes: Long? = null,
     ): EstimationResult {
@@ -62,8 +65,8 @@ object ModelMemoryEstimator {
                 modelFileSizeBytes = modelFileSizeBytes,
                 gguf = gguf,
                 nCtx = nCtx,
-                kvCacheTypeK = kvCacheType,
-                kvCacheTypeV = kvCacheType,
+                kvCacheMethod = kvCacheMethod,
+                kvCacheMethodPreset = kvCacheMethodPreset,
                 nUbatch = nUbatch,
                 availableMemoryBytes = availableMemoryBytes,
             )
@@ -79,8 +82,8 @@ object ModelMemoryEstimator {
         modelFileSizeBytes: Long,
         gguf: GgufFields,
         nCtx: Int,
-        kvCacheTypeK: KvCacheType,
-        kvCacheTypeV: KvCacheType,
+        kvCacheMethod: KvCacheMethod,
+        kvCacheMethodPreset: KvCacheMethodPreset,
         nUbatch: Int,
         availableMemoryBytes: Long?,
     ): EstimationResult {
@@ -96,8 +99,8 @@ object ModelMemoryEstimator {
                 vocabSize = gguf.nVocab,
             ),
             nCtx = nCtx,
-            kvCacheTypeK = kvCacheTypeK,
-            kvCacheTypeV = kvCacheTypeV,
+            kvCacheMethod = kvCacheMethod,
+            kvCacheMethodPreset = kvCacheMethodPreset,
             nUbatch = nUbatch,
             availableMemoryMb = availableMemoryBytes?.toDouble()?.div(MB),
         )
@@ -130,8 +133,8 @@ object ModelMemoryEstimator {
             modelFileSizeBytes = modelFileSizeBytes,
             metadata = null,
             nCtx = 2048,
-            kvCacheTypeK = KvCacheType.Q8_0,
-            kvCacheTypeV = KvCacheType.Q8_0,
+            kvCacheMethod = KvCacheMethod.AUTO,
+            kvCacheMethodPreset = KvCacheMethodPreset.SAFE,
             nUbatch = 512,
             availableMemoryMb = availableMemoryBytes?.toDouble()?.div(MB),
         )

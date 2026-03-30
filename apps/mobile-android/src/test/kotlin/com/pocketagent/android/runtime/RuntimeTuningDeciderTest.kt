@@ -1,5 +1,6 @@
 package com.pocketagent.android.runtime
 
+import com.pocketagent.nativebridge.KvCacheMethodPreset
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimePerformanceProfile
 import kotlin.test.Test
@@ -33,7 +34,7 @@ class RuntimeTuningDeciderTest {
         assertEquals(128, next.nBatch)
         assertEquals(128, next.nUbatch)
         assertEquals(1, next.speculativeDraftGpuLayers)
-        assertEquals(com.pocketagent.nativebridge.KvCacheType.Q8_0, next.kvCacheType)
+        assertEquals(KvCacheMethodPreset.AGGRESSIVE, next.kvCacheMethodPreset)
         assertEquals(42L, next.updatedAtEpochMs)
         assertEquals("demote_memory_pressure", next.lastDecision)
     }
@@ -226,7 +227,7 @@ class RuntimeTuningDeciderTest {
         )
         val demoted = RuntimeTuningRecommendation(
             gpuLayers = 4,
-            kvCacheType = com.pocketagent.nativebridge.KvCacheType.Q8_0,
+            kvCacheMethodPreset = KvCacheMethodPreset.BALANCED,
             speculativeEnabled = true,
             nBatch = 256,
             nUbatch = 256,
@@ -290,10 +291,24 @@ class RuntimeTuningDeciderTest {
                 artifactIdentity = "ffffeeee11112222",
             ),
         )
+        val kvMethodKey = buildRuntimeTuningStorageKey(
+            prefix = "runtime_tuning_rec__",
+            deviceKey = "pixel_8",
+            profileName = "FAST",
+            mode = "gpu",
+            modelId = "qwen3.5-0.8b-q4",
+            envelope = baseEnvelope.copy(
+                kvMethod = "turboquant",
+                kvMethodPreset = "balanced",
+            ),
+        )
 
         assertNotEquals(versionKey, contextKey)
         assertNotEquals(versionKey, artifactKey)
+        assertNotEquals(versionKey, kvMethodKey)
         assertNotEquals(contextKey, artifactKey)
+        assertNotEquals(contextKey, kvMethodKey)
+        assertNotEquals(artifactKey, kvMethodKey)
     }
 
     @Test

@@ -1,6 +1,8 @@
 package com.pocketagent.android.runtime
 
 import com.pocketagent.nativebridge.CachePolicy
+import com.pocketagent.nativebridge.KvCacheMethod
+import com.pocketagent.nativebridge.KvCacheMethodPreset
 import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -103,8 +105,8 @@ class GpuProbeServiceTest {
         assertTrue(bridge.generationConfigs.all { cfg -> cfg.nBatch == 256 && cfg.nUbatch == 256 })
         assertTrue(
             bridge.generationConfigs.all { cfg ->
-                cfg.kvCacheTypeK == com.pocketagent.nativebridge.KvCacheType.F16 &&
-                    cfg.kvCacheTypeV == com.pocketagent.nativebridge.KvCacheType.F16
+                cfg.kvCacheMethod == KvCacheMethod.TURBOQUANT &&
+                    cfg.kvCacheMethodPreset == KvCacheMethodPreset.SAFE
             },
         )
     }
