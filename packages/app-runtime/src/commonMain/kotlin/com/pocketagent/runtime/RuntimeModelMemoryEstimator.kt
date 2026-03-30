@@ -58,7 +58,13 @@ object RuntimeModelMemoryEstimator {
                     )
             ).toLong()
         val computeBufferBytes = (vocabSize.toLong() + embeddingSize.toLong()) * nUbatch.coerceAtLeast(1).toLong() * 4L
-        val estimatedBytes = ((modelFileSizeBytes + kvCacheBytes + computeBufferBytes).toDouble() * METADATA_OVERHEAD_MULTIPLIER)
+        // TurboQuant WHT rotation overhead: one sign vector (float[head_dim]) per layer.
+        // Only allocated when quantized KV is active (BALANCED or AGGRESSIVE preset).
+        val rotationOverheadBytes = when (kvCacheMethodPreset) {
+            KvCacheMethodPreset.SAFE -> 0L
+            else -> layerCount.toLong() * keyLength.toLong() * 4L
+        }
+        val estimatedBytes = ((modelFileSizeBytes + kvCacheBytes + computeBufferBytes + rotationOverheadBytes).toDouble() * METADATA_OVERHEAD_MULTIPLIER)
             .toLong()
         return RuntimeMemoryEstimate(
             estimatedBytes = estimatedBytes,
