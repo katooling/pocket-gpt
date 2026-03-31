@@ -53,6 +53,25 @@ class ChatStartupProbeOrchestrator(
                 onPersist()
                 log("completed", probeToken, normalizedDetail, null)
             } catch (cancelled: CancellationException) {
+                if (isLatestStartupProbe(probeToken)) {
+                    updateState { state ->
+                        val runtime = state.runtime
+                        if (runtime.startupProbeState == com.pocketagent.android.ui.state.StartupProbeState.RUNNING) {
+                            state.copy(
+                                runtime = runtime.copy(
+                                    startupProbeState = com.pocketagent.android.ui.state.StartupProbeState.IDLE,
+                                    modelRuntimeStatus = if (runtime.modelRuntimeStatus == com.pocketagent.android.ui.state.ModelRuntimeStatus.LOADING) {
+                                        com.pocketagent.android.ui.state.ModelRuntimeStatus.NOT_READY
+                                    } else {
+                                        runtime.modelRuntimeStatus
+                                    },
+                                ),
+                            )
+                        } else {
+                            state
+                        }
+                    }
+                }
                 log("cancelled", probeToken, normalizedDetail, cancelled)
                 throw cancelled
             } finally {

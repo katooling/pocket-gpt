@@ -12,15 +12,17 @@ class SendReducer {
         runtime: RuntimeUiState,
         toolDriven: Boolean,
     ): RuntimeUiState {
-        if (toolDriven) {
-            return runtime.clearError()
-        }
-        return runtime.copy(
-            modelRuntimeStatus = ModelRuntimeStatus.LOADING,
-            modelStatusDetail = "Loading model...",
+        val base = runtime.copy(
             sendElapsedMs = 0L,
             sendSlowState = null,
         ).clearError()
+        if (toolDriven) {
+            return base
+        }
+        return base.copy(
+            modelRuntimeStatus = ModelRuntimeStatus.LOADING,
+            modelStatusDetail = "Preparing request...",
+        )
     }
 
     fun statusDetailForEvent(event: ChatStreamEvent): String? {

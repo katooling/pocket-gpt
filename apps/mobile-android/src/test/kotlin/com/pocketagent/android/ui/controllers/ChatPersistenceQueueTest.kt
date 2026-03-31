@@ -64,4 +64,28 @@ class ChatPersistenceQueueTest {
         assertTrue(metrics.lastPayloadBytes > 0)
         assertTrue(metrics.medianPayloadBytes > 0)
     }
+
+    @Test
+    fun `close flushes pending state before worker debounce completes`() = runTest(dispatcher) {
+        val persisted = mutableListOf<StoredChatState>()
+        val queue = ChatPersistenceQueue(
+            scope = this,
+            ioDispatcher = dispatcher,
+            debounceMs = 1_000L,
+            toStoredState = { state ->
+                StoredChatState(activeSessionId = state.composer.text.ifBlank { null })
+            },
+            saveStoredState = { state ->
+                persisted += state
+            },
+        )
+
+        queue.enqueue(ChatUiState(composer = ComposerUiState(text = "pending-close")))
+        advanceTimeBy(100L)
+
+        queue.close()
+
+        assertEquals(1, persisted.size)
+        assertEquals("pending-close", persisted.single().activeSessionId)
+    }
 }

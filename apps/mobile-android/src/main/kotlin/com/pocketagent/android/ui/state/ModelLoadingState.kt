@@ -27,6 +27,7 @@ sealed interface ModelLoadingState {
     data class Loaded(
         val model: RuntimeLoadedModel,
         override val lastUsedModel: RuntimeLoadedModel?,
+        val detail: String?,
         val readyAtEpochMs: Long,
     ) : ModelLoadingState {
         override val loadedModel: RuntimeLoadedModel = model
@@ -78,6 +79,9 @@ internal fun RuntimeModelLifecycleSnapshot.toModelLoadingState(): ModelLoadingSt
             ModelLoadingState.Loaded(
                 model = resolvedModel,
                 lastUsedModel = lastUsedModel ?: resolvedModel,
+                detail = loadingDetail
+                    ?.trim()
+                    ?.takeIf { detail -> detail.isNotEmpty() && detail != DEFAULT_LOADED_DETAIL },
                 readyAtEpochMs = updatedAtEpochMs,
             )
         }
@@ -101,6 +105,8 @@ internal fun RuntimeModelLifecycleSnapshot.toModelLoadingState(): ModelLoadingSt
         )
     }
 }
+
+private const val DEFAULT_LOADED_DETAIL = "Loaded"
 
 internal fun ModelLoadingState.activeOrRequestedModel(): RuntimeLoadedModel? {
     return when (this) {

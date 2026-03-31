@@ -273,6 +273,39 @@ class ChatStreamCoordinatorTest {
         assertEquals("completed", terminalState?.finishReason)
         assertEquals("legacy response", terminalState?.responseText)
     }
+
+    @Test
+    fun `collect stream thrown failure cancels request by request id`() = runTest {
+        val runtime = FlowRuntimeGateway(
+            flowFactory = { request ->
+                flow {
+                    emit(ChatStreamEvent.Started(request.requestId, startedAtEpochMs = 1L))
+                    throw IllegalStateException("stream exploded")
+                }
+            },
+        )
+        val coordinator = ChatStreamCoordinator(
+            terminalWatchdogGraceMs = 10L,
+            sendElapsedUpdateIntervalMs = 5L,
+        )
+        val reducer = StreamStateReducer(requestTimeoutMs = 200L)
+        var terminalState: StreamTerminalState? = null
+
+        coordinator.collectStream(
+            runtimeService = runtime,
+            preparedStream = preparedRequest("req-failure", 200L),
+            streamReducer = reducer,
+            sendStartedAtMs = System.currentTimeMillis(),
+            onEvent = { _, _ -> },
+            onElapsed = { _, _ -> },
+            onBeforeTerminal = { },
+            onTerminal = { terminal -> terminalState = terminal },
+        )
+
+        assertEquals(1, runtime.cancelByRequestCalls)
+        assertNotNull(terminalState)
+        assertEquals("runtime_error", terminalState?.finishReason)
+    }
 }
 
 private fun request(requestId: String): StreamChatRequestV2 {

@@ -731,11 +731,12 @@ class ChatViewModel(
             is ModelLoadingState.Loaded -> {
                 syncRoutingModeToLoadedModel(nextState.model)
                 _uiState.update { state ->
+                    val loadedDetail = nextState.detail?.takeIf { detail -> detail.isNotBlank() }
                     state.copy(
                         runtime = state.runtime.copy(
                             activeModelId = nextState.model.modelId,
                             modelRuntimeStatus = ModelRuntimeStatus.READY,
-                            modelStatusDetail = buildString {
+                            modelStatusDetail = loadedDetail ?: buildString {
                                 append("Runtime model loaded (")
                                 append(nextState.model.modelId)
                                 nextState.model.modelVersion?.takeIf { it.isNotBlank() }?.let { version ->

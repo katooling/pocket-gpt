@@ -50,10 +50,21 @@ class ChatPersistenceQueue(
     fun metricsSnapshot(): PersistenceQueueMetrics = synchronized(lock) { metrics }
 
     fun close() {
+        val stateToFlush: ChatUiState?
         synchronized(lock) {
+            stateToFlush = pendingState
+            pendingState = null
             workerJob?.cancel()
             workerJob = null
-            pendingState = null
+        }
+        if (stateToFlush != null) {
+            runCatching {
+                val stored = toStoredState(stateToFlush)
+                if (stored != lastSaved) {
+                    saveStoredState(stored)
+                    lastSaved = stored
+                }
+            }
         }
     }
 

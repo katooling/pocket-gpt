@@ -113,10 +113,7 @@ class ChatStreamCoordinator(
                 if (previousTerminal != null || nextState.terminal == null) return@onFailure
                 prefillTimeoutWatchdog.cancel()
                 elapsedTicker.cancel()
-                val generationTimedOut = error is TimeoutCancellationException || error is RuntimeGenerationTimeoutException
-                if (generationTimedOut) {
-                    runtimeService.cancelGenerationByRequest(request.requestId)
-                }
+                runtimeService.cancelGenerationByRequest(request.requestId)
                 val terminal = nextState.terminal ?: return@onFailure
                 onBeforeTerminal()
                 onTerminal(terminal)

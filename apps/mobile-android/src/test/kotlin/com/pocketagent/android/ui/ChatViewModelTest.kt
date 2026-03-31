@@ -1321,6 +1321,38 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `loaded lifecycle detail is surfaced as runtime status detail`() = runTest(dispatcher) {
+        val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
+        val residentModel = RuntimeLoadedModel(
+            modelId = com.pocketagent.inference.ModelCatalog.QWEN_3_5_0_8B_Q4,
+            modelVersion = "q4_0",
+        )
+        val gateway = LifecycleOnlyProvisioningGateway(
+            initialLifecycle = RuntimeModelLifecycleSnapshot(
+                state = com.pocketagent.nativebridge.ModelLifecycleState.LOADED,
+                loadedModel = residentModel,
+                lastUsedModel = residentModel,
+                loadingDetail = "Model loaded with reduced GPU acceleration.",
+                loadingStage = com.pocketagent.nativebridge.ModelLoadingStage.COMPLETED,
+                loadingProgress = 1.0f,
+            ),
+        )
+        val viewModel = ChatViewModel(
+            runtimeFacade = runtime,
+            sessionPersistence = RecordingPersistence(),
+            provisioningGateway = gateway,
+            ioDispatcher = dispatcher,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(
+            "Model loaded with reduced GPU acceleration.",
+            viewModel.uiState.value.runtime.modelStatusDetail,
+        )
+    }
+
+    @Test
     fun `gpu probe pending state is refreshed to terminal status`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade(
             runtimeBackend = "NATIVE_JNI",
@@ -1565,6 +1597,8 @@ private class LifecycleOnlyProvisioningGateway(
     override fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor> = emptyList()
 
     override fun setActiveVersion(modelId: String, version: String): Boolean = false
+
+    override fun clearActiveVersion(modelId: String): Boolean = false
 
     override fun removeVersion(modelId: String, version: String): Boolean = false
 
@@ -1837,6 +1871,8 @@ private class LoadingProvisioningGateway : ProvisioningGateway {
 
     override fun setActiveVersion(modelId: String, version: String): Boolean = false
 
+    override fun clearActiveVersion(modelId: String): Boolean = false
+
     override fun removeVersion(modelId: String, version: String): Boolean = false
 
     override suspend fun loadInstalledModel(
@@ -1961,6 +1997,8 @@ private class QuickLoadProvisioningGatewayForTest(
     }
 
     override fun setActiveVersion(modelId: String, version: String): Boolean = true
+
+    override fun clearActiveVersion(modelId: String): Boolean = true
 
     override fun removeVersion(modelId: String, version: String): Boolean = true
 
