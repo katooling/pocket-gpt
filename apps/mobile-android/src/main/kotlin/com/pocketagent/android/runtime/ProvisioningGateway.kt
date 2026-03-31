@@ -22,6 +22,7 @@ interface ProvisioningGateway {
     suspend fun loadModelDistributionManifest(): ModelDistributionManifest
     fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor>
     fun setActiveVersion(modelId: String, version: String): Boolean
+    fun clearActiveVersion(modelId: String): Boolean
     fun removeVersion(modelId: String, version: String): Boolean
     suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult
     suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult
@@ -85,6 +86,10 @@ class DefaultProvisioningGateway(
 
     override fun setActiveVersion(modelId: String, version: String): Boolean {
         return dependencies.setActiveVersion(modelId = modelId, version = version)
+    }
+
+    override fun clearActiveVersion(modelId: String): Boolean {
+        return dependencies.clearActiveVersion(modelId = modelId)
     }
 
     override fun removeVersion(modelId: String, version: String): Boolean {
@@ -156,6 +161,7 @@ interface ProvisioningDependencyAccess {
         modelId: String,
     ): List<ModelVersionDescriptor>
     fun setActiveVersion(modelId: String, version: String): Boolean
+    fun clearActiveVersion(modelId: String): Boolean
     fun removeVersion(modelId: String, version: String): Boolean
     suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult
     suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult
@@ -217,6 +223,10 @@ class AppProvisioningDependencyAccess(
 
     override fun setActiveVersion(modelId: String, version: String): Boolean {
         return AppRuntimeDependencies.setActiveVersion(context = context, modelId = modelId, version = version)
+    }
+
+    override fun clearActiveVersion(modelId: String): Boolean {
+        return AppRuntimeDependencies.clearActiveVersion(context = context, modelId = modelId)
     }
 
     override fun removeVersion(modelId: String, version: String): Boolean {

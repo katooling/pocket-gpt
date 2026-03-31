@@ -29,6 +29,8 @@
 #include "ggml-backend.h"
 #include "turboquant.h"
 #include "llama-kv-cache.h"
+#include "llama-kv-cache-iswa.h"
+#include "llama-memory-hybrid.h"
 
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
@@ -36,6 +38,8 @@ constexpr int DEFAULT_CONTEXT_SIZE = 2048;
 constexpr int DEFAULT_BATCH_SIZE = 512;
 constexpr int DEFAULT_PROMPT_DECODE_BATCH_SIZE = 512;
 constexpr int CPU_PROMPT_DECODE_BATCH_CAP = 128;
+constexpr int CPU_PREFILL_ONLY_BATCH_CAP = 128;
+constexpr int CPU_PREFILL_ONLY_PROMPT_DECODE_BATCH_CAP = 64;
 constexpr int CACHE_POLICY_OFF = 0;
 constexpr int CACHE_POLICY_PREFIX_REUSE = 1;
 constexpr int CACHE_POLICY_PREFIX_REUSE_STRICT = 2;
@@ -211,6 +215,18 @@ int32_t resolve_context_size(jint requested_ctx) {
         return DEFAULT_CONTEXT_SIZE;
     }
     return clamp_i32(static_cast<int32_t>(requested_ctx), 512, 32768);
+}
+
+bool model_has_no_kv_cache() {
+    return g_model_uses_recurrent_memory && !g_model_uses_hybrid_memory;
+}
+
+bool should_run_native_warmup(bool gpu_ops_active) {
+    // Speed-first policy:
+    // For CPU-only prefill-only models (recurrent / hybrid), the 1-token warmup
+    // has shown poor ROI: it can take seconds and still fails to prevent the
+    // later larger-batch graph reallocation during real prompt decode.
+    return gpu_ops_active || !model_has_no_kv_cache();
 }
 
 void clear_prefix_cache_slots_locked();
@@ -3309,22 +3325,33 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             g_model_uses_hybrid_memory ? "true" : "false");
 
         llama_context_params context_params = llama_context_default_params();
+        const int32_t requested_n_batch = resolve_batch(nBatch);
+        const int32_t requested_n_ubatch = resolve_batch(nUbatch);
+        const bool recurrent_cpu_batch_cap_applied =
+            !use_gpu_ops && model_has_no_kv_cache();
         context_params.n_ctx = static_cast<uint32_t>(resolve_context_size(nCtx));
-        context_params.n_batch = resolve_batch(nBatch);
-        context_params.n_ubatch = resolve_batch(nUbatch);
+        context_params.n_batch = recurrent_cpu_batch_cap_applied
+            ? std::min<int32_t>(requested_n_batch, CPU_PREFILL_ONLY_BATCH_CAP)
+            : requested_n_batch;
+        context_params.n_ubatch = recurrent_cpu_batch_cap_applied
+            ? std::min<int32_t>(requested_n_ubatch, CPU_PREFILL_ONLY_BATCH_CAP)
+            : requested_n_ubatch;
         context_params.n_threads = resolve_threads(nThreads);
         context_params.n_threads_batch = resolve_threads(nThreadsBatch);
         context_params.offload_kqv = use_gpu_ops;
         context_params.op_offload = use_gpu_ops;
         const bool is_opencl_backend = (g_active_backend == "opencl");
         const bool opencl_flash_guard_applied = use_gpu_ops && is_opencl_backend;
-        context_params.kv_unified = uses_turboquant_kv_cache(kvCacheMethodCode);
+        const bool turboquant_kv_applicable = !model_has_no_kv_cache();
+        context_params.kv_unified =
+            uses_turboquant_kv_cache(kvCacheMethodCode) && turboquant_kv_applicable;
         context_params.flash_attn_type = resolve_flash_attn_type(flashAttnCode, opencl_flash_guard_applied);
         const auto kv_types = resolve_turboquant_kv_types(kvCacheMethodPresetCode, g_model_size_bytes);
         const ggml_type requested_kv_type_k = kv_types.type_k;
         const ggml_type requested_kv_type_v = kv_types.type_v;
         const bool quantized_kv_requested =
             uses_turboquant_kv_cache(kvCacheMethodCode) &&
+                turboquant_kv_applicable &&
                 (requested_kv_type_k != GGML_TYPE_F16 || requested_kv_type_v != GGML_TYPE_F16);
         const bool quantized_kv_enabled =
             quantized_kv_requested &&
@@ -3343,7 +3370,10 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         g_last_opencl_quant_kv_guard_applied = quantized_kv_requested && is_opencl_backend;
         g_last_quantized_kv_cache = quantized_kv_enabled;
         g_last_turboquant_fallback_reason.clear();
-        if (quantized_kv_enabled) {
+        if (!turboquant_kv_applicable) {
+            g_last_turboquant_mode = "not_applicable";
+            g_last_turboquant_fallback_reason = "recurrent_no_kv_cache";
+        } else if (quantized_kv_enabled) {
             g_last_turboquant_mode = "rotation_pending";
         } else if (quantized_kv_requested) {
             g_last_turboquant_mode = "f16_guarded";
@@ -3360,6 +3390,16 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             context_params.op_offload ? "true" : "false",
             static_cast<int>(context_params.flash_attn_type),
             quantized_kv_enabled ? "true" : "false");
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            TAG,
+            "BATCH_TUNING|requested_n_batch=%d|requested_n_ubatch=%d|effective_n_batch=%u|effective_n_ubatch=%u|prefill_only_mode=%s|cpu_cap_applied=%s",
+            requested_n_batch,
+            requested_n_ubatch,
+            context_params.n_batch,
+            context_params.n_ubatch,
+            g_prefix_cache_prefill_only_mode ? "true" : "false",
+            recurrent_cpu_batch_cap_applied ? "true" : "false");
         auto apply_turboquant_f16_fallback = [&](const std::string & reason) {
             context_params.type_k = GGML_TYPE_F16;
             context_params.type_v = GGML_TYPE_F16;
@@ -3468,33 +3508,59 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
 
         // ── TurboQuant rotation hook registration (post-context) ────────
         if (g_tq_rotation_enabled && g_tq_session) {
-            // Allocate per-layer hook contexts with layer-adaptive protection.
-            // First/last PROTECT_N_LAYERS layers skip rotation — they are most
-            // sensitive to quantization error (embedding/output projections).
-            constexpr int PROTECT_N_LAYERS = 2;
-            delete[] g_tq_hook_ctxs;
-            delete[] g_tq_hook_userdata;
-            g_tq_hook_ctxs = new TqHookCtx[tq_n_layer];
-            g_tq_hook_userdata = new void*[tq_n_layer];
-            int protected_count = 0;
-            for (int i = 0; i < tq_n_layer; i++) {
-                const bool protect = (i < PROTECT_N_LAYERS) ||
-                                     (i >= tq_n_layer - PROTECT_N_LAYERS);
-                g_tq_hook_ctxs[i] = { g_tq_session, i, tq_n_embd_head_k, protect };
-                g_tq_hook_userdata[i] = &g_tq_hook_ctxs[i];
-                if (protect) protected_count++;
+            // Resolve the KV cache from the model's memory backend.
+            // Recurrent/SSM models (Mamba, RWKV, Qwen-SSM) have no KV cache —
+            // TurboQuant is not applicable and must be skipped cleanly.
+            llama_kv_cache * resolved_kv = nullptr;
+            auto * memory = llama_get_memory(g_context);
+            if (memory) {
+                resolved_kv = dynamic_cast<llama_kv_cache *>(memory);
+                if (!resolved_kv) {
+                    // Try hybrid memory (attention + recurrent layers)
+                    auto * hybrid = dynamic_cast<llama_memory_hybrid *>(memory);
+                    if (hybrid) resolved_kv = hybrid->get_mem_attn();
+                }
+                if (!resolved_kv) {
+                    // Try ISWA KV cache (SWA + non-SWA layers)
+                    auto * iswa = dynamic_cast<llama_kv_cache_iswa *>(memory);
+                    if (iswa) resolved_kv = iswa->get_base();
+                }
             }
 
-            // Register rotation hook with the KV cache
-            bool hook_registered = false;
-            const bool hook_failpoint = turboquant_force_hook_registration_failure();
-            auto * memory = llama_get_memory(g_context);
-            if (!hook_failpoint && memory) {
-                auto * kv_cache = dynamic_cast<llama_kv_cache *>(memory);
-                if (kv_cache) {
-                    kv_cache->set_kv_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
-                    kv_cache->set_q_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
-                    kv_cache->set_inverse_rotation_hook(turboquant_inverse_rotation_callback, g_tq_hook_userdata);
+            if (!resolved_kv) {
+                // Model does not use a KV cache (e.g. pure recurrent/SSM).
+                // TurboQuant rotation is irrelevant — clean up without
+                // destroying the already-working context.
+                g_tq_rotation_enabled = false;
+                tq_session_free(g_tq_session);
+                g_tq_session = nullptr;
+                g_last_turboquant_mode = "not_applicable";
+                g_last_turboquant_fallback_reason = "no_kv_cache";
+                __android_log_print(ANDROID_LOG_INFO, TAG,
+                    "TURBOQUANT|skipped=true|reason=no_kv_cache|memory_type=%s",
+                    memory ? "recurrent_or_other" : "null");
+            } else {
+                // KV cache found — register rotation hooks.
+                constexpr int PROTECT_N_LAYERS = 2;
+                delete[] g_tq_hook_ctxs;
+                delete[] g_tq_hook_userdata;
+                g_tq_hook_ctxs = new TqHookCtx[tq_n_layer];
+                g_tq_hook_userdata = new void*[tq_n_layer];
+                int protected_count = 0;
+                for (int i = 0; i < tq_n_layer; i++) {
+                    const bool protect = (i < PROTECT_N_LAYERS) ||
+                                         (i >= tq_n_layer - PROTECT_N_LAYERS);
+                    g_tq_hook_ctxs[i] = { g_tq_session, i, tq_n_embd_head_k, protect };
+                    g_tq_hook_userdata[i] = &g_tq_hook_ctxs[i];
+                    if (protect) protected_count++;
+                }
+
+                bool hook_registered = false;
+                const bool hook_failpoint = turboquant_force_hook_registration_failure();
+                if (!hook_failpoint) {
+                    resolved_kv->set_kv_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
+                    resolved_kv->set_q_rotation_hook(turboquant_rotation_callback, g_tq_hook_userdata);
+                    resolved_kv->set_inverse_rotation_hook(turboquant_inverse_rotation_callback, g_tq_hook_userdata);
                     hook_registered = true;
                     g_last_turboquant_mode = "rotation_active";
                     __android_log_print(ANDROID_LOG_INFO, TAG,
@@ -3503,32 +3569,33 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                         ggml_type_name(context_params.type_k),
                         ggml_type_name(context_params.type_v));
                 }
-            }
-            if (!hook_registered) {
-                g_tq_rotation_enabled = false;
-                g_last_quantized_kv_cache = false;
-                tq_session_free(g_tq_session);
-                g_tq_session = nullptr;
-                delete[] g_tq_hook_ctxs;
-                g_tq_hook_ctxs = nullptr;
-                delete[] g_tq_hook_userdata;
-                g_tq_hook_userdata = nullptr;
-                if (g_context != nullptr) {
-                    llama_free(g_context);
-                    g_context = nullptr;
+
+                if (!hook_registered) {
+                    g_tq_rotation_enabled = false;
+                    g_last_quantized_kv_cache = false;
+                    tq_session_free(g_tq_session);
+                    g_tq_session = nullptr;
+                    delete[] g_tq_hook_ctxs;
+                    g_tq_hook_ctxs = nullptr;
+                    delete[] g_tq_hook_userdata;
+                    g_tq_hook_userdata = nullptr;
+                    if (g_context != nullptr) {
+                        llama_free(g_context);
+                        g_context = nullptr;
+                    }
+                    apply_turboquant_f16_fallback(
+                        hook_failpoint ? "hook_registration_failpoint" : "hook_registration_failed");
+                    __android_log_print(ANDROID_LOG_WARN, TAG,
+                        "TURBOQUANT|rotation_fallback=f16|reason=%s",
+                        g_last_turboquant_fallback_reason.c_str());
+                    int recovery_errno = 0;
+                    if (!init_target_context("context_reinit_f16_after_hook_failure", &recovery_errno)) {
+                        log_error("nativeLoadModel failed: llama_init_from_model F16 recovery returned null");
+                        release_runtime_locked();
+                        return JNI_FALSE;
+                    }
+                    g_last_turboquant_mode = "f16_recovery";
                 }
-                apply_turboquant_f16_fallback(
-                    hook_failpoint ? "hook_registration_failpoint" : "hook_registration_failed");
-                __android_log_print(ANDROID_LOG_WARN, TAG,
-                    "TURBOQUANT|rotation_fallback=f16|reason=%s",
-                    g_last_turboquant_fallback_reason.c_str());
-                int recovery_errno = 0;
-                if (!init_target_context("context_reinit_f16_after_hook_failure", &recovery_errno)) {
-                    log_error("nativeLoadModel failed: llama_init_from_model F16 recovery returned null");
-                    release_runtime_locked();
-                    return JNI_FALSE;
-                }
-                g_last_turboquant_mode = "f16_recovery";
             }
         }
         g_last_flash_attn_active = context_params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED;
@@ -3547,7 +3614,7 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             g_last_turboquant_mode.c_str(),
             g_last_turboquant_fallback_reason.c_str());
 
-        {
+        if (should_run_native_warmup(use_gpu_ops)) {
             llama_set_warmup(g_context, true);
             llama_token bos = llama_vocab_bos(llama_model_get_vocab(g_model));
             llama_batch warmup_batch = llama_batch_get_one(&bos, 1);
@@ -3555,6 +3622,11 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             llama_set_warmup(g_context, false);
             llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
             __android_log_print(ANDROID_LOG_INFO, TAG, "WARMUP|target|rc=%d", warmup_rc);
+        } else {
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                TAG,
+                "WARMUP|target|skipped=true|reason=cpu_prefill_only_low_roi");
         }
 
         const float resolved_temperature = std::max(0.0f, static_cast<float>(temperature));
@@ -3573,16 +3645,22 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
         const float resolved_xtc_threshold = std::max(0.0f, std::min(1.0f, static_cast<float>(xtcThreshold)));
         const float resolved_xtc_probability = std::max(0.0f, std::min(1.0f, static_cast<float>(xtcProbability)));
         const int32_t resolved_seed = static_cast<int32_t>(seed);
-        const int32_t resolved_prompt_decode_batch = std::min(resolve_batch(nBatch), resolve_batch(nUbatch));
+        const int32_t resolved_prompt_decode_batch =
+            std::min<int32_t>(context_params.n_batch, context_params.n_ubatch);
+        const int32_t cpu_prompt_decode_batch_cap = model_has_no_kv_cache()
+            ? CPU_PREFILL_ONLY_PROMPT_DECODE_BATCH_CAP
+            : CPU_PROMPT_DECODE_BATCH_CAP;
         g_prompt_decode_batch_size = use_gpu_ops
             ? resolved_prompt_decode_batch
-            : std::min<int32_t>(resolved_prompt_decode_batch, CPU_PROMPT_DECODE_BATCH_CAP);
+            : std::min<int32_t>(resolved_prompt_decode_batch, cpu_prompt_decode_batch_cap);
         __android_log_print(
             ANDROID_LOG_INFO,
             TAG,
-            "PROMPT_DECODE|batch_size=%d|cpu_cap_applied=%s",
+            "PROMPT_DECODE|batch_size=%d|cpu_cap_applied=%s|prefill_only_mode=%s|cpu_cap=%d",
             static_cast<int>(g_prompt_decode_batch_size),
-            (!use_gpu_ops && g_prompt_decode_batch_size < resolved_prompt_decode_batch) ? "true" : "false");
+            (!use_gpu_ops && g_prompt_decode_batch_size < resolved_prompt_decode_batch) ? "true" : "false",
+            g_prefix_cache_prefill_only_mode ? "true" : "false",
+            cpu_prompt_decode_batch_cap);
         g_runtime_context_size = static_cast<int32_t>(context_params.n_ctx);
         g_runtime_n_keep = clamp_i32(
             static_cast<int32_t>(nKeep),
@@ -3669,15 +3747,22 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                         resolved_seed);
                     if (g_draft_sampler != nullptr) {
                         g_speculative_enabled = true;
-                        llama_set_warmup(g_draft_context, true);
-                        llama_token draft_bos = llama_vocab_bos(
-                            llama_model_get_vocab(g_draft_model));
-                        llama_batch draft_warmup = llama_batch_get_one(&draft_bos, 1);
-                        const int draft_warmup_rc = llama_decode(g_draft_context, draft_warmup);
-                        llama_set_warmup(g_draft_context, false);
-                        llama_memory_seq_rm(llama_get_memory(g_draft_context), 0, -1, -1);
-                        __android_log_print(ANDROID_LOG_INFO, TAG,
-                            "WARMUP|draft|rc=%d", draft_warmup_rc);
+                        if (should_run_native_warmup(draft_context_params.offload_kqv)) {
+                            llama_set_warmup(g_draft_context, true);
+                            llama_token draft_bos = llama_vocab_bos(
+                                llama_model_get_vocab(g_draft_model));
+                            llama_batch draft_warmup = llama_batch_get_one(&draft_bos, 1);
+                            const int draft_warmup_rc = llama_decode(g_draft_context, draft_warmup);
+                            llama_set_warmup(g_draft_context, false);
+                            llama_memory_seq_rm(llama_get_memory(g_draft_context), 0, -1, -1);
+                            __android_log_print(ANDROID_LOG_INFO, TAG,
+                                "WARMUP|draft|rc=%d", draft_warmup_rc);
+                        } else {
+                            __android_log_print(
+                                ANDROID_LOG_INFO,
+                                TAG,
+                                "WARMUP|draft|skipped=true|reason=cpu_prefill_only_low_roi");
+                        }
                     }
                 }
             }

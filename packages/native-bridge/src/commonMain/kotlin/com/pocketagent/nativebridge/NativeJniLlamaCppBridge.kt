@@ -51,6 +51,8 @@ class NativeJniLlamaCppBridge(
     @Volatile
     private var lastGpuLoadRetryCount: Int? = null
     @Volatile
+    private var lastSuccessfulLoadDetail: String? = null
+    @Volatile
     private var loadedNativeLibraryName: String? = null
     private val kvCacheMethodState: AtomicReference<KvCacheMethodResolution> = AtomicReference(
         KvCacheMethodResolution(
@@ -297,6 +299,7 @@ class NativeJniLlamaCppBridge(
             activeLoadToken += 1L
             activeLoadToken
         }
+        lastSuccessfulLoadDetail = null
         emitLifecycleEvent(
             ModelLifecycleEvent(
                 state = ModelLifecycleState.LOADING,
@@ -339,7 +342,7 @@ class NativeJniLlamaCppBridge(
                         state = ModelLifecycleState.LOADED,
                         modelId = modelId,
                         modelVersion = options.modelVersion,
-                        loadingDetail = defaultLoadingDetail(ModelLoadingStage.COMPLETED),
+                        loadingDetail = lastSuccessfulLoadDetail ?: defaultLoadingDetail(ModelLoadingStage.COMPLETED),
                         loadingStage = ModelLoadingStage.COMPLETED,
                         loadingProgress = 1.0f,
                     ),
@@ -535,6 +538,13 @@ class NativeJniLlamaCppBridge(
                     draftGpuLayers = attempt.draftGpuLayers,
                     retryCount = attemptIndex,
                 )
+                lastSuccessfulLoadDetail = when {
+                    openclQuantDemoted && gpuRequested ->
+                        "Model loaded on CPU because this quantization is not release-qualified for GPU."
+                    attemptIndex > 0 ->
+                        "Model loaded with reduced GPU acceleration."
+                    else -> null
+                }
                 return true
             }
 

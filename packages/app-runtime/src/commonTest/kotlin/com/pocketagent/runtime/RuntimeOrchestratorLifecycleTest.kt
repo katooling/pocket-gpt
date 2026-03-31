@@ -99,6 +99,45 @@ class RuntimeOrchestratorLifecycleTest {
             modelFile.delete()
         }
     }
+
+    @Test
+    fun `foreground auto restore emits failure event when reload fails`() {
+        val modelId = ModelCatalog.QWEN_3_5_0_8B_Q4
+        val modelFile = File.createTempFile("runtime-orchestrator-foreground-fail", ".gguf").apply {
+            writeText("fake-gguf-payload")
+            deleteOnExit()
+        }
+        val bridge = RecordingLifecycleBridge(modelId = modelId)
+        val module = RecordingLifecycleInferenceModule(bridge)
+        module.registerModelPath(modelId, modelFile.absolutePath)
+        val orchestrator = RuntimeOrchestrator(
+            inferenceModule = module,
+            runtimeConfig = lifecycleRuntimeConfig(modelId = modelId, file = modelFile),
+        )
+        val events = mutableListOf<ModelLifecycleEvent>()
+        val subscription = orchestrator.observeModelLifecycleEvents { event ->
+            synchronized(events) {
+                events += event
+            }
+        }
+
+        try {
+            assertTrue(orchestrator.loadModel(modelId = modelId).success)
+            assertTrue(orchestrator.onAppBackground())
+            bridge.failNextLoad = true
+
+            assertEquals(false, orchestrator.onAppForeground())
+
+            waitForLifecycleEvent(events) { event ->
+                event.state == ModelLifecycleState.FAILED &&
+                    event.modelId == modelId
+            }
+            assertEquals(ModelLifecycleState.FAILED, orchestrator.currentModelLifecycleEvent()?.state)
+        } finally {
+            subscription.close()
+            modelFile.delete()
+        }
+    }
 }
 
 private class RecordingLifecycleInferenceModule(
@@ -259,6 +298,7 @@ private class RecordingLifecycleBridge(
     private var nextObserverId: Int = 1
     private var loadedModel: LoadedModelInfo? = null
     private var currentEvent: ModelLifecycleEvent = ModelLifecycleEvent(state = ModelLifecycleState.UNLOADED)
+    var failNextLoad: Boolean = false
     val savedSessionPaths = mutableListOf<String>()
     val restoredSessionPaths = mutableListOf<String>()
 
@@ -280,6 +320,10 @@ private class RecordingLifecycleBridge(
                 loadingProgress = 0.5f,
             ),
         )
+        if (failNextLoad) {
+            failNextLoad = false
+            return false
+        }
         loadedModel = LoadedModelInfo(modelId = modelId, modelPath = modelPath, modelVersion = options.modelVersion)
         emit(
             ModelLifecycleEvent(

@@ -156,6 +156,19 @@ object AppRuntimeDependencies {
         return changed
     }
 
+    fun clearActiveVersion(
+        context: Context,
+        modelId: String,
+    ): Boolean {
+        val graph = graphManager.getOrCreateRuntimeGraph(context)
+        val changed = graph.provisioningStore.clearActiveVersion(modelId)
+        if (changed) {
+            installProductionRuntime(context)
+        }
+        lifecycleCoordinator.reconcileLifecycleState(graph)
+        return changed
+    }
+
     fun removeVersion(
         context: Context,
         modelId: String,
@@ -163,7 +176,11 @@ object AppRuntimeDependencies {
     ): Boolean {
         val graph = graphManager.getOrCreateRuntimeGraph(context)
         val loaded = graph.runtimeFacade.loadedModel()
-        if (loaded != null && loaded.modelId == modelId && (loaded.modelVersion == null || loaded.modelVersion == version)) {
+        val guardedLoadedVersion = loadedVersionForRemovalGuard(
+            loadedModel = loaded,
+            installedVersions = graph.provisioningStore.listInstalledVersions(modelId),
+        )
+        if (loaded != null && loaded.modelId == modelId && guardedLoadedVersion == version) {
             return false
         }
         val removed = graph.provisioningStore.removeVersion(modelId, version)
@@ -261,4 +278,15 @@ object AppRuntimeDependencies {
     suspend fun offloadModel(context: Context, reason: String): RuntimeModelLifecycleCommandResult {
         return lifecycleCoordinator.offloadModel(context, reason)
     }
+}
+
+internal fun loadedVersionForRemovalGuard(
+    loadedModel: com.pocketagent.runtime.RuntimeLoadedModel?,
+    installedVersions: List<com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor>,
+): String? {
+    if (loadedModel == null) {
+        return null
+    }
+    return loadedModel.modelVersion
+        ?: installedVersions.firstOrNull { descriptor -> descriptor.isActive }?.version
 }

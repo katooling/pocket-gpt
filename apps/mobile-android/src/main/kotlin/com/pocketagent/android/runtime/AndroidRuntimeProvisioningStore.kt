@@ -349,6 +349,25 @@ class AndroidRuntimeProvisioningStore(
         }
     }
 
+    fun clearActiveVersion(modelId: String): Boolean {
+        val spec = modelSpecFor(modelId)
+        return withModelLock(modelId) {
+            ensureMigrated()
+            val activeVersion = prefs.readOptional(activeVersionKey(spec)) ?: return@withModelLock false
+            val versions = readInstalledVersions(spec)
+            if (versions.none { descriptor -> descriptor.version == activeVersion }) {
+                prefs.edit()
+                    .remove(activeVersionKey(spec))
+                    .apply()
+                return@withModelLock true
+            }
+            prefs.edit()
+                .remove(activeVersionKey(spec))
+                .apply()
+            true
+        }
+    }
+
     fun removeVersion(modelId: String, version: String): Boolean {
         val spec = modelSpecFor(modelId)
         return withModelLock(modelId) {

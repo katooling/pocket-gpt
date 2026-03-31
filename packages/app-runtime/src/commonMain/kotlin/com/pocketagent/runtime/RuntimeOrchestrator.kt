@@ -20,6 +20,7 @@ import com.pocketagent.memory.FileBackedMemoryModule
 import com.pocketagent.memory.MemoryModule
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.nativebridge.ModelLifecycleEvent
+import com.pocketagent.nativebridge.ModelLifecycleError
 import com.pocketagent.nativebridge.ModelLifecycleState
 import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.NativeJniLlamaCppBridge
@@ -670,7 +671,40 @@ class RuntimeOrchestrator(
         }
         val modelId = runtimeResidencyManager.lastAutoReleasedModelId ?: return false
         runtimeResidencyManager.clearAutoReleasedState()
+        emitRuntimeLifecycleEvent(
+            ModelLifecycleEvent(
+                state = ModelLifecycleState.LOADING,
+                modelId = modelId,
+                loadingDetail = "Restoring your last model after background unload...",
+                loadingStage = ModelLoadingStage.INITIALIZING_RUNTIME,
+                loadingProgress = 0f,
+            ),
+        )
         val result = loadModel(modelId = modelId)
+        if (result.success) {
+            emitRuntimeLifecycleEvent(
+                ModelLifecycleEvent(
+                    state = ModelLifecycleState.LOADED,
+                    modelId = result.loadedModel?.modelId ?: modelId,
+                    modelVersion = result.loadedModel?.modelVersion,
+                    loadingDetail = "Restored after background unload.",
+                    loadingStage = ModelLoadingStage.COMPLETED,
+                    loadingProgress = 1.0f,
+                ),
+            )
+        } else {
+            emitRuntimeLifecycleEvent(
+                ModelLifecycleEvent(
+                    state = ModelLifecycleState.FAILED,
+                    modelId = modelId,
+                    modelVersion = result.loadedModel?.modelVersion,
+                    error = ModelLifecycleError(
+                        code = result.errorCode ?: ModelLifecycleErrorCode.UNKNOWN,
+                        detail = result.detail,
+                    ),
+                ),
+            )
+        }
         return result.success
     }
 

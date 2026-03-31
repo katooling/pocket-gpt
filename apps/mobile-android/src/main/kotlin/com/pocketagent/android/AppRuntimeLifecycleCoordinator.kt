@@ -7,6 +7,7 @@ import com.pocketagent.android.runtime.ModelMemoryEstimator
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
 import com.pocketagent.nativebridge.ModelLifecycleEvent
+import com.pocketagent.nativebridge.ModelLoadingStage
 import com.pocketagent.nativebridge.ModelLifecycleState
 import com.pocketagent.runtime.RuntimeLoadedModel
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
@@ -261,6 +262,9 @@ internal class AppRuntimeLifecycleCoordinator(
         val shouldKeepOffloadingState = current.state == ModelLifecycleState.OFFLOADING &&
             current.requestedModel != null &&
             normalizedLoaded == null
+        val preserveCompletedDetail = normalizedLoaded != null &&
+            current.loadingStage == ModelLoadingStage.COMPLETED &&
+            !current.loadingDetail.isNullOrBlank()
         val reconciledState = when {
             normalizedLoaded != null -> ModelLifecycleState.LOADED
             current.queuedOffload && activeGenerationCount > 0 -> ModelLifecycleState.OFFLOADING
@@ -283,9 +287,21 @@ internal class AppRuntimeLifecycleCoordinator(
             errorDetail = if (reconciledState == ModelLifecycleState.FAILED) current.errorDetail else null,
             lastUsedModel = lastUsed,
             queuedOffload = current.queuedOffload && activeGenerationCount > 0,
-            loadingDetail = if (normalizedLoaded != null) null else current.loadingDetail,
-            loadingStage = if (normalizedLoaded != null) null else current.loadingStage,
-            loadingProgress = if (normalizedLoaded != null) null else current.loadingProgress,
+            loadingDetail = when {
+                preserveCompletedDetail -> current.loadingDetail
+                normalizedLoaded != null -> null
+                else -> current.loadingDetail
+            },
+            loadingStage = when {
+                preserveCompletedDetail -> current.loadingStage
+                normalizedLoaded != null -> null
+                else -> current.loadingStage
+            },
+            loadingProgress = when {
+                preserveCompletedDetail -> current.loadingProgress
+                normalizedLoaded != null -> null
+                else -> current.loadingProgress
+            },
             updatedAtEpochMs = System.currentTimeMillis(),
         )
     }
@@ -335,9 +351,12 @@ internal class AppRuntimeLifecycleCoordinator(
                 queuedOffload = false,
                 errorCode = null,
                 errorDetail = result.detail,
-                loadingDetail = null,
-                loadingStage = null,
-                loadingProgress = null,
+                loadingDetail = lifecycleState.value.loadingDetail
+                    ?.takeIf { lifecycleState.value.loadingStage == ModelLoadingStage.COMPLETED },
+                loadingStage = lifecycleState.value.loadingStage
+                    ?.takeIf { lifecycleState.value.loadingStage == ModelLoadingStage.COMPLETED },
+                loadingProgress = lifecycleState.value.loadingProgress
+                    ?.takeIf { lifecycleState.value.loadingStage == ModelLoadingStage.COMPLETED },
                 lastUsedModel = resolvedLastUsed,
                 updatedAtEpochMs = System.currentTimeMillis(),
             )
