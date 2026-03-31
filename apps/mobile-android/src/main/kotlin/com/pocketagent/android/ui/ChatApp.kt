@@ -68,9 +68,8 @@ fun PocketAgentApp(
         provisioningSnapshot = provisioningSnapshot,
         advancedUnlocked = state.advancedUnlocked,
     )
-    val activeRuntimeModelLabel = modelLoadingState.loadedModel?.let { model ->
-        "${model.modelId} ${model.modelVersion.orEmpty()}".trim()
-    }
+    val headerUiState = deriveChatHeaderUiState(modelLoadingState)
+    val activeRuntimeModelLabel = headerUiState.activeRuntimeModelLabel
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val currentActiveSurface by rememberUpdatedState(state.activeSurface)
     val interactionRegistry = remember { ModelInteractionRegistry() }
@@ -80,13 +79,8 @@ fun PocketAgentApp(
             interactionRegistry.interactionProfileForModel(modelId).thinkingSupport == ThinkingSupport.THINK_TAGS
         }.getOrDefault(false)
     } == true
-    val canLoadLastUsedModel = modelLoadingState.loadedModel == null &&
-        modelLoadingState.lastUsedModel != null &&
-        modelLoadingState !is ModelLoadingState.Loading &&
-        modelLoadingState !is ModelLoadingState.Offloading
-    val lastUsedModelLabel = modelLoadingState.lastUsedModel?.let { model ->
-        "${model.modelId} ${model.modelVersion.orEmpty()}".trim()
-    }
+    val canLoadLastUsedModel = headerUiState.canLoadLastUsedModel
+    val lastUsedModelLabel = headerUiState.lastUsedModelLabel
     val appViewModel: ChatAppViewModel = viewModel()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }

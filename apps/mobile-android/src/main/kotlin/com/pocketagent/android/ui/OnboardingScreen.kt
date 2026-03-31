@@ -39,13 +39,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import com.pocketagent.android.ui.theme.PocketTheme
+import com.pocketagent.android.ui.theme.tickLight
 import com.pocketagent.android.R
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -93,6 +98,7 @@ fun OnboardingScreen(
     downloadProgress: Float? = null,
     onStartDownload: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val pagerState = rememberPagerState(
         initialPage = currentPage.coerceIn(0, PAGE_COUNT - 1),
         pageCount = { PAGE_COUNT },
@@ -120,7 +126,10 @@ fun OnboardingScreen(
         // Skip button -- top right, hidden on last page
         if (pagerState.currentPage < PAGE_COUNT - 1) {
             TextButton(
-                onClick = onSkip,
+                onClick = {
+                    haptic.tickLight()
+                    onSkip()
+                },
                 modifier = Modifier
                     .testTag("onboarding_skip")
                     .align(Alignment.TopEnd)
@@ -235,17 +244,23 @@ private fun OnboardingPage(
                         progress = { downloadProgress },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = PocketTheme.spacing.xl),
+                            .padding(horizontal = PocketTheme.spacing.xl)
+                            .then(onboardingDownloadProgressSemantics(downloadProgress)),
                     )
                 } else {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = PocketTheme.spacing.xl),
+                            .padding(horizontal = PocketTheme.spacing.xl)
+                            .then(onboardingDownloadProgressSemantics(progress = null)),
                     )
                 }
             } else {
-                Button(onClick = onStartDownload) {
+                val downloadHaptic = LocalHapticFeedback.current
+                Button(onClick = {
+                    downloadHaptic.tickLight()
+                    onStartDownload()
+                }) {
                     Text(
                         text = stringResource(id = R.string.ui_onboarding_download_model),
                     )
@@ -301,8 +316,12 @@ private fun BottomNavigation(
     onFinish: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptic = LocalHapticFeedback.current
     Button(
-        onClick = if (isLastPage) onFinish else onNext,
+        onClick = {
+            haptic.tickLight()
+            if (isLastPage) onFinish() else onNext()
+        },
         modifier = modifier.testTag(if (isLastPage) "onboarding_get_started" else "onboarding_next"),
         enabled = !isDownloading || !isLastPage,
     ) {
@@ -313,6 +332,27 @@ private fun BottomNavigation(
                 else -> stringResource(id = R.string.ui_onboarding_next)
             },
         )
+    }
+}
+
+@Composable
+private fun onboardingDownloadProgressSemantics(progress: Float?): Modifier {
+    val progressLabel = stringResource(id = R.string.a11y_onboarding_download_progress)
+    return Modifier.semantics {
+        liveRegion = LiveRegionMode.Polite
+        contentDescription = if (progress != null) {
+            "$progressLabel ${(progress * 100).toInt()}%"
+        } else {
+            progressLabel
+        }
+        progressBarRangeInfo = if (progress != null) {
+            androidx.compose.ui.semantics.ProgressBarRangeInfo(
+                current = progress,
+                range = 0f..1f,
+            )
+        } else {
+            androidx.compose.ui.semantics.ProgressBarRangeInfo.Indeterminate
+        }
     }
 }
 

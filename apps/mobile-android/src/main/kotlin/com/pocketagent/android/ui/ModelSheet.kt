@@ -135,10 +135,16 @@ internal fun ModelSheet(
                 placeholder = { Text(stringResource(id = R.string.ui_search_models)) },
             )
         }
+        libraryState.statusMessage?.takeIf { message -> message.isNotBlank() }?.let { message ->
+            item {
+                StatusMessageCard(message = message)
+            }
+        }
         item {
             ActiveModelSection(
                 modelLoadingState = modelLoadingState,
                 routingMode = routingMode,
+                onRetryLoad = { model -> onEvent(ModelSheetEvent.RetryLoad(model.modelId, model.modelVersion)) },
                 onLoadLastUsedModel = { onEvent(ModelSheetEvent.LoadLastUsedModel) },
                 onOffloadModel = { onEvent(ModelSheetEvent.OffloadModel) },
             )
@@ -165,6 +171,7 @@ internal fun ModelSheet(
                 DownloadedModelCard(
                     model = model,
                     version = version,
+                    defaultGetReadyModelId = libraryState.defaultGetReadyModelId,
                     activeModel = activeModel,
                     loadedModel = modelLoadingState.loadedModel,
                     busy = busy,
@@ -208,15 +215,6 @@ internal fun ModelSheet(
                 )
             }
         }
-        libraryState.statusMessage?.let { message ->
-            item {
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -229,15 +227,44 @@ internal fun ModelSheet(
         }
     }
     pendingRemoveVersion?.let { (modelId, version) ->
+        val model = libraryState.snapshot.models.firstOrNull { installedModel -> installedModel.modelId == modelId }
+        val targetVersion = model?.installedVersions?.firstOrNull { installedVersion -> installedVersion.version == version }
+        val removePlan = if (model != null && targetVersion != null) {
+            resolveRemoveVersionPlan(
+                model = model,
+                version = targetVersion,
+                loadedModel = modelLoadingState.loadedModel,
+            )
+        } else {
+            null
+        }
         AlertDialog(
             onDismissRequest = { pendingRemoveVersion = null },
             title = { Text(stringResource(id = R.string.ui_remove_model_title)) },
-            text = { Text(stringResource(id = R.string.ui_remove_model_body, version)) },
+            text = {
+                Text(
+                    text = when {
+                        removePlan?.isBlockedByActiveSelection == true ->
+                            stringResource(id = R.string.ui_remove_model_body_active_blocked, version)
+                        removePlan?.requiresOffload == true && removePlan.requiresClearingActiveSelection ->
+                            stringResource(id = R.string.ui_remove_model_body_loaded_only_active, version)
+                        removePlan?.requiresOffload == true ->
+                            stringResource(id = R.string.ui_remove_model_body_loaded, version)
+                        removePlan?.requiresClearingActiveSelection == true ->
+                            stringResource(id = R.string.ui_remove_model_body_only_active, version)
+                        else ->
+                            stringResource(id = R.string.ui_remove_model_body, version)
+                    },
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    onEvent(ModelSheetEvent.RemoveVersion(modelId, version))
-                    pendingRemoveVersion = null
-                }) {
+                TextButton(
+                    onClick = {
+                        onEvent(ModelSheetEvent.RemoveVersion(modelId, version))
+                        pendingRemoveVersion = null
+                    },
+                    enabled = removePlan?.isBlockedByActiveSelection != true,
+                ) {
                     Text(stringResource(id = R.string.ui_remove))
                 }
             },
@@ -251,15 +278,39 @@ internal fun ModelSheet(
 }
 
 @Composable
+private fun StatusMessageCard(message: String) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("model_sheet_status_message"),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(PocketAgentDimensions.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing / 2),
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ActiveModelSection(
     modelLoadingState: ModelLoadingState,
     routingMode: RoutingMode,
+    onRetryLoad: (com.pocketagent.runtime.RuntimeLoadedModel) -> Unit,
     onLoadLastUsedModel: () -> Unit,
     onOffloadModel: () -> Unit,
 ) {
     val currentModel = modelLoadingState.activeOrRequestedModel()
     val canLoadLastUsed = modelLoadingState.loadedModel == null &&
         modelLoadingState.lastUsedModel != null &&
+        modelLoadingState !is ModelLoadingState.Error &&
         modelLoadingState !is ModelLoadingState.Loading &&
         modelLoadingState !is ModelLoadingState.Offloading
     Card {
@@ -322,6 +373,21 @@ private fun ActiveModelSection(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
+                    currentModel?.let { retryModel ->
+                        OutlinedButton(onClick = { onRetryLoad(retryModel) }) {
+                            Text(stringResource(id = R.string.ui_model_runtime_retry_load))
+                        }
+                    }
+                }
+
+                is ModelLoadingState.Loaded -> {
+                    modelLoadingState.detail?.takeIf { detail -> detail.isNotBlank() }?.let { detail ->
+                        Text(
+                            text = detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 else -> Unit
@@ -349,6 +415,7 @@ private fun ActiveModelSection(
 private fun DownloadedModelCard(
     model: ProvisionedModelState,
     version: ModelVersionDescriptor,
+    defaultGetReadyModelId: String?,
     activeModel: com.pocketagent.runtime.RuntimeLoadedModel?,
     loadedModel: com.pocketagent.runtime.RuntimeLoadedModel?,
     busy: Boolean,
@@ -357,13 +424,21 @@ private fun DownloadedModelCard(
     onLoadVersion: (String, String) -> Unit,
     onRemoveVersion: (String, String) -> Unit,
 ) {
-    val isLoaded = loadedModel?.modelId == model.modelId && loadedModel.modelVersion == version.version
-    val isRequested = activeModel?.modelId == model.modelId && activeModel.modelVersion == version.version && !isLoaded
-    val statusColor = when {
-        isLoaded -> MaterialTheme.colorScheme.primary
-        isRequested -> MaterialTheme.colorScheme.tertiary
-        version.isActive -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.outline
+    val badge = resolveDownloadedModelBadge(
+        model = model,
+        version = version,
+        defaultGetReadyModelId = defaultGetReadyModelId,
+        activeModel = activeModel,
+        loadedModel = loadedModel,
+    )
+    val isLoaded = badge == DownloadedModelBadge.LOADED
+    val statusColor = when (badge) {
+        DownloadedModelBadge.LOADED -> MaterialTheme.colorScheme.primary
+        DownloadedModelBadge.SWITCHING -> MaterialTheme.colorScheme.tertiary
+        DownloadedModelBadge.DEFAULT,
+        DownloadedModelBadge.ACTIVE,
+        -> MaterialTheme.colorScheme.secondary
+        DownloadedModelBadge.READY -> MaterialTheme.colorScheme.outline
     }
     Card {
         Column(
@@ -392,11 +467,12 @@ private fun DownloadedModelCard(
                 }
                 StatusRow(
                     color = statusColor,
-                    label = when {
-                        isLoaded -> stringResource(id = R.string.ui_loaded)
-                        isRequested -> stringResource(id = R.string.ui_switching)
-                        version.isActive -> stringResource(id = R.string.ui_default)
-                        else -> stringResource(id = R.string.ui_ready)
+                    label = when (badge) {
+                        DownloadedModelBadge.LOADED -> stringResource(id = R.string.ui_loaded)
+                        DownloadedModelBadge.SWITCHING -> stringResource(id = R.string.ui_switching)
+                        DownloadedModelBadge.DEFAULT -> stringResource(id = R.string.ui_default)
+                        DownloadedModelBadge.ACTIVE -> stringResource(id = R.string.ui_active)
+                        DownloadedModelBadge.READY -> stringResource(id = R.string.ui_ready)
                     },
                 )
             }
@@ -414,7 +490,7 @@ private fun DownloadedModelCard(
                     onClick = { onSetDefaultVersion(model.modelId, version.version) },
                     enabled = !version.isActive,
                 ) {
-                    Text(stringResource(id = if (version.isActive) R.string.ui_default else R.string.ui_set_as_default))
+                    Text(stringResource(id = if (version.isActive) R.string.ui_active else R.string.ui_set_active))
                 }
                 OutlinedButton(onClick = { onImportModel(model.modelId) }) {
                     Text(stringResource(id = if (model.isProvisioned) R.string.ui_replace_file else R.string.ui_import))

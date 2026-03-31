@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -49,6 +50,7 @@ import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.theme.LocalReduceMotion
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.tickLight
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.ModelLoadingState
 import kotlinx.coroutines.launch
@@ -118,6 +120,7 @@ private fun MessageList(
     val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
     val clipboardManager = LocalClipboardManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val haptic = LocalHapticFeedback.current
     val reduceMotion = LocalReduceMotion.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -271,7 +274,10 @@ private fun MessageList(
             exit = scaleOut() + fadeOut(),
         ) {
             FloatingActionButton(
-                onClick = { coroutineScope.launch { listState.animateScrollToItem(activeSession.messages.lastIndex) } },
+                onClick = {
+                    haptic.tickLight()
+                    coroutineScope.launch { listState.animateScrollToItem(activeSession.messages.lastIndex) }
+                },
                 modifier = Modifier.size(48.dp),
             ) {
                 Icon(

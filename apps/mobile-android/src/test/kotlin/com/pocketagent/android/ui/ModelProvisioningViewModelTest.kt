@@ -133,6 +133,19 @@ class ModelProvisioningViewModelTest {
     }
 
     @Test
+    fun `clear active version delegates through gateway and refreshes snapshot`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway()
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.clearActiveVersion("qwen3.5-0.8b-q4"))
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.clearActiveCalls)
+        assertTrue(gateway.snapshotCalls > 1)
+    }
+
+    @Test
     fun `download preference actions update observed state and warning checks delegate`() = runTest(dispatcher) {
         val version = sampleDownloadVersion()
         val gateway = FakeProvisioningGateway().apply {
@@ -234,6 +247,7 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     var snapshotCalls: Int = 0
     var importCalls: Int = 0
     var setActiveCalls: Int = 0
+    var clearActiveCalls: Int = 0
     var removeCalls: Int = 0
     var cancelCalls: Int = 0
     var importFailure: Throwable? = null
@@ -288,6 +302,11 @@ private class FakeProvisioningGateway : ProvisioningGateway {
 
     override fun setActiveVersion(modelId: String, version: String): Boolean {
         setActiveCalls += 1
+        return true
+    }
+
+    override fun clearActiveVersion(modelId: String): Boolean {
+        clearActiveCalls += 1
         return true
     }
 

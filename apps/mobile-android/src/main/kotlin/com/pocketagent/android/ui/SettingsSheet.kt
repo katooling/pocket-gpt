@@ -76,17 +76,26 @@ internal fun AdvancedSettingsSheet(
         TabRow(selectedTabIndex = selectedTab) {
             Tab(
                 selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
+                onClick = {
+                    haptic.tickLight()
+                    selectedTab = 0
+                },
                 text = { Text(stringResource(id = R.string.ui_tab_general)) },
             )
             Tab(
                 selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
+                onClick = {
+                    haptic.tickLight()
+                    selectedTab = 1
+                },
                 text = { Text(stringResource(id = R.string.ui_tab_model)) },
             )
             Tab(
                 selected = selectedTab == 2,
-                onClick = { selectedTab = 2 },
+                onClick = {
+                    haptic.tickLight()
+                    selectedTab = 2
+                },
                 text = { Text(stringResource(id = R.string.ui_tab_about)) },
             )
         }
@@ -112,6 +121,7 @@ internal fun AdvancedSettingsSheet(
             )
             2 -> AboutTabContent(
                 state = state,
+                haptic = haptic,
                 onExportDiagnostics = onExportDiagnostics,
             )
         }
@@ -147,7 +157,7 @@ private fun GeneralTabContent(
                     .fillMaxWidth()
                     .selectable(
                         selected = state.runtime.performanceProfile == profile,
-                        onClick = { onPerformanceProfileSelected(profile) },
+                        onClick = { haptic.tickLightThen { onPerformanceProfileSelected(profile) } },
                         role = Role.RadioButton,
                     )
                     .semantics { contentDescription = profileDescription },
@@ -208,7 +218,7 @@ private fun GeneralTabContent(
                     .fillMaxWidth()
                     .selectable(
                         selected = state.runtime.keepAlivePreference == preference,
-                        onClick = { onKeepAlivePreferenceSelected(preference) },
+                        onClick = { haptic.tickLightThen { onKeepAlivePreferenceSelected(preference) } },
                         role = Role.RadioButton,
                     ),
                 verticalAlignment = Alignment.CenterVertically,
@@ -288,7 +298,7 @@ private fun ModelTabContent(
                     .fillMaxWidth()
                     .selectable(
                         selected = state.runtime.routingMode == mode,
-                        onClick = { onRoutingModeSelected(mode) },
+                        onClick = { haptic.tickLightThen { onRoutingModeSelected(mode) } },
                         role = Role.RadioButton,
                     )
                     .semantics { contentDescription = routingDescription },
@@ -380,6 +390,7 @@ private fun ModelTabContent(
 @Composable
 private fun AboutTabContent(
     state: ChatUiState,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
     onExportDiagnostics: () -> Unit,
 ) {
     Column(
@@ -393,7 +404,7 @@ private fun AboutTabContent(
             title = stringResource(id = R.string.ui_diagnostics_section_title),
             subtitle = stringResource(id = R.string.ui_diagnostics_export_hint),
         )
-        TextButton(onClick = onExportDiagnostics) {
+        TextButton(onClick = { haptic.tickLightThen(onExportDiagnostics) }) {
             Text(stringResource(id = R.string.ui_export_diagnostics))
         }
 
@@ -401,24 +412,36 @@ private fun AboutTabContent(
 
         DiagnosticsSection(
             runtime = state.runtime,
+            haptic = haptic,
         )
 
         HorizontalDivider()
 
         // --- Privacy (collapsible) ---
-        PrivacySection()
+        PrivacySection(haptic = haptic)
     }
 }
 
 @Composable
 private fun DiagnosticsSection(
     runtime: RuntimeUiState,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val diagnosticsLabel = stringResource(id = R.string.a11y_toggle_diagnostics)
+    val diagnosticsState = stringResource(
+        id = if (expanded) R.string.a11y_expanded else R.string.a11y_collapsed,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = !expanded },
+            .clickable {
+                haptic.tickLightThen { expanded = !expanded }
+            }
+            .disclosureSemantics(
+                label = diagnosticsLabel,
+                stateLabel = diagnosticsState,
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -490,12 +513,24 @@ private fun DiagnosticsSection(
 }
 
 @Composable
-private fun PrivacySection() {
+private fun PrivacySection(
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+) {
     var expanded by remember { mutableStateOf(false) }
+    val privacyLabel = stringResource(id = R.string.a11y_toggle_privacy)
+    val privacyState = stringResource(
+        id = if (expanded) R.string.a11y_expanded else R.string.a11y_collapsed,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = !expanded },
+            .clickable {
+                haptic.tickLightThen { expanded = !expanded }
+            }
+            .disclosureSemantics(
+                label = privacyLabel,
+                stateLabel = privacyState,
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

@@ -33,10 +33,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.components.SectionHeader
 import com.pocketagent.android.ui.state.CompletionSettings
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.tickLight
 import kotlin.math.roundToInt
 
 @Composable
@@ -45,6 +47,7 @@ internal fun CompletionSettingsSheet(
     onSettingsChanged: (CompletionSettings) -> Unit,
     onClose: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     var temperature by remember(settings) { mutableFloatStateOf(settings.temperature) }
     var topP by remember(settings) { mutableFloatStateOf(settings.topP) }
     var topK by remember(settings) { mutableIntStateOf(settings.topK) }
@@ -98,7 +101,10 @@ internal fun CompletionSettingsSheet(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = { resetDefaults() }) {
+            TextButton(onClick = {
+                haptic.tickLight()
+                resetDefaults()
+            }) {
                 Text(stringResource(id = R.string.ui_completion_reset_defaults))
             }
         }
@@ -164,7 +170,10 @@ internal fun CompletionSettingsSheet(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { showAdvanced = !showAdvanced }
+                .clickable {
+                    haptic.tickLight()
+                    showAdvanced = !showAdvanced
+                }
                 .semantics(mergeDescendants = true) { role = Role.Button },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -234,7 +243,10 @@ internal fun CompletionSettingsSheet(
 
         Spacer(modifier = Modifier.height(PocketAgentDimensions.screenPadding))
         Button(
-            onClick = onClose,
+            onClick = {
+                haptic.tickLight()
+                onClose()
+            },
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(id = R.string.ui_completion_done))

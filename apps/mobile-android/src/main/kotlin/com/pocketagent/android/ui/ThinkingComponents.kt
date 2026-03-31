@@ -30,18 +30,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.PersistedToolCallStatus
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.tickLight
 
 @Composable
 internal fun ThinkingBubble(reasoningContent: String) {
+    val haptic = LocalHapticFeedback.current
     var expanded by remember { mutableStateOf(false) }
     val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
+    val thinkingLabel = stringResource(id = R.string.a11y_toggle_thinking_details)
+    val expandedLabel = stringResource(id = R.string.a11y_collapse_thinking)
+    val collapsedLabel = stringResource(id = R.string.a11y_expand_thinking)
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = MaterialTheme.shapes.small,
@@ -55,14 +66,19 @@ internal fun ThinkingBubble(reasoningContent: String) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded },
+                    .clickable {
+                        haptic.tickLight()
+                        expanded = !expanded
+                    }
+                    .disclosureSemantics(
+                        label = thinkingLabel,
+                        stateLabel = if (expanded) expandedLabel else collapsedLabel,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = stringResource(
-                        id = if (expanded) R.string.a11y_collapse_thinking else R.string.a11y_expand_thinking,
-                    ),
+                    contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

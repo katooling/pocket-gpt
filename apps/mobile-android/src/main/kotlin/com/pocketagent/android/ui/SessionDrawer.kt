@@ -1,8 +1,7 @@
 package com.pocketagent.android.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +29,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,11 +45,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.ChatSessionUiModel
 import com.pocketagent.android.ui.state.ChatUiState
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.tickLight
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -107,7 +109,7 @@ private fun groupSessionsByDate(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SessionDrawer(
     state: ChatUiState,
@@ -116,6 +118,7 @@ internal fun SessionDrawer(
     onDeleteSession: (ChatSessionUiModel) -> Unit,
     hiddenSessionIds: Set<String> = emptySet(),
 ) {
+    val haptic = LocalHapticFeedback.current
     val createSessionDescription = stringResource(id = R.string.a11y_create_session)
     var searchQuery by remember { mutableStateOf("") }
     val visibleSessions = state.sessions.filterNot { it.id in hiddenSessionIds }
@@ -146,7 +149,10 @@ internal fun SessionDrawer(
                     fontWeight = FontWeight.SemiBold,
                 )
                 IconButton(
-                    onClick = onCreateSession,
+                    onClick = {
+                        haptic.tickLight()
+                        onCreateSession()
+                    },
                     modifier = Modifier.testTag("create_session_button"),
                 ) {
                     Icon(Icons.Default.Add, contentDescription = createSessionDescription)
@@ -169,7 +175,10 @@ internal fun SessionDrawer(
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
+                        IconButton(onClick = {
+                            haptic.tickLight()
+                            searchQuery = ""
+                        }) {
                             Icon(Icons.Default.Clear, contentDescription = stringResource(id = R.string.ui_session_search_clear))
                         }
                     }
@@ -206,14 +215,18 @@ internal fun SessionDrawer(
                 )
             }
             items(sessions, key = { it.id }) { session ->
+                var deleteDispatched by remember(session.id) { mutableStateOf(false) }
                 val dismissState = rememberSwipeToDismissBoxState(
                     confirmValueChange = { value ->
-                        if (value == SwipeToDismissBoxValue.EndToStart) {
-                            onDeleteSession(session)
-                        }
-                        false
+                        value == SwipeToDismissBoxValue.EndToStart
                     },
                 )
+                LaunchedEffect(dismissState.currentValue, deleteDispatched) {
+                    if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart && !deleteDispatched) {
+                        deleteDispatched = true
+                        onDeleteSession(session)
+                    }
+                }
                 SwipeToDismissBox(
                     state = dismissState,
                     backgroundContent = {
@@ -237,7 +250,6 @@ internal fun SessionDrawer(
                         session = session,
                         isActive = session.id == state.activeSessionId,
                         onSwitchSession = onSwitchSession,
-                        onDeleteSession = onDeleteSession,
                     )
                 }
             }
@@ -245,14 +257,13 @@ internal fun SessionDrawer(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionRow(
     session: ChatSessionUiModel,
     isActive: Boolean,
     onSwitchSession: (String) -> Unit,
-    onDeleteSession: (ChatSessionUiModel) -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val activeStateDescription = if (isActive) {
         stringResource(id = R.string.a11y_session_active)
     } else {
@@ -262,7 +273,6 @@ private fun SessionRow(
         id = R.string.a11y_switch_session,
         session.title,
     )
-    val deleteSessionActionLabel = stringResource(id = R.string.cd_session_delete)
     val subtitle = if (session.messageCount > 0) {
         pluralStringResource(
             id = R.plurals.ui_session_message_count,
@@ -275,12 +285,20 @@ private fun SessionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (isActive) {
+                    Modifier.testTag("session_row_active")
+                } else {
+                    Modifier
+                },
+            )
             .background(if (isActive) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-            .combinedClickable(
+            .clickable(
                 onClickLabel = switchSessionDescription,
-                onLongClickLabel = deleteSessionActionLabel,
-                onLongClick = { onDeleteSession(session) },
-                onClick = { onSwitchSession(session.id) },
+                onClick = {
+                    haptic.tickLight()
+                    onSwitchSession(session.id)
+                },
             )
             .semantics {
                 selected = isActive

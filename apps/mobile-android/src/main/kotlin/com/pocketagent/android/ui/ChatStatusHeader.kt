@@ -59,6 +59,7 @@ import com.pocketagent.android.ui.state.ModelRuntimeStatus
 import com.pocketagent.android.ui.state.RuntimeUiState
 import com.pocketagent.android.ui.state.StartupProbeState
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import java.util.Locale
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -76,11 +77,15 @@ internal fun OfflineAndStatusHeader(
     var showTechnicalDetails by remember(state.runtime.lastErrorTechnicalDetail) {
         mutableStateOf(false)
     }
+    val loadedLifecycleNotice = (modelLoadingState as? ModelLoadingState.Loaded)
+        ?.detail
+        ?.takeIf { detail -> detail.isNotBlank() }
 
     // Task 2.1: Determine if we are in the collapsed "ready" state
     val isReadyAndClean = modelLoadingState is ModelLoadingState.Loaded
         && state.runtime.modelRuntimeStatus == ModelRuntimeStatus.READY
         && state.runtime.lastErrorUserMessage == null
+        && loadedLifecycleNotice == null
     val lifecycleAnimationKey = modelLoadingState.visualStateKey()
 
     // Task 2.1: AnimatedContent for smooth transition between collapsed and expanded
@@ -235,30 +240,49 @@ internal fun OfflineAndStatusHeader(
                             )
                         }
 
+                        is ModelLoadingState.Loaded -> {
+                            loadedLifecycleNotice?.let { detail ->
+                                Text(
+                                    text = detail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+
                         else -> Unit
                     }
 
-                    // Task 2.5: Remove "Open Models" during Loading/Offloading
-                    // Task 2.2: Remove "Get Ready" from the not-ready branch
-                    if (modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading) {
-                        // No action buttons during loading/offloading
-                    } else if (state.runtime.modelRuntimeStatus != ModelRuntimeStatus.READY) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing)) {
-                            TextButton(
-                                onClick = onOpenModels,
-                                modifier = Modifier.testTag("open_models_button"),
-                            ) {
-                                Text(stringResource(id = R.string.ui_open_models))
-                            }
-                            TextButton(
-                                onClick = onRefresh,
-                                modifier = Modifier.testTag("refresh_button"),
-                                enabled = state.runtime.startupProbeState != StartupProbeState.RUNNING,
-                            ) {
-                                Text(stringResource(id = R.string.ui_refresh_runtime_checks))
-                            }
+                    if (modelLoadingState is ModelLoadingState.Loaded &&
+                        state.runtime.modelRuntimeStatus != ModelRuntimeStatus.READY
+                    ) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        state.runtime.modelStatusDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                            Text(
+                                text = buildString {
+                                    append(detail)
+                                    state.runtime.sendElapsedMs?.let { elapsedMs ->
+                                        append(" (")
+                                        append(formatSendElapsed(elapsedMs))
+                                        append(")")
+                                    }
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                    } else {
+                        state.runtime.sendSlowState?.takeIf { it.isNotBlank() }?.let { slowState ->
+                            Text(
+                                text = slowState,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    if (modelLoadingState !is ModelLoadingState.Loading && modelLoadingState !is ModelLoadingState.Offloading) {
                         Row(horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing)) {
                             TextButton(
                                 onClick = onRefresh,
@@ -364,6 +388,14 @@ internal fun RuntimeUiState.recoveryHintTextResId(): Int {
         R.string.ui_runtime_timeout_hint
     } else {
         R.string.ui_model_setup_hint
+    }
+}
+
+private fun formatSendElapsed(elapsedMs: Long): String {
+    return if (elapsedMs < 1_000L) {
+        "${elapsedMs} ms"
+    } else {
+        String.format(Locale.US, "%.1fs", elapsedMs / 1_000.0)
     }
 }
 

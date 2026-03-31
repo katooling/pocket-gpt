@@ -137,6 +137,38 @@ class ModelManagementSheetComposeContractTest {
         composeRule.onNodeWithText("No installed models yet").assertIsDisplayed()
         composeRule.onNodeWithText("Open model library").assertIsDisplayed()
     }
+
+    @Test
+    fun removedVersionStateShowsVisibleFeedbackAndAvailableDownloadAction() {
+        val removedMessage =
+            "qwen3.5-0.8b-q4 (q4_0) removed from this device. If it still appears below, you can download it again."
+        val removedState = sampleLibraryState().copy(
+            snapshot = sampleSnapshot(installed = false),
+            downloads = emptyList(),
+            statusMessage = removedMessage,
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = removedState,
+                    runtimeState = sampleRuntimeState(
+                        snapshot = removedState.snapshot,
+                        lifecycle = RuntimeModelLifecycleSnapshot.initial(),
+                    ),
+                    modelLoadingState = ModelLoadingState.Idle(),
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("model_sheet_status_message").assertIsDisplayed()
+        composeRule.onNodeWithText(removedMessage).assertIsDisplayed()
+        composeRule.onNodeWithText("No downloaded models yet").assertIsDisplayed()
+        composeRule.onNodeWithTag("unified_model_sheet").performScrollToNode(hasText("Download"))
+        composeRule.onNodeWithText("Download").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("Load").fetchSemanticsNodes().isEmpty())
+    }
 }
 
 @Composable
@@ -222,6 +254,7 @@ private fun sampleRuntimeLoadingState(): ModelLoadingState {
     return ModelLoadingState.Loaded(
         model = loadedModel,
         lastUsedModel = loadedModel,
+        detail = null,
         readyAtEpochMs = 1L,
     )
 }

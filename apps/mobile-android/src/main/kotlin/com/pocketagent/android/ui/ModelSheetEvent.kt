@@ -11,6 +11,7 @@ sealed interface ModelSheetEvent {
     data class CancelDownload(val taskId: String) : ModelSheetEvent
     data class SetDefaultVersion(val modelId: String, val version: String) : ModelSheetEvent
     data class LoadVersion(val modelId: String, val version: String) : ModelSheetEvent
+    data class RetryLoad(val modelId: String, val version: String?) : ModelSheetEvent
     data object LoadLastUsedModel : ModelSheetEvent
     data object OffloadModel : ModelSheetEvent
     data class RemoveVersion(val modelId: String, val version: String) : ModelSheetEvent

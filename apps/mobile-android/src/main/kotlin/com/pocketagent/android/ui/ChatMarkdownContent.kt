@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 internal fun MarkdownMessageContent(
     content: String,
     clipboardManager: ClipboardManager? = null,
+    onCopiedToClipboard: (() -> Unit)? = null,
 ) {
     val sanitizedContent = remember(content) { sanitizeMarkdownForRendering(content) }
     val codeFenceParts = remember(sanitizedContent) { sanitizedContent.split("```") }
@@ -80,7 +81,10 @@ internal fun MarkdownMessageContent(
                             }
                             if (clipboardManager != null) {
                                 IconButton(
-                                    onClick = { clipboardManager.setText(AnnotatedString(codeContent)) },
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(codeContent))
+                                        onCopiedToClipboard?.invoke()
+                                    },
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,

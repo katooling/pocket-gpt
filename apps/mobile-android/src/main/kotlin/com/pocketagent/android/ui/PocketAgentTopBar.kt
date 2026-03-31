@@ -24,8 +24,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
+import com.pocketagent.android.ui.theme.tickLight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +40,7 @@ internal fun PocketAgentTopBar(
     onOpenModelLibrary: () -> Unit,
     onOpenAdvancedSettings: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     var showModelMenu by remember { mutableStateOf(false) }
     val installedModels = remember(modelLibraryState) {
         modelLibraryState.snapshot.models.flatMap { model ->
@@ -57,7 +60,10 @@ internal fun PocketAgentTopBar(
         navigationIcon = {
             IconButton(
                 modifier = Modifier.testTag("session_drawer_button"),
-                onClick = onOpenSessionDrawer,
+                onClick = {
+                    haptic.tickLight()
+                    onOpenSessionDrawer()
+                },
             ) {
                 Icon(
                     Icons.Default.Menu,
@@ -69,6 +75,7 @@ internal fun PocketAgentTopBar(
             Box {
                 AssistChip(
                     onClick = {
+                        haptic.tickLight()
                         if (installedModels.isEmpty()) {
                             onOpenModelLibrary()
                         } else {
@@ -98,6 +105,7 @@ internal fun PocketAgentTopBar(
                                 )
                             },
                             onClick = {
+                                haptic.tickLight()
                                 showModelMenu = false
                                 onLoadModelVersion(model.modelId, version.version)
                             },
@@ -106,6 +114,7 @@ internal fun PocketAgentTopBar(
                     DropdownMenuItem(
                         text = { Text(text = stringResource(id = R.string.ui_more_models)) },
                         onClick = {
+                            haptic.tickLight()
                             showModelMenu = false
                             onOpenModelLibrary()
                         },
@@ -114,7 +123,10 @@ internal fun PocketAgentTopBar(
             }
             IconButton(
                 modifier = Modifier.testTag("advanced_sheet_button"),
-                onClick = onOpenAdvancedSettings,
+                onClick = {
+                    haptic.tickLight()
+                    onOpenAdvancedSettings()
+                },
             ) {
                 Icon(
                     Icons.Default.Settings,

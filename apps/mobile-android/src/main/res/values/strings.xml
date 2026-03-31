@@ -236,8 +236,14 @@
     <string name="ui_model_remove_version">Remove</string>
     <string name="ui_model_version_activated">%1$s (%2$s) verified and active.</string>
     <string name="ui_model_version_activation_failed">Version activation failed.</string>
-    <string name="ui_model_version_removed">%1$s (%2$s) removed.</string>
-    <string name="ui_model_version_remove_blocked">Cannot remove active version. Set another version active first.</string>
+    <string name="ui_model_version_removing">Removing %1$s (%2$s)...</string>
+    <string name="ui_model_version_removed">%1$s (%2$s) removed from this device. If it still appears below, you can download it again.</string>
+    <string name="ui_model_version_remove_blocked">Can\'t remove this version because it is still active. Set another version active first.</string>
+    <string name="ui_model_version_remove_failed">Couldn\'t remove this model version. It is still on this device.</string>
+    <string name="ui_model_version_remove_snackbar">Removed %1$s (%2$s). Undo?</string>
+    <string name="ui_choose_another_model">Choose another</string>
+    <string name="ui_load_button_disabled_already_loaded">Already loaded</string>
+    <string name="ui_load_button_disabled_busy">Another operation in progress</string>
     <string name="ui_model_runtime_lifecycle_title">Runtime load state</string>
     <string name="ui_runtime_model_sheet_title">Runtime model</string>
     <string name="ui_runtime_model_sheet_subtitle">Load or offload installed models without browsing downloads or storage details.</string>
@@ -400,12 +406,13 @@
     <string name="ui_load_last_used">Load last used</string>
     <string name="ui_loaded">Loaded</string>
     <string name="ui_switching">Switching</string>
+    <string name="ui_active">Active</string>
     <string name="ui_default">Default</string>
     <string name="ui_ready">Ready</string>
-    <string name="ui_set_as_default">Set as default</string>
+    <string name="ui_set_active">Set active</string>
     <string name="ui_replace_file">Replace file</string>
     <string name="ui_downloaded_models">Downloaded models</string>
-    <string name="ui_downloaded_models_subtitle">One tap to switch. \"Set as default\" controls app startup and routing follow-through.</string>
+    <string name="ui_downloaded_models_subtitle">Choose which version is active, load a model into memory, or remove versions you no longer need.</string>
     <string name="ui_no_downloaded_models_title">No downloaded models yet</string>
     <string name="ui_no_downloaded_models_body">Import a local GGUF or download one from the catalog below.</string>
     <string name="ui_available_models">Available models</string>
@@ -414,6 +421,10 @@
     <string name="ui_catalog_up_to_date_body">Everything in the current manifest is already installed or filtered out.</string>
     <string name="ui_remove_model_title">Remove model?</string>
     <string name="ui_remove_model_body">Remove %1$s? You will need to re-download it to use it again.</string>
+    <string name="ui_remove_model_body_only_active">Remove %1$s? This is the only installed version, so the app will also clear it as the selected version. You will need to re-download it to use it again.</string>
+    <string name="ui_remove_model_body_loaded">Remove %1$s? The app will unload it from memory first. You will need to re-download it to use it again.</string>
+    <string name="ui_remove_model_body_loaded_only_active">Remove %1$s? The app will unload it from memory and clear it as the selected version before removing it. You will need to re-download it to use it again.</string>
+    <string name="ui_remove_model_body_active_blocked">%1$s is still the selected version for this model. Set another version active before removing it.</string>
 
     <!-- Routing mode switch dialog -->
     <string name="ui_switch_model_title">Switch model now?</string>
@@ -465,6 +476,13 @@
     <string name="a11y_local_tools">Local tools</string>
     <string name="a11y_chat_settings">Chat settings</string>
     <string name="a11y_copy_code">Copy code</string>
+    <string name="a11y_toggle_metrics">Toggle generation metrics</string>
+    <string name="a11y_toggle_thinking_details">Toggle thinking details</string>
+    <string name="a11y_toggle_diagnostics">Toggle diagnostics details</string>
+    <string name="a11y_toggle_privacy">Toggle privacy details</string>
+    <string name="a11y_expanded">Expanded</string>
+    <string name="a11y_collapsed">Collapsed</string>
+    <string name="a11y_onboarding_download_progress">Model download progress</string>
 
     <!-- Model download status labels -->
     <string name="model_download_status_queued">Queued</string>

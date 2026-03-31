@@ -1,7 +1,12 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,13 +36,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.pocketagent.android.R
 import com.pocketagent.android.ui.state.MessageRole
@@ -46,6 +58,7 @@ import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import com.pocketagent.android.ui.theme.tickConfirm
 import com.pocketagent.android.ui.theme.tickLight
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MessageBubble(
     message: MessageUiModel,
@@ -59,14 +72,31 @@ internal fun MessageBubble(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
     val isUser = message.role == MessageRole.USER
     var showContextMenu by remember { mutableStateOf(false) }
+    var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
+    val menuInteractionSource = remember(message.id) { MutableInteractionSource() }
+    val indication = LocalIndication.current
     val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
     val bubbleShape = messageBubbleShape(
         isUser = isUser,
         isFirstInGroup = isFirstInGroup,
         isLastInGroup = isLastInGroup,
     )
+    val hasContextActions = message.content.isNotBlank() && message.role == MessageRole.USER
+    val messageOptionsLabel = stringResource(R.string.cd_message_options)
+
+    fun openContextMenu(offset: Offset?) {
+        if (!hasContextActions) return
+        menuOffset = offset?.let { pressOffset ->
+            with(density) {
+                DpOffset(pressOffset.x.toDp(), pressOffset.y.toDp())
+            }
+        } ?: DpOffset.Zero
+        haptic.tickConfirm()
+        showContextMenu = true
+    }
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -81,22 +111,42 @@ internal fun MessageBubble(
                 .widthIn(max = 600.dp),
         ) {
             Box {
-                val messageOptionsLabel = stringResource(R.string.cd_message_options)
                 Column(
                     modifier = Modifier
-                        .semantics {
-                            onLongClick(label = messageOptionsLabel) { true }
-                        }
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onLongPress = {
-                                    if (message.content.isNotBlank()) {
-                                        haptic.tickConfirm()
-                                        showContextMenu = true
+                        .then(
+                            if (hasContextActions) {
+                                Modifier
+                                    .indication(menuInteractionSource, indication)
+                                    .semantics {
+                                        onLongClick(
+                                            label = messageOptionsLabel,
+                                            action = {
+                                                openContextMenu(offset = null)
+                                                true
+                                            },
+                                        )
                                     }
-                                },
-                            )
-                        }
+                                    .pointerInput(hasContextActions) {
+                                        detectTapGestures(
+                                            onPress = { pressOffset ->
+                                                val press = PressInteraction.Press(pressOffset)
+                                                menuInteractionSource.tryEmit(press)
+                                                val released = tryAwaitRelease()
+                                                menuInteractionSource.tryEmit(
+                                                    if (released) {
+                                                        PressInteraction.Release(press)
+                                                    } else {
+                                                        PressInteraction.Cancel(press)
+                                                    },
+                                                )
+                                            },
+                                            onLongPress = ::openContextMenu,
+                                        )
+                                    }
+                            } else {
+                                Modifier
+                            },
+                        )
                         .padding(PocketAgentDimensions.messageBubblePadding),
                 ) {
                     val attachmentPaths = message.imagePaths.ifEmpty { listOfNotNull(message.imagePath) }
@@ -143,20 +193,20 @@ internal fun MessageBubble(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                    } else if (message.role == MessageRole.ASSISTANT) {
-                        androidx.compose.foundation.text.selection.SelectionContainer {
-                            MarkdownMessageContent(content = content, clipboardManager = clipboardManager)
-                        }
                     } else {
-                        MarkdownMessageContent(content = content, clipboardManager = clipboardManager)
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            MarkdownMessageContent(
+                                content = content,
+                                clipboardManager = clipboardManager,
+                                onCopiedToClipboard = onCopiedToClipboard,
+                            )
+                        }
                     }
 
                     MessageMetrics(message)
                     FailedMessageRetry(message, onRegenerateMessage)
                     MessageActions(
                         message = message,
-                        onEditMessage = onEditMessage,
-                        onRegenerateMessage = onRegenerateMessage,
                         onCopiedToClipboard = onCopiedToClipboard,
                         clipboardManager = clipboardManager,
                     )
@@ -165,11 +215,9 @@ internal fun MessageBubble(
                 MessageContextMenu(
                     message = message,
                     expanded = showContextMenu,
+                    offset = menuOffset,
                     onDismiss = { showContextMenu = false },
                     onEditMessage = onEditMessage,
-                    onRegenerateMessage = onRegenerateMessage,
-                    onCopiedToClipboard = onCopiedToClipboard,
-                    clipboardManager = clipboardManager,
                 )
             }
         }
@@ -181,13 +229,25 @@ private fun MessageMetrics(message: MessageUiModel) {
     if (message.role != MessageRole.ASSISTANT || message.isStreaming || message.content.isBlank()) return
     val hasMetadata = message.tokensPerSec != null || message.firstTokenMs != null || message.totalLatencyMs != null
     if (!hasMetadata) return
+    val haptic = LocalHapticFeedback.current
     var expanded by remember(message.id) { mutableStateOf(false) }
+    val metricsLabel = stringResource(id = R.string.a11y_toggle_metrics)
+    val metricsStateLabel = stringResource(
+        id = if (expanded) R.string.a11y_expanded else R.string.a11y_collapsed,
+    )
     Spacer(modifier = Modifier.height(PocketAgentDimensions.sectionSpacing / 2))
     if (expanded) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = false },
+                .clickable {
+                    haptic.tickLight()
+                    expanded = false
+                }
+                .disclosureSemantics(
+                    label = metricsLabel,
+                    stateLabel = metricsStateLabel,
+                ),
             horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
         ) {
             val style = MaterialTheme.typography.labelSmall
@@ -202,7 +262,15 @@ private fun MessageMetrics(message: MessageUiModel) {
                 text = stringResource(id = R.string.ui_metric_tokens_per_sec, tps),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                modifier = Modifier.clickable { expanded = true },
+                modifier = Modifier
+                    .clickable {
+                        haptic.tickLight()
+                        expanded = true
+                    }
+                    .disclosureSemantics(
+                        label = metricsLabel,
+                        stateLabel = metricsStateLabel,
+                    ),
             )
         }
     }
@@ -213,6 +281,7 @@ private fun FailedMessageRetry(
     message: MessageUiModel,
     onRegenerateMessage: (String) -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val isFailed = message.role == MessageRole.ASSISTANT &&
         !message.isStreaming &&
         message.finishReason?.let {
@@ -222,7 +291,10 @@ private fun FailedMessageRetry(
     val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
     Spacer(modifier = Modifier.height(compactSpacing))
     Surface(
-        onClick = { onRegenerateMessage(message.id) },
+        onClick = {
+            haptic.tickLight()
+            onRegenerateMessage(message.id)
+        },
         color = MaterialTheme.colorScheme.errorContainer,
         shape = MaterialTheme.shapes.small,
     ) {
@@ -252,14 +324,11 @@ private fun FailedMessageRetry(
 @Composable
 private fun MessageActions(
     message: MessageUiModel,
-    onEditMessage: (String) -> Unit,
-    onRegenerateMessage: (String) -> Unit,
     onCopiedToClipboard: () -> Unit,
     clipboardManager: ClipboardManager,
 ) {
     if (message.content.isBlank() || message.isStreaming) return
     val haptic = LocalHapticFeedback.current
-    // Only show Copy inline — Edit and Regenerate are available via long-press context menu
     Spacer(modifier = Modifier.height(PocketAgentDimensions.sectionSpacing / 2))
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -287,44 +356,25 @@ private fun MessageActions(
 private fun MessageContextMenu(
     message: MessageUiModel,
     expanded: Boolean,
+    offset: DpOffset = DpOffset.Zero,
     onDismiss: () -> Unit,
     onEditMessage: (String) -> Unit,
-    onRegenerateMessage: (String) -> Unit,
-    onCopiedToClipboard: () -> Unit,
-    clipboardManager: ClipboardManager,
 ) {
+    if (message.role != MessageRole.USER) return
     val haptic = LocalHapticFeedback.current
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
+        offset = offset,
     ) {
         DropdownMenuItem(
-            text = { Text(stringResource(id = R.string.ui_copy)) },
+            text = { Text(stringResource(id = R.string.ui_edit)) },
             onClick = {
                 haptic.tickLight()
-                clipboardManager.setText(AnnotatedString(message.content))
-                onCopiedToClipboard()
+                onEditMessage(message.id)
                 onDismiss()
             },
         )
-        if (message.role == MessageRole.USER) {
-            DropdownMenuItem(
-                text = { Text(stringResource(id = R.string.ui_edit)) },
-                onClick = {
-                    onEditMessage(message.id)
-                    onDismiss()
-                },
-            )
-        }
-        if (message.role == MessageRole.ASSISTANT) {
-            DropdownMenuItem(
-                text = { Text(stringResource(id = R.string.ui_regenerate)) },
-                onClick = {
-                    onRegenerateMessage(message.id)
-                    onDismiss()
-                },
-            )
-        }
     }
 }
 

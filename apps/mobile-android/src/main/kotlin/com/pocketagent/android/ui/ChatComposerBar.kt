@@ -101,6 +101,11 @@ internal fun ComposerBar(
             focusRequester.requestFocus()
         }
     }
+    LaunchedEffect(editingMessageId) {
+        if (editingMessageId != null) {
+            focusRequester.requestFocus()
+        }
+    }
     val canTriggerBlockedAction = hasChatGatePrimaryAction(chatGateState)
     val sendButtonEnabled = when {
         isSending -> !isCancelling
@@ -156,7 +161,12 @@ internal fun ComposerBar(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                IconButton(onClick = onCancelEdit) {
+                IconButton(
+                    onClick = {
+                        haptic.tickLight()
+                        onCancelEdit()
+                    },
+                ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = stringResource(id = R.string.a11y_cancel_edit),
@@ -195,7 +205,10 @@ internal fun ComposerBar(
                                 .clip(MaterialTheme.shapes.small),
                         )
                         IconButton(
-                            onClick = { onRemoveImage(index) },
+                            onClick = {
+                                haptic.tickLight()
+                                onRemoveImage(index)
+                            },
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp),
@@ -216,13 +229,19 @@ internal fun ComposerBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(
-                onClick = onAttachImage,
+                onClick = {
+                    haptic.tickLight()
+                    onAttachImage()
+                },
                 enabled = !isSending,
             ) {
                 Icon(Icons.Default.Image, contentDescription = stringResource(id = R.string.a11y_attach_image))
             }
             IconButton(
-                onClick = onOpenToolDialog,
+                onClick = {
+                    haptic.tickLight()
+                    onOpenToolDialog()
+                },
                 enabled = !isSending,
             ) {
                 Icon(
@@ -251,7 +270,12 @@ internal fun ComposerBar(
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = onOpenCompletionSettings) {
+            IconButton(
+                onClick = {
+                    haptic.tickLight()
+                    onOpenCompletionSettings()
+                },
+            ) {
                 Icon(
                     imageVector = Icons.Default.Tune,
                     contentDescription = stringResource(id = R.string.a11y_chat_settings),

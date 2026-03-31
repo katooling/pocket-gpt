@@ -195,6 +195,26 @@ class ModelProvisioningViewModel(
         return changed
     }
 
+    fun clearActiveVersion(modelId: String): Boolean {
+        val changed = gateway.clearActiveVersion(modelId = modelId)
+        if (changed) {
+            refreshSnapshot()
+        }
+        refreshLifecycle()
+        return changed
+    }
+
+    suspend fun clearActiveVersionAsync(modelId: String): Boolean {
+        val changed = withContext(ioDispatcher) {
+            gateway.clearActiveVersion(modelId = modelId)
+        }
+        if (changed) {
+            refreshSnapshot()
+        }
+        refreshLifecycle()
+        return changed
+    }
+
     fun removeVersion(modelId: String, version: String): Boolean {
         val removed = gateway.removeVersion(modelId = modelId, version = version)
         if (removed) {
