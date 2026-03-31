@@ -356,6 +356,8 @@ private class QuickLoadProvisioningGateway(
 
     override fun setActiveVersion(modelId: String, version: String): Boolean = true
 
+    override fun clearActiveVersion(modelId: String): Boolean = true
+
     override fun removeVersion(modelId: String, version: String): Boolean = true
 
     override suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult {
