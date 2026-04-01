@@ -1,6 +1,7 @@
 package com.pocketagent.android.ui.controllers
 
 import com.pocketagent.android.ui.state.ChatSessionUiModel
+import com.pocketagent.android.ui.state.MessageKind
 import com.pocketagent.android.ui.state.MessageRole
 import com.pocketagent.android.ui.state.MessageUiModel
 import com.pocketagent.android.ui.state.PersistedInteractionPart
@@ -38,12 +39,21 @@ class TimelineProjector {
 
 private fun MessageUiModel.toInteractionMessage(): InteractionMessage {
     val interaction = interaction
-    val parts = if (interaction?.parts?.isNotEmpty() == true) {
-        interaction.parts.map { part ->
-            part.toContentPart()
-        }
+    val textParts = if (interaction?.parts?.isNotEmpty() == true) {
+        interaction.parts.map { part -> part.toContentPart() }
     } else {
         listOf(InteractionContentPart.Text(content))
+    }
+    val parts = if (kind == MessageKind.IMAGE) {
+        val attachmentPaths = imagePaths.ifEmpty { listOfNotNull(imagePath) }
+        if (attachmentPaths.isNotEmpty()) {
+            val imageParts = attachmentPaths.map { InteractionContentPart.Image(path = it) }
+            imageParts + textParts
+        } else {
+            textParts
+        }
+    } else {
+        textParts
     }
     val toolCalls = if (interaction?.toolCalls?.isNotEmpty() == true) {
         interaction.toolCalls.map { call -> call.toInteractionToolCall() }

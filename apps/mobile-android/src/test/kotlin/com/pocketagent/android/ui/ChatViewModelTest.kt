@@ -1286,7 +1286,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `resident lifecycle model pins routing mode during startup`() = runTest(dispatcher) {
+    fun `resident lifecycle model preserves persisted routing mode during startup`() = runTest(dispatcher) {
         val runtime = RecordingRuntimeFacade(runtimeBackend = "NATIVE_JNI")
         val residentModel = com.pocketagent.runtime.RuntimeLoadedModel(
             modelId = com.pocketagent.inference.ModelCatalog.QWEN3_0_6B_Q4_K_M,
@@ -1315,8 +1315,11 @@ class ChatViewModelTest {
 
         advanceUntilIdle()
 
-        assertEquals(RoutingMode.QWEN3_0_6B, viewModel.uiState.value.runtime.routingMode)
-        assertEquals(RoutingMode.QWEN3_0_6B, runtime.getRoutingMode())
+        // Routing mode from persistence is preserved — the lifecycle observer
+        // no longer auto-syncs routing to the loaded model. Only explicit
+        // user-initiated loads (finalizeModelOperation) sync routing mode.
+        assertEquals(RoutingMode.QWEN_0_8B, viewModel.uiState.value.runtime.routingMode)
+        assertEquals(RoutingMode.QWEN_0_8B, runtime.getRoutingMode())
         assertEquals(residentModel.modelId, viewModel.uiState.value.runtime.activeModelId)
     }
 
@@ -1693,11 +1696,8 @@ private class RecordingRuntimeFacade(
             .asReversed()
             .firstOrNull { message -> message.role == InteractionRole.USER }
             ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            ?.filterIsInstance<InteractionContentPart.Text>()
+            ?.joinToString(separator = "\n") { it.text }
             .orEmpty()
         when (streamTerminal) {
             StreamTerminal.COMPLETED -> emit(

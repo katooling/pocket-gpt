@@ -457,11 +457,8 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
             .asReversed()
             .firstOrNull { message -> message.role == InteractionRole.USER }
             ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            ?.filterIsInstance<InteractionContentPart.Text>()
+            ?.joinToString(separator = "\n") { it.text }
             .orEmpty()
         emit(
             ChatStreamEvent.Started(

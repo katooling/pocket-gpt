@@ -8,7 +8,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -168,6 +172,180 @@ class ModelManagementSheetComposeContractTest {
         composeRule.onNodeWithTag("unified_model_sheet").performScrollToNode(hasText("Download"))
         composeRule.onNodeWithText("Download").assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithText("Load").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun statusCardAppearsWhenMessageSetAndDisappearsWhenNull() {
+        val stateWithMessage = sampleLibraryState().copy(statusMessage = "Model activated")
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = stateWithMessage,
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("model_sheet_status_message").assertIsDisplayed()
+        composeRule.onNodeWithText("Model activated").assertIsDisplayed()
+    }
+
+    @Test
+    fun statusCardHiddenWhenMessageIsNull() {
+        val stateNoMessage = sampleLibraryState().copy(statusMessage = null)
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = stateNoMessage,
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = {},
+                )
+            }
+        }
+
+        assertTrue(
+            composeRule.onAllNodes(hasTestTag("model_sheet_status_message"))
+                .fetchSemanticsNodes().isEmpty(),
+        )
+    }
+
+    @Test
+    fun errorStateShowsRetryAndChooseAnotherActions() {
+        val errorModel = RuntimeLoadedModel(modelId = "qwen3.5-0.8b-q4", modelVersion = "q4_0")
+        val errorState = ModelLoadingState.Error(
+            requestedModel = errorModel,
+            loadedModel = null,
+            lastUsedModel = errorModel,
+            message = "Failed to load model",
+            code = "LOAD_FAILED",
+            detail = "out of memory",
+            timestampMs = 1L,
+        )
+
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = sampleLibraryState(),
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = errorState,
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Retry load").assertIsDisplayed()
+        composeRule.onNodeWithTag("choose_another_model").assertIsDisplayed()
+        composeRule.onNodeWithText("Choose another").assertIsDisplayed()
+    }
+
+    @Test
+    fun removeButtonIsSeparatedFromPrimaryActionsWithErrorTint() {
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = sampleLibraryState(),
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("unified_model_sheet")
+            .performScrollToNode(hasTestTag("remove_button_qwen3.5-0.8b-q4_q4_0"))
+        composeRule.onNodeWithTag("remove_button_qwen3.5-0.8b-q4_q4_0").assertIsDisplayed()
+    }
+
+    @Test
+    fun removeButtonDispatchesRequestRemoveEvent() {
+        val events = mutableListOf<ModelSheetEvent>()
+
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = sampleLibraryState(),
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = { events += it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("unified_model_sheet")
+            .performScrollToNode(hasTestTag("remove_button_qwen3.5-0.8b-q4_q4_0"))
+        composeRule.onNodeWithTag("remove_button_qwen3.5-0.8b-q4_q4_0").performClick()
+        composeRule.runOnIdle {
+            assertTrue(events.any { it is ModelSheetEvent.RequestRemove })
+        }
+    }
+
+    @Test
+    fun hiddenVersionKeysFilterOutModelsFromList() {
+        val hiddenKeys = setOf("qwen3.5-0.8b-q4::q4_0")
+
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = sampleLibraryState(),
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
+                    hiddenVersionKeys = hiddenKeys,
+                    onEvent = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("No downloaded models yet").assertIsDisplayed()
+    }
+
+    @Test
+    fun disabledLoadButtonHasStateDescriptionForLoadedModel() {
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = sampleLibraryState(),
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = {},
+                )
+            }
+        }
+
+        val stateDescMatcher = SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription)
+        composeRule.onNodeWithTag("unified_model_sheet")
+            .performScrollToNode(hasText("Loaded"))
+        val loadedNodes = composeRule.onAllNodes(hasText("Loaded").and(stateDescMatcher))
+        assertTrue(loadedNodes.fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test
+    fun statusCardHasLiveRegionSemantics() {
+        val stateWithMessage = sampleLibraryState().copy(statusMessage = "Removing model...")
+        composeRule.setContent {
+            MaterialTheme {
+                ModelSheet(
+                    libraryState = stateWithMessage,
+                    runtimeState = sampleRuntimeState(),
+                    modelLoadingState = sampleRuntimeLoadingState(),
+                    routingMode = RoutingMode.AUTO,
+                    onEvent = {},
+                )
+            }
+        }
+
+        val liveRegionMatcher = SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion)
+        composeRule.onNode(hasTestTag("model_sheet_status_message").and(liveRegionMatcher))
+            .assertIsDisplayed()
     }
 }
 

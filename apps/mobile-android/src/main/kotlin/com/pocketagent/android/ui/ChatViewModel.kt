@@ -729,7 +729,9 @@ class ChatViewModel(
             }
 
             is ModelLoadingState.Loaded -> {
-                syncRoutingModeToLoadedModel(nextState.model)
+                // Routing mode sync is handled in finalizeModelOperation for
+                // user-initiated loads only. Syncing here would cement accidental
+                // model switches caused by ensureLoaded or background restore.
                 _uiState.update { state ->
                     val loadedDetail = nextState.detail?.takeIf { detail -> detail.isNotBlank() }
                     state.copy(
@@ -783,17 +785,6 @@ class ChatViewModel(
                 }
             }
         }
-    }
-
-    private fun syncRoutingModeToLoadedModel(model: RuntimeLoadedModel) {
-        // Keep sends pinned to the resident model instead of the last persisted route.
-        val pinnedMode = ModelCatalog.routingModesForModel(model.modelId)
-            .firstOrNull { it != RoutingMode.AUTO }
-            ?: return
-        if (_uiState.value.runtime.routingMode == pinnedMode) {
-            return
-        }
-        setRoutingModeInternal(pinnedMode)
     }
 
     private fun applyImmediateModelLoadingState(nextState: ModelLoadingState) {

@@ -31,6 +31,8 @@
 #include "llama-kv-cache.h"
 #include "llama-kv-cache-iswa.h"
 #include "llama-memory-hybrid.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
@@ -69,6 +71,8 @@ constexpr size_t MAX_DRAFT_PREFIX_STATE_BYTES = 48u * 1024u * 1024u;
 bool g_model_uses_recurrent_memory = false;
 bool g_model_uses_hybrid_memory = false;
 bool g_prefix_cache_prefill_only_mode = false;
+
+mtmd_context * g_mtmd_ctx = nullptr;
 
 struct PrefixCacheSlot {
     std::vector<llama_token> target_prompt_tokens;
@@ -1601,6 +1605,10 @@ std::string to_std_string(JNIEnv * env, jstring value) {
 }
 
 void release_runtime_locked() {
+    if (g_mtmd_ctx != nullptr) {
+        mtmd_free(g_mtmd_ctx);
+        g_mtmd_ctx = nullptr;
+    }
     if (g_sampler != nullptr) {
         llama_sampler_free(g_sampler);
         g_sampler = nullptr;
@@ -4396,6 +4404,304 @@ Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nati
     slot.last_used_epoch = ++g_prefix_cache_epoch;
     g_active_prefix_cache_slot = slot_index;
     return JNI_TRUE;
+}
+
+// ---------------------------------------------------------------------------
+// Multimodal (vision) support
+// ---------------------------------------------------------------------------
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeInitMultimodal(
+    JNIEnv * env,
+    jobject /*thiz*/,
+    jstring mmProjPath,
+    jboolean useGpu,
+    jint imageMaxTokens) {
+    const std::string path = to_std_string(env, mmProjPath);
+    if (path.empty()) {
+        log_error("nativeInitMultimodal: empty mmproj path");
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_model == nullptr) {
+        log_error("nativeInitMultimodal: model not loaded");
+        return JNI_FALSE;
+    }
+    if (g_mtmd_ctx != nullptr) {
+        mtmd_free(g_mtmd_ctx);
+        g_mtmd_ctx = nullptr;
+    }
+    mtmd_context_params params = mtmd_context_params_default();
+    params.use_gpu = useGpu == JNI_TRUE;
+    params.print_timings = false;
+    params.n_threads = 4;
+    if (imageMaxTokens > 0) {
+        params.image_max_tokens = static_cast<int>(imageMaxTokens);
+    }
+    g_mtmd_ctx = mtmd_init_from_file(path.c_str(), g_model, params);
+    if (g_mtmd_ctx == nullptr) {
+        log_error("nativeInitMultimodal: mtmd_init_from_file failed");
+        return JNI_FALSE;
+    }
+    const bool has_vision = mtmd_support_vision(g_mtmd_ctx);
+    __android_log_print(ANDROID_LOG_INFO, TAG,
+        "MULTIMODAL|init=ok|vision=%s|gpu=%s|max_tokens=%d",
+        has_vision ? "true" : "false",
+        params.use_gpu ? "true" : "false",
+        params.image_max_tokens);
+    return has_vision ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeFreeMultimodal(
+    JNIEnv * /*env*/,
+    jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_mtmd_ctx != nullptr) {
+        mtmd_free(g_mtmd_ctx);
+        g_mtmd_ctx = nullptr;
+        __android_log_print(ANDROID_LOG_INFO, TAG, "MULTIMODAL|freed");
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeIsMultimodalEnabled(
+    JNIEnv * /*env*/,
+    jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return (g_mtmd_ctx != nullptr && mtmd_support_vision(g_mtmd_ctx)) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeGenerateStreamWithImages(
+    JNIEnv * env,
+    jobject /*thiz*/,
+    jstring requestId,
+    jstring prompt,
+    jobjectArray imagePaths,
+    jint maxTokens,
+    jobject callback) {
+    const std::string request_id = to_std_string(env, requestId);
+    (void)request_id;
+    const std::string prompt_text = to_std_string(env, prompt);
+    if (prompt_text.empty() || callback == nullptr) {
+        return STREAM_STATUS_RUNTIME_ERROR;
+    }
+    const int image_count = (imagePaths != nullptr) ? env->GetArrayLength(imagePaths) : 0;
+
+    jclass callback_class = env->GetObjectClass(callback);
+    if (callback_class == nullptr) {
+        log_error("nativeGenerateStreamWithImages: callback class missing");
+        return STREAM_STATUS_RUNTIME_ERROR;
+    }
+    const jmethodID on_token = env->GetMethodID(callback_class, "onToken", "(Ljava/lang/String;)V");
+    if (on_token == nullptr) {
+        env->DeleteLocalRef(callback_class);
+        log_error("nativeGenerateStreamWithImages: callback.onToken(String) missing");
+        return STREAM_STATUS_CALLBACK_ERROR;
+    }
+
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_model == nullptr || g_context == nullptr || g_sampler == nullptr) {
+        env->DeleteLocalRef(callback_class);
+        log_error("nativeGenerateStreamWithImages: runtime not initialized");
+        return STREAM_STATUS_RUNTIME_ERROR;
+    }
+    if (g_mtmd_ctx == nullptr) {
+        env->DeleteLocalRef(callback_class);
+        log_error("nativeGenerateStreamWithImages: multimodal context not initialized");
+        return STREAM_STATUS_RUNTIME_ERROR;
+    }
+    if (g_cancel_requested.exchange(false, std::memory_order_acq_rel)) {
+        env->DeleteLocalRef(callback_class);
+        log_error("nativeGenerateStreamWithImages: cancelled before start");
+        return STREAM_STATUS_CANCELLED;
+    }
+
+    // Load image bitmaps via stb_image through mtmd helper
+    mtmd::bitmaps bitmaps;
+    for (int i = 0; i < image_count; ++i) {
+        auto jpath = static_cast<jstring>(env->GetObjectArrayElement(imagePaths, i));
+        const std::string img_path = to_std_string(env, jpath);
+        env->DeleteLocalRef(jpath);
+        mtmd_bitmap * bmp = mtmd_helper_bitmap_init_from_file(g_mtmd_ctx, img_path.c_str());
+        if (bmp == nullptr) {
+            env->DeleteLocalRef(callback_class);
+            __android_log_print(ANDROID_LOG_ERROR, TAG,
+                "MULTIMODAL|bitmap_load_failed|path=%s", img_path.c_str());
+            return STREAM_STATUS_RUNTIME_ERROR;
+        }
+        bitmaps.entries.emplace_back(bmp);
+    }
+
+    // Tokenize prompt with interleaved media markers.
+    // The prompt must contain the marker returned by mtmd_default_marker() (currently
+    // "<__media__>") for each image — the Kotlin layer injects these via injectImageMarkers().
+    const char * marker = mtmd_default_marker();
+    __android_log_print(ANDROID_LOG_INFO, TAG,
+        "MULTIMODAL|tokenize_start|images=%d|marker=%s|prompt_len=%zu|marker_present=%s",
+        image_count, marker, prompt_text.size(),
+        (prompt_text.find(marker) != std::string::npos) ? "true" : "false");
+
+    mtmd_input_text input_text{};
+    input_text.text = prompt_text.c_str();
+    input_text.add_special = true;
+    input_text.parse_special = true;
+
+    mtmd::input_chunks chunks(mtmd_input_chunks_init());
+    auto bitmaps_c = bitmaps.c_ptr();
+    int32_t tok_result = mtmd_tokenize(
+        g_mtmd_ctx, chunks.ptr.get(), &input_text,
+        bitmaps_c.data(), bitmaps_c.size());
+    if (tok_result != 0) {
+        env->DeleteLocalRef(callback_class);
+        __android_log_print(ANDROID_LOG_ERROR, TAG,
+            "MULTIMODAL|tokenize_failed|result=%d|n_images=%d", tok_result, image_count);
+        return STREAM_STATUS_RUNTIME_ERROR;
+    }
+
+    const size_t total_tokens = mtmd_helper_get_n_tokens(chunks.ptr.get());
+    __android_log_print(ANDROID_LOG_INFO, TAG,
+        "MULTIMODAL|tokenized|chunks=%zu|total_tokens=%zu|images=%d",
+        chunks.size(), total_tokens, image_count);
+
+    // Clear KV cache and evaluate all chunks (text + vision interleaved)
+    llama_memory_clear(llama_get_memory(g_context), false);
+    llama_pos n_past = 0;
+    int32_t eval_result = mtmd_helper_eval_chunks(
+        g_mtmd_ctx, g_context, chunks.ptr.get(),
+        n_past, 0, g_prompt_decode_batch_size, true, &n_past);
+    if (eval_result != 0) {
+        env->DeleteLocalRef(callback_class);
+        __android_log_print(ANDROID_LOG_ERROR, TAG,
+            "MULTIMODAL|eval_chunks_failed|result=%d", eval_result);
+        return STREAM_STATUS_RUNTIME_ERROR;
+    }
+
+    // Sampling loop — identical to text-only path but starting after multimodal eval
+    const llama_vocab * vocab = llama_model_get_vocab(g_model);
+    if (vocab == nullptr) {
+        env->DeleteLocalRef(callback_class);
+        log_error("nativeGenerateStreamWithImages: vocab is null");
+        return STREAM_STATUS_RUNTIME_ERROR;
+    }
+    llama_sampler_reset(g_sampler);
+
+    const int runtime_context_size = static_cast<int>(
+        llama_n_ctx(g_context) > 0 ? llama_n_ctx(g_context) : static_cast<uint32_t>(g_runtime_context_size));
+    const int safe_max_tokens = std::clamp(maxTokens, 1, std::max(1, runtime_context_size - static_cast<int>(n_past) - 1));
+
+    std::string utf8_pending;
+    int emitted_count = 0;
+    jint final_status = STREAM_STATUS_MAX_TOKENS;
+
+    while (emitted_count < safe_max_tokens) {
+        if (g_cancel_requested.load(std::memory_order_acquire)) {
+            g_cancel_requested.store(false, std::memory_order_release);
+            final_status = STREAM_STATUS_CANCELLED;
+            break;
+        }
+        const llama_token token = llama_sampler_sample(g_sampler, g_context, -1);
+        if (llama_vocab_is_eog(vocab, token)) {
+            final_status = STREAM_STATUS_COMPLETED;
+            break;
+        }
+        llama_sampler_accept(g_sampler, token);
+
+        llama_token next_token = token;
+        llama_batch batch = llama_batch_get_one(&next_token, 1);
+        if (llama_decode(g_context, batch) != 0) {
+            log_error("nativeGenerateStreamWithImages: decode failed on sampled token");
+            final_status = STREAM_STATUS_RUNTIME_ERROR;
+            break;
+        }
+        n_past += 1;
+
+        std::string piece;
+        if (!token_to_piece_dynamic(vocab, token, &piece)) {
+            final_status = STREAM_STATUS_RUNTIME_ERROR;
+            break;
+        }
+
+        utf8_pending += piece;
+        while (!utf8_pending.empty()) {
+            size_t valid_bytes = 0;
+            for (size_t j = 0; j < utf8_pending.size(); ) {
+                unsigned char c = static_cast<unsigned char>(utf8_pending[j]);
+                size_t char_len = 0;
+                if (c < 0x80) char_len = 1;
+                else if ((c & 0xE0) == 0xC0) char_len = 2;
+                else if ((c & 0xF0) == 0xE0) char_len = 3;
+                else if ((c & 0xF8) == 0xF0) char_len = 4;
+                else { valid_bytes = j + 1; break; }
+                if (j + char_len > utf8_pending.size()) break;
+                valid_bytes = j + char_len;
+                j += char_len;
+            }
+            if (valid_bytes == 0) break;
+            std::string valid_str = utf8_pending.substr(0, valid_bytes);
+            utf8_pending.erase(0, valid_bytes);
+            jstring token_j = env->NewStringUTF(valid_str.c_str());
+            if (token_j == nullptr) {
+                final_status = STREAM_STATUS_RUNTIME_ERROR;
+                goto done;
+            }
+            env->CallVoidMethod(callback, on_token, token_j);
+            env->DeleteLocalRef(token_j);
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+                final_status = STREAM_STATUS_CALLBACK_ERROR;
+                goto done;
+            }
+        }
+        emitted_count += 1;
+    }
+
+done:
+    env->DeleteLocalRef(callback_class);
+    __android_log_print(ANDROID_LOG_INFO, TAG,
+        "MULTIMODAL|generate_done|tokens=%d|status=%d", emitted_count, static_cast<int>(final_status));
+    return final_status;
+}
+
+// NativeJniLlamaCppBridge delegates (multimodal)
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeInitMultimodal(
+    JNIEnv * env,
+    jobject thiz,
+    jstring mmProjPath,
+    jboolean useGpu,
+    jint imageMaxTokens) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeInitMultimodal(
+        env, thiz, mmProjPath, useGpu, imageMaxTokens);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeFreeMultimodal(
+    JNIEnv * env,
+    jobject thiz) {
+    Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeFreeMultimodal(env, thiz);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeIsMultimodalEnabled(
+    JNIEnv * env,
+    jobject thiz) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeIsMultimodalEnabled(env, thiz);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_pocketagent_nativebridge_NativeJniLlamaCppBridge_00024JniNativeApi_nativeGenerateStreamWithImages(
+    JNIEnv * env,
+    jobject thiz,
+    jstring requestId,
+    jstring prompt,
+    jobjectArray imagePaths,
+    jint maxTokens,
+    jobject callback) {
+    return Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nativeGenerateStreamWithImages(
+        env, thiz, requestId, prompt, imagePaths, maxTokens, callback);
 }
 
 extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM * /*vm*/, void * /*reserved*/) {

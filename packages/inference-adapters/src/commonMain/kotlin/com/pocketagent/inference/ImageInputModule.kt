@@ -114,10 +114,30 @@ class RuntimeImageInputModule(
     }
 
     private fun normalizeExtension(imagePath: String): String {
-        val extension = imagePath.substringAfterLast('.', missingDelimiterValue = "")
+        val raw = imagePath.trim()
+        val fromPath = raw.substringAfterLast('.', missingDelimiterValue = "")
+            .substringBefore('?') // strip query params from URIs
             .lowercase()
             .filter { it.isLetterOrDigit() }
-        return if (extension.isBlank()) "unknown" else extension
+            .takeIf { it.length in 1..6 }
+        if (fromPath != null && fromPath in SUPPORTED_EXTENSIONS) {
+            return fromPath
+        }
+        val fromMimeSegment = raw.substringAfterLast('/', "")
+            .substringBefore(';')
+            .substringBefore('?')
+            .lowercase()
+        return when {
+            fromMimeSegment.contains("jpeg") || fromMimeSegment.contains("jpg") -> "jpg"
+            fromMimeSegment.contains("png") -> "png"
+            fromMimeSegment.contains("webp") -> "webp"
+            fromMimeSegment.contains("heic") -> "heic"
+            fromMimeSegment.contains("heif") -> "heif"
+            fromMimeSegment.contains("bmp") -> "bmp"
+            fromMimeSegment.contains("pdf") -> "pdf"
+            fromPath != null -> fromPath
+            else -> "unknown"
+        }
     }
 
     companion object {

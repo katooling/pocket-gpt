@@ -168,11 +168,8 @@ private class FakeRuntimeContainer : RuntimeContainer {
         sendError?.let { throw it }
         lastUserText = messages.lastOrNull { it.role == InteractionRole.USER }
             ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            ?.filterIsInstance<InteractionContentPart.Text>()
+            ?.joinToString(separator = "\n") { it.text }
             .orEmpty()
         lastMaxTokens = maxTokens
         onToken("hello ")

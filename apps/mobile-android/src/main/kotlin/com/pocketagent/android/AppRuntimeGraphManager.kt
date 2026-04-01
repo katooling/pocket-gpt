@@ -13,6 +13,7 @@ import com.pocketagent.runtime.RuntimeCompositionRoot
 
 internal class AppRuntimeGraphManager {
     private val lock = Any()
+    @Volatile private var appContext: Context? = null
     private var runtimeProvisioningStore: AndroidRuntimeProvisioningStore? = null
     private var runtimeTuningStore: AndroidRuntimeTuningStore? = null
     private var modelDownloadManager: ModelDownloadManager? = null
@@ -24,6 +25,11 @@ internal class AppRuntimeGraphManager {
         RuntimeCompositionRoot.createFacade(
             conversationModule = getOrCreateConversationModule(),
             memoryModule = getOrCreateMemoryModule(),
+            mmProjPathResolver = { modelId ->
+                val store = runtimeProvisioningStore
+                    ?: appContext?.let { AndroidRuntimeProvisioningStore(it) }
+                store?.resolveMmProjPath(modelId)
+            },
         ),
     )
 
@@ -37,6 +43,7 @@ internal class AppRuntimeGraphManager {
     }
 
     fun runtimeTuning(context: Context): AndroidRuntimeTuningStore {
+        appContext = context.applicationContext
         return synchronized(lock) {
             runtimeTuningStore
                 ?: AndroidRuntimeTuningStore(context.applicationContext).also { runtimeTuningStore = it }
@@ -48,6 +55,7 @@ internal class AppRuntimeGraphManager {
     }
 
     fun getOrCreateRuntimeGraph(context: Context): AppRuntimeGraph {
+        appContext = context.applicationContext
         return synchronized(lock) {
             runtimeGraph ?: createRuntimeGraph(context.applicationContext).also { created ->
                 runtimeGraph = created

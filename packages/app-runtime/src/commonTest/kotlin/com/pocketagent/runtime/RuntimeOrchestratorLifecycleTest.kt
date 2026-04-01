@@ -101,9 +101,9 @@ class RuntimeOrchestratorLifecycleTest {
     }
 
     @Test
-    fun `foreground auto restore emits failure event when reload fails`() {
+    fun `foreground after background unload emits unloaded event without reloading`() {
         val modelId = ModelCatalog.QWEN_3_5_0_8B_Q4
-        val modelFile = File.createTempFile("runtime-orchestrator-foreground-fail", ".gguf").apply {
+        val modelFile = File.createTempFile("runtime-orchestrator-foreground-lazy", ".gguf").apply {
             writeText("fake-gguf-payload")
             deleteOnExit()
         }
@@ -124,15 +124,14 @@ class RuntimeOrchestratorLifecycleTest {
         try {
             assertTrue(orchestrator.loadModel(modelId = modelId).success)
             assertTrue(orchestrator.onAppBackground())
-            bridge.failNextLoad = true
 
             assertEquals(false, orchestrator.onAppForeground())
 
             waitForLifecycleEvent(events) { event ->
-                event.state == ModelLifecycleState.FAILED &&
+                event.state == ModelLifecycleState.UNLOADED &&
                     event.modelId == modelId
             }
-            assertEquals(ModelLifecycleState.FAILED, orchestrator.currentModelLifecycleEvent()?.state)
+            assertEquals(ModelLifecycleState.UNLOADED, orchestrator.currentModelLifecycleEvent()?.state)
         } finally {
             subscription.close()
             modelFile.delete()

@@ -45,13 +45,14 @@ class AndroidChatConversationService(
     }
 
     internal fun addAttachedImage(state: ChatUiState, imagePath: String): ChatUiState {
+        val trimmed = imagePath.trim()
+        if (trimmed.isBlank()) return state
         val current = state.composer.attachedImages
-        if (current.size >= 5) {
-            return state
-        }
+        if (current.size >= 5) return state
+        if (current.contains(trimmed)) return state
         return state.copy(
             composer = state.composer.copy(
-                attachedImages = current + imagePath,
+                attachedImages = current + trimmed,
             ),
         )
     }

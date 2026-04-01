@@ -22,6 +22,16 @@ enum class InteractionRole {
 
 sealed interface InteractionContentPart {
     data class Text(val text: String) : InteractionContentPart
+    data class Image(val path: String) : InteractionContentPart
+}
+
+fun List<InteractionMessage>.extractLatestUserImagePaths(): List<String> {
+    return asReversed()
+        .firstOrNull { it.role == InteractionRole.USER }
+        ?.parts
+        ?.filterIsInstance<InteractionContentPart.Image>()
+        ?.map { it.path }
+        .orEmpty()
 }
 
 data class InteractionToolCall(

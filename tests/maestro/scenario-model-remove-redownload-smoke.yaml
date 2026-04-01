@@ -1,0 +1,52 @@
+appId: com.pocketagent.android
+tags:
+  - smoke
+  - model-management
+  - remove
+---
+- runFlow: shared/bootstrap-runtime-ready.yaml
+
+- tapOn:
+    id: "open_model_library"
+- extendedWaitUntil:
+    visible: "Model library"
+    timeout: 30000
+
+- assertVisible: "Downloaded models"
+- scrollUntilVisible:
+    element:
+      text: "Remove"
+    direction: DOWN
+    timeout: 20000
+
+- tapOn: "Remove"
+- extendedWaitUntil:
+    visible: "Remove model"
+    timeout: 10000
+- assertVisible: "Cancel"
+- tapOn:
+    text: "Remove"
+    index: 1
+
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 10000
+
+- extendedWaitUntil:
+    notVisible: "Undo"
+    timeout: 15000
+
+- scrollUntilVisible:
+    element:
+      text: "Available models"
+    direction: DOWN
+    timeout: 20000
+- assertVisible: "Available models"
+
+- scrollUntilVisible:
+    element:
+      text: "Download"
+    direction: DOWN
+    timeout: 20000
+- assertVisible: "Download"
+- takeScreenshot: "model-remove-redownload-after-remove"

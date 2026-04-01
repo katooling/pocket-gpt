@@ -456,6 +456,24 @@ class AndroidRuntimeProvisioningStore(
         )
     }
 
+    fun resolveMmProjPath(modelId: String): String? {
+        val mmProjFileName = com.pocketagent.inference.ModelCatalog.mmProjFileNameFor(modelId) ?: return null
+        val managedDir = managedModelDirectory()
+        val managedFile = File(managedDir, mmProjFileName)
+        if (managedFile.exists() && managedFile.isFile) {
+            return managedFile.absolutePath
+        }
+        val externalRoots = arrayOf(context.getExternalFilesDir(null))
+        for (root in externalRoots) {
+            if (root == null) continue
+            val candidate = File(root, "$PROVISIONING_MANAGED_MODELS_DIR_NAME/$mmProjFileName")
+            if (candidate.exists() && candidate.isFile) {
+                return candidate.absolutePath
+            }
+        }
+        return null
+    }
+
     fun expectedRuntimeCompatibilityTag(): String = PROVISIONING_RUNTIME_COMPATIBILITY_TAG
 
     private fun upsertInstalledVersion(

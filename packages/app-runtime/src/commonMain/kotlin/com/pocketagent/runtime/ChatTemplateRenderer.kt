@@ -123,11 +123,8 @@ private fun InteractionRole.toTemplateRole(): String {
 }
 
 private fun InteractionMessage.renderedText(): String {
-    return parts.joinToString(separator = "\n") { part ->
-        when (part) {
-            is InteractionContentPart.Text -> part.text
-        }
-    }
+    return parts.filterIsInstance<InteractionContentPart.Text>()
+        .joinToString(separator = "\n") { it.text }
 }
 
 /**

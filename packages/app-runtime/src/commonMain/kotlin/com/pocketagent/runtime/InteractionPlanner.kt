@@ -200,6 +200,7 @@ private fun InteractionMessage.removeThinkingFromContext(thinkingSupport: Thinki
                 is InteractionContentPart.Text -> part.copy(
                     text = ThinkingBlockFilter.stripThinkingBlocks(part.text),
                 )
+                is InteractionContentPart.Image -> part
             }
         },
     )
@@ -272,6 +273,7 @@ private fun InteractionMessage.estimatedTokenCount(): Int {
     val contentChars = parts.sumOf { part ->
         when (part) {
             is InteractionContentPart.Text -> part.text.length
+            is InteractionContentPart.Image -> IMAGE_TOKEN_ESTIMATE_CHARS
         }
     }
     val toolChars = toolCalls.sumOf { call ->
@@ -280,3 +282,5 @@ private fun InteractionMessage.estimatedTokenCount(): Int {
     val totalChars = (contentChars + toolChars).coerceAtLeast(1)
     return (totalChars / 4).coerceAtLeast(1)
 }
+
+private const val IMAGE_TOKEN_ESTIMATE_CHARS = 1200

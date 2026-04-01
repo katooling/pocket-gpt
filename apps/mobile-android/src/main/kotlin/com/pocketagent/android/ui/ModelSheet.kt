@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -31,9 +33,13 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +57,7 @@ import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.activeOrRequestedModel
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
 import com.pocketagent.core.RoutingMode
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ModelSheet(
@@ -58,23 +65,24 @@ internal fun ModelSheet(
     runtimeState: RuntimeModelUiState,
     modelLoadingState: ModelLoadingState,
     routingMode: RoutingMode,
+    hiddenVersionKeys: Set<String> = emptySet(),
     onEvent: (ModelSheetEvent) -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    var pendingRemoveVersion by remember { mutableStateOf<Pair<String, String>?>(null) }
     val activeModel = modelLoadingState.activeOrRequestedModel()
     val busy = modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading
-    val installedVersions by remember(libraryState, searchQuery) {
+    val installedVersions by remember(libraryState, searchQuery, hiddenVersionKeys) {
         derivedStateOf {
             libraryState.snapshot.models.flatMap { model ->
                 model.installedVersions.map { version -> model to version }
             }.filter { (model, version) ->
-                matchesModelSearch(
-                    searchQuery = searchQuery,
-                    modelId = model.modelId,
-                    displayName = model.displayName,
-                    version = version.version,
-                )
+                versionIdentityKey(model.modelId, version.version) !in hiddenVersionKeys &&
+                    matchesModelSearch(
+                        searchQuery = searchQuery,
+                        modelId = model.modelId,
+                        displayName = model.displayName,
+                        version = version.version,
+                    )
             }
         }
     }
@@ -107,8 +115,11 @@ internal fun ModelSheet(
             }
         }
     }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxWidth()
             .padding(PocketAgentDimensions.sheetHorizontalPadding)
@@ -147,10 +158,11 @@ internal fun ModelSheet(
                 onRetryLoad = { model -> onEvent(ModelSheetEvent.RetryLoad(model.modelId, model.modelVersion)) },
                 onLoadLastUsedModel = { onEvent(ModelSheetEvent.LoadLastUsedModel) },
                 onOffloadModel = { onEvent(ModelSheetEvent.OffloadModel) },
+                onChooseAnother = { scope.launch { scrollToDownloadedSection(listState) } },
             )
         }
         item { HorizontalDivider() }
-        item {
+        item(key = DOWNLOADED_SECTION_KEY) {
             SectionHeader(
                 title = stringResource(id = R.string.ui_downloaded_models),
                 subtitle = stringResource(id = R.string.ui_downloaded_models_subtitle),
@@ -178,7 +190,7 @@ internal fun ModelSheet(
                     onImportModel = { modelId -> onEvent(ModelSheetEvent.ImportModel(modelId)) },
                     onSetDefaultVersion = { modelId, ver -> onEvent(ModelSheetEvent.SetDefaultVersion(modelId, ver)) },
                     onLoadVersion = { modelId, ver -> onEvent(ModelSheetEvent.LoadVersion(modelId, ver)) },
-                    onRemoveVersion = { modelId, ver -> pendingRemoveVersion = modelId to ver },
+                    onRemoveVersion = { modelId, ver -> onEvent(ModelSheetEvent.RequestRemove(modelId, ver)) },
                 )
             }
         }
@@ -226,54 +238,18 @@ internal fun ModelSheet(
             }
         }
     }
-    pendingRemoveVersion?.let { (modelId, version) ->
-        val model = libraryState.snapshot.models.firstOrNull { installedModel -> installedModel.modelId == modelId }
-        val targetVersion = model?.installedVersions?.firstOrNull { installedVersion -> installedVersion.version == version }
-        val removePlan = if (model != null && targetVersion != null) {
-            resolveRemoveVersionPlan(
-                model = model,
-                version = targetVersion,
-                loadedModel = modelLoadingState.loadedModel,
-            )
-        } else {
-            null
+}
+
+private const val DOWNLOADED_SECTION_KEY = "downloaded_section_header"
+
+private suspend fun scrollToDownloadedSection(listState: LazyListState) {
+    val targetIndex = listState.layoutInfo.totalItemsCount.let { total ->
+        (0 until total).firstOrNull { index ->
+            listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == DOWNLOADED_SECTION_KEY }?.index == index
         }
-        AlertDialog(
-            onDismissRequest = { pendingRemoveVersion = null },
-            title = { Text(stringResource(id = R.string.ui_remove_model_title)) },
-            text = {
-                Text(
-                    text = when {
-                        removePlan?.isBlockedByActiveSelection == true ->
-                            stringResource(id = R.string.ui_remove_model_body_active_blocked, version)
-                        removePlan?.requiresOffload == true && removePlan.requiresClearingActiveSelection ->
-                            stringResource(id = R.string.ui_remove_model_body_loaded_only_active, version)
-                        removePlan?.requiresOffload == true ->
-                            stringResource(id = R.string.ui_remove_model_body_loaded, version)
-                        removePlan?.requiresClearingActiveSelection == true ->
-                            stringResource(id = R.string.ui_remove_model_body_only_active, version)
-                        else ->
-                            stringResource(id = R.string.ui_remove_model_body, version)
-                    },
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onEvent(ModelSheetEvent.RemoveVersion(modelId, version))
-                        pendingRemoveVersion = null
-                    },
-                    enabled = removePlan?.isBlockedByActiveSelection != true,
-                ) {
-                    Text(stringResource(id = R.string.ui_remove))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRemoveVersion = null }) {
-                    Text(stringResource(id = R.string.ui_cancel_button))
-                }
-            },
-        )
+    }
+    if (targetIndex != null) {
+        listState.animateScrollToItem(targetIndex)
     }
 }
 
@@ -282,7 +258,8 @@ private fun StatusMessageCard(message: String) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("model_sheet_status_message"),
+            .testTag("model_sheet_status_message")
+            .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
         Column(
             modifier = Modifier
@@ -306,6 +283,7 @@ private fun ActiveModelSection(
     onRetryLoad: (com.pocketagent.runtime.RuntimeLoadedModel) -> Unit,
     onLoadLastUsedModel: () -> Unit,
     onOffloadModel: () -> Unit,
+    onChooseAnother: () -> Unit,
 ) {
     val currentModel = modelLoadingState.activeOrRequestedModel()
     val canLoadLastUsed = modelLoadingState.loadedModel == null &&
@@ -373,9 +351,20 @@ private fun ActiveModelSection(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
-                    currentModel?.let { retryModel ->
-                        OutlinedButton(onClick = { onRetryLoad(retryModel) }) {
-                            Text(stringResource(id = R.string.ui_model_runtime_retry_load))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                        verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                    ) {
+                        currentModel?.let { retryModel ->
+                            OutlinedButton(onClick = { onRetryLoad(retryModel) }) {
+                                Text(stringResource(id = R.string.ui_model_runtime_retry_load))
+                            }
+                        }
+                        TextButton(
+                            onClick = onChooseAnother,
+                            modifier = Modifier.testTag("choose_another_model"),
+                        ) {
+                            Text(stringResource(id = R.string.ui_choose_another_model))
                         }
                     }
                 }
@@ -440,6 +429,11 @@ private fun DownloadedModelCard(
         -> MaterialTheme.colorScheme.secondary
         DownloadedModelBadge.READY -> MaterialTheme.colorScheme.outline
     }
+    val loadDisabledReason = when {
+        isLoaded -> stringResource(id = R.string.ui_load_button_disabled_already_loaded)
+        busy -> stringResource(id = R.string.ui_load_button_disabled_busy)
+        else -> null
+    }
     Card {
         Column(
             modifier = Modifier.fillMaxWidth().padding(PocketAgentDimensions.cardPadding),
@@ -483,6 +477,11 @@ private fun DownloadedModelCard(
                 Button(
                     onClick = { onLoadVersion(model.modelId, version.version) },
                     enabled = !busy && !isLoaded,
+                    modifier = if (loadDisabledReason != null) {
+                        Modifier.semantics { stateDescription = loadDisabledReason }
+                    } else {
+                        Modifier
+                    },
                 ) {
                     Text(stringResource(id = if (isLoaded) R.string.ui_loaded else R.string.ui_load))
                 }
@@ -495,9 +494,16 @@ private fun DownloadedModelCard(
                 OutlinedButton(onClick = { onImportModel(model.modelId) }) {
                     Text(stringResource(id = if (model.isProvisioned) R.string.ui_replace_file else R.string.ui_import))
                 }
-                OutlinedButton(onClick = { onRemoveVersion(model.modelId, version.version) }) {
-                    Text(stringResource(id = R.string.ui_remove))
-                }
+            }
+            HorizontalDivider()
+            OutlinedButton(
+                onClick = { onRemoveVersion(model.modelId, version.version) },
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+                modifier = Modifier.testTag("remove_button_${model.modelId}_${version.version}"),
+            ) {
+                Text(stringResource(id = R.string.ui_remove))
             }
         }
     }

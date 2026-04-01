@@ -238,6 +238,46 @@ class ModelProvisioningViewModelTest {
         assertTrue(offloadResult.success)
         assertEquals(null, viewModel.uiState.value.lifecycle.loadedModel)
     }
+
+    @Test
+    fun `remove version async success sets status and refreshes snapshot`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway()
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+
+        viewModel.setStatusMessage("Removing...")
+        val result = viewModel.removeVersionAsync("qwen3.5-0.8b-q4", "1")
+        advanceUntilIdle()
+
+        assertTrue(result)
+        assertEquals(1, gateway.removeCalls)
+        assertTrue(gateway.snapshotCalls > 1)
+    }
+
+    @Test
+    fun `remove version async failure preserves failed status`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway().apply { removeResult = false }
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+
+        val snapshotCountAfterInit = gateway.snapshotCalls
+        assertFalse(viewModel.removeVersionAsync("qwen3.5-0.8b-q4", "1"))
+        advanceUntilIdle()
+
+        assertEquals(snapshotCountAfterInit, gateway.snapshotCalls)
+    }
+
+    @Test
+    fun `set status message updates ui state`() = runTest(dispatcher) {
+        val gateway = FakeProvisioningGateway()
+        val viewModel = ModelProvisioningViewModel(gateway, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+
+        viewModel.setStatusMessage("test message")
+        assertEquals("test message", viewModel.uiState.value.statusMessage)
+        viewModel.setStatusMessage(null)
+        assertEquals(null, viewModel.uiState.value.statusMessage)
+    }
 }
 
 private class FakeProvisioningGateway : ProvisioningGateway {
@@ -255,6 +295,7 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     var lastEnqueuedOptions: DownloadRequestOptions? = null
     var shouldWarnForMeteredLargeDownloadResult: Boolean = false
     var lastWarnVersion: ModelDistributionVersion? = null
+    var removeResult: Boolean = true
 
     override fun currentSnapshot(): RuntimeProvisioningSnapshot {
         snapshotCalls += 1
@@ -312,7 +353,7 @@ private class FakeProvisioningGateway : ProvisioningGateway {
 
     override fun removeVersion(modelId: String, version: String): Boolean {
         removeCalls += 1
-        return true
+        return removeResult
     }
 
     override suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult {

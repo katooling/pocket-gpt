@@ -15,6 +15,7 @@ import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 internal fun DownloadTransitionHandler(
     downloads: List<DownloadTaskState>,
     pendingGetReadyActivation: Pair<String, String>?,
+    loadedModelId: String?,
     lastDownloadTransitionRefreshKey: String?,
     readinessRefreshSequence: Long,
     onRefreshSnapshot: () -> Unit,
@@ -31,6 +32,7 @@ internal fun DownloadTransitionHandler(
     val context = LocalContext.current
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
     val currentPendingGetReadyActivation by rememberUpdatedState(pendingGetReadyActivation)
+    val currentLoadedModelId by rememberUpdatedState(loadedModelId)
     val currentLastDownloadTransitionRefreshKey by rememberUpdatedState(lastDownloadTransitionRefreshKey)
     val currentReadinessRefreshSequence by rememberUpdatedState(readinessRefreshSequence)
 
@@ -67,17 +69,21 @@ internal fun DownloadTransitionHandler(
                     onSetStatusMessage(activationMessage)
                     refreshDetail = activationMessage
                     refreshKey += ":activated"
-                    val loadResult = onLoadModel(transitioned.modelId, transitioned.version)
-                    loadResult?.let { result ->
-                        onSetStatusMessage(
-                            lifecycleStatusMessage(
-                                context = context,
-                                result = result,
-                                fallbackModelId = transitioned.modelId,
-                                fallbackVersion = transitioned.version,
-                            ),
-                        )
-                    } ?: onShowBusyModelOperationFeedback()
+                    val alreadyLoadedDifferentModel =
+                        currentLoadedModelId != null && currentLoadedModelId != transitioned.modelId
+                    if (!alreadyLoadedDifferentModel) {
+                        val loadResult = onLoadModel(transitioned.modelId, transitioned.version)
+                        loadResult?.let { result ->
+                            onSetStatusMessage(
+                                lifecycleStatusMessage(
+                                    context = context,
+                                    result = result,
+                                    fallbackModelId = transitioned.modelId,
+                                    fallbackVersion = transitioned.version,
+                                ),
+                            )
+                        } ?: onShowBusyModelOperationFeedback()
+                    }
                     logProvisioningTransition(
                         phase = "download_activation",
                         eventId = transitioned.taskId,

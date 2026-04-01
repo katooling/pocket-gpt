@@ -234,11 +234,9 @@ private class EchoTemplateRenderer : ChatTemplateRenderer {
         modelProfile: ModelTemplateProfile,
     ): RenderedPrompt {
         val prompt = messages.joinToString(separator = "\n") { message ->
-            val text = message.parts.joinToString(separator = "") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            val text = message.parts
+                .filterIsInstance<InteractionContentPart.Text>()
+                .joinToString(separator = "") { it.text }
             if (message.toolCalls.isEmpty()) {
                 text
             } else {

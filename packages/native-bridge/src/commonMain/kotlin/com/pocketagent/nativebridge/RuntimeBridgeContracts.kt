@@ -394,6 +394,23 @@ interface LlamaCppRuntimeBridge {
     fun prefixCacheDiagnosticsLine(): String? = null
     fun saveSessionCache(filePath: String): Boolean = false
     fun loadSessionCache(filePath: String): Boolean = false
+    fun initMultimodal(mmProjPath: String, useGpu: Boolean, imageMaxTokens: Int): Boolean = false
+    fun freeMultimodal() {}
+    fun isMultimodalEnabled(): Boolean = false
+    fun generateWithImages(
+        requestId: String,
+        prompt: String,
+        imagePaths: List<String>,
+        maxTokens: Int,
+        onToken: (String) -> Unit,
+    ): GenerationResult = generate(
+        requestId = requestId,
+        prompt = prompt,
+        maxTokens = maxTokens,
+        cacheKey = null,
+        cachePolicy = CachePolicy.OFF,
+        onToken = onToken,
+    )
 }
 
 private val ACTIVE_BACKEND_PATTERN = Regex(""""active_backend"\s*:\s*"([^"]+)"""")

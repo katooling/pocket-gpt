@@ -256,6 +256,28 @@ class LlamaCppInferenceModule(
 
     override fun isRuntimeReleased(): Boolean = runtimeBridge.isRuntimeReleased()
 
+    override fun initMultimodal(mmProjPath: String, useGpu: Boolean, imageMaxTokens: Int): Boolean =
+        runtimeBridge.initMultimodal(mmProjPath, useGpu, imageMaxTokens)
+
+    override fun freeMultimodal() = runtimeBridge.freeMultimodal()
+
+    override fun isMultimodalEnabled(): Boolean = runtimeBridge.isMultimodalEnabled()
+
+    override fun generateWithImages(
+        requestId: String,
+        prompt: String,
+        imagePaths: List<String>,
+        maxTokens: Int,
+        onToken: (String) -> Unit,
+    ): GenerationResult {
+        check(activeModelId != null) { "Model must be loaded before multimodal generation." }
+        val result = runtimeBridge.generateWithImages(requestId, prompt, imagePaths, maxTokens, onToken)
+        runtimeResidencyState = runtimeResidencyState.copy(
+            lastAccessAtEpochMs = System.currentTimeMillis(),
+        )
+        return result
+    }
+
     override fun cachedEstimatedMaxGpuLayers(modelId: String, nCtx: Int): Int? {
         val resolvedCtx = nCtx.coerceAtLeast(1)
         val cacheKey = modelId to resolvedCtx

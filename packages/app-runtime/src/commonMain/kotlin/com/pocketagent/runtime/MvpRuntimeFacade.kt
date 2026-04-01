@@ -541,6 +541,7 @@ class DefaultRuntimeContainer(
     inferenceModule: InferenceModule? = null,
     memoryBudgetTracker: MemoryBudgetTracker? = null,
     recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
+    mmProjPathResolver: (String) -> String? = { null },
     private val orchestrator: RuntimeOrchestrator = RuntimeOrchestrator(
         conversationModule = conversationModule,
         memoryModule = memoryModule,
@@ -548,6 +549,7 @@ class DefaultRuntimeContainer(
         inferenceModule = inferenceModule ?: createDefaultRuntimeInferenceModule(),
         memoryBudgetTracker = memoryBudgetTracker,
         recommendedGpuLayers = recommendedGpuLayers,
+        mmProjPathResolver = mmProjPathResolver,
     ),
 ) : RuntimeContainer {
     override fun createSession(): SessionId = orchestrator.createSession()

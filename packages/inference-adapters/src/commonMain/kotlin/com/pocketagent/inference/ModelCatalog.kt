@@ -48,6 +48,7 @@ data class ModelDescriptor(
     val interactionFeatures: Set<String> = emptySet(),
     val includeAutoRoutingMode: Boolean = false,
     val explicitRoutingModes: Set<RoutingMode> = emptySet(),
+    val mmProjFileName: String? = null,
 )
 
 data class ModelLoadValidation(
@@ -107,6 +108,7 @@ object ModelCatalog {
             interactionFeatures = setOf("TOOL_CALL_XML", "THINKING_TAGS"),
             includeAutoRoutingMode = true,
             explicitRoutingModes = setOf(RoutingMode.QWEN_0_8B),
+            mmProjFileName = "qwen3.5-0.8b-mmproj-q8_0.gguf",
         ),
         ModelDescriptor(
             modelId = QWEN3_0_6B_Q4_K_M,
@@ -154,6 +156,7 @@ object ModelCatalog {
             interactionFeatures = setOf("TOOL_CALL_XML", "THINKING_TAGS"),
             includeAutoRoutingMode = true,
             explicitRoutingModes = setOf(RoutingMode.QWEN_2B),
+            mmProjFileName = "qwen3.5-2b-mmproj-q8_0.gguf",
         ),
         ModelDescriptor(
             modelId = SMOLLM3_3B_Q4_K_M,
@@ -371,6 +374,13 @@ object ModelCatalog {
             accepted = true,
             normalizedModelPath = normalizedPath,
         )
+    }
+
+    fun mmProjFileNameFor(modelId: String): String? = descriptorFor(modelId)?.mmProjFileName
+
+    fun isVisionCapable(modelId: String): Boolean {
+        val descriptor = descriptorFor(modelId) ?: return false
+        return descriptor.capabilities.contains(ModelCapability.IMAGE) && descriptor.mmProjFileName != null
     }
 
     private fun capabilityForTask(taskType: String): ModelCapability {

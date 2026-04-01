@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# DEPRECATED: Use `maestro-android scoped` instead. This script is kept for
+# backwards compatibility but all new features land in the CLI.
+# See: maestro-android scoped --help
 set -euo pipefail
 
 usage() {

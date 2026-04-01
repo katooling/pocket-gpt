@@ -106,6 +106,12 @@ class AndroidMvpContainer(
                     .takeIf { it != config.gpuLayers }
             }
         },
+        mmProjPathResolver = { modelId ->
+            appContext?.let { context ->
+                com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore(context.applicationContext)
+                    .resolveMmProjPath(modelId)
+            }
+        },
     )
 
     fun createSession(): SessionId = orchestrator.createSession()

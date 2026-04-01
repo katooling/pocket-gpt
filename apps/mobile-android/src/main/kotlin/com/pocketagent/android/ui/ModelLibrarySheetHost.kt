@@ -1,9 +1,16 @@
 package com.pocketagent.android.ui
 
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.pocketagent.android.R
@@ -23,6 +30,7 @@ internal fun ModelLibrarySheetHost(
     runtimeModelState: RuntimeModelUiState,
     modelLoadingState: ModelLoadingState,
     routingMode: RoutingMode,
+    modelRemoveUndoState: ModelRemoveUndoState,
     viewModel: ChatViewModel,
     provisioningViewModel: ModelProvisioningViewModel,
     appViewModel: ChatAppViewModel,
@@ -39,6 +47,7 @@ internal fun ModelLibrarySheetHost(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val runtimeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var pendingRemoveVersion by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     AppBottomSheet(
         title = stringResource(id = R.string.ui_model_library_title),
@@ -50,6 +59,7 @@ internal fun ModelLibrarySheetHost(
             runtimeState = runtimeModelState,
             modelLoadingState = modelLoadingState,
             routingMode = routingMode,
+            hiddenVersionKeys = modelRemoveUndoState.hiddenVersionKeys,
             onEvent = { event ->
                 when (event) {
                     is ModelSheetEvent.ImportModel -> {
@@ -107,6 +117,9 @@ internal fun ModelLibrarySheetHost(
                     }
                     ModelSheetEvent.LoadLastUsedModel -> onLoadLastUsedModel(true)
                     ModelSheetEvent.OffloadModel -> onOffloadModel(false)
+                    is ModelSheetEvent.RequestRemove -> {
+                        pendingRemoveVersion = event.modelId to event.version
+                    }
                     is ModelSheetEvent.RemoveVersion -> {
                         scope.launch {
                             val model = modelLibraryState.snapshot.models
@@ -188,6 +201,57 @@ internal fun ModelLibrarySheetHost(
                         }
                     }
                     ModelSheetEvent.Close -> viewModel.dismissSurface()
+                    ModelSheetEvent.ScrollToDownloaded -> Unit
+                }
+            },
+        )
+    }
+
+    pendingRemoveVersion?.let { (modelId, version) ->
+        val model = modelLibraryState.snapshot.models.firstOrNull { it.modelId == modelId }
+        val targetVersion = model?.installedVersions?.firstOrNull { it.version == version }
+        val removePlan = if (model != null && targetVersion != null) {
+            resolveRemoveVersionPlan(
+                model = model,
+                version = targetVersion,
+                loadedModel = modelLoadingState.loadedModel,
+            )
+        } else {
+            null
+        }
+        AlertDialog(
+            onDismissRequest = { pendingRemoveVersion = null },
+            title = { Text(stringResource(id = R.string.ui_remove_model_title)) },
+            text = {
+                Text(
+                    text = when {
+                        removePlan?.isBlockedByActiveSelection == true ->
+                            stringResource(id = R.string.ui_remove_model_body_active_blocked, version)
+                        removePlan?.requiresOffload == true && removePlan.requiresClearingActiveSelection ->
+                            stringResource(id = R.string.ui_remove_model_body_loaded_only_active, version)
+                        removePlan?.requiresOffload == true ->
+                            stringResource(id = R.string.ui_remove_model_body_loaded, version)
+                        removePlan?.requiresClearingActiveSelection == true ->
+                            stringResource(id = R.string.ui_remove_model_body_only_active, version)
+                        else ->
+                            stringResource(id = R.string.ui_remove_model_body, version)
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRemoveVersion = null
+                        modelRemoveUndoState.requestRemove(modelId, version)
+                    },
+                    enabled = removePlan?.isBlockedByActiveSelection != true,
+                ) {
+                    Text(stringResource(id = R.string.ui_remove))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoveVersion = null }) {
+                    Text(stringResource(id = R.string.ui_cancel_button))
                 }
             },
         )

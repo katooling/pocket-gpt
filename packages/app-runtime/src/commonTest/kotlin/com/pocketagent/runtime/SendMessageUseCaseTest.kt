@@ -638,11 +638,9 @@ private class RecordingTemplateRenderer : ChatTemplateRenderer {
     ): RenderedPrompt {
         lastMessages = messages
         lastPrompt = messages.joinToString(separator = "\n") { message ->
-            message.parts.joinToString(separator = "") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            message.parts
+                .filterIsInstance<InteractionContentPart.Text>()
+                .joinToString(separator = "") { it.text }
         }
         return RenderedPrompt(
             prompt = lastPrompt,
@@ -653,11 +651,9 @@ private class RecordingTemplateRenderer : ChatTemplateRenderer {
 
     fun lastSystemText(): String {
         val system = lastMessages.first { it.role == InteractionRole.SYSTEM }
-        return system.parts.joinToString(separator = "") { part ->
-            when (part) {
-                is InteractionContentPart.Text -> part.text
-            }
-        }
+        return system.parts
+            .filterIsInstance<InteractionContentPart.Text>()
+            .joinToString(separator = "") { it.text }
     }
 }
 
