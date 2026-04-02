@@ -8,6 +8,7 @@ import com.pocketagent.inference.ModelRuntimeProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class ModelPolicyTest {
     @Test
@@ -95,5 +96,10 @@ class ModelPolicyTest {
             q4,
             resolveDefaultGetReadyVersion(manifest = manifest, defaultModelId = defaultModelId),
         )
+    }
+
+    @Test
+    fun `supported routing modes include bonsai when bridge supported`() {
+        assertTrue(supportedRoutingModes().contains(com.pocketagent.core.RoutingMode.BONSAI_8B))
     }
 }

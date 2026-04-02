@@ -10,6 +10,7 @@ import com.pocketagent.core.RuntimeExecutionStats
 import com.pocketagent.core.SessionId
 import com.pocketagent.inference.InferenceModule
 import com.pocketagent.inference.InferenceRequest
+import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.RoutingModule
 import com.pocketagent.memory.MemoryChunk
 import com.pocketagent.memory.MemoryModule
@@ -68,6 +69,24 @@ internal class SendMessageUseCase(
             throw RuntimeTemplateUnavailableException(message)
         }
 
+        val userImagePaths = request.messages.extractLatestUserImagePaths()
+        val multimodalEnabled = runtimeInferencePorts.managedRuntime?.isMultimodalEnabled() == true
+        val multimodalRequest = userImagePaths.isNotEmpty()
+        if (multimodalRequest) {
+            val supportsImages = ModelCatalog.isVisionCapable(modelId)
+            if (!supportsImages || !multimodalEnabled) {
+                throw RuntimeImageAttachmentUnsupportedException(
+                    message = buildString {
+                        append("Selected model cannot process image attachments.")
+                        if (!supportsImages) {
+                            append(" Choose a vision-capable model.")
+                        } else {
+                            append(" Load a runtime with multimodal support.")
+                        }
+                    },
+                )
+            }
+        }
         conversationModule.appendUserTurn(request.sessionId, latestUserText)
         val transcriptMessages = if (request.messages.isNotEmpty()) {
             request.messages
@@ -106,7 +125,13 @@ internal class SendMessageUseCase(
             promptCharBudget = minOf(contextBudget * 4, promptCharBudget),
             showThinking = showThinking,
         )
-        val prompt = renderedPrompt.prompt
+        val isMultimodalRequest = multimodalRequest && multimodalEnabled
+        // Debug: MULTIMODAL_DECISION images=${userImagePaths.size} mmEnabled=$multimodalEnabled routing=$isMultimodalRequest
+        val prompt = if (isMultimodalRequest) {
+            injectImageMarkers(renderedPrompt.prompt, userImagePaths.size)
+        } else {
+            renderedPrompt.prompt
+        }
         val managedRuntime = runtimeInferencePorts.managedRuntime
         val cacheAwareGeneration = runtimeInferencePorts.cacheAwareGeneration
         val modelRegistry = runtimeInferencePorts.modelRegistry
@@ -184,40 +209,50 @@ internal class SendMessageUseCase(
         )
         var lastThinkingState = false
         runtimeResidencyManager.onGenerationStarted()
-        try {
-            executionResult = inferenceExecutor.execute(
-                sessionId = request.sessionId.value,
-                requestId = executionContext.requestId,
-                request = InferenceRequest(prompt = prompt, maxTokens = executionContext.maxTokens),
-                cacheKey = prefixCacheKey,
-                cachePolicy = cachePolicy,
-                stopSequences = renderedPrompt.stopSequences,
-                onToken = { token ->
-                    if (timeoutGuard.timedOut()) {
-                        return@execute
-                    }
-                    if (firstTokenLatencyMs < 0 && token.isNotEmpty()) {
-                        // Timeout guard protects "no token ever arrived". Hidden thinking tokens
-                        // still count as generation progress and should clear the prefill timeout.
+        val tokenHandler: (String) -> Unit = { token ->
+            if (!timeoutGuard.timedOut()) {
+                if (firstTokenLatencyMs < 0 && token.isNotEmpty()) {
+                    firstTokenLatencyMs = System.currentTimeMillis() - startedMs
+                    timeoutGuard.finish()
+                }
+                val filterResult = streamFilters.thinkingFilter?.filterToken(token)
+                val visibleText = filterResult?.visibleText ?: token
+                val currentThinkingState = filterResult?.isCurrentlyThinking ?: false
+                if (currentThinkingState != lastThinkingState) {
+                    lastThinkingState = currentThinkingState
+                    if (currentThinkingState && firstTokenLatencyMs < 0) {
                         firstTokenLatencyMs = System.currentTimeMillis() - startedMs
                         timeoutGuard.finish()
                     }
-                    val filterResult = streamFilters.thinkingFilter?.filterToken(token)
-                    val visibleText = filterResult?.visibleText ?: token
-                    val currentThinkingState = filterResult?.isCurrentlyThinking ?: false
-                    if (currentThinkingState != lastThinkingState) {
-                        lastThinkingState = currentThinkingState
-                        if (currentThinkingState && firstTokenLatencyMs < 0) {
-                            firstTokenLatencyMs = System.currentTimeMillis() - startedMs
-                            timeoutGuard.finish()
-                        }
-                        request.onThinkingStateChanged(currentThinkingState)
-                    }
-                    if (visibleText.isNotEmpty()) {
-                        request.onToken(visibleText)
-                    }
-                },
-            )
+                    request.onThinkingStateChanged(currentThinkingState)
+                }
+                if (visibleText.isNotEmpty()) {
+                    request.onToken(visibleText)
+                }
+            }
+        }
+        try {
+            executionResult = if (isMultimodalRequest) {
+                inferenceExecutor.executeWithImages(
+                    sessionId = request.sessionId.value,
+                    requestId = executionContext.requestId,
+                    prompt = prompt,
+                    imagePaths = userImagePaths,
+                    maxTokens = executionContext.maxTokens,
+                    stopSequences = renderedPrompt.stopSequences,
+                    onToken = tokenHandler,
+                )
+            } else {
+                inferenceExecutor.execute(
+                    sessionId = request.sessionId.value,
+                    requestId = executionContext.requestId,
+                    request = InferenceRequest(prompt = prompt, maxTokens = executionContext.maxTokens),
+                    cacheKey = prefixCacheKey,
+                    cachePolicy = cachePolicy,
+                    stopSequences = renderedPrompt.stopSequences,
+                    onToken = tokenHandler,
+                )
+            }
             finishReason = executionResult.finishReason
             val flushResult = streamFilters.thinkingFilter?.flush()
             if (lastThinkingState) {
@@ -426,14 +461,33 @@ private fun List<InteractionMessage>.latestUserMessageText(): String {
     return asReversed()
         .firstOrNull { message -> message.role == InteractionRole.USER }
         ?.parts
-        ?.joinToString(separator = "\n") { part ->
-            when (part) {
-                is InteractionContentPart.Text -> part.text
-            }
-        }
+        ?.filterIsInstance<InteractionContentPart.Text>()
+        ?.joinToString(separator = "\n") { it.text }
         ?.trim()
         .orEmpty()
 }
+
+/**
+ * Injects media markers into a ChatML-formatted prompt so that mtmd can map them to
+ * actual vision embeddings.  Markers are placed immediately after the last `user\n` role tag.
+ *
+ * The marker MUST match what [mtmd_default_marker()] returns in the native layer — currently
+ * `<__media__>`.  Using any other string (e.g. `<image>`) will cause mtmd_tokenize to skip
+ * the image embeddings entirely.
+ */
+internal fun injectImageMarkers(prompt: String, imageCount: Int): String {
+    if (imageCount <= 0) return prompt
+    val markers = (1..imageCount).joinToString(separator = "\n") { MTMD_MEDIA_MARKER }
+    val userRoleTag = "<|im_start|>user\n"
+    val lastIdx = prompt.lastIndexOf(userRoleTag)
+    if (lastIdx >= 0) {
+        val insertAt = lastIdx + userRoleTag.length
+        return prompt.substring(0, insertAt) + markers + "\n" + prompt.substring(insertAt)
+    }
+    return markers + "\n" + prompt
+}
+
+private const val MTMD_MEDIA_MARKER = "<__media__>"
 
 private fun com.pocketagent.core.Turn.toInteractionMessage(): InteractionMessage {
     val interactionRole = when (role.trim().lowercase()) {

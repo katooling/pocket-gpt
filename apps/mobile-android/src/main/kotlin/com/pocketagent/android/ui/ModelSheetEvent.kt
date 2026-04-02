@@ -14,7 +14,7 @@ sealed interface ModelSheetEvent {
     data class RetryLoad(val modelId: String, val version: String?) : ModelSheetEvent
     data object LoadLastUsedModel : ModelSheetEvent
     data object OffloadModel : ModelSheetEvent
-    data class RemoveVersion(val modelId: String, val version: String) : ModelSheetEvent
+    data class RequestRemove(val modelId: String, val version: String) : ModelSheetEvent
     data object RefreshAll : ModelSheetEvent
     data object Close : ModelSheetEvent
 }

@@ -397,6 +397,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             when (modelId) {
                 ModelCatalog.QWEN_3_5_2B_Q4 -> RoutingMode.QWEN_2B
                 ModelCatalog.SMOLLM3_3B_Q4_K_M -> RoutingMode.SMOLLM3_3B
+                ModelCatalog.BONSAI_8B_Q1_0_G128 -> RoutingMode.BONSAI_8B
                 else -> RoutingMode.QWEN_0_8B
             },
         )
@@ -735,6 +736,7 @@ class NativeStage2BenchmarkInstrumentationTest {
             ModelCatalog.QWEN_3_5_0_8B_Q4 -> ARG_MODEL_PATH_0_8B
             ModelCatalog.QWEN_3_5_2B_Q4 -> ARG_MODEL_PATH_2B
             ModelCatalog.SMOLLM3_3B_Q4_K_M -> ARG_MODEL_PATH_SMOLLM3_Q4
+            ModelCatalog.BONSAI_8B_Q1_0_G128 -> ARG_MODEL_PATH_BONSAI
             else -> ARG_MODEL_PATH_0_8B
         }
     }
@@ -807,6 +809,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
         private const val ARG_MODEL_PATH_SMOLLM3_Q4 = "stage2_model_smol_360m_path"
+        private const val ARG_MODEL_PATH_BONSAI = "stage2_model_bonsai_path"
         private const val ARG_MODEL_PATH_SMOLLM3_DRAFT = "stage2_model_smol_135m_path"
         private const val ARG_RUNS = "stage2_runs"
         private const val ARG_MAX_TOKENS = "stage2_max_tokens"

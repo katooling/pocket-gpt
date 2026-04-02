@@ -48,6 +48,7 @@ data class ModelDescriptor(
     val interactionFeatures: Set<String> = emptySet(),
     val includeAutoRoutingMode: Boolean = false,
     val explicitRoutingModes: Set<RoutingMode> = emptySet(),
+    val mmProjFileName: String? = null,
 )
 
 data class ModelLoadValidation(
@@ -66,6 +67,7 @@ object ModelCatalog {
     const val QWEN3_0_6B_Q4_K_M = "qwen3-0.6b-q4_k_m"
     const val PHI_4_MINI_Q4_K_M = "phi-4-mini-instruct-q4_k_m"
     const val GEMMA_2_2B_Q4_K_M = "gemma-2-2b-it-q4_k_m"
+    const val BONSAI_8B_Q1_0_G128 = "bonsai-8b-q1_0_g128"
 
     private val descriptors: List<ModelDescriptor> = listOf(
         ModelDescriptor(
@@ -107,6 +109,7 @@ object ModelCatalog {
             interactionFeatures = setOf("TOOL_CALL_XML", "THINKING_TAGS"),
             includeAutoRoutingMode = true,
             explicitRoutingModes = setOf(RoutingMode.QWEN_0_8B),
+            mmProjFileName = "qwen3.5-0.8b-mmproj-q8_0.gguf",
         ),
         ModelDescriptor(
             modelId = QWEN3_0_6B_Q4_K_M,
@@ -154,6 +157,7 @@ object ModelCatalog {
             interactionFeatures = setOf("TOOL_CALL_XML", "THINKING_TAGS"),
             includeAutoRoutingMode = true,
             explicitRoutingModes = setOf(RoutingMode.QWEN_2B),
+            mmProjFileName = "qwen3.5-2b-mmproj-q8_0.gguf",
         ),
         ModelDescriptor(
             modelId = SMOLLM3_3B_Q4_K_M,
@@ -240,6 +244,29 @@ object ModelCatalog {
             chatTemplateId = "GEMMA",
             includeAutoRoutingMode = false,
             explicitRoutingModes = setOf(RoutingMode.GEMMA_2_2B),
+        ),
+        ModelDescriptor(
+            modelId = BONSAI_8B_Q1_0_G128,
+            tier = ModelTier.BASELINE,
+            family = ModelFamily.QWEN,
+            bridgeSupported = true,
+            autoRoutingEnabled = false,
+            capabilities = setOf(
+                ModelCapability.SHORT_TEXT,
+                ModelCapability.LONG_TEXT,
+                ModelCapability.REASONING,
+            ),
+            minRamGb = 8,
+            qualityRank = 7,
+            speedRank = -2,
+            fallbackPriority = 30,
+            startupCandidate = false,
+            startupRequired = false,
+            defaultGetReadyProfiles = emptySet(),
+            envKeyToken = "BONSAI_8B_Q1_0_G128",
+            interactionFeatures = setOf("THINKING_TAGS"),
+            includeAutoRoutingMode = false,
+            explicitRoutingModes = setOf(RoutingMode.BONSAI_8B),
         ),
     )
 
@@ -371,6 +398,13 @@ object ModelCatalog {
             accepted = true,
             normalizedModelPath = normalizedPath,
         )
+    }
+
+    fun mmProjFileNameFor(modelId: String): String? = descriptorFor(modelId)?.mmProjFileName
+
+    fun isVisionCapable(modelId: String): Boolean {
+        val descriptor = descriptorFor(modelId) ?: return false
+        return descriptor.capabilities.contains(ModelCapability.IMAGE) && descriptor.mmProjFileName != null
     }
 
     private fun capabilityForTask(taskType: String): ModelCapability {

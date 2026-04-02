@@ -69,6 +69,22 @@
       ]
     },
     {
+      "modelId": "bonsai-8b-q1_0_g128",
+      "displayName": "1-bit Bonsai 8B",
+      "versions": [
+        {
+          "version": "q1_0_g128",
+          "downloadUrl": "https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/main/Bonsai-8B.gguf",
+          "expectedSha256": "ead25897bc034fa52569d0c6d054ce38216f95db09900c8add8f6bbfb370cff1",
+          "provenanceIssuer": "huggingface/prism-ml",
+          "provenanceSignature": "",
+          "verificationPolicy": "INTEGRITY_ONLY",
+          "runtimeCompatibility": "android-arm64-v8a",
+          "fileSizeBytes": 1158654496
+        }
+      ]
+    },
+    {
       "modelId": "smollm3-3b-q4_k_m",
       "displayName": "SmolLM3 3B (Q4_K_M)",
       "versions": [

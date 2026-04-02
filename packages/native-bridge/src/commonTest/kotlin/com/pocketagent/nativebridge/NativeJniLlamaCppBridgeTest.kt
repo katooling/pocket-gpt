@@ -151,6 +151,120 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
+    fun `bonsai rejects cpu only devices before load`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = false,
+            backendDiagnosticsJson = """{"compiled_backend":"cpu","supports_q1_0_g128":true}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = false,
+                flashAttnMode = FlashAttnMode.ON,
+                kvCacheMethod = KvCacheMethod.TURBOQUANT,
+                kvCacheMethodPreset = KvCacheMethodPreset.AGGRESSIVE,
+                nBatch = 576,
+                nUbatch = 384,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertFalse(
+            bridge.loadModel(
+                ModelCatalog.BONSAI_8B_Q1_0_G128,
+                "/tmp/bonsai-8b-q1_0_g128.gguf",
+                options = ModelLoadOptions(modelVersion = "q1_0_g128"),
+            ),
+        )
+        assertFalse(nativeApi.loadCalled)
+        assertEquals("RUNTIME_INCOMPATIBLE_MODEL_FORMAT", bridge.lastError()?.code)
+        assertTrue(bridge.lastError()?.detail?.contains("bonsai_gpu_required=true") == true)
+    }
+
+    @Test
+    fun `bonsai cpu fallback keeps cpu safe runtime config on gpu capable device`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1,"supports_q1_0_g128":true}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = false,
+                flashAttnMode = FlashAttnMode.ON,
+                kvCacheMethod = KvCacheMethod.TURBOQUANT,
+                kvCacheMethodPreset = KvCacheMethodPreset.AGGRESSIVE,
+                nBatch = 576,
+                nUbatch = 384,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                ModelCatalog.BONSAI_8B_Q1_0_G128,
+                "/tmp/bonsai-8b-q1_0_g128.gguf",
+                options = ModelLoadOptions(modelVersion = "q1_0_g128"),
+            ),
+        )
+        assertEquals(listOf(FlashAttnMode.OFF.code), nativeApi.loadFlashAttnCodes)
+        assertEquals(listOf(KvCacheMethod.TURBOQUANT.code), nativeApi.loadKvCacheMethodCodes)
+        assertEquals(listOf(KvCacheMethodPreset.SAFE.code), nativeApi.loadKvCacheMethodPresetCodes)
+        assertEquals(listOf(128), nativeApi.loadNBatches)
+        assertEquals(listOf(128), nativeApi.loadNUbatches)
+    }
+
+    @Test
+    fun `non bonsai cpu load preserves requested runtime config`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = false,
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = false,
+                flashAttnMode = FlashAttnMode.ON,
+                kvCacheMethod = KvCacheMethod.TURBOQUANT,
+                kvCacheMethodPreset = KvCacheMethodPreset.AGGRESSIVE,
+                nBatch = 576,
+                nUbatch = 384,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(bridge.loadModel(ModelCatalog.QWEN_3_5_0_8B_Q4, "/tmp/qwen-0.8b.gguf"))
+        assertEquals(listOf(FlashAttnMode.ON.code), nativeApi.loadFlashAttnCodes)
+        assertEquals(listOf(KvCacheMethod.TURBOQUANT.code), nativeApi.loadKvCacheMethodCodes)
+        assertEquals(listOf(KvCacheMethodPreset.AGGRESSIVE.code), nativeApi.loadKvCacheMethodPresetCodes)
+        assertEquals(listOf(576), nativeApi.loadNBatches)
+        assertEquals(listOf(384), nativeApi.loadNUbatches)
+    }
+
+    @Test
     fun `turboquant requests preserve turboquant metadata`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
@@ -1078,6 +1192,8 @@ private class FakeNativeApi(
     val loadFlashAttnCodes = mutableListOf<Int>()
     val loadKvCacheMethodCodes = mutableListOf<Int>()
     val loadKvCacheMethodPresetCodes = mutableListOf<Int>()
+    val loadNBatches = mutableListOf<Int>()
+    val loadNUbatches = mutableListOf<Int>()
     val loadDraftGpuLayers = mutableListOf<Int>()
     val loadUseMmap = mutableListOf<Boolean>()
     val loadUseMlock = mutableListOf<Boolean>()
@@ -1167,6 +1283,8 @@ private class FakeNativeApi(
         loadFlashAttnCodes += flashAttnCode
         loadKvCacheMethodCodes += kvCacheMethodCode
         loadKvCacheMethodPresetCodes += kvCacheMethodPresetCode
+        loadNBatches += nBatch
+        loadNUbatches += nUbatch
         loadDraftGpuLayers += speculativeDraftGpuLayers
         loadUseMmap += useMmap
         loadUseMlock += useMlock

@@ -14,6 +14,7 @@ object RuntimeCompositionRoot {
         inferenceModule: InferenceModule? = null,
         memoryBudgetTracker: MemoryBudgetTracker? = null,
         recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
+        mmProjPathResolver: (String) -> String? = { null },
     ): RuntimeContainer {
         return DefaultRuntimeContainer(
             runtimeConfig = runtimeConfig,
@@ -22,6 +23,7 @@ object RuntimeCompositionRoot {
             inferenceModule = inferenceModule,
             memoryBudgetTracker = memoryBudgetTracker,
             recommendedGpuLayers = recommendedGpuLayers,
+            mmProjPathResolver = mmProjPathResolver,
         )
     }
 
@@ -32,6 +34,7 @@ object RuntimeCompositionRoot {
         inferenceModule: InferenceModule? = null,
         memoryBudgetTracker: MemoryBudgetTracker? = null,
         recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
+        mmProjPathResolver: (String) -> String? = { null },
     ): MvpRuntimeFacade {
         return DefaultMvpRuntimeFacade(
             container = createContainer(
@@ -41,6 +44,7 @@ object RuntimeCompositionRoot {
                 inferenceModule = inferenceModule,
                 memoryBudgetTracker = memoryBudgetTracker,
                 recommendedGpuLayers = recommendedGpuLayers,
+                mmProjPathResolver = mmProjPathResolver,
             ),
         )
     }

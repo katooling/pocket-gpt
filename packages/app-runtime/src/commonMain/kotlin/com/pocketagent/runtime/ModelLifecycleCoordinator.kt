@@ -11,6 +11,7 @@ internal class ModelLifecycleCoordinator(
     private val inferenceModule: InferenceModule,
     private val routingModule: RoutingModule,
     private val runtimeConfig: RuntimeConfig,
+    private val residentModelIdProvider: () -> String? = { null },
 ) {
     fun selectRunnableModelId(
         routingMode: RoutingMode,
@@ -25,6 +26,10 @@ internal class ModelLifecycleCoordinator(
         val availableModels = inferenceModule.listAvailableModels().toSet()
         if (availableModels.isEmpty() || availableModels.contains(preferredModelId)) {
             return preferredModelId
+        }
+        val residentModelId = residentModelIdProvider()
+        if (residentModelId != null && availableModels.contains(residentModelId)) {
+            return residentModelId
         }
         return preferredModelOrder(availableModels).firstOrNull() ?: preferredModelId
     }

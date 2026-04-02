@@ -70,6 +70,16 @@ class UiErrorMapperTest {
     }
 
     @Test
+    fun `startup mapper differentiates bonsai gpu requirement guidance`() {
+        val error = UiErrorMapper.startupFailure(
+            listOf("RUNTIME_INCOMPATIBLE_MODEL_FORMAT:modelId=bonsai-8b-q1_0_g128|required_backend=gpu|bonsai_gpu_required=true"),
+        )
+
+        assertNotNull(error)
+        assertTrue(error.userMessage.contains("GPU acceleration", ignoreCase = true))
+    }
+
+    @Test
     fun `startup mapper differentiates backend readiness guidance`() {
         val error = UiErrorMapper.startupFailure(
             listOf("Runtime backend is ADB_FALLBACK but NATIVE runtime is required"),
@@ -116,6 +126,17 @@ class UiErrorMapperTest {
         assertEquals("UI-RUNTIME-001", error.code)
         assertTrue(error.userMessage.contains("cancelled", ignoreCase = true))
         assertTrue(error.technicalDetail?.contains("cancelled", ignoreCase = true) == true)
+    }
+
+    @Test
+    fun `runtime failure surfaces image attachment guidance`() {
+        val error = UiErrorMapper.runtimeFailure(
+            "image_attachments_unsupported:Selected model cannot process image attachments.",
+        )
+
+        assertEquals("UI-RUNTIME-001", error.code)
+        assertTrue(error.userMessage.contains("image attachments", ignoreCase = true))
+        assertEquals(RecoveryAction.CHANGE_MODEL, error.recoveryAction)
     }
 
     @Test
@@ -175,6 +196,20 @@ class UiErrorMapperTest {
 
         assertNotNull(error)
         assertTrue(error.userMessage.contains("Bonsai runtime support", ignoreCase = true))
+        assertEquals(RecoveryAction.CHANGE_MODEL, error.recoveryAction)
+    }
+
+    @Test
+    fun `model lifecycle runtime incompatible maps bonsai gpu requirement guidance`() {
+        val error = UiErrorMapper.fromModelLifecycleResult(
+            RuntimeModelLifecycleCommandResult.rejected(
+                code = ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE,
+                detail = "RUNTIME_INCOMPATIBLE_MODEL_FORMAT:modelId=bonsai-8b-q1_0_g128|required_backend=gpu|bonsai_gpu_required=true",
+            ),
+        )
+
+        assertNotNull(error)
+        assertTrue(error.userMessage.contains("GPU acceleration", ignoreCase = true))
         assertEquals(RecoveryAction.CHANGE_MODEL, error.recoveryAction)
     }
 }

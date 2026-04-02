@@ -251,11 +251,8 @@ private class QuickLoadRuntimeGateway(
             .asReversed()
             .firstOrNull { it.role == com.pocketagent.runtime.InteractionRole.USER }
             ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is com.pocketagent.runtime.InteractionContentPart.Text -> part.text
-                }
-            }
+            ?.filterIsInstance<com.pocketagent.runtime.InteractionContentPart.Text>()
+            ?.joinToString(separator = "\n") { it.text }
             .orEmpty()
         emit(
             ChatStreamEvent.Completed(

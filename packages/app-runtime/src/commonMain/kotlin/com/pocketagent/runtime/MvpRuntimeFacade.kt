@@ -423,6 +423,7 @@ class DefaultMvpRuntimeFacade(
                             requestId = request.requestId,
                             errorCode = when (error) {
                                 is RuntimeModelLoadPlanningException -> error.errorCode
+                                is RuntimeImageAttachmentUnsupportedException -> error.errorCode
                                 is RuntimeTemplateUnavailableException -> "template_unavailable"
                                 is RuntimeGenerationFailureException -> error.errorCode
                                     ?.trim()
@@ -541,6 +542,7 @@ class DefaultRuntimeContainer(
     inferenceModule: InferenceModule? = null,
     memoryBudgetTracker: MemoryBudgetTracker? = null,
     recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
+    mmProjPathResolver: (String) -> String? = { null },
     private val orchestrator: RuntimeOrchestrator = RuntimeOrchestrator(
         conversationModule = conversationModule,
         memoryModule = memoryModule,
@@ -548,6 +550,7 @@ class DefaultRuntimeContainer(
         inferenceModule = inferenceModule ?: createDefaultRuntimeInferenceModule(),
         memoryBudgetTracker = memoryBudgetTracker,
         recommendedGpuLayers = recommendedGpuLayers,
+        mmProjPathResolver = mmProjPathResolver,
     ),
 ) : RuntimeContainer {
     override fun createSession(): SessionId = orchestrator.createSession()

@@ -1,8 +1,10 @@
 package com.pocketagent.android.ui
 
+import android.content.Context
 import android.Manifest
 import android.net.Uri
 import android.os.Build
+import android.webkit.MimeTypeMap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,6 +44,7 @@ import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.activeOrRequestedModel
 import com.pocketagent.android.ui.state.resolveChatGateState
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.runtime.ModelInteractionRegistry
 import com.pocketagent.runtime.ThinkingSupport
 import kotlinx.coroutines.launch
@@ -70,6 +73,8 @@ fun PocketAgentApp(
     )
     val headerUiState = deriveChatHeaderUiState(modelLoadingState)
     val activeRuntimeModelLabel = headerUiState.activeRuntimeModelLabel
+    val activeModelId = modelLoadingState.loadedModel?.modelId ?: state.runtime.activeModelId
+    val canAttachImages = canAttachImagesForModel(activeModelId)
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val currentActiveSurface by rememberUpdatedState(state.activeSurface)
     val interactionRegistry = remember { ModelInteractionRegistry() }
@@ -99,6 +104,48 @@ fun PocketAgentApp(
     val defaultGetReadyModelId = remember { resolveDefaultGetReadyModelId(isDebugBuild = BuildConfig.DEBUG) }
     val modelLibraryState = provisioningState.toModelLibraryUiState(defaultGetReadyModelId) ?: return
     val runtimeModelState = provisioningState.toRuntimeModelUiState() ?: return
+    val modelRemoveUndoState = rememberModelRemoveUndoState(
+        snackbarHostState = snackbarHostState,
+        onCommitRemove = { modelId, version ->
+            scope.launch {
+                val model = modelLibraryState.snapshot.models
+                    .firstOrNull { it.modelId == modelId }
+                val targetVersion = model?.installedVersions
+                    ?.firstOrNull { it.version == version }
+                val removePlan = if (model != null && targetVersion != null) {
+                    resolveRemoveVersionPlan(
+                        model = model,
+                        version = targetVersion,
+                        loadedModel = modelLoadingState.loadedModel,
+                    )
+                } else {
+                    null
+                }
+                if (removePlan?.isBlockedByActiveSelection == true) {
+                    provisioningViewModel.setStatusMessage(
+                        context.getString(R.string.ui_model_version_remove_failed),
+                    )
+                    return@launch
+                }
+                if (removePlan?.requiresOffload == true) {
+                    provisioningViewModel.offloadModel(reason = MODEL_OFFLOAD_REASON_MANUAL)
+                }
+                if (removePlan?.requiresClearingActiveSelection == true) {
+                    provisioningViewModel.clearActiveVersionAsync(modelId)
+                }
+                val removed = provisioningViewModel.removeVersionAsync(modelId, version)
+                val statusMessage = if (removed) {
+                    context.getString(R.string.ui_model_version_removed, modelId, version)
+                } else {
+                    context.getString(R.string.ui_model_version_remove_failed)
+                }
+                if (removed) {
+                    viewModel.refreshRuntimeReadiness(statusDetailOverride = statusMessage)
+                }
+                provisioningViewModel.setStatusMessage(statusMessage)
+            }
+        },
+    )
     val beginDownload: (ModelDistributionVersion) -> Unit = { version ->
         startModelDownload(
             context = context,
@@ -295,7 +342,18 @@ fun PocketAgentApp(
         }
     }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { viewModel.addAttachedImage(it.toString()) }
+        if (uri != null) {
+            scope.launch {
+                val localPath = copyContentUriToLocal(context, uri)
+                if (localPath != null) {
+                    viewModel.addAttachedImage(localPath)
+                } else {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.ui_image_attach_failed),
+                    )
+                }
+            }
+        }
     }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         val modelId = appViewModel.selectedModelIdForImport.value ?: return@rememberLauncherForActivityResult
@@ -351,6 +409,7 @@ fun PocketAgentApp(
     DownloadTransitionHandler(
         downloads = downloads,
         pendingGetReadyActivation = pendingGetReadyActivation,
+        loadedModelId = modelLoadingState.loadedModel?.modelId,
         lastDownloadTransitionRefreshKey = lastDownloadTransitionRefreshKey,
         readinessRefreshSequence = readinessRefreshSequence,
         onRefreshSnapshot = provisioningViewModel::refreshSnapshot,
@@ -446,6 +505,7 @@ fun PocketAgentApp(
                     onAttachImage = {
                         imagePicker.launch("image/*")
                     },
+                    canAttachImages = canAttachImages,
                     onRemoveImage = viewModel::removeAttachedImage,
                     onOpenToolDialog = { viewModel.showSurface(ModalSurface.ToolSuggestions) },
                     showThinkingToggle = showThinkingToggle,
@@ -486,6 +546,7 @@ fun PocketAgentApp(
         runtimeModelState = runtimeModelState,
         modelLoadingState = modelLoadingState,
         routingMode = state.runtime.routingMode,
+        modelRemoveUndoState = modelRemoveUndoState,
         viewModel = viewModel,
         provisioningViewModel = provisioningViewModel,
         appViewModel = appViewModel,
@@ -532,4 +593,38 @@ fun PocketAgentApp(
         onFinishOnboarding = viewModel::completeOnboarding,
         onStartOnboardingDownload = runGetReadyFlow,
     )
+}
+
+private suspend fun copyContentUriToLocal(context: Context, uri: Uri): String? {
+    return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
+            val mimeType = context.contentResolver.getType(uri)
+            val extension = MimeTypeMap.getSingleton()
+                .getExtensionFromMimeType(mimeType)
+                ?.lowercase()
+                ?: uri.lastPathSegment?.substringAfterLast('.', "")?.takeIf { it.isNotBlank() }
+                ?: "jpg"
+            val imagesDir = java.io.File(context.cacheDir, "attached_images").apply { mkdirs() }
+            // Clean up stale attached images older than 1 hour
+            val staleThresholdMs = 60 * 60 * 1000L
+            imagesDir.listFiles()?.forEach { file ->
+                if (System.currentTimeMillis() - file.lastModified() > staleThresholdMs) {
+                    file.delete()
+                }
+            }
+            val target = java.io.File(imagesDir, "img_${System.currentTimeMillis()}.$extension")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            } ?: return@runCatching null
+            if (target.length() == 0L) {
+                target.delete()
+                return@runCatching null
+            }
+            target.absolutePath
+        }.getOrNull()
+    }
+}
+
+internal fun canAttachImagesForModel(modelId: String?): Boolean {
+    return modelId?.let(ModelCatalog::isVisionCapable) == true
 }

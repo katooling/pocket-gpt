@@ -60,6 +60,7 @@
     <string name="ui_copied_to_clipboard">Copied to clipboard</string>
     <string name="a11y_assistant_responding">Assistant is responding</string>
     <string name="a11y_response_complete">Response complete</string>
+    <string name="a11y_attach_image_requires_vision_model">Image attachments require a vision-capable model.</string>
     <string name="ui_offline_indicator">Offline</string>
     <string name="ui_completion_settings_title">Chat settings</string>
     <string name="ui_completion_common_section">Common</string>
@@ -139,6 +140,8 @@
     <string name="ui_performance_profile_fast_desc">Faster responses, more battery drain</string>
     <string name="ui_routing_mode_auto">Auto (recommended)</string>
     <string name="ui_routing_mode_auto_desc">Uses the best available model</string>
+    <string name="ui_routing_mode_bonsai">1-bit Bonsai</string>
+    <string name="ui_routing_mode_bonsai_desc">Ultra-lightweight model for fast, battery-efficient responses</string>
     <string name="ui_model_selection_title">Model selection</string>
     <string name="ui_model_selection_subtitle">Choose which model handles new messages. Most users should stay on Auto.</string>
     <string name="ui_diagnostics_section_title">Diagnostics</string>
@@ -235,6 +238,7 @@
     <string name="ui_model_current_active_badge">Current active version</string>
     <string name="ui_model_remove_version">Remove</string>
     <string name="ui_model_version_activated">%1$s (%2$s) verified and active.</string>
+    <string name="ui_download_complete_different_model_loaded">%1$s is ready. Switch to it from the model list when needed.</string>
     <string name="ui_model_version_activation_failed">Version activation failed.</string>
     <string name="ui_model_version_removing">Removing %1$s (%2$s)...</string>
     <string name="ui_model_version_removed">%1$s (%2$s) removed from this device. If it still appears below, you can download it again.</string>
@@ -390,6 +394,7 @@
     <string name="ui_metric_ttft">TTFT: %1$dms</string>
     <string name="ui_metric_total_latency">Total: %1$dms</string>
     <string name="ui_images_attached">%1$d image(s) attached</string>
+    <string name="ui_image_attach_failed">Could not attach image. Please try again.</string>
 
     <!-- Composer bar -->
     <string name="ui_editing_message">Editing message</string>

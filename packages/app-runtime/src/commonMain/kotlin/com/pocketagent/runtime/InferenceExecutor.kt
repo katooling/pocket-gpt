@@ -159,6 +159,114 @@ internal class InferenceExecutor(
         }
     }
 
+    fun executeWithImages(
+        sessionId: String,
+        requestId: String,
+        prompt: String,
+        imagePaths: List<String>,
+        maxTokens: Int,
+        stopSequences: List<String>,
+        onToken: (String) -> Unit,
+    ): InferenceExecutionResult {
+        val managedRuntime = runtimeInferencePorts.managedRuntime
+            ?: return InferenceExecutionResult(
+                text = "",
+                finishReason = "error:multimodal_not_available",
+                bridgeErrorCode = "MULTIMODAL_NOT_AVAILABLE",
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = 0L,
+                prefillMs = null,
+                decodeMs = null,
+                tokensPerSec = null,
+                peakRssMb = null,
+            )
+        val state = ActiveGenerationState(requestId = requestId, sessionId = sessionId)
+        activeByRequestId[requestId] = state
+        activeBySessionId[sessionId] = state
+        val streamedText = StringBuilder()
+        var stoppedBySequence = false
+        var finishReason = "completed"
+        var bridgeErrorCode: String? = null
+        var tokenCount = 0
+        var firstTokenMs = -1L
+        val startedAtMs = System.currentTimeMillis()
+        try {
+            val result = managedRuntime.generateWithImages(
+                requestId = requestId,
+                prompt = prompt,
+                imagePaths = imagePaths,
+                maxTokens = maxTokens,
+                onToken = { token ->
+                    if (stoppedBySequence) return@generateWithImages
+                    streamedText.append(token)
+                    val maxStopLen = stopSequences.maxOfOrNull { it.length } ?: 0
+                    if (maxStopLen > 0) {
+                        val tail = streamedText.substring(
+                            (streamedText.length - maxStopLen).coerceAtLeast(0),
+                        )
+                        if (stopSequences.any { tail.endsWith(it) }) {
+                            stoppedBySequence = true
+                            runtimeInferencePorts.cacheAwareGeneration?.cancelGeneration(requestId)
+                            return@generateWithImages
+                        }
+                    }
+                    tokenCount++
+                    if (firstTokenMs < 0L && token.isNotEmpty()) {
+                        firstTokenMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
+                    }
+                    onToken(token)
+                },
+            )
+            finishReason = result.finishReason.name.lowercase()
+            bridgeErrorCode = result.errorCode
+            if (!result.success) {
+                if (result.cancelled && stoppedBySequence) {
+                    finishReason = "stop_sequence"
+                } else if (result.cancelled) {
+                    throw RuntimeGenerationCancelledException(requestId = requestId)
+                } else {
+                    throw RuntimeGenerationFailureException(
+                        message = "Multimodal generation failed: finish=${result.finishReason} code=${result.errorCode.orEmpty()}",
+                        errorCode = result.errorCode,
+                    )
+                }
+            }
+            val totalMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
+            val prefillMs = if (firstTokenMs >= 0L) firstTokenMs else null
+            val decodeMs = if (firstTokenMs >= 0L) (totalMs - firstTokenMs).coerceAtLeast(0L) else null
+            val tokensPerSec = if (tokenCount > 0 && decodeMs != null && decodeMs > 0L) {
+                tokenCount.toDouble() / (decodeMs.toDouble() / 1000.0)
+            } else {
+                null
+            }
+            return InferenceExecutionResult(
+                text = streamedText.toString().let { raw ->
+                    var value = raw
+                    stopSequences.forEach { stop ->
+                        if (stop.isNotEmpty() && value.endsWith(stop)) value = value.removeSuffix(stop)
+                    }
+                    value
+                },
+                finishReason = if (bridgeErrorCode.isNullOrBlank()) finishReason else "$finishReason:${bridgeErrorCode.lowercase()}",
+                bridgeErrorCode = bridgeErrorCode,
+                tokenCount = tokenCount,
+                firstTokenMs = firstTokenMs,
+                totalMs = totalMs,
+                prefillMs = prefillMs,
+                decodeMs = decodeMs,
+                tokensPerSec = tokensPerSec,
+                peakRssMb = result.peakRssMb,
+            )
+        } finally {
+            activeByRequestId.remove(requestId)
+            activeBySessionId.remove(sessionId)
+            if (activeByRequestId.isEmpty()) {
+                idleLatch.getAndSet(null)?.countDown()
+            }
+        }
+    }
+
     fun cancelByRequest(requestId: String): Boolean {
         return cancelByRequestDetailed(requestId).cancelled
     }

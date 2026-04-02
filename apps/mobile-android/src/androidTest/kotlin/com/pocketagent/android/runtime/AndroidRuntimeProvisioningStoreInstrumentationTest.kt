@@ -367,6 +367,111 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
     }
 
     @Test
+    fun removeVersionThenSnapshotShowsVersionAbsent() {
+        val managedDir = store.managedModelDirectory().apply { mkdirs() }
+        val v1File = writeTempFile(dir = managedDir, fileName = "remove-roundtrip-v1.gguf", content = "v1")
+        val v2File = writeTempFile(dir = managedDir, fileName = "remove-roundtrip-v2.gguf", content = "v2")
+
+        store.installDownloadedModel(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            version = "rt-v1",
+            absolutePath = v1File.absolutePath,
+            sha256 = sha256Hex(v1File),
+            provenanceIssuer = "internal-release",
+            provenanceSignature = "",
+            runtimeCompatibility = store.expectedRuntimeCompatibilityTag(),
+            fileSizeBytes = v1File.length(),
+            makeActive = true,
+        )
+        store.installDownloadedModel(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            version = "rt-v2",
+            absolutePath = v2File.absolutePath,
+            sha256 = sha256Hex(v2File),
+            provenanceIssuer = "internal-release",
+            provenanceSignature = "",
+            runtimeCompatibility = store.expectedRuntimeCompatibilityTag(),
+            fileSizeBytes = v2File.length(),
+            makeActive = false,
+        )
+
+        assertTrue(store.removeVersion(ModelCatalog.QWEN_3_5_0_8B_Q4, "rt-v2"))
+
+        val snapshot = store.snapshot()
+        val model = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+        assertTrue(model.installedVersions.none { it.version == "rt-v2" })
+        assertTrue(model.installedVersions.any { it.version == "rt-v1" })
+    }
+
+    @Test
+    fun removeOnlyVersionClearsActiveVersionInSnapshot() = runBlocking {
+        val source = writeTempFile(
+            dir = appContext.cacheDir,
+            fileName = "remove-only-source.gguf",
+            content = "only-version",
+        )
+        val sourceUri = android.net.Uri.fromFile(source)
+
+        store.importModel(
+            modelId = ModelCatalog.QWEN_3_5_2B_Q4,
+            sourceUri = sourceUri,
+            version = "only-v1",
+        )
+
+        val snapshotBefore = store.snapshot()
+        val modelBefore = snapshotBefore.models.first { it.modelId == ModelCatalog.QWEN_3_5_2B_Q4 }
+        assertEquals("only-v1", modelBefore.activeVersion)
+        assertEquals(1, modelBefore.installedVersions.size)
+
+        store.clearActiveVersion(ModelCatalog.QWEN_3_5_2B_Q4)
+        assertTrue(store.removeVersion(ModelCatalog.QWEN_3_5_2B_Q4, "only-v1"))
+
+        val snapshotAfter = store.snapshot()
+        val modelAfter = snapshotAfter.models.first { it.modelId == ModelCatalog.QWEN_3_5_2B_Q4 }
+        assertTrue(modelAfter.installedVersions.isEmpty())
+        assertEquals(null, modelAfter.activeVersion)
+    }
+
+    @Test
+    fun removeActiveVersionWithAlternativesReturnsFalse() {
+        val managedDir = store.managedModelDirectory().apply { mkdirs() }
+        val v1File = writeTempFile(dir = managedDir, fileName = "guard-v1.gguf", content = "guard-v1")
+        val v2File = writeTempFile(dir = managedDir, fileName = "guard-v2.gguf", content = "guard-v2")
+
+        store.installDownloadedModel(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            version = "guard-v1",
+            absolutePath = v1File.absolutePath,
+            sha256 = sha256Hex(v1File),
+            provenanceIssuer = "internal-release",
+            provenanceSignature = "",
+            runtimeCompatibility = store.expectedRuntimeCompatibilityTag(),
+            fileSizeBytes = v1File.length(),
+            makeActive = true,
+        )
+        store.installDownloadedModel(
+            modelId = ModelCatalog.QWEN_3_5_0_8B_Q4,
+            version = "guard-v2",
+            absolutePath = v2File.absolutePath,
+            sha256 = sha256Hex(v2File),
+            provenanceIssuer = "internal-release",
+            provenanceSignature = "",
+            runtimeCompatibility = store.expectedRuntimeCompatibilityTag(),
+            fileSizeBytes = v2File.length(),
+            makeActive = false,
+        )
+
+        assertFalse(
+            "Removing the active version when alternatives exist should be blocked by the store.",
+            store.removeVersion(ModelCatalog.QWEN_3_5_0_8B_Q4, "guard-v1"),
+        )
+
+        val snapshot = store.snapshot()
+        val model = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
+        assertEquals(2, model.installedVersions.size)
+    }
+
+    @Test
     fun emptyVersionsJsonSelfHealsFromDiscoveredManagedModelFile() {
         val managedDir = store.managedModelDirectory().apply { mkdirs() }
         val canonicalModel = writeTempFile(

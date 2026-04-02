@@ -16,6 +16,7 @@ internal class ImageAnalyzeUseCase(
     private val observabilityModule: ObservabilityModule,
     private val modelLifecycleCoordinator: ModelLifecycleCoordinator,
     private val routingModeProvider: () -> RoutingMode,
+    private val residentModelIdProvider: () -> String? = { null },
 ) {
     fun execute(
         imagePath: String,
@@ -39,19 +40,22 @@ internal class ImageAnalyzeUseCase(
             )
         }
         val startedMs = System.currentTimeMillis()
-        var modelLoaded = false
+        val residentModelBefore = residentModelIdProvider()
+        var imageModelLoaded = false
+        var imageModelId: String? = null
         val output = runCatching {
             val modelId = modelLifecycleCoordinator.selectRunnableModelId(
                 routingMode = routingModeProvider(),
                 taskType = "image",
                 deviceState = deviceState,
             )
+            imageModelId = modelId
             check(artifactVerifier.manager().setActiveModel(modelId)) {
                 "Model artifact not registered for image runtime model: $modelId"
             }
             artifactVerifier.verifyArtifactOrThrow(modelId)
-            modelLoaded = inferenceModule.loadModel(modelId)
-            check(modelLoaded) {
+            imageModelLoaded = inferenceModule.loadModel(modelId)
+            check(imageModelLoaded) {
                 "Failed to load runtime model for image analysis: $modelId"
             }
             if (!policyModule.enforceDataBoundary("inference.image_analyze")) {
@@ -96,7 +100,11 @@ internal class ImageAnalyzeUseCase(
                 ),
             )
         }
-        if (modelLoaded) {
+        // Only unload if the image model wasn't the user's resident chat model.
+        // Unconditional unload would nuke the user's chat model when they share
+        // the same inference engine.
+        val wasResidentBefore = residentModelBefore != null && residentModelBefore == imageModelId
+        if (imageModelLoaded && !wasResidentBefore) {
             inferenceModule.unloadModel()
         }
 

@@ -91,15 +91,75 @@ class ImageAnalyzeUseCaseTest {
         assertEquals(1, inference.unloadCalls)
         assertTrue(observability.metrics.any { it.first == "inference.image.total_ms" })
     }
+
+    @Test
+    fun `skips unload when image model matches resident chat model`() {
+        val inference = ImageRecordingInferenceModule()
+        val useCase = buildUseCase(
+            inference = inference,
+            policy = ALL_EVENTS_POLICY,
+            imageInput = StaticImageInputModule(ImageInputResult.Success("ok")),
+            residentModelIdProvider = { ModelCatalog.QWEN_3_5_0_8B_Q4 },
+        )
+
+        val result = useCase.execute("/tmp/img.jpg", "describe", DEVICE_STATE)
+
+        assertTrue(result is ImageAnalysisResult.Success)
+        assertEquals(1, inference.loadCalls)
+        assertEquals(0, inference.unloadCalls)
+    }
+
+    @Test
+    fun `unloads when image model differs from resident chat model`() {
+        val inference = ImageRecordingInferenceModule()
+        val useCase = buildUseCase(
+            inference = inference,
+            policy = ALL_EVENTS_POLICY,
+            imageInput = StaticImageInputModule(ImageInputResult.Success("ok")),
+            residentModelIdProvider = { ModelCatalog.QWEN_3_5_2B_Q4 },
+        )
+
+        val result = useCase.execute("/tmp/img.jpg", "describe", DEVICE_STATE)
+
+        assertTrue(result is ImageAnalysisResult.Success)
+        assertEquals(1, inference.loadCalls)
+        assertEquals(1, inference.unloadCalls)
+    }
+
+    @Test
+    fun `unloads when no resident model is set`() {
+        val inference = ImageRecordingInferenceModule()
+        val useCase = buildUseCase(
+            inference = inference,
+            policy = ALL_EVENTS_POLICY,
+            imageInput = StaticImageInputModule(ImageInputResult.Success("ok")),
+            residentModelIdProvider = { null },
+        )
+
+        val result = useCase.execute("/tmp/img.jpg", "describe", DEVICE_STATE)
+
+        assertTrue(result is ImageAnalysisResult.Success)
+        assertEquals(1, inference.loadCalls)
+        assertEquals(1, inference.unloadCalls)
+    }
 }
 
 private val DEVICE_STATE = DeviceState(batteryPercent = 85, thermalLevel = 3, ramClassGb = 8)
+
+private val ALL_EVENTS_POLICY = ImageEventPolicyModule(
+    allowedEvents = setOf(
+        "routing.image_model_select",
+        "inference.image_analyze",
+        "observability.record_runtime_metrics",
+    ),
+)
 
     private fun buildUseCase(
     inference: ImageRecordingInferenceModule,
     policy: ImageEventPolicyModule,
     imageInput: ImageInputModule,
     observability: RecordingObservabilityModule = RecordingObservabilityModule(),
+    residentModelIdProvider: () -> String? = { null },
 ): ImageAnalyzeUseCase {
     val runtimeConfig = imageRuntimeConfig()
     val modelLifecycleCoordinator = ModelLifecycleCoordinator(
@@ -115,6 +175,7 @@ private val DEVICE_STATE = DeviceState(batteryPercent = 85, thermalLevel = 3, ra
         observabilityModule = observability,
         modelLifecycleCoordinator = modelLifecycleCoordinator,
         routingModeProvider = { RoutingMode.AUTO },
+        residentModelIdProvider = residentModelIdProvider,
     )
 }
 

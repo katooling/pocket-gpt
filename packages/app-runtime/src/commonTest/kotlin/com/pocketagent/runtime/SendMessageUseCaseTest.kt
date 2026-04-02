@@ -23,6 +23,12 @@ import com.pocketagent.nativebridge.RuntimeModelRegistryPort
 import com.pocketagent.nativebridge.RuntimeReloadReason
 import com.pocketagent.nativebridge.RuntimeResidencyPort
 import com.pocketagent.nativebridge.RuntimeResidencyState
+import com.pocketagent.nativebridge.BridgeError
+import com.pocketagent.nativebridge.ManagedRuntimePort
+import com.pocketagent.nativebridge.ModelLifecycleEvent
+import com.pocketagent.nativebridge.ModelLifecycleState
+import com.pocketagent.nativebridge.RuntimeBackend
+import com.pocketagent.nativebridge.RuntimeGenerationConfig
 import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -65,6 +71,79 @@ class SendMessageUseCaseTest {
 
         assertTrue(error.message?.contains("Failed to load runtime model") == true)
         assertEquals(1, fixture.inferenceModule.loadCalls)
+    }
+
+    @Test
+    fun `image attachments are rejected for non vision models before inference`() {
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(),
+            routingModule = SendStaticRoutingModule(modelId = ModelCatalog.BONSAI_8B_Q1_0_G128),
+        )
+
+        val error = assertFailsWith<RuntimeImageAttachmentUnsupportedException> {
+            fixture.useCase.execute(
+                fixture.request(
+                    messages = listOf(
+                        InteractionMessage(
+                            role = InteractionRole.USER,
+                            parts = listOf(
+                                InteractionContentPart.Text("what is in this image?"),
+                                InteractionContentPart.Image("/tmp/example.png"),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+
+        assertTrue(error.message?.contains("image attachments", ignoreCase = true) == true)
+        assertEquals(0, fixture.inferenceModule.loadCalls)
+    }
+
+    @Test
+    fun `image attachments are rejected for vision model when multimodal runtime is disabled`() {
+        val managedRuntime = object : ManagedRuntimePort {
+            override fun loadModel(modelId: String, modelVersion: String?, strictGpuOffload: Boolean): Boolean = true
+            override fun setRuntimeGenerationConfig(config: RuntimeGenerationConfig) = Unit
+            override fun supportsGpuOffload(): Boolean = false
+            override fun runtimeBackend(): RuntimeBackend = RuntimeBackend.NATIVE_JNI
+            override fun lastBridgeError(): BridgeError? = null
+            override fun currentModelLifecycleState(): ModelLifecycleEvent = ModelLifecycleEvent(state = ModelLifecycleState.UNLOADED)
+            override fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable = AutoCloseable {}
+            override fun currentRssMb(): Double? = null
+            override fun isRuntimeReleased(): Boolean = false
+            override fun isMultimodalEnabled(): Boolean = false
+        }
+        val fixture = createFixture(
+            runtimeConfig = sendRuntimeConfig(streamContractV2Enabled = true),
+            policyModule = permissivePolicy(),
+            inferenceModule = SendRecordingInferenceModule(),
+            routingModule = SendStaticRoutingModule(modelId = ModelCatalog.QWEN_3_5_0_8B_Q4),
+            runtimeInferencePorts = RuntimeInferencePorts(
+                managedRuntime = managedRuntime,
+            ),
+        )
+
+        val error = assertFailsWith<RuntimeImageAttachmentUnsupportedException> {
+            fixture.useCase.execute(
+                fixture.request(
+                    messages = listOf(
+                        InteractionMessage(
+                            role = InteractionRole.USER,
+                            parts = listOf(
+                                InteractionContentPart.Text("what is in this image?"),
+                                InteractionContentPart.Image("/tmp/example.png"),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+
+        assertTrue(error.message?.contains("multimodal support", ignoreCase = true) == true)
+        assertEquals(0, fixture.inferenceModule.loadCalls)
     }
 
     @Test
@@ -434,6 +513,41 @@ class SendMessageUseCaseTest {
     }
 
     @Test
+    fun `injectImageMarkers with zero images returns prompt unchanged`() {
+        val prompt = "<|im_start|>user\nHello<|im_end|>"
+        assertEquals(prompt, injectImageMarkers(prompt, 0))
+    }
+
+    @Test
+    fun `injectImageMarkers with negative count returns prompt unchanged`() {
+        val prompt = "<|im_start|>user\nHello<|im_end|>"
+        assertEquals(prompt, injectImageMarkers(prompt, -1))
+    }
+
+    @Test
+    fun `injectImageMarkers inserts single marker after last user tag`() {
+        val prompt = "<|im_start|>system\nYou are helpful.<|im_end|>\n<|im_start|>user\nDescribe this image.<|im_end|>"
+        val result = injectImageMarkers(prompt, 1)
+        val expected = "<|im_start|>system\nYou are helpful.<|im_end|>\n<|im_start|>user\n<__media__>\nDescribe this image.<|im_end|>"
+        assertEquals(expected, result)
+    }
+
+    @Test
+    fun `injectImageMarkers inserts multiple markers`() {
+        val prompt = "<|im_start|>user\nCompare these images.<|im_end|>"
+        val result = injectImageMarkers(prompt, 3)
+        assertTrue(result.contains("<__media__>\n<__media__>\n<__media__>"))
+    }
+
+    @Test
+    fun `injectImageMarkers without user tag prepends markers`() {
+        val prompt = "Some plain prompt"
+        val result = injectImageMarkers(prompt, 1)
+        assertTrue(result.startsWith("<__media__>\n"))
+        assertTrue(result.endsWith("Some plain prompt"))
+    }
+
+    @Test
     fun `follow up prompts include prior user and assistant turns`() {
         val templateRenderer = RecordingTemplateRenderer()
         val fixture = createFixture(
@@ -481,10 +595,12 @@ private class SendMessageFixture(
             keepLoadedWhileAppForeground = true,
             idleUnloadTtlMs = 3_000L,
         ),
+        messages: List<InteractionMessage> = emptyList(),
     ): SendMessageUseCase.Request {
         return SendMessageUseCase.Request(
             sessionId = SessionId("session-1"),
             userText = "hello world",
+            messages = messages,
             taskType = "short_text",
             executionContext = RuntimeRequestContext(
                 deviceState = DeviceState(batteryPercent = 80, thermalLevel = 3, ramClassGb = 8),
@@ -638,11 +754,9 @@ private class RecordingTemplateRenderer : ChatTemplateRenderer {
     ): RenderedPrompt {
         lastMessages = messages
         lastPrompt = messages.joinToString(separator = "\n") { message ->
-            message.parts.joinToString(separator = "") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            message.parts
+                .filterIsInstance<InteractionContentPart.Text>()
+                .joinToString(separator = "") { it.text }
         }
         return RenderedPrompt(
             prompt = lastPrompt,
@@ -653,11 +767,9 @@ private class RecordingTemplateRenderer : ChatTemplateRenderer {
 
     fun lastSystemText(): String {
         val system = lastMessages.first { it.role == InteractionRole.SYSTEM }
-        return system.parts.joinToString(separator = "") { part ->
-            when (part) {
-                is InteractionContentPart.Text -> part.text
-            }
-        }
+        return system.parts
+            .filterIsInstance<InteractionContentPart.Text>()
+            .joinToString(separator = "") { it.text }
     }
 }
 
@@ -789,31 +901,37 @@ private fun sendRuntimeConfig(
     val payload0 = "payload-0".encodeToByteArray()
     val payload2 = "payload-2".encodeToByteArray()
     val payloadGemma = "payload-gemma".encodeToByteArray()
+    val payloadBonsai = "payload-bonsai".encodeToByteArray()
     return RuntimeConfig(
         artifactPayloadByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to payload0,
             ModelCatalog.QWEN_3_5_2B_Q4 to payload2,
             ModelCatalog.GEMMA_2_2B_Q4_K_M to payloadGemma,
+            ModelCatalog.BONSAI_8B_Q1_0_G128 to payloadBonsai,
         ),
         artifactFilePathByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to "",
             ModelCatalog.QWEN_3_5_2B_Q4 to "",
             ModelCatalog.GEMMA_2_2B_Q4_K_M to "",
+            ModelCatalog.BONSAI_8B_Q1_0_G128 to "",
         ),
         artifactSha256ByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to sendSha256(payload0),
             ModelCatalog.QWEN_3_5_2B_Q4 to sendSha256(payload2),
             ModelCatalog.GEMMA_2_2B_Q4_K_M to sendSha256(payloadGemma),
+            ModelCatalog.BONSAI_8B_Q1_0_G128 to sendSha256(payloadBonsai),
         ),
         artifactProvenanceIssuerByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to "internal-release",
             ModelCatalog.QWEN_3_5_2B_Q4 to "internal-release",
             ModelCatalog.GEMMA_2_2B_Q4_K_M to "internal-release",
+            ModelCatalog.BONSAI_8B_Q1_0_G128 to "internal-release",
         ),
         artifactProvenanceSignatureByModelId = mapOf(
             ModelCatalog.QWEN_3_5_0_8B_Q4 to "sig-0",
             ModelCatalog.QWEN_3_5_2B_Q4 to "sig-2",
             ModelCatalog.GEMMA_2_2B_Q4_K_M to "sig-gemma",
+            ModelCatalog.BONSAI_8B_Q1_0_G128 to "sig-bonsai",
         ),
         runtimeCompatibilityTag = "android-arm64-v8a",
         requireNativeRuntimeForStartupChecks = false,

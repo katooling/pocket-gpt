@@ -80,6 +80,9 @@ object AppRuntimeDependencies {
                     .gpuLayers
                     .takeIf { it != config.gpuLayers }
             },
+            mmProjPathResolver = { modelId ->
+                store.resolveMmProjPath(modelId)
+            },
         )
         graph.runtimeFacade.replace(newFacade)
         lifecycleCoordinator.attachLifecycleObserver(graph)

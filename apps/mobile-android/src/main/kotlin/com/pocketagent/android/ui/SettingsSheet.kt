@@ -596,6 +596,10 @@ private fun routingModeLabels(mode: RoutingMode): Pair<String, String> {
             stringResource(id = R.string.ui_routing_mode_auto),
             stringResource(id = R.string.ui_routing_mode_auto_desc),
         )
+        RoutingMode.BONSAI_8B -> Pair(
+            stringResource(id = R.string.ui_routing_mode_bonsai),
+            stringResource(id = R.string.ui_routing_mode_bonsai_desc),
+        )
         else -> Pair(mode.name, "")
     }
 }
@@ -671,6 +675,6 @@ internal val OPENCL_SAFE_QUANT_MODEL_REGEX = Regex(
 )
 
 internal val OPENCL_UNSUPPORTED_QUANT_MODEL_REGEX = Regex(
-    """(?:^|[._-])(q(?:[2-8][._-](?:k|[0-9])[._-]?[a-z0-9_]*|5|8)|iq[1-4](?:[._-][a-z]+)?)(?:[._-]|$)""",
+    """(?:^|[._-])(q(?:[1-8][._-](?:k|[0-9])[._-]?[a-z0-9_]*|5|8)|iq[1-4](?:[._-][a-z]+)?)(?:[._-]|$)""",
     RegexOption.IGNORE_CASE,
 )

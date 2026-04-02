@@ -36,6 +36,10 @@ object UiErrorMapper {
         val detail = startupChecks.joinToString(" | ")
         val normalized = detail.lowercase()
         val (userMessage, recovery) = when {
+            normalized.contains("bonsai_gpu_required") ||
+                normalized.contains("required_backend=gpu")
+            ->
+                "Bonsai requires GPU acceleration on this device. Use a GPU-capable device or switch models." to RecoveryAction.CHANGE_MODEL
             normalized.contains("runtime_incompatible_model_format") ||
                 normalized.contains("required_format=q1_0_g128") ||
                 normalized.contains("supports_q1_0_g128")
@@ -142,6 +146,19 @@ object UiErrorMapper {
     }
 
     fun runtimeFailure(detail: String?): UiError {
+        val normalized = detail?.lowercase().orEmpty()
+        if (normalized.contains("image_attachments_unsupported") ||
+            normalized.contains("does not support image attachments") ||
+            normalized.contains("cannot process image attachments")
+        ) {
+            // TODO: migrate to string resource for localization
+            return UiError(
+                code = RUNTIME_CODE,
+                userMessage = "This model cannot use image attachments. Switch to a vision-capable model and retry.",
+                technicalDetail = detail,
+                recoveryAction = RecoveryAction.CHANGE_MODEL,
+            )
+        }
         return UiError(
             code = RUNTIME_CODE,
             userMessage = "Request failed. Please try again.",
@@ -179,7 +196,9 @@ object UiErrorMapper {
             "MODEL_FILE_UNAVAILABLE" ->
                 "Model file is unavailable. Re-download or re-import the model." to RecoveryAction.REDOWNLOAD_MODEL
             "RUNTIME_INCOMPATIBLE" ->
-                if (
+                if (normalizedDetail.contains("bonsai_gpu_required") || normalizedDetail.contains("required_backend=gpu")) {
+                    "Bonsai requires GPU acceleration on this device. Use a GPU-capable device or switch models." to RecoveryAction.CHANGE_MODEL
+                } else if (
                     normalizedDetail.contains("q1_0_g128") ||
                     normalizedDetail.contains("bonsai") ||
                     normalizedDetail.contains("runtime_incompatible_model_format")

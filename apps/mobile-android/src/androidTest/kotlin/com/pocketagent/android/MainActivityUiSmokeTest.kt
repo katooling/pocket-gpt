@@ -457,11 +457,8 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
             .asReversed()
             .firstOrNull { message -> message.role == InteractionRole.USER }
             ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            ?.filterIsInstance<InteractionContentPart.Text>()
+            ?.joinToString(separator = "\n") { it.text }
             .orEmpty()
         emit(
             ChatStreamEvent.Started(
@@ -571,6 +568,7 @@ private class FakeRuntimeFacade : MvpRuntimeFacade {
                         RoutingMode.SMOLLM3_3B -> "smollm3-3b"
                         RoutingMode.PHI_4_MINI -> "phi-4-mini"
                         RoutingMode.GEMMA_2_2B -> "gemma-2-2b"
+                        RoutingMode.BONSAI_8B -> "bonsai-8b"
                     },
                     text = "runtime response for $latestUserText",
                     firstTokenLatencyMs = 42,

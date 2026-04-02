@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -41,8 +41,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -83,6 +85,7 @@ internal fun ComposerBar(
     onSubmitEdit: () -> Unit,
     onCancelEdit: () -> Unit,
     onAttachImage: () -> Unit,
+    canAttachImages: Boolean = true,
     onRemoveImage: (Int) -> Unit,
     onOpenToolDialog: () -> Unit,
     showThinkingToggle: Boolean = false,
@@ -135,218 +138,277 @@ internal fun ComposerBar(
         PocketAgentDimensions.sectionSpacing
     }
     val compactSpacing = PocketAgentDimensions.sectionSpacing / 2
-    Column(
+
+    Surface(
+        tonalElevation = 2.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 250.dp)
-            .verticalScroll(rememberScrollState())
             .imePadding()
-            .animateContentSize()
-            .padding(horizontal = PocketAgentDimensions.sectionSpacing, vertical = verticalPadding),
+            .animateContentSize(),
     ) {
-        if (shouldShowChatGateInlineCard(chatGateState)) {
-            ChatGateInlineCard(chatGateState = chatGateState)
-            Spacer(modifier = Modifier.size(PocketAgentDimensions.sectionSpacing))
-        }
-        if (isEditing) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = compactSpacing),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = stringResource(id = R.string.ui_editing_message),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                IconButton(
-                    onClick = {
-                        haptic.tickLight()
-                        onCancelEdit()
-                    },
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 280.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = PocketAgentDimensions.sectionSpacing, vertical = verticalPadding),
+        ) {
+            if (shouldShowChatGateInlineCard(chatGateState)) {
+                ChatGateInlineCard(chatGateState = chatGateState)
+                Spacer(modifier = Modifier.size(compactSpacing))
+            }
+            if (isEditing) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = compactSpacing),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = stringResource(id = R.string.a11y_cancel_edit),
-                        modifier = Modifier.size(18.dp),
+                    Text(
+                        text = stringResource(id = R.string.ui_editing_message),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
                     )
+                    IconButton(
+                        onClick = {
+                            haptic.tickLight()
+                            onCancelEdit()
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(id = R.string.a11y_cancel_edit),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
-        }
-        if (attachedImages.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(bottom = compactSpacing),
-                horizontalArrangement = Arrangement.spacedBy(compactSpacing),
-            ) {
-                attachedImages.forEachIndexed { index, path ->
-                    val attachmentLabel = Uri.parse(path).lastPathSegment
-                        ?.takeIf { it.isNotBlank() }
-                        ?: File(path).name.ifBlank { path }
-                    Box(
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(path)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = stringResource(
-                                id = R.string.a11y_attached_image_thumbnail,
-                                attachmentLabel,
-                            ),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(MaterialTheme.shapes.small),
-                        )
-                        IconButton(
-                            onClick = {
-                                haptic.tickLight()
-                                onRemoveImage(index)
-                            },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = stringResource(id = R.string.a11y_remove_image),
-                                modifier = Modifier.size(14.dp),
+            if (attachedImages.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = compactSpacing),
+                    horizontalArrangement = Arrangement.spacedBy(compactSpacing),
+                ) {
+                    attachedImages.forEachIndexed { index, path ->
+                        val attachmentLabel = Uri.parse(path).lastPathSegment
+                            ?.takeIf { it.isNotBlank() }
+                            ?: File(path).name.ifBlank { path }
+                        Box(modifier = Modifier.size(48.dp)) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(path)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = stringResource(
+                                    id = R.string.a11y_attached_image_thumbnail,
+                                    attachmentLabel,
+                                ),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(MaterialTheme.shapes.small),
                             )
+                            IconButton(
+                                onClick = {
+                                    haptic.tickLight()
+                                    onRemoveImage(index)
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .minimumInteractiveComponentSize(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = stringResource(id = R.string.a11y_remove_image),
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
-        // Action strip: secondary controls above the input row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = {
-                    haptic.tickLight()
-                    onAttachImage()
-                },
-                enabled = !isSending,
-            ) {
-                Icon(Icons.Default.Image, contentDescription = stringResource(id = R.string.a11y_attach_image))
-            }
-            IconButton(
-                onClick = {
-                    haptic.tickLight()
-                    onOpenToolDialog()
-                },
-                enabled = !isSending,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Build,
-                    contentDescription = stringResource(id = R.string.a11y_open_tools),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            if (showThinkingToggle) {
-                IconButton(
-                    onClick = {
-                        haptic.tickLight()
-                        onToggleThinking()
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = stringResource(id = if (thinkingEnabled) R.string.a11y_disable_thinking else R.string.a11y_enable_thinking),
-                        tint = if (thinkingEnabled) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            IconButton(
-                onClick = {
-                    haptic.tickLight()
-                    onOpenCompletionSettings()
-                },
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Tune,
-                    contentDescription = stringResource(id = R.string.a11y_chat_settings),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
-        // Input row: full-width text field + send button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(compactSpacing),
-        ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChanged,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("composer_input")
-                    .focusRequester(focusRequester),
-                label = { Text(stringResource(id = R.string.ui_composer_label)) },
-                enabled = !isSending,
-                maxLines = if (isLandscape) 2 else 4,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { handlePrimaryComposerAction() }),
+            ComposerActionStrip(
+                isSending = isSending,
+                showThinkingToggle = showThinkingToggle,
+                thinkingEnabled = thinkingEnabled,
+                onAttachImage = onAttachImage,
+                canAttachImages = canAttachImages,
+                onOpenToolDialog = onOpenToolDialog,
+                onToggleThinking = onToggleThinking,
+                onOpenCompletionSettings = onOpenCompletionSettings,
             )
-            val sendInteractionSource = remember { MutableInteractionSource() }
-            val isPressed by sendInteractionSource.collectIsPressedAsState()
-            val sendScale by animateFloatAsState(
-                targetValue = if (isPressed) 0.92f else 1f,
-                label = "send_scale",
+            ComposerInputRow(
+                text = text,
+                isSending = isSending,
+                isCancelling = isCancelling,
+                isEditing = isEditing,
+                isLandscape = isLandscape,
+                chatGateState = chatGateState,
+                sendButtonEnabled = sendButtonEnabled,
+                sendButtonDescription = sendButtonDescription,
+                sendStateDescription = sendStateDescription,
+                focusRequester = focusRequester,
+                compactSpacing = compactSpacing,
+                onTextChanged = onTextChanged,
+                onPrimaryAction = handlePrimaryComposerAction,
             )
-            val isLoadingModel = !isSending && !isEditing &&
-                chatGateState.status == ChatGateStatus.LOADING_MODEL
-            Button(
-                modifier = Modifier
-                    .testTag("send_button")
-                    .graphicsLayer {
-                        scaleX = sendScale
-                        scaleY = sendScale
+        }
+    }
+}
+
+@Composable
+private fun ComposerActionStrip(
+    isSending: Boolean,
+    showThinkingToggle: Boolean,
+    thinkingEnabled: Boolean,
+    onAttachImage: () -> Unit,
+    canAttachImages: Boolean,
+    onOpenToolDialog: () -> Unit,
+    onToggleThinking: () -> Unit,
+    onOpenCompletionSettings: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    val attachImageStateDescription = if (canAttachImages) {
+        null
+    } else {
+        stringResource(id = R.string.a11y_attach_image_requires_vision_model)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = { haptic.tickLight(); onAttachImage() },
+            enabled = !isSending && canAttachImages,
+            modifier = Modifier
+                .alpha(if (canAttachImages) 1f else 0.38f)
+                .semantics {
+                    attachImageStateDescription?.let {
+                        stateDescription = it
                     }
-                    .semantics {
-                        contentDescription = sendButtonDescription
-                        stateDescription = sendStateDescription
-                    },
-                interactionSource = sendInteractionSource,
-                onClick = {
-                    haptic.tickLight()
-                    handlePrimaryComposerAction()
                 },
-                enabled = sendButtonEnabled,
-            ) {
-                if (isLoadingModel) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                    )
-                    Spacer(modifier = Modifier.size(compactSpacing))
-                }
-                Text(
-                    when {
-                        isSending && isCancelling -> stringResource(id = R.string.ui_cancelling_button)
-                        isSending -> stringResource(id = R.string.ui_cancel_button)
-                        isEditing -> stringResource(id = R.string.ui_update_button)
-                        chatGateState.status == ChatGateStatus.BLOCKED_MODEL_MISSING -> stringResource(id = R.string.ui_setup_button)
-                        chatGateState.status == ChatGateStatus.LOADING_MODEL -> stringResource(id = R.string.ui_loading_button)
-                        chatGateState.status == ChatGateStatus.ERROR_RECOVERABLE -> stringResource(id = R.string.ui_retry_button)
-                        else -> stringResource(id = R.string.ui_send_button)
+        ) {
+            Icon(Icons.Default.Image, contentDescription = stringResource(id = R.string.a11y_attach_image))
+        }
+        IconButton(
+            onClick = { haptic.tickLight(); onOpenToolDialog() },
+            enabled = !isSending,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Build,
+                contentDescription = stringResource(id = R.string.a11y_open_tools),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        if (showThinkingToggle) {
+            IconButton(onClick = { haptic.tickLight(); onToggleThinking() }) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = stringResource(
+                        id = if (thinkingEnabled) R.string.a11y_disable_thinking else R.string.a11y_enable_thinking,
+                    ),
+                    tint = if (thinkingEnabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
+                    modifier = Modifier.size(20.dp),
                 )
             }
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        IconButton(onClick = { haptic.tickLight(); onOpenCompletionSettings() }) {
+            Icon(
+                imageVector = Icons.Default.Tune,
+                contentDescription = stringResource(id = R.string.a11y_chat_settings),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComposerInputRow(
+    text: String,
+    isSending: Boolean,
+    isCancelling: Boolean,
+    isEditing: Boolean,
+    isLandscape: Boolean,
+    chatGateState: ChatGateState,
+    sendButtonEnabled: Boolean,
+    sendButtonDescription: String,
+    sendStateDescription: String,
+    focusRequester: FocusRequester,
+    compactSpacing: androidx.compose.ui.unit.Dp,
+    onTextChanged: (String) -> Unit,
+    onPrimaryAction: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(compactSpacing),
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = onTextChanged,
+            modifier = Modifier
+                .weight(1f)
+                .testTag("composer_input")
+                .focusRequester(focusRequester),
+            label = { Text(stringResource(id = R.string.ui_composer_label)) },
+            enabled = !isSending,
+            maxLines = if (isLandscape) 2 else 4,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { onPrimaryAction() }),
+        )
+        val sendInteractionSource = remember { MutableInteractionSource() }
+        val isPressed by sendInteractionSource.collectIsPressedAsState()
+        val sendScale by animateFloatAsState(
+            targetValue = if (isPressed) 0.92f else 1f,
+            label = "send_scale",
+        )
+        val isLoadingModel = !isSending && !isEditing &&
+            chatGateState.status == ChatGateStatus.LOADING_MODEL
+        Button(
+            modifier = Modifier
+                .testTag("send_button")
+                .graphicsLayer {
+                    scaleX = sendScale
+                    scaleY = sendScale
+                }
+                .semantics {
+                    contentDescription = sendButtonDescription
+                    stateDescription = sendStateDescription
+                },
+            interactionSource = sendInteractionSource,
+            onClick = { haptic.tickLight(); onPrimaryAction() },
+            enabled = sendButtonEnabled,
+        ) {
+            if (isLoadingModel) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                )
+                Spacer(modifier = Modifier.width(compactSpacing))
+            }
+            Text(
+                when {
+                    isSending && isCancelling -> stringResource(id = R.string.ui_cancelling_button)
+                    isSending -> stringResource(id = R.string.ui_cancel_button)
+                    isEditing -> stringResource(id = R.string.ui_update_button)
+                    chatGateState.status == ChatGateStatus.BLOCKED_MODEL_MISSING ->
+                        stringResource(id = R.string.ui_setup_button)
+                    chatGateState.status == ChatGateStatus.LOADING_MODEL ->
+                        stringResource(id = R.string.ui_loading_button)
+                    chatGateState.status == ChatGateStatus.ERROR_RECOVERABLE ->
+                        stringResource(id = R.string.ui_retry_button)
+                    else -> stringResource(id = R.string.ui_send_button)
+                },
+            )
         }
     }
 }

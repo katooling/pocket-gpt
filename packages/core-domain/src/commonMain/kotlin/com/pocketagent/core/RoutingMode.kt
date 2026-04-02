@@ -8,4 +8,5 @@ enum class RoutingMode {
     SMOLLM3_3B,
     PHI_4_MINI,
     GEMMA_2_2B,
+    BONSAI_8B,
 }

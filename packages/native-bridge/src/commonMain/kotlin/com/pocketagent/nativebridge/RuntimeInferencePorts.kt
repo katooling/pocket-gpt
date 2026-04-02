@@ -13,6 +13,23 @@ interface ManagedRuntimePort {
     fun observeModelLifecycleState(listener: (ModelLifecycleEvent) -> Unit): AutoCloseable
     fun currentRssMb(): Double?
     fun isRuntimeReleased(): Boolean
+    fun initMultimodal(mmProjPath: String, useGpu: Boolean, imageMaxTokens: Int): Boolean = false
+    fun freeMultimodal() {}
+    fun isMultimodalEnabled(): Boolean = false
+    fun generateWithImages(
+        requestId: String,
+        prompt: String,
+        imagePaths: List<String>,
+        maxTokens: Int,
+        onToken: (String) -> Unit,
+    ): GenerationResult = GenerationResult(
+        finishReason = GenerationFinishReason.ERROR,
+        tokenCount = 0,
+        firstTokenMs = -1L,
+        totalMs = 0L,
+        cancelled = false,
+        errorCode = "MULTIMODAL_NOT_SUPPORTED",
+    )
 }
 
 interface CacheAwareGenerationPort {

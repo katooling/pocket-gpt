@@ -56,6 +56,7 @@ class RuntimeOrchestrator(
     private val diagnosticsRedactor: DiagnosticsRedactor = DiagnosticsRedactor(),
     private val memoryBudgetTracker: MemoryBudgetTracker? = null,
     private val recommendedGpuLayers: (String, PerformanceRuntimeConfig) -> Int? = { _, _ -> null },
+    private val mmProjPathResolver: (String) -> String? = { null },
 ) : RuntimeContainer {
     private val runtimeInferencePorts: RuntimeInferencePorts = inferenceModule.runtimeInferencePorts()
     private val runtimeLifecycleObserverLock = Any()
@@ -106,6 +107,7 @@ class RuntimeOrchestrator(
         inferenceModule = inferenceModule,
         routingModule = routingModule,
         runtimeConfig = runtimeConfig,
+        residentModelIdProvider = { runtimeResidencyManager.loadedModelId() },
     )
     private val sendMessageUseCase = SendMessageUseCase(
         conversationModule = conversationModule,
@@ -137,6 +139,7 @@ class RuntimeOrchestrator(
         observabilityModule = observabilityModule,
         modelLifecycleCoordinator = modelLifecycleCoordinator,
         routingModeProvider = { routingMode },
+        residentModelIdProvider = { runtimeResidencyManager.loadedModelId() },
     )
     private val diagnosticsUseCase = DiagnosticsUseCase(
         policyModule = policyModule,
@@ -188,11 +191,8 @@ class RuntimeOrchestrator(
             .asReversed()
             .firstOrNull { message -> message.role == InteractionRole.USER }
             ?.parts
-            ?.joinToString(separator = "\n") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            ?.filterIsInstance<InteractionContentPart.Text>()
+            ?.joinToString(separator = "\n") { it.text }
             ?.trim()
             .orEmpty()
         return sendMessageUseCase.execute(
@@ -612,6 +612,7 @@ class RuntimeOrchestrator(
                 keepAliveMs = runtimePlan.keepAliveMs,
                 sessionCacheIdentity = runtimePlan.sessionCacheIdentity,
             )
+            initMultimodalIfAvailable(modelId, managedRuntime)
             return RuntimeModelLifecycleCommandResult.applied(
                 loadedModel = RuntimeLoadedModel(
                     modelId = modelId,
@@ -622,6 +623,22 @@ class RuntimeOrchestrator(
             pendingLoadModelId.compareAndSet(modelId, null)
             modelLifecycleLock.unlock()
         }
+    }
+
+    private fun initMultimodalIfAvailable(modelId: String, managedRuntime: ManagedRuntimePort) {
+        val mmProjPath = runCatching { mmProjPathResolver(modelId) }.getOrElse { null }
+        if (mmProjPath.isNullOrBlank()) {
+            return
+        }
+        val useGpu = managedRuntime.supportsGpuOffload()
+        val initialized = runCatching {
+            managedRuntime.initMultimodal(
+                mmProjPath = mmProjPath,
+                useGpu = useGpu,
+                imageMaxTokens = 0,
+            )
+        }.getOrElse { false }
+        // Multimodal init result is observable via isMultimodalEnabled() — no runtime log needed.
     }
 
     override fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult {
@@ -669,43 +686,22 @@ class RuntimeOrchestrator(
         if (!runtimeResidencyManager.wasAutoReleased) {
             return false
         }
-        val modelId = runtimeResidencyManager.lastAutoReleasedModelId ?: return false
+        // Clear the auto-released state but do NOT eagerly reload the model.
+        // The model will be loaded lazily on the next user-initiated action
+        // (message send via ensureLoaded, or explicit load tap).
+        // This prevents expensive surprise loads when the user merely foregrounds the app.
+        val modelId = runtimeResidencyManager.lastAutoReleasedModelId
         runtimeResidencyManager.clearAutoReleasedState()
-        emitRuntimeLifecycleEvent(
-            ModelLifecycleEvent(
-                state = ModelLifecycleState.LOADING,
-                modelId = modelId,
-                loadingDetail = "Restoring your last model after background unload...",
-                loadingStage = ModelLoadingStage.INITIALIZING_RUNTIME,
-                loadingProgress = 0f,
-            ),
-        )
-        val result = loadModel(modelId = modelId)
-        if (result.success) {
+        if (modelId != null) {
             emitRuntimeLifecycleEvent(
                 ModelLifecycleEvent(
-                    state = ModelLifecycleState.LOADED,
-                    modelId = result.loadedModel?.modelId ?: modelId,
-                    modelVersion = result.loadedModel?.modelVersion,
-                    loadingDetail = "Restored after background unload.",
-                    loadingStage = ModelLoadingStage.COMPLETED,
-                    loadingProgress = 1.0f,
-                ),
-            )
-        } else {
-            emitRuntimeLifecycleEvent(
-                ModelLifecycleEvent(
-                    state = ModelLifecycleState.FAILED,
+                    state = ModelLifecycleState.UNLOADED,
                     modelId = modelId,
-                    modelVersion = result.loadedModel?.modelVersion,
-                    error = ModelLifecycleError(
-                        code = result.errorCode ?: ModelLifecycleErrorCode.UNKNOWN,
-                        detail = result.detail,
-                    ),
+                    loadingDetail = "Model was released in the background. It will reload when needed.",
                 ),
             )
         }
-        return result.success
+        return false
     }
 
     override fun addAutoReleaseDisableReason(reason: String) {

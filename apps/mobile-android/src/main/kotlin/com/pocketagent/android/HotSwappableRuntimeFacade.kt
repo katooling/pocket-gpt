@@ -30,9 +30,11 @@ internal class HotSwappableRuntimeFacade(
 
     fun replace(newDelegate: MvpRuntimeFacade) {
         lock.write {
+            val previousRoutingMode = runCatching { delegate.getRoutingMode() }.getOrDefault(RoutingMode.AUTO)
             delegate = newDelegate
+            runCatching { newDelegate.setRoutingMode(previousRoutingMode) }
             replacementCounter += 1L
-            safeLogInfo("RUNTIME_SWAP|phase=replaced|counter=$replacementCounter")
+            safeLogInfo("RUNTIME_SWAP|phase=replaced|counter=$replacementCounter|routingMode=$previousRoutingMode")
         }
     }
 

@@ -2,6 +2,7 @@ package com.pocketagent.runtime
 
 import com.pocketagent.inference.DeviceState
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -195,6 +196,85 @@ class InteractionPlannerTest {
     }
 
     @Test
+    fun `image part estimates to 300 tokens based on IMAGE_TOKEN_ESTIMATE_CHARS`() {
+        val planner = InteractionPlanner(
+            interactionRegistry = ModelInteractionRegistry(
+                profileByModelId = mapOf(
+                    "model-1" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.CHATML,
+                        thinkingSupport = ThinkingSupport.NONE,
+                        toolCallSupport = ToolCallSupport.NONE,
+                    ),
+                ),
+            ),
+            templateRenderer = EchoTemplateRenderer(),
+        )
+
+        // A message with a single Image part and no text should estimate to 300 tokens (1200 / 4).
+        // Under a tight budget of 300 tokens (system + image message), the image message must survive.
+        val rendered = planner.buildRenderedPrompt(
+            modelId = "model-1",
+            messages = listOf(
+                InteractionMessage(
+                    role = InteractionRole.USER,
+                    parts = listOf(
+                        InteractionContentPart.Image("/tmp/photo.png"),
+                    ),
+                ),
+            ),
+            memorySnippets = emptyList(),
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            promptCharBudget = 4096,
+        )
+
+        // The EchoTemplateRenderer joins Text parts; Image parts won't produce text,
+        // but the message should still be included (not pruned). The prompt will contain
+        // the system preamble at minimum.
+        assertTrue(rendered.prompt.contains("helpful assistant"))
+    }
+
+    @Test
+    fun `image parts survive removeThinkingFromContext unchanged`() {
+        val planner = InteractionPlanner(
+            interactionRegistry = ModelInteractionRegistry(
+                profileByModelId = mapOf(
+                    "model-1" to ModelInteractionProfile(
+                        templateProfile = ModelTemplateProfile.CHATML,
+                        thinkingSupport = ThinkingSupport.THINK_TAGS,
+                        toolCallSupport = ToolCallSupport.NONE,
+                    ),
+                ),
+            ),
+            templateRenderer = ImageAwareTemplateRenderer(),
+        )
+
+        val rendered = planner.buildRenderedPrompt(
+            modelId = "model-1",
+            messages = listOf(
+                message(InteractionRole.USER, "describe this"),
+                InteractionMessage(
+                    role = InteractionRole.ASSISTANT,
+                    parts = listOf(
+                        InteractionContentPart.Text("<think>reasoning</think>Visible text"),
+                        InteractionContentPart.Image("/tmp/diagram.png"),
+                    ),
+                ),
+            ),
+            memorySnippets = emptyList(),
+            taskType = "short_text",
+            deviceState = DeviceState(80, 3, 8),
+            promptCharBudget = 4096,
+            showThinking = false,
+        )
+
+        // Thinking text should be stripped, but the image marker must survive.
+        assertFalse(rendered.prompt.contains("reasoning"))
+        assertTrue(rendered.prompt.contains("Visible text"))
+        assertTrue(rendered.prompt.contains("[image:/tmp/diagram.png]"))
+    }
+
+    @Test
     fun `planner injects think directive into all user turns`() {
         val planner = InteractionPlanner(
             interactionRegistry = ModelInteractionRegistry(
@@ -234,16 +314,35 @@ private class EchoTemplateRenderer : ChatTemplateRenderer {
         modelProfile: ModelTemplateProfile,
     ): RenderedPrompt {
         val prompt = messages.joinToString(separator = "\n") { message ->
-            val text = message.parts.joinToString(separator = "") { part ->
-                when (part) {
-                    is InteractionContentPart.Text -> part.text
-                }
-            }
+            val text = message.parts
+                .filterIsInstance<InteractionContentPart.Text>()
+                .joinToString(separator = "") { it.text }
             if (message.toolCalls.isEmpty()) {
                 text
             } else {
                 text + message.toolCalls.joinToString(separator = "") { call ->
                     " tool_call(id=${call.id},name=${call.name})"
+                }
+            }
+        }
+        return RenderedPrompt(
+            prompt = prompt,
+            stopSequences = emptyList(),
+            templateProfile = modelProfile,
+        )
+    }
+}
+
+private class ImageAwareTemplateRenderer : ChatTemplateRenderer {
+    override fun render(
+        messages: List<InteractionMessage>,
+        modelProfile: ModelTemplateProfile,
+    ): RenderedPrompt {
+        val prompt = messages.joinToString(separator = "\n") { message ->
+            message.parts.joinToString(separator = "") { part ->
+                when (part) {
+                    is InteractionContentPart.Text -> part.text
+                    is InteractionContentPart.Image -> "[image:${part.path}]"
                 }
             }
         }

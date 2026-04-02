@@ -1,5 +1,7 @@
 package com.pocketagent.nativebridge
 
+import com.pocketagent.inference.ModelCatalog
+
 enum class OpenClQuantCompatibility {
     SAFE,
     UNSUPPORTED,
@@ -15,7 +17,7 @@ object OpenClRuntimePolicy {
     )
 
     private val knownQuantRegex = Regex(
-        """(?:^|[._-])(q[2-8](?:[._-][0-9a-z_]+)|iq[1-4](?:[._-][a-z]+)?|f16|f32|fp16|fp32|mxfp4(?:[._-]moe)?)(?:[._-]|$)""",
+        """(?:^|[._-])(q[1-8](?:[._-][0-9a-z_]+)|iq[1-4](?:[._-][a-z]+)?|f16|f32|fp16|fp32|mxfp4(?:[._-]moe)?)(?:[._-]|$)""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -24,6 +26,19 @@ object OpenClRuntimePolicy {
         modelId: String,
         modelVersion: String?,
     ): OpenClQuantCompatibility {
+        val normalizedModelId = modelId.trim().lowercase()
+        val normalizedModelPath = modelPath
+            ?.substringAfterLast('/')
+            ?.substringBeforeLast('.')
+            .orEmpty()
+            .trim()
+            .lowercase()
+        if (
+            normalizedModelId == ModelCatalog.BONSAI_8B_Q1_0_G128 ||
+            normalizedModelPath.contains("bonsai-8b")
+        ) {
+            return OpenClQuantCompatibility.SAFE
+        }
         val versionCompatibility = classifyQuantHint(modelVersion.orEmpty())
         if (versionCompatibility != OpenClQuantCompatibility.UNKNOWN) {
             return versionCompatibility
@@ -33,7 +48,6 @@ object OpenClRuntimePolicy {
             ?.substringBeforeLast('.')
             .orEmpty()
             .lowercase()
-        val normalizedModelId = modelId.trim().lowercase()
         return buildList {
             if (filenameStem.isNotBlank()) {
                 add(filenameStem)

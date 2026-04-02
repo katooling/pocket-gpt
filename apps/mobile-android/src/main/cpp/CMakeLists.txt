@@ -25,7 +25,9 @@ option(
     OFF
 )
 
-# Path from apps/mobile-android/src/main/cpp -> repo root -> third_party/llama.cpp
+# Path from apps/mobile-android/src/main/cpp -> repo root -> vendored llama.cpp.
+# Keep the Android app coupled to this seam rather than to a specific upstream,
+# Prism, or PocketGPT overlay branch so vendor refreshes stay mechanical.
 set(LLAMA_CPP_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../third_party/llama.cpp")
 if(NOT EXISTS "${LLAMA_CPP_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "Missing vendored llama.cpp source at ${LLAMA_CPP_ROOT}.")
@@ -112,6 +114,30 @@ if(GGML_OPENCL)
 endif()
 
 add_subdirectory("${LLAMA_CPP_ROOT}" "${CMAKE_BINARY_DIR}/llama.cpp")
+
+# Build libmtmd (multimodal: vision encoder, clip, image tokenization) as a
+# static library.  The upstream CMakeLists is gated by LLAMA_BUILD_TOOLS which
+# we disable for the minimal Android build, so we add it explicitly.
+# Provide LLAMA_INSTALL_VERSION which mtmd's CMakeLists.txt requires for
+# set_target_properties(VERSION ...).
+if(NOT DEFINED LLAMA_INSTALL_VERSION)
+    set(LLAMA_INSTALL_VERSION "0.0.0")
+endif()
+set(LLAMA_TOOLS_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(
+    "${LLAMA_CPP_ROOT}/tools/mtmd"
+    "${CMAKE_BINARY_DIR}/llama.cpp-mtmd"
+)
+if(TARGET mtmd)
+    target_compile_options(mtmd PRIVATE -O3 -DNDEBUG -fvectorize)
+endif()
+# Remove the CLI executables that mtmd's CMakeLists produces — we only need
+# the library, not the binaries.
+foreach(_mtmd_exe llama-mtmd-cli llama-llava-cli llama-gemma3-cli llama-minicpmv-cli llama-qwen2vl-cli)
+    if(TARGET ${_mtmd_exe})
+        set_target_properties(${_mtmd_exe} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    endif()
+endforeach()
 
 set(POCKET_LLAMA_COMPILE_FLAGS
     -O3
@@ -248,9 +274,12 @@ function(add_pocket_llama_variant target_name march_flag linked_llama_target)
         "${LLAMA_CPP_ROOT}/include"
         "${LLAMA_CPP_ROOT}/ggml/include"
         "${LLAMA_CPP_ROOT}/src"
+        "${LLAMA_CPP_ROOT}/tools/mtmd"
+        "${LLAMA_CPP_ROOT}/vendor"
     )
     target_link_libraries(${target_name}
         ${linked_llama_target}
+        mtmd
         android
         log
     )

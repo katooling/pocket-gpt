@@ -266,6 +266,113 @@ class NativeJniLlamaCppBridge(
             .getOrElse { false }
     }
 
+    override fun initMultimodal(mmProjPath: String, useGpu: Boolean, imageMaxTokens: Int): Boolean {
+        ensureRuntimeInitialized()
+        if (usingFallback || !runtimeReady) return false
+        return runCatching { nativeApi.initMultimodal(mmProjPath, useGpu, imageMaxTokens) }
+            .onSuccess { clearBridgeError() }
+            .onFailure { error -> recordBridgeError("JNI_INIT_MULTIMODAL_EXCEPTION", error) }
+            .getOrElse { false }
+    }
+
+    override fun freeMultimodal() {
+        if (usingFallback || !runtimeReady) return
+        runCatching { nativeApi.freeMultimodal() }
+    }
+
+    override fun isMultimodalEnabled(): Boolean {
+        if (usingFallback || !runtimeReady) return false
+        return runCatching { nativeApi.isMultimodalEnabled() }
+            .getOrElse { false }
+    }
+
+    override fun generateWithImages(
+        requestId: String,
+        prompt: String,
+        imagePaths: List<String>,
+        maxTokens: Int,
+        onToken: (String) -> Unit,
+    ): GenerationResult {
+        val startedMs = System.currentTimeMillis()
+        ensureRuntimeInitialized()
+        if (!runtimeReady) {
+            return currentKvMethodGenerationResult(
+                finishReason = GenerationFinishReason.ERROR,
+                tokenCount = 0,
+                firstTokenMs = -1L,
+                totalMs = 0L,
+                cancelled = false,
+                errorCode = "RUNTIME_UNAVAILABLE",
+            )
+        }
+        if (usingFallback) {
+            return fallbackBridge.generateWithImages(requestId, prompt, imagePaths, maxTokens, onToken)
+        }
+        var tokenCount = 0
+        var firstTokenMs = -1L
+        activeRequestId = requestId
+        return try {
+            val status = runCatching {
+                nativeApi.generateStreamWithImages(
+                    requestId = requestId,
+                    prompt = prompt,
+                    imagePaths = imagePaths.toTypedArray(),
+                    maxTokens = maxTokens,
+                    onToken = NativeApi.TokenCallback { token ->
+                        if (firstTokenMs < 0L) {
+                            firstTokenMs = System.currentTimeMillis() - startedMs
+                        }
+                        tokenCount += 1
+                        onToken(token)
+                    },
+                )
+            }.onFailure { error ->
+                recordBridgeError("JNI_GENERATE_MULTIMODAL_EXCEPTION", error)
+            }.getOrElse {
+                return currentKvMethodGenerationResult(
+                    finishReason = GenerationFinishReason.ERROR,
+                    tokenCount = tokenCount,
+                    firstTokenMs = firstTokenMs,
+                    totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
+                    cancelled = false,
+                    errorCode = "JNI_GENERATE_MULTIMODAL_EXCEPTION",
+                )
+            }
+            val finishReason = status.finishReason
+            val statusErrorCode = status.errorCode?.trim()?.takeIf { it.isNotEmpty() }
+            if (
+                finishReason == GenerationFinishReason.ERROR ||
+                finishReason == GenerationFinishReason.CALLBACK_ERROR
+            ) {
+                recordBridgeError(statusErrorCode ?: "JNI_MULTIMODAL_STREAM_ERROR", "requestId=$requestId")
+            } else if (finishReason != GenerationFinishReason.CANCELLED) {
+                clearBridgeError()
+            }
+            currentKvMethodGenerationResult(
+                finishReason = finishReason,
+                tokenCount = tokenCount,
+                firstTokenMs = firstTokenMs,
+                totalMs = (System.currentTimeMillis() - startedMs).coerceAtLeast(0L),
+                cancelled = finishReason == GenerationFinishReason.CANCELLED,
+                prefillMs = if (firstTokenMs >= 0) firstTokenMs else null,
+                decodeMs = if (firstTokenMs >= 0) {
+                    ((System.currentTimeMillis() - startedMs).coerceAtLeast(0L) - firstTokenMs).coerceAtLeast(0L)
+                } else {
+                    null
+                },
+                tokensPerSec = if (tokenCount > 0 && firstTokenMs >= 0) {
+                    val decodeMs = ((System.currentTimeMillis() - startedMs).coerceAtLeast(0L) - firstTokenMs).coerceAtLeast(1L)
+                    tokenCount.toDouble() / (decodeMs.toDouble() / 1000.0)
+                } else {
+                    null
+                },
+                errorCode = statusErrorCode,
+            )
+        } finally {
+            activeRequestId = null
+        }
+    }
+
     fun generateSyncProbe(
         prompt: String,
         maxTokens: Int,
@@ -407,6 +514,14 @@ class NativeJniLlamaCppBridge(
             return loaded
         }
         val baseConfig = runtimeGenerationConfig
+        validateBonsaiDeviceSupport(
+            modelId = modelId,
+            modelPath = normalizedModelPath,
+            modelVersion = options.modelVersion,
+        )?.let { incompatibility ->
+            recordBridgeError(incompatibility.code, incompatibility.detail)
+            return false
+        }
         var preferredBackend = resolvePreferredBackend(baseConfig)
         val openclQuantCompatibility = OpenClRuntimePolicy.releaseQuantCompatibility(
             modelPath = normalizedModelPath,
@@ -422,7 +537,19 @@ class NativeJniLlamaCppBridge(
             preferredBackend = GpuExecutionBackend.CPU
         }
         applyPreferredBackend(preferredBackend)
-        val config = sanitizeRuntimeConfigForBackend(baseConfig, preferredBackend)
+        val backendSanitizedConfig = sanitizeRuntimeConfigForBackend(baseConfig, preferredBackend)
+        val cpuOnlyBackend = backendSanitizedConfig.gpuBackend == GpuExecutionBackend.CPU
+        val gpuEnabledRequested = backendSanitizedConfig.gpuEnabled && !cpuOnlyBackend
+        val preferredBackendAvailable = preferredBackendAvailable(preferredBackend)
+        val runtimeGpuSupported = gpuOffloadAllowed && gpuEnabledRequested && supportsGpuOffload()
+        val gpuEnabledAndSupported = runtimeGpuSupported && preferredBackendAvailable
+        val config = sanitizeRuntimeConfigForLoad(
+            config = backendSanitizedConfig,
+            modelId = modelId,
+            modelPath = normalizedModelPath,
+            modelVersion = options.modelVersion,
+            cpuExecution = !gpuEnabledAndSupported,
+        )
         val kvMethodResolution = resolveKvCacheMethod(
             requestedMethod = config.kvCacheMethod,
             preset = config.kvCacheMethodPreset,
@@ -434,11 +561,6 @@ class NativeJniLlamaCppBridge(
                 "model=$normalizedModelPath|model_id=$modelId|requested=${kvMethodResolution.requestedMethod.name.lowercase()}|effective=${kvMethodResolution.effectiveMethod.name.lowercase()}|preset=${kvMethodResolution.preset.name.lowercase()}|reason=$reason",
             )
         }
-        val cpuOnlyBackend = baseConfig.gpuBackend == GpuExecutionBackend.CPU
-        val gpuEnabledRequested = config.gpuEnabled && !cpuOnlyBackend
-        val preferredBackendAvailable = preferredBackendAvailable(preferredBackend)
-        val runtimeGpuSupported = gpuOffloadAllowed && gpuEnabledRequested && supportsGpuOffload()
-        val gpuEnabledAndSupported = runtimeGpuSupported && preferredBackendAvailable
         val requestedGpuLayers = if (gpuEnabledAndSupported) config.gpuLayers else 0
         val requestedDraftGpuLayers = if (gpuEnabledAndSupported && config.speculativeEnabled && config.speculativeDraftGpuLayers > 0) {
             config.speculativeDraftGpuLayers.coerceAtLeast(0)
@@ -1054,6 +1176,31 @@ class NativeJniLlamaCppBridge(
         )
     }
 
+    private fun sanitizeRuntimeConfigForLoad(
+        config: RuntimeGenerationConfig,
+        modelId: String,
+        modelPath: String,
+        modelVersion: String?,
+        cpuExecution: Boolean,
+    ): RuntimeGenerationConfig {
+        if (!cpuExecution || requiredRuntimeFormat(modelId, modelPath, modelVersion) != "q1_0_g128") {
+            return config
+        }
+        val sanitized = config.copy(
+            flashAttnMode = FlashAttnMode.OFF,
+            kvCacheMethodPreset = KvCacheMethodPreset.SAFE,
+            nBatch = minOf(config.nBatch, BONSAI_CPU_SAFE_BATCH),
+            nUbatch = minOf(config.nUbatch, BONSAI_CPU_SAFE_BATCH),
+        )
+        if (sanitized != config) {
+            logBridge(
+                "BONSAI_CPU_SAFE_CONFIG",
+                "model_id=$modelId|flash_attn=${sanitized.flashAttnMode.name.lowercase()}|kv_preset=${sanitized.kvCacheMethodPreset.name.lowercase()}|n_batch=${sanitized.nBatch}|n_ubatch=${sanitized.nUbatch}",
+            )
+        }
+        return sanitized
+    }
+
     private fun preferredBackendAvailable(backend: GpuExecutionBackend): Boolean {
         if (backend == GpuExecutionBackend.AUTO || backend == GpuExecutionBackend.CPU) {
             return true
@@ -1160,14 +1307,11 @@ class NativeJniLlamaCppBridge(
         modelPath: String,
         modelVersion: String?,
     ): BridgeError? {
-        val requiredFormat = when {
-            modelId == ModelCatalog.BONSAI_8B_Q1_0_G128 -> "q1_0_g128"
-            modelVersion?.contains("q1_0_g128", ignoreCase = true) == true -> "q1_0_g128"
-            modelPath.contains("q1_0_g128", ignoreCase = true) -> "q1_0_g128"
-            modelVersion?.equals("q1_0", ignoreCase = true) == true -> "q1_0"
-            modelPath.contains("q1_0", ignoreCase = true) -> "q1_0"
-            else -> null
-        } ?: return null
+        val requiredFormat = requiredRuntimeFormat(
+            modelId = modelId,
+            modelPath = modelPath,
+            modelVersion = modelVersion,
+        ) ?: return null
         val diagnostics = backendDiagnosticsJson().orEmpty()
         val supported = when (requiredFormat) {
             "q1_0" -> parseRuntimeSupportFlag(diagnostics, SUPPORTS_Q1_0_REGEX)
@@ -1190,6 +1334,46 @@ class NativeJniLlamaCppBridge(
                     append(parseCompiledBackends(diagnostics).joinToString(separator = ","))
                 },
             )
+        }
+    }
+
+    private fun validateBonsaiDeviceSupport(
+        modelId: String,
+        modelPath: String,
+        modelVersion: String?,
+    ): BridgeError? {
+        if (requiredRuntimeFormat(modelId, modelPath, modelVersion) != "q1_0_g128") {
+            return null
+        }
+        if (supportsGpuOffload()) {
+            return null
+        }
+        val diagnostics = backendDiagnosticsJson().orEmpty()
+        return BridgeError(
+            code = "RUNTIME_INCOMPATIBLE_MODEL_FORMAT",
+            detail = buildString {
+                append("modelId=").append(modelId)
+                append("|required_format=q1_0_g128")
+                append("|required_backend=gpu")
+                append("|bonsai_gpu_required=true")
+                append("|gpu_runtime_supported=false")
+                append("|compiled_backends=").append(parseCompiledBackends(diagnostics).joinToString(separator = ","))
+            },
+        )
+    }
+
+    private fun requiredRuntimeFormat(
+        modelId: String,
+        modelPath: String,
+        modelVersion: String?,
+    ): String? {
+        return when {
+            modelId == ModelCatalog.BONSAI_8B_Q1_0_G128 -> "q1_0_g128"
+            modelVersion?.contains("q1_0_g128", ignoreCase = true) == true -> "q1_0_g128"
+            modelPath.contains("q1_0_g128", ignoreCase = true) -> "q1_0_g128"
+            modelVersion?.equals("q1_0", ignoreCase = true) == true -> "q1_0"
+            modelPath.contains("q1_0", ignoreCase = true) -> "q1_0"
+            else -> null
         }
     }
 
@@ -1442,6 +1626,16 @@ class NativeJniLlamaCppBridge(
         fun setBackendProfile(profile: String) {}
         fun saveSessionCache(filePath: String): Boolean = false
         fun loadSessionCache(filePath: String): Boolean = false
+        fun initMultimodal(mmProjPath: String, useGpu: Boolean, imageMaxTokens: Int): Boolean = false
+        fun freeMultimodal() {}
+        fun isMultimodalEnabled(): Boolean = false
+        fun generateStreamWithImages(
+            requestId: String,
+            prompt: String,
+            imagePaths: Array<String>,
+            maxTokens: Int,
+            onToken: TokenCallback,
+        ): StreamStatus = StreamStatus(GenerationFinishReason.ERROR, "MULTIMODAL_NOT_SUPPORTED")
     }
 
     private class JniNativeApi : NativeApi {
@@ -1524,6 +1718,16 @@ class NativeJniLlamaCppBridge(
         external fun nativeSetBackendProfile(profile: String)
         external fun nativeSaveSessionCache(filePath: String): Boolean
         external fun nativeLoadSessionCache(filePath: String): Boolean
+        external fun nativeInitMultimodal(mmProjPath: String, useGpu: Boolean, imageMaxTokens: Int): Boolean
+        external fun nativeFreeMultimodal()
+        external fun nativeIsMultimodalEnabled(): Boolean
+        external fun nativeGenerateStreamWithImages(
+            requestId: String,
+            prompt: String,
+            imagePaths: Array<String>,
+            maxTokens: Int,
+            callback: NativeApi.TokenCallback,
+        ): Int
 
         override fun initialize(): Boolean = nativeInitialize()
 
@@ -1697,6 +1901,32 @@ class NativeJniLlamaCppBridge(
         override fun saveSessionCache(filePath: String): Boolean = nativeSaveSessionCache(filePath)
 
         override fun loadSessionCache(filePath: String): Boolean = nativeLoadSessionCache(filePath)
+
+        override fun initMultimodal(mmProjPath: String, useGpu: Boolean, imageMaxTokens: Int): Boolean =
+            nativeInitMultimodal(mmProjPath, useGpu, imageMaxTokens)
+
+        override fun freeMultimodal() = nativeFreeMultimodal()
+
+        override fun isMultimodalEnabled(): Boolean = nativeIsMultimodalEnabled()
+
+        override fun generateStreamWithImages(
+            requestId: String,
+            prompt: String,
+            imagePaths: Array<String>,
+            maxTokens: Int,
+            onToken: NativeApi.TokenCallback,
+        ): NativeApi.StreamStatus {
+            val statusCode = nativeGenerateStreamWithImages(requestId, prompt, imagePaths, maxTokens, onToken)
+            return when (statusCode) {
+                0 -> NativeApi.StreamStatus(GenerationFinishReason.COMPLETED)
+                1 -> NativeApi.StreamStatus(GenerationFinishReason.MAX_TOKENS)
+                2 -> NativeApi.StreamStatus(GenerationFinishReason.CANCELLED, "JNI_CANCELLED")
+                3 -> NativeApi.StreamStatus(GenerationFinishReason.CALLBACK_ERROR, "JNI_CALLBACK_ERROR")
+                4 -> NativeApi.StreamStatus(GenerationFinishReason.UTF8_STREAM_ERROR, "JNI_UTF8_STREAM_ERROR")
+                5 -> NativeApi.StreamStatus(GenerationFinishReason.ERROR, "JNI_RUNTIME_ERROR")
+                else -> NativeApi.StreamStatus(GenerationFinishReason.ERROR, "JNI_UNKNOWN_STATUS_$statusCode")
+            }
+        }
     }
 
     companion object {
@@ -1730,6 +1960,7 @@ class NativeJniLlamaCppBridge(
         private val SUPPORTS_Q1_0_G128_REGEX = "\"supports_q1_0_g128\"\\s*:\\s*(true|false)".toRegex(
             option = RegexOption.IGNORE_CASE,
         )
+        private const val BONSAI_CPU_SAFE_BATCH = 128
         private val RETRYABLE_GPU_LOAD_ERROR_TERMS = setOf(
             "gpu",
             "opencl",
