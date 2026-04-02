@@ -236,10 +236,10 @@ bool model_has_no_kv_cache() {
 
 bool should_run_native_warmup(bool gpu_ops_active) {
     // Speed-first policy:
-    // For CPU-only prefill-only models (recurrent / hybrid), the 1-token warmup
-    // has shown poor ROI: it can take seconds and still fails to prevent the
-    // later larger-batch graph reallocation during real prompt decode.
-    return gpu_ops_active || !model_has_no_kv_cache();
+    // Native warmup is most valuable when GPU kernels/shader paths are active.
+    // On CPU-only device paths it adds visible load latency, including for
+    // quantized transformer models like Bonsai, without enough first-turn ROI.
+    return gpu_ops_active;
 }
 
 void clear_prefix_cache_slots_locked();

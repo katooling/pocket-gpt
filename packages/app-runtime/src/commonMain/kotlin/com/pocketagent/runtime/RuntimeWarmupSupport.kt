@@ -57,6 +57,7 @@ internal class RuntimeWarmupCoordinator(
         if (managedRuntime == null || cacheAwareGeneration == null || residencyPort == null) {
             return WarmupResult.skipped("warmup_requires_native_bridge")
         }
+        val activeBackend = cacheAwareGeneration.activeBackendIdentity()?.trim()?.lowercase()
         val modelId = artifactVerifier.manager().getActiveModel().trim()
         if (modelId.isEmpty()) {
             return WarmupResult.skipped("warmup_model_missing")
@@ -68,6 +69,9 @@ internal class RuntimeWarmupCoordinator(
         val verification = artifactVerifier.verifyArtifactForModel(modelId)
         if (!verification.passed) {
             return WarmupResult.skipped("warmup_artifact_unverified")
+        }
+        if (activeBackend == null || activeBackend == "cpu" || activeBackend == "adb_fallback") {
+            return WarmupResult.skipped("warmup_cpu_only_runtime")
         }
         if (!inferenceModule.listAvailableModels().contains(modelId)) {
             return WarmupResult.skipped("warmup_model_unavailable")
@@ -188,9 +192,10 @@ internal class RuntimeWarmupCoordinator(
     }
 
     private companion object {
-        private const val WARMUP_MAX_TOKENS = 8
-        private const val WARMUP_PROMPT =
-            "Summarize the resident runtime warmup path in one short sentence for shader and KV cache warmup."
+        // Keep warmup cheap enough that a manual model load does not feel stuck
+        // behind a real chat turn, especially on CPU-only devices.
+        private const val WARMUP_MAX_TOKENS = 1
+        private const val WARMUP_PROMPT = "Ready?"
     }
 }
 

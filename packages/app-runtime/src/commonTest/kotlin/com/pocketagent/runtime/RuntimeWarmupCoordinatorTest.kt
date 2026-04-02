@@ -63,14 +63,50 @@ class RuntimeWarmupCoordinatorTest {
         assertEquals(1, warmupPorts.loadCalls)
         assertEquals(expectedModelVersion, warmupPorts.lastModelVersion)
         assertEquals(2, warmupPorts.generateCalls)
-        assertEquals(8, warmupPorts.lastMaxTokens)
-        assertTrue(warmupPorts.lastPrompt.contains("shader") || warmupPorts.lastPrompt.contains("warmup"))
+        assertEquals(1, warmupPorts.lastMaxTokens)
+        assertEquals("Ready?", warmupPorts.lastPrompt)
         assertEquals(1, residencyManager.listResident().size)
         assertTrue(observability.metrics.keys.contains("inference.model_load_ms"))
         assertTrue(observability.metrics.keys.contains("inference.warmup_ms"))
         assertTrue(observability.metrics.keys.contains("inference.warmup.speculative_path"))
         assertTrue(observability.metrics.keys.contains("inference.resident_hit"))
         assertTrue(lifecycleStages.contains(ModelLoadingStage.WARMING_UP))
+    }
+
+    @Test
+    fun `warmup skips cpu only runtimes`() {
+        val inferenceModule = WarmupInferenceModule()
+        val warmupPorts = WarmupRuntimePorts(
+            supportsGpuOffload = false,
+            activeBackendIdentity = "cpu",
+        )
+        val runtimeInferencePorts = RuntimeInferencePorts(
+            managedRuntime = warmupPorts,
+            cacheAwareGeneration = warmupPorts,
+            residency = warmupPorts,
+        )
+        val coordinator = RuntimeWarmupCoordinator(
+            inferenceModule = inferenceModule,
+            artifactVerifier = ArtifactVerifier(warmupRuntimeConfig()),
+            observabilityModule = WarmupObservabilityModule(),
+            runtimeResidencyManager = RuntimeResidencyManager(
+                inferenceModule,
+                runtimeInferencePorts = runtimeInferencePorts,
+                nowMs = monotonicClock(),
+            ),
+            runtimePlanResolver = RuntimePlanResolver(availableCpuThreads = { 6 }),
+            availableCpuThreads = { 6 },
+            nowMs = monotonicClock(),
+            runtimeInferencePorts = runtimeInferencePorts,
+        )
+
+        val result = coordinator.warmup()
+
+        assertFalse(result.attempted)
+        assertFalse(result.warmed)
+        assertEquals("warmup_cpu_only_runtime", result.errorCode)
+        assertEquals(0, warmupPorts.generateCalls)
+        assertEquals(0, warmupPorts.loadCalls)
     }
 }
 
@@ -95,7 +131,10 @@ private class WarmupInferenceModule : InferenceModule {
     }
 }
 
-private class WarmupRuntimePorts : ManagedRuntimePort, CacheAwareGenerationPort, RuntimeResidencyPort {
+private class WarmupRuntimePorts(
+    private val supportsGpuOffload: Boolean = true,
+    private val activeBackendIdentity: String? = "opencl",
+) : ManagedRuntimePort, CacheAwareGenerationPort, RuntimeResidencyPort {
     var loadCalls: Int = 0
     var generateCalls: Int = 0
     var lastMaxTokens: Int = 0
@@ -118,7 +157,7 @@ private class WarmupRuntimePorts : ManagedRuntimePort, CacheAwareGenerationPort,
         this.config = config
     }
 
-    override fun supportsGpuOffload(): Boolean = true
+    override fun supportsGpuOffload(): Boolean = supportsGpuOffload
 
     override fun runtimeBackend(): RuntimeBackend = RuntimeBackend.NATIVE_JNI
 
@@ -165,7 +204,7 @@ private class WarmupRuntimePorts : ManagedRuntimePort, CacheAwareGenerationPort,
 
     override fun lastGpuLoadRetryCount(): Int? = 0
 
-    override fun activeBackendIdentity(): String? = null
+    override fun activeBackendIdentity(): String? = activeBackendIdentity
 
     override fun updateResidencySlot(slotId: String?, expiresAtEpochMs: Long?) {
         val wasResident = residencyState.resident
