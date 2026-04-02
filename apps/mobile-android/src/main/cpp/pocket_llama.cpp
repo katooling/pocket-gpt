@@ -32,6 +32,14 @@
 #include "llama-kv-cache-iswa.h"
 #include "llama-memory-hybrid.h"
 
+#ifndef GGML_HAVE_Q1_0
+#define GGML_HAVE_Q1_0 0
+#endif
+
+#ifndef GGML_HAVE_Q1_0_G128
+#define GGML_HAVE_Q1_0_G128 0
+#endif
+
 namespace {
 constexpr const char * TAG = "PocketLlamaJNI";
 constexpr int DEFAULT_CONTEXT_SIZE = 2048;
@@ -49,6 +57,11 @@ constexpr jint STREAM_STATUS_CANCELLED = 2;
 constexpr jint STREAM_STATUS_CALLBACK_ERROR = 3;
 constexpr jint STREAM_STATUS_UTF8_STREAM_ERROR = 4;
 constexpr jint STREAM_STATUS_RUNTIME_ERROR = 5;
+
+bool runtime_supports_q1_0();
+bool runtime_supports_q1_0_g128();
+bool active_quantization_requires_prism_runtime();
+bool active_quantization_runtime_supported();
 
 std::mutex g_mutex;
 enum class BackendInitMode {
@@ -1285,6 +1298,8 @@ std::string backend_diagnostics_json() {
         << "\"opencl_device_version\":\"" << json_escape(diag.opencl_device_version) << "\","
         << "\"opencl_adreno_generation\":" << diag.opencl_adreno_generation << ","
         << "\"active_model_quantization\":\"" << json_escape(g_last_model_quantization) << "\","
+        << "\"supports_q1_0\":" << (runtime_supports_q1_0() ? "true" : "false") << ","
+        << "\"supports_q1_0_g128\":" << (runtime_supports_q1_0_g128() ? "true" : "false") << ","
         << "\"model_memory_mode\":\"" << json_escape(model_memory_mode_label()) << "\","
         << "\"prefix_cache_mode\":\"" << json_escape(prefix_cache_mode_label()) << "\","
         << "\"flashAttnActive\":" << (g_last_flash_attn_active ? "true" : "false") << ","
@@ -1395,6 +1410,28 @@ const char * model_memory_mode_label() {
         return "recurrent";
     }
     return "standard";
+}
+
+bool runtime_supports_q1_0() {
+    return GGML_HAVE_Q1_0 == 1;
+}
+
+bool runtime_supports_q1_0_g128() {
+    return GGML_HAVE_Q1_0_G128 == 1;
+}
+
+bool active_quantization_requires_prism_runtime() {
+    return g_last_model_quantization == "q1_0" || g_last_model_quantization == "q1_0_g128";
+}
+
+bool active_quantization_runtime_supported() {
+    if (g_last_model_quantization == "q1_0") {
+        return runtime_supports_q1_0();
+    }
+    if (g_last_model_quantization == "q1_0_g128") {
+        return runtime_supports_q1_0_g128();
+    }
+    return true;
 }
 
 const char * prefix_cache_mode_label() {
@@ -3301,6 +3338,17 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
                 set_backend_error_locked(
                     "OUT_OF_MEMORY",
                     std::string("stage=model_load|errno=") + std::to_string(target_load_errno) + "|detail=" + std::strerror(target_load_errno));
+            } else if (active_quantization_requires_prism_runtime()) {
+                std::ostringstream detail;
+                detail << "quantization=" << g_last_model_quantization
+                       << "|supports_q1_0=" << (runtime_supports_q1_0() ? "true" : "false")
+                       << "|supports_q1_0_g128=" << (runtime_supports_q1_0_g128() ? "true" : "false")
+                       << "|runtime_supported=" << (active_quantization_runtime_supported() ? "true" : "false")
+                       << "|profile=" << g_backend_profile
+                       << "|selected_backend=" << g_active_backend
+                       << "|target_layers=" << static_cast<int>(model_params.n_gpu_layers)
+                       << "|use_mmap=" << (model_params.use_mmap ? "true" : "false");
+                set_backend_error_locked("RUNTIME_INCOMPATIBLE_MODEL_FORMAT", detail.str());
             } else {
                 set_backend_error_locked(
                     "GPU_BACKEND_LOAD_FAILED",

@@ -60,6 +60,16 @@ class UiErrorMapperTest {
     }
 
     @Test
+    fun `startup mapper differentiates bonsai runtime support guidance`() {
+        val error = UiErrorMapper.startupFailure(
+            listOf("RUNTIME_INCOMPATIBLE_MODEL_FORMAT:modelId=bonsai-8b-q1_0_g128|required_format=q1_0_g128"),
+        )
+
+        assertNotNull(error)
+        assertTrue(error.userMessage.contains("Bonsai runtime support", ignoreCase = true))
+    }
+
+    @Test
     fun `startup mapper differentiates backend readiness guidance`() {
         val error = UiErrorMapper.startupFailure(
             listOf("Runtime backend is ADB_FALLBACK but NATIVE runtime is required"),
@@ -151,6 +161,20 @@ class UiErrorMapperTest {
 
         assertNotNull(error)
         assertTrue(error.userMessage.contains("fit in available memory", ignoreCase = true))
+        assertEquals(RecoveryAction.CHANGE_MODEL, error.recoveryAction)
+    }
+
+    @Test
+    fun `model lifecycle runtime incompatible maps bonsai support guidance`() {
+        val error = UiErrorMapper.fromModelLifecycleResult(
+            RuntimeModelLifecycleCommandResult.rejected(
+                code = ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE,
+                detail = "RUNTIME_INCOMPATIBLE_MODEL_FORMAT:modelId=bonsai-8b-q1_0_g128|required_format=q1_0_g128",
+            ),
+        )
+
+        assertNotNull(error)
+        assertTrue(error.userMessage.contains("Bonsai runtime support", ignoreCase = true))
         assertEquals(RecoveryAction.CHANGE_MODEL, error.recoveryAction)
     }
 }

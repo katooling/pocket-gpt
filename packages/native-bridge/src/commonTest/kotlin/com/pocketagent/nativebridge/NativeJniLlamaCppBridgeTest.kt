@@ -1,6 +1,7 @@
 package com.pocketagent.nativebridge
 
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.nativebridge.ModelLoadOptions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -496,6 +497,71 @@ class NativeJniLlamaCppBridgeTest {
     }
 
     @Test
+    fun `bonsai q1 keeps opencl backend and gpu layers when release-qualified`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1,"supports_q1_0_g128":true}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.AUTO,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.BONSAI_8B_Q1_0_G128,
+                modelPath = "/tmp/Bonsai-8B.gguf",
+                options = ModelLoadOptions(modelVersion = "q1_0_g128"),
+            ),
+        )
+        assertEquals(listOf("opencl"), nativeApi.backendProfiles)
+        assertEquals(listOf(20), nativeApi.loadGpuLayers)
+    }
+
+    @Test
+    fun `bonsai q1 is rejected when runtime format capability is unavailable`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1,"supports_q1_0_g128":false}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+
+        assertTrue(bridge.isReady())
+        assertFalse(
+            bridge.loadModel(
+                modelId = ModelCatalog.BONSAI_8B_Q1_0_G128,
+                modelPath = "/tmp/Bonsai-8B.gguf",
+                options = ModelLoadOptions(modelVersion = "q1_0_g128"),
+            ),
+        )
+        assertFalse(nativeApi.loadCalled)
+        assertEquals("RUNTIME_INCOMPATIBLE_MODEL_FORMAT", bridge.lastError()?.code)
+    }
+
+    @Test
     fun `opencl heuristic fallback demotes gpu layers when quantization cannot be inferred`() {
         val nativeApi = FakeNativeApi(
             initializeOk = true,
@@ -665,6 +731,42 @@ class NativeJniLlamaCppBridgeTest {
             ),
         )
         assertEquals(listOf(0), nativeApi.loadGpuLayers)
+    }
+
+    @Test
+    fun `bonsai q1 quant keeps opencl backend and gpu layers on native load`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1,"supports_q1_0_g128":true}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            gpuOffloadAllowed = true,
+        )
+        bridge.setRuntimeGenerationConfig(
+            RuntimeGenerationConfig.default().copy(
+                gpuEnabled = true,
+                gpuLayers = 20,
+                gpuBackend = GpuExecutionBackend.AUTO,
+            ),
+        )
+
+        assertTrue(bridge.isReady())
+        assertTrue(
+            bridge.loadModel(
+                modelId = ModelCatalog.BONSAI_8B_Q1_0_G128,
+                modelPath = "/tmp/bonsai-8b.gguf",
+                options = ModelLoadOptions(modelVersion = "q1_0_g128"),
+            ),
+        )
+        assertEquals(listOf("opencl"), nativeApi.backendProfiles)
+        assertEquals(listOf(20), nativeApi.loadGpuLayers)
     }
 
     @Test
@@ -971,6 +1073,7 @@ private class FakeNativeApi(
     var lastSamplingXtcProbability: Float? = null
     var lastSamplingSeed: Int? = null
     var lastSamplingNKeep: Int? = null
+    val backendProfiles = mutableListOf<String>()
     val loadGpuLayers = mutableListOf<Int>()
     val loadFlashAttnCodes = mutableListOf<Int>()
     val loadKvCacheMethodCodes = mutableListOf<Int>()
@@ -1118,6 +1221,10 @@ private class FakeNativeApi(
     override fun supportsGpuOffload(): Boolean = supportsGpuOffload
 
     override fun backendDiagnosticsJson(): String = backendDiagnosticsJson
+
+    override fun setBackendProfile(profile: String) {
+        backendProfiles += profile
+    }
 
     override fun peakRssMb(): Double? = peakRssMb
 

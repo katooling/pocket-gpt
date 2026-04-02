@@ -381,6 +381,15 @@ class NativeJniLlamaCppBridge(
             recordBridgeError(validation.code ?: "MODEL_INVALID", validation.detail)
             return false
         }
+        val normalizedModelPath = validation.normalizedModelPath.orEmpty()
+        validateRuntimeFormatSupport(
+            modelId = modelId,
+            modelPath = normalizedModelPath,
+            modelVersion = options.modelVersion,
+        )?.let { incompatibility ->
+            recordBridgeError(incompatibility.code, incompatibility.detail)
+            return false
+        }
         if (usingFallback) {
             fallbackBridge.setRuntimeGenerationConfig(runtimeGenerationConfig)
             val loaded = fallbackBridge.loadModel(
@@ -397,9 +406,21 @@ class NativeJniLlamaCppBridge(
             }
             return loaded
         }
-        val normalizedModelPath = validation.normalizedModelPath.orEmpty()
         val baseConfig = runtimeGenerationConfig
-        val preferredBackend = resolvePreferredBackend(baseConfig)
+        var preferredBackend = resolvePreferredBackend(baseConfig)
+        val openclQuantCompatibility = OpenClRuntimePolicy.releaseQuantCompatibility(
+            modelPath = normalizedModelPath,
+            modelId = modelId,
+            modelVersion = options.modelVersion,
+        )
+        val openclQuantUnsupported = preferredBackend == GpuExecutionBackend.OPENCL &&
+            openclQuantCompatibility == OpenClQuantCompatibility.UNSUPPORTED
+        val openclQuantUnknown = preferredBackend == GpuExecutionBackend.OPENCL &&
+            openclQuantCompatibility == OpenClQuantCompatibility.UNKNOWN &&
+            !baseConfig.speculativeEnabled
+        if (openclQuantUnsupported) {
+            preferredBackend = GpuExecutionBackend.CPU
+        }
         applyPreferredBackend(preferredBackend)
         val config = sanitizeRuntimeConfigForBackend(baseConfig, preferredBackend)
         val kvMethodResolution = resolveKvCacheMethod(
@@ -424,19 +445,12 @@ class NativeJniLlamaCppBridge(
         } else {
             0
         }
-        val openclQuantDemoted = gpuEnabledAndSupported &&
-            isOpenClBackendActive(preferredBackend) &&
-            !OpenClRuntimePolicy.isReleaseSafeQuantization(
-                modelPath = normalizedModelPath,
-                modelId = modelId,
-                modelVersion = options.modelVersion,
-            )
-        val effectiveGpuLayers = if (openclQuantDemoted) 0 else requestedGpuLayers
-        val effectiveDraftGpuLayers = if (openclQuantDemoted) 0 else requestedDraftGpuLayers
-        if (openclQuantDemoted) {
+        val effectiveGpuLayers = if (openclQuantUnsupported || openclQuantUnknown) 0 else requestedGpuLayers
+        val effectiveDraftGpuLayers = if (openclQuantUnsupported || openclQuantUnknown) 0 else requestedDraftGpuLayers
+        if (openclQuantUnsupported || openclQuantUnknown) {
             logBridge(
                 "OPENCL_QUANT_DEMOTE",
-                "model=$normalizedModelPath|model_id=$modelId|demoted_to_cpu=true|reason=quant_not_in_release_opencl_allowlist",
+                "model=$normalizedModelPath|model_id=$modelId|demoted_to_cpu=$openclQuantUnsupported|backend=${preferredBackend.name.lowercase()}|compatibility=${openclQuantCompatibility.name.lowercase()}",
             )
         }
 
@@ -539,7 +553,7 @@ class NativeJniLlamaCppBridge(
                     retryCount = attemptIndex,
                 )
                 lastSuccessfulLoadDetail = when {
-                    openclQuantDemoted && gpuRequested ->
+                    openclQuantUnsupported && gpuRequested ->
                         "Model loaded on CPU because this quantization is not release-qualified for GPU."
                     attemptIndex > 0 ->
                         "Model loaded with reduced GPU acceleration."
@@ -1120,6 +1134,65 @@ class NativeJniLlamaCppBridge(
         return code to detail
     }
 
+    private fun parseRuntimeSupportFlag(
+        diagnosticsJson: String,
+        regex: Regex,
+    ): Boolean? {
+        if (diagnosticsJson.isBlank()) {
+            return null
+        }
+        return regex.find(diagnosticsJson)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.lowercase()
+            ?.let { value ->
+                when (value) {
+                    "true" -> true
+                    "false" -> false
+                    else -> null
+                }
+            }
+    }
+
+    private fun validateRuntimeFormatSupport(
+        modelId: String,
+        modelPath: String,
+        modelVersion: String?,
+    ): BridgeError? {
+        val requiredFormat = when {
+            modelId == ModelCatalog.BONSAI_8B_Q1_0_G128 -> "q1_0_g128"
+            modelVersion?.contains("q1_0_g128", ignoreCase = true) == true -> "q1_0_g128"
+            modelPath.contains("q1_0_g128", ignoreCase = true) -> "q1_0_g128"
+            modelVersion?.equals("q1_0", ignoreCase = true) == true -> "q1_0"
+            modelPath.contains("q1_0", ignoreCase = true) -> "q1_0"
+            else -> null
+        } ?: return null
+        val diagnostics = backendDiagnosticsJson().orEmpty()
+        val supported = when (requiredFormat) {
+            "q1_0" -> parseRuntimeSupportFlag(diagnostics, SUPPORTS_Q1_0_REGEX)
+            "q1_0_g128" -> parseRuntimeSupportFlag(diagnostics, SUPPORTS_Q1_0_G128_REGEX)
+            else -> null
+        }
+        return if (supported == true) {
+            null
+        } else {
+            BridgeError(
+                code = "RUNTIME_INCOMPATIBLE_MODEL_FORMAT",
+                detail = buildString {
+                    append("modelId=")
+                    append(modelId)
+                    append("|required_format=")
+                    append(requiredFormat)
+                    append("|runtime_support=")
+                    append(supported?.toString() ?: "unknown")
+                    append("|compiled_backends=")
+                    append(parseCompiledBackends(diagnostics).joinToString(separator = ","))
+                },
+            )
+        }
+    }
+
     private fun resolveLoadAttemptError(
         throwable: Throwable?,
         modelId: String,
@@ -1649,6 +1722,12 @@ class NativeJniLlamaCppBridge(
             option = RegexOption.IGNORE_CASE,
         )
         private val LAST_ERROR_DETAIL_REGEX = "\"last_error_detail\"\\s*:\\s*\"([^\"]*)\"".toRegex(
+            option = RegexOption.IGNORE_CASE,
+        )
+        private val SUPPORTS_Q1_0_REGEX = "\"supports_q1_0\"\\s*:\\s*(true|false)".toRegex(
+            option = RegexOption.IGNORE_CASE,
+        )
+        private val SUPPORTS_Q1_0_G128_REGEX = "\"supports_q1_0_g128\"\\s*:\\s*(true|false)".toRegex(
             option = RegexOption.IGNORE_CASE,
         )
         private val RETRYABLE_GPU_LOAD_ERROR_TERMS = setOf(

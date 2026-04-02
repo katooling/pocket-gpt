@@ -36,6 +36,11 @@ object UiErrorMapper {
         val detail = startupChecks.joinToString(" | ")
         val normalized = detail.lowercase()
         val (userMessage, recovery) = when {
+            normalized.contains("runtime_incompatible_model_format") ||
+                normalized.contains("required_format=q1_0_g128") ||
+                normalized.contains("supports_q1_0_g128")
+            ->
+                "This build does not include the 1-bit Bonsai runtime support. Install a compatible build or switch models." to RecoveryAction.CHANGE_MODEL
             normalized.contains("missing runtime model") ->
                 "Runtime setup is incomplete. Download or import required models, then refresh checks." to RecoveryAction.REDOWNLOAD_MODEL
             normalized.contains("model_artifact_config_missing") ->
@@ -169,11 +174,20 @@ object UiErrorMapper {
     fun fromModelLifecycleResult(result: RuntimeModelLifecycleCommandResult): UiError? {
         if (result.success) return null
         val errorCode = result.errorCodeName() ?: "UNKNOWN"
+        val normalizedDetail = result.detail?.lowercase().orEmpty()
         val (userMessage, recovery) = when (errorCode) {
             "MODEL_FILE_UNAVAILABLE" ->
                 "Model file is unavailable. Re-download or re-import the model." to RecoveryAction.REDOWNLOAD_MODEL
             "RUNTIME_INCOMPATIBLE" ->
-                "Model is not compatible with this runtime. Choose a different model." to RecoveryAction.CHANGE_MODEL
+                if (
+                    normalizedDetail.contains("q1_0_g128") ||
+                    normalizedDetail.contains("bonsai") ||
+                    normalizedDetail.contains("runtime_incompatible_model_format")
+                ) {
+                    "This build does not include the 1-bit Bonsai runtime support. Install a compatible build or switch models." to RecoveryAction.CHANGE_MODEL
+                } else {
+                    "Model is not compatible with this runtime. Choose a different model." to RecoveryAction.CHANGE_MODEL
+                }
             "OUT_OF_MEMORY" ->
                 "Model could not fit in available memory. Try a smaller model, lower context, or offload the current model first." to RecoveryAction.CHANGE_MODEL
             "BACKEND_INIT_FAILED" ->

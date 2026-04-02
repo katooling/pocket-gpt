@@ -35,7 +35,7 @@ Key descriptor fields:
 |---|---|
 | `modelId` | Unique string ID (e.g., `phi-4-mini-instruct-q4_k_m`) |
 | `tier` | `BASELINE` for production models, `DEBUG` for test/draft models |
-| `bridgeSupported` | `true` if the native bridge can load it |
+| `bridgeSupported` | `true` only after a real JNI/device-path test proves the vendored native runtime can load its format |
 | `autoRoutingEnabled` | `true` to include in adaptive routing policy |
 | `capabilities` | Set of `SHORT_TEXT`, `LONG_TEXT`, `REASONING`, `IMAGE` |
 | `minRamGb` | Minimum device RAM for safe inference |
@@ -105,6 +105,7 @@ This validates:
 - Distribution entries reference known catalog models
 - All RoutingMode enum values are bound to descriptors
 - All `chatTemplateId` values reference valid template profiles
+- Bridge-supported models are expected to have runtime capability validation, not just catalog coverage
 
 ### 8. Run tests
 
@@ -120,6 +121,8 @@ Because the tests are **catalog-driven**, adding a new model to the descriptor l
 You should **not** need to edit any of these test files when adding a standard model.
 
 The only test that may need manual updates is `AdaptiveRoutingPolicyTest`, since routing case expectations depend on the relative quality/speed ranks of all models in the catalog.
+
+For specialized runtimes or quantizations such as Bonsai-style 1-bit GGUFs, catalog-driven tests are not enough. Add or update a real Android instrumentation smoke that seeds the model path and exercises JNI load before marking the model as `bridgeSupported`.
 
 ## Files touched (typical new model with existing template)
 
