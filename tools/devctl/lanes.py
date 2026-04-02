@@ -219,6 +219,7 @@ def _instrumentation_args_from_model_paths(model_paths_by_id: Mapping[str, str])
     arg_map = {
         "qwen3.5-0.8b-q4": "stage2_model_0_8b_path",
         "qwen3.5-2b-q4": "stage2_model_2b_path",
+        "bonsai-8b-q1_0_g128": "stage2_model_bonsai_path",
     }
     runner_args: dict[str, str] = {}
     for model_id, arg_key in arg_map.items():
