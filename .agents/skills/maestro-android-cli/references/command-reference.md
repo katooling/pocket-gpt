@@ -1,35 +1,56 @@
 # Maestro Android CLI Reference
 
-Use this when you need the concrete PocketGPT workflow for `maestro-android`.
-
-## Setup
+## Device-Pinned Lanes
 
 ```bash
-pipx install -e /path/to/maestro-android
-cp /path/to/maestro-android/examples/pocket-gpt/maestro-android.pocket-gpt.yaml .maestro-android.yaml
+maestro-android lane maestro --device RFCT2178PDV
+maestro-android lane journey --device RFCT2178PDV
+maestro-android lane screenshot-pack --device RFCT2178PDV
 ```
 
-## PocketGPT Workflow
+## Targeted Instrumented Runs
 
-- `doctor` checks Android tooling, `adb`, `maestro`, `gradlew`, and config presence.
-- `lane smoke` runs the stable smoke flow set.
-- `lane journey` and `lane screenshot-pack` inspect structured evidence outputs.
-- `scoped` is the fast one-flow repro path for crashes, hangs, or runtime regressions.
-- `report latest` finds the newest artifact bundle.
-- `trace latest` shows the trace-capable bundle and `trace.json`.
-- `cloud smoke` runs hosted smoke coverage.
-- `cloud benchmark` runs hosted GPU-vs-CPU checks.
-- `cloud status` polls Maestro Cloud upload ids.
+```bash
+maestro-android scoped \
+  --type instrumented \
+  --device RFCT2178PDV \
+  --test-class com.pocketagent.android.ChatQuickLoadFlowInstrumentationTest
+```
 
-## Scoped Flow Rules
+```bash
+maestro-android scoped \
+  --type instrumented \
+  --device RFCT2178PDV \
+  --test-class com.pocketagent.android.MainActivityUiSmokeTest \
+  --runner-arg screenshot_pack_dir=tmp/screenshots \
+  --runner-arg screenshot_pack_fallback_dir=tmp/screenshots-fallback \
+  --no-build \
+  --no-install
+```
 
-- Put scoped repro flows in `tmp/`.
-- Start the file with title and description comments.
-- Use `--no-build --no-install` for fast reruns once the repro is stable.
-- Use `--device` or `--serial` only when multiple devices are attached.
+## Scoped Maestro Repros
 
-## When Not To Use It
+```bash
+maestro-android scoped --flow tmp/runtime-ready-repro.yaml
+maestro-android scoped --flow tmp/runtime-ready-repro.yaml --no-build --no-install
+```
 
-- Do not replace canonical repo lanes with `scoped`.
-- Do not use `scoped` as release evidence.
-- Do not move PocketGPT-specific policy out of `devctl` unless the repo is intentionally standardizing it in the standalone CLI.
+## Device Storage Inspection
+
+```bash
+maestro-android device files models/
+maestro-android device files --storage media models/
+maestro-android device files --storage media runtime-model-downloads/
+maestro-android device push --storage media mmproj-q8_0.gguf models/
+```
+
+## Runtime Triage
+
+```bash
+maestro-android device logcat --follow --filter "MULTIMODAL|SendMessage|PocketLlama|RuntimeOrchestrator"
+maestro-android device logcat --filter "FATAL|SIGSEGV|ANR" --lines 80
+maestro-android device ui
+maestro-android device info
+maestro-android report latest
+maestro-android trace latest
+```

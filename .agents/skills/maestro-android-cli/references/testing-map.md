@@ -26,11 +26,14 @@ Use the smallest standard command that proves the change.
 8. `bash scripts/dev/scoped-repro.sh --flow tmp/<name>.yaml`
    - Use only for one short runtime crash/hang/regression path.
    - Keep the flow minimal, with `title` and `description` comments in the first two lines.
-9. `maestro-android cloud smoke`
+9. `maestro-android scoped --type instrumented --device <serial> --test-class com.example.Test[#method]`
+   - Use for one connected Android test class or method without rerunning the full lane.
+   - Add `--runner-arg key=value` for screenshot-pack or other instrumentation args.
+10. `maestro-android cloud smoke`
    - Hosted supplemental smoke coverage only.
-10. `maestro-android cloud benchmark`
+11. `maestro-android cloud benchmark`
    - Hosted GPU-vs-CPU benchmark coverage only.
-11. `maestro-android cloud status label:upload-id`
+12. `maestro-android cloud status label:upload-id`
    - Poll upload ids when a cloud run has already been started.
 
 ## Best Practices
@@ -40,3 +43,12 @@ Use the smallest standard command that proves the change.
 - Prefer stable selectors (`id:`/resource-id) over fragile text when the app exposes them.
 - Treat cloud coverage as supplemental. Do not use it as the only merge gate.
 - Preserve first-failure artifacts when a bounded retry is part of the gate.
+- Use `maestro-android lane <name> --device <serial>` when you want a repo lane on a specific phone without manually exporting `ANDROID_SERIAL`.
+- For PocketGPT model/download debugging, inspect `Android/media` with `maestro-android device files --storage media ...`.
+
+## Targeted Device Loops
+
+1. `maestro-android scoped --type instrumented --device <serial> --test-class com.pocketagent.android.ChatQuickLoadFlowInstrumentationTest`
+2. `maestro-android scoped --type instrumented --device <serial> --test-class com.pocketagent.android.MainActivityUiSmokeTest --runner-arg screenshot_pack_dir=tmp/screens`
+3. `maestro-android device ui`
+4. `maestro-android device logcat --follow --filter "PocketLlama|RuntimeOrchestrator|MULTIMODAL"`

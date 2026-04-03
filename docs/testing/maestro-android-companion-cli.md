@@ -47,9 +47,13 @@ That example config preserves the repo’s current operating model:
 - `cloud benchmark` runs the hosted GPU-vs-CPU benchmark loop directly
 - `cloud status` replaces the upload-status polling shell helper
 - `scoped` remains the fast one-flow repro path, but now runs through the external CLI with the same `tmp/` and title/description flow convention
+- `scoped --type instrumented --test-class <Class[#method]>` now provides the short connectedAndroidTest loop that previously required a long manual Gradle command
+- `scoped --runner-arg key=value` maps directly to `-Pandroid.testInstrumentationRunnerArguments.<key>=<value>` for screenshot-pack and other harness-only args
+- `lane <name> --device <serial>` pins `ANDROID_SERIAL` for delegated lanes such as `devctl`
 - `lint` checks tmp flow conventions and stale scoped flows
 - `audit-selectors` inventories id-based vs text-based selectors before you widen a refactor
 - `clean --stale-flows` removes old scoped tmp flows after a dry run
+- `device files|push --storage media ...` targets PocketGPT's shared `Android/media/<app>` model cache instead of only `Android/data/<app>/files`
 
 ## Bundle download validation with a local manifest
 
@@ -83,9 +87,14 @@ See `.claude/skills/maestro-android-cli/references/testing-map.md` for the canon
 
 ```bash
 maestro-android lane smoke
+maestro-android lane journey --device RFCT2178PDV
 maestro-android lane journey -- --repeats 2
 maestro-android lane screenshot-pack
 maestro-android scoped --flow tmp/maestro-repro.yaml
+maestro-android scoped --type instrumented --device RFCT2178PDV --test-class com.pocketagent.android.ChatQuickLoadFlowInstrumentationTest
+maestro-android scoped --type instrumented --device RFCT2178PDV --test-class com.pocketagent.android.MainActivityUiSmokeTest --runner-arg screenshot_pack_dir=tmp/screens
+maestro-android device files --storage media models/
+maestro-android device push --storage media mmproj-q8_0.gguf models/
 maestro-android lint
 maestro-android audit-selectors
 maestro-android clean --stale-flows --confirm
