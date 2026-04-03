@@ -1,5 +1,10 @@
 package com.pocketagent.android.runtime
 
+import com.pocketagent.android.runtime.modelmanager.InstalledArtifactDescriptor
+import com.pocketagent.android.runtime.modelmanager.GgufMetadataExtractor
+import com.pocketagent.core.model.ModelArtifactRole
+import com.pocketagent.core.model.ModelSourceKind
+import com.pocketagent.inference.ModelCatalog
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
@@ -46,28 +51,103 @@ internal fun AndroidRuntimeProvisioningStore.encodeStoredVersions(entries: List<
 internal fun AndroidRuntimeProvisioningStore.writeManagedMetadataIfApplicable(
     modelId: String,
     entry: StoredVersionEntry,
+    sourceKind: ModelSourceKind? = null,
+    promptProfileId: String? = null,
+    installedArtifacts: List<InstalledArtifactDescriptor>? = null,
 ) {
     val target = File(entry.absolutePath)
-    if (!target.exists() || !target.isFile || !isManagedModelFile(target)) {
+    if (!target.exists() || !target.isFile || !isMetadataSidecarEligiblePath(target)) {
         return
     }
     val metadataFile = metadataFileFor(entry.absolutePath)
-    val payload = JSONObject()
-        .put("modelId", modelId)
-        .put("version", entry.version)
-        .put("absolutePath", entry.absolutePath)
-        .put("sha256", entry.sha256)
-        .put("provenanceIssuer", entry.provenanceIssuer)
-        .put("provenanceSignature", entry.provenanceSignature)
-        .put("runtimeCompatibility", entry.runtimeCompatibility)
-        .put("fileSizeBytes", entry.fileSizeBytes)
-        .put("importedAtEpochMs", entry.importedAtEpochMs)
+    val normalizedSpec = ModelCatalog.normalizedSpecFor(modelId)
+    val variant = normalizedSpec?.variant(entry.version) ?: normalizedSpec?.variant(null)
+    val primaryArtifact = InstalledArtifactDescriptor(
+        artifactId = "$modelId::${entry.version}::primary",
+        role = ModelArtifactRole.PRIMARY_GGUF,
+        fileName = target.name,
+        absolutePath = entry.absolutePath,
+        expectedSha256 = entry.sha256,
+        runtimeCompatibility = entry.runtimeCompatibility,
+        fileSizeBytes = entry.fileSizeBytes,
+    )
+    val bundledArtifacts = variant?.artifactBundle
+        ?.artifacts
+        ?.filterNot { artifact -> artifact.role == ModelArtifactRole.PRIMARY_GGUF }
+        ?.map { artifact ->
+            val fileName = artifact.locator.fileName.orEmpty()
+            InstalledArtifactDescriptor(
+                artifactId = artifact.artifactId,
+                role = artifact.role,
+                fileName = fileName,
+                absolutePath = resolveSiblingArtifactPath(fileName),
+                expectedSha256 = artifact.sha256,
+                runtimeCompatibility = artifact.runtimeCompatibility,
+                fileSizeBytes = artifact.fileSizeBytes,
+                required = artifact.required,
+            )
+        }
+        .orEmpty()
+    val resolvedArtifacts = installedArtifacts ?: (listOf(primaryArtifact) + bundledArtifacts)
     runCatching {
-        metadataFile.parentFile?.mkdirs()
-        metadataFile.writeText(payload.toString())
+        StoredModelSidecarMetadataStore.write(
+            metadataFile = metadataFile,
+            metadata = StoredModelSidecarMetadata(
+                modelId = modelId,
+                version = entry.version,
+                sourceKind = sourceKind ?: when (normalizedSpec?.source?.kind) {
+                    null -> ModelSourceKind.LOCAL_IMPORT
+                    else -> normalizedSpec.source.kind
+                },
+                promptProfileId = promptProfileId ?: normalizedSpec?.promptProfile?.profileId,
+                artifacts = resolvedArtifacts,
+            ),
+        )
+        GgufMetadataExtractor.extractAndPersist(
+            modelFile = target,
+            metadataFile = metadataFile,
+        )
     }
+}
+
+internal fun AndroidRuntimeProvisioningStore.readSidecarMetadata(absolutePath: String): StoredModelSidecarMetadata? {
+    return StoredModelSidecarMetadataStore.read(metadataFileFor(absolutePath))
 }
 
 internal fun AndroidRuntimeProvisioningStore.metadataFileFor(absolutePath: String): File {
     return File("$absolutePath$PROVISIONING_METADATA_SUFFIX")
+}
+
+private fun AndroidRuntimeProvisioningStore.resolveSiblingArtifactPath(fileName: String): String? {
+    if (fileName.isBlank()) {
+        return null
+    }
+    val candidates = buildList {
+        add(File(managedModelDirectory(), fileName))
+        context.getExternalFilesDir(null)?.let { root ->
+            add(File(root, "$PROVISIONING_MANAGED_MODELS_DIR_NAME/$fileName"))
+        }
+    }
+    return candidates.firstOrNull { candidate -> candidate.exists() && candidate.isFile }?.absolutePath
+}
+
+private fun AndroidRuntimeProvisioningStore.isMetadataSidecarEligiblePath(target: File): Boolean {
+    if (isManagedModelFile(target)) {
+        return true
+    }
+    val packageName = context.packageName
+    val appOwnedRoots = listOfNotNull(
+        context.filesDir,
+        context.cacheDir,
+        context.getExternalFilesDir(null),
+        File("/storage/emulated/0/Android/media/$packageName/models"),
+        File("/storage/emulated/0/Download/$packageName/models"),
+        File("/sdcard/Android/media/$packageName/models"),
+        File("/sdcard/Download/$packageName/models"),
+    )
+    val targetPath = runCatching { target.canonicalPath }.getOrNull() ?: return false
+    return appOwnedRoots.any { root ->
+        val rootPath = runCatching { root.canonicalPath }.getOrNull() ?: return@any false
+        targetPath == rootPath || targetPath.startsWith("$rootPath${File.separator}")
+    }
 }

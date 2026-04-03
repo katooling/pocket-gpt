@@ -23,11 +23,23 @@ enum class BackendFeatureQualificationState {
     UNAVAILABLE,
 }
 
+enum class RuntimeBackendFamily {
+    CPU,
+    OPENCL,
+    HEXAGON,
+    VULKAN,
+}
+
 data class RuntimeBackendCapability(
+    val family: RuntimeBackendFamily,
     val backend: String,
     val compiled: Boolean,
+    val registered: Boolean = false,
     val discovered: Boolean? = null,
     val active: Boolean,
+    val deviceCount: Int? = null,
+    val runtimeAvailable: Boolean? = null,
+    val qualified: Boolean? = null,
 )
 
 data class RuntimeDiagnosticsSnapshot(
@@ -41,12 +53,14 @@ data class RuntimeDiagnosticsSnapshot(
     val discoveredBackends: List<String>? = null,
     val activeBackend: String? = null,
     val backendCapabilities: List<RuntimeBackendCapability> = emptyList(),
+    val backendCapabilityByFamily: Map<RuntimeBackendFamily, RuntimeBackendCapability> = emptyMap(),
     val backendQualificationState: BackendQualificationState = BackendQualificationState.UNKNOWN,
     val nativeRuntimeSupported: Boolean? = null,
     val strictAcceleratorFailFast: Boolean? = null,
     val autoBackendCpuFallback: Boolean? = null,
     val openclDeviceVersion: String? = null,
     val openclAdrenoGeneration: Int? = null,
+    val requestedModelQuantization: String? = null,
     val activeModelQuantization: String? = null,
     val supportsQ10: Boolean? = null,
     val supportsQ10G128: Boolean? = null,
@@ -61,7 +75,11 @@ data class RuntimeDiagnosticsSnapshot(
     val quantizedKvQualificationState: BackendFeatureQualificationState = BackendFeatureQualificationState.UNKNOWN,
     val flashAttnGuardReason: String? = null,
     val quantizedKvGuardReason: String? = null,
-)
+) {
+    fun backendCapability(family: RuntimeBackendFamily): RuntimeBackendCapability? {
+        return backendCapabilityByFamily[family]
+    }
+}
 
 internal object RuntimeDiagnosticsSnapshotParser {
     fun parse(exportedDiagnostics: String?): RuntimeDiagnosticsSnapshot {
@@ -106,11 +124,6 @@ internal object RuntimeDiagnosticsSnapshotParser {
             discoveredBackendsOverride = gpuProbeFields["discovered_backends"],
             activeBackend = activeBackend,
         )
-        val backendCapabilities = buildBackendCapabilities(
-            compiledBackends = compiledBackends,
-            discoveredBackends = discoveredBackends,
-            activeBackend = activeBackend,
-        )
         val probeStatus = gpuProbeFields["status"]?.trim()?.ifEmpty { null }
             ?: offloadFields["probe_status"]?.trim()?.ifEmpty { null }
         val probeReason = gpuProbeFields["reason"]?.trim()?.ifEmpty { null }
@@ -121,8 +134,19 @@ internal object RuntimeDiagnosticsSnapshotParser {
                 probeStatus = probeStatus,
                 probeReason = probeReason,
             )
+        val backendCapabilities = buildBackendCapabilities(
+            compiledBackends = compiledBackends,
+            registeredBackends = registeredBackends,
+            discoveredBackends = discoveredBackends,
+            activeBackend = activeBackend,
+            openclDeviceCount = openclDeviceCount,
+            hexagonDeviceCount = hexagonDeviceCount,
+            runtimeSupported = runtimeSupported,
+            backendQualificationState = backendQualificationState,
+        )
         val openclDeviceVersion = nativePayloadRoot.stringOrNull("opencl_device_version")
         val openclAdrenoGeneration = nativePayloadRoot.intOrNull("opencl_adreno_generation")
+        val requestedModelQuantization = nativePayloadRoot.stringOrNull("requested_model_quantization")
         val activeModelQuantization = nativePayloadRoot.stringOrNull("active_model_quantization")
         val supportsQ10 = nativePayloadRoot.booleanOrNull("supports_q1_0")
         val supportsQ10G128 = nativePayloadRoot.booleanOrNull("supports_q1_0_g128")
@@ -161,12 +185,14 @@ internal object RuntimeDiagnosticsSnapshotParser {
             discoveredBackends = discoveredBackends,
             activeBackend = activeBackend,
             backendCapabilities = backendCapabilities,
+            backendCapabilityByFamily = backendCapabilities.associateBy { capability -> capability.family },
             backendQualificationState = backendQualificationState,
             nativeRuntimeSupported = runtimeSupported,
             strictAcceleratorFailFast = strictAcceleratorFailFast,
             autoBackendCpuFallback = autoBackendCpuFallback,
             openclDeviceVersion = openclDeviceVersion,
             openclAdrenoGeneration = openclAdrenoGeneration,
+            requestedModelQuantization = requestedModelQuantization,
             activeModelQuantization = activeModelQuantization,
             supportsQ10 = supportsQ10,
             supportsQ10G128 = supportsQ10G128,
@@ -298,24 +324,114 @@ internal object RuntimeDiagnosticsSnapshotParser {
 
     private fun buildBackendCapabilities(
         compiledBackends: List<String>,
+        registeredBackends: List<String>?,
         discoveredBackends: List<String>?,
         activeBackend: String?,
+        openclDeviceCount: Int?,
+        hexagonDeviceCount: Int?,
+        runtimeSupported: Boolean?,
+        backendQualificationState: BackendQualificationState,
     ): List<RuntimeBackendCapability> {
         val normalizedActiveBackend = activeBackend?.trim()?.lowercase()?.takeIf { value -> value.isNotEmpty() }
         val backendNames = mutableSetOf<String>()
         backendNames += compiledBackends
+        registeredBackends?.let { backendNames += it }
         discoveredBackends?.let { backendNames += it }
         normalizedActiveBackend?.let { backendNames += it }
         return backendNames
             .sorted()
-            .map { backend ->
+            .mapNotNull { backend ->
+                val family = backendFamilyFor(backend) ?: return@mapNotNull null
+                val discovered = discoveredBackends?.contains(backend)
+                val active = normalizedActiveBackend == backend
+                val registered = registeredBackends?.contains(backend) == true
+                val deviceCount = when (family) {
+                    RuntimeBackendFamily.OPENCL -> openclDeviceCount
+                    RuntimeBackendFamily.HEXAGON -> hexagonDeviceCount
+                    RuntimeBackendFamily.CPU,
+                    RuntimeBackendFamily.VULKAN,
+                    -> null
+                }
                 RuntimeBackendCapability(
+                    family = family,
                     backend = backend,
                     compiled = compiledBackends.contains(backend),
-                    discovered = discoveredBackends?.contains(backend),
-                    active = normalizedActiveBackend == backend,
+                    registered = registered,
+                    discovered = discovered,
+                    active = active,
+                    deviceCount = deviceCount,
+                    runtimeAvailable = resolveRuntimeAvailability(
+                        family = family,
+                        discovered = discovered,
+                        active = active,
+                        deviceCount = deviceCount,
+                        runtimeSupported = runtimeSupported,
+                        registered = registered,
+                    ),
+                    qualified = resolveBackendQualifiedState(
+                        family = family,
+                        active = active,
+                        runtimeSupported = runtimeSupported,
+                        backendQualificationState = backendQualificationState,
+                    ),
                 )
             }
+    }
+
+    private fun backendFamilyFor(backend: String): RuntimeBackendFamily? {
+        return when (backend.trim().lowercase()) {
+            "cpu" -> RuntimeBackendFamily.CPU
+            "opencl" -> RuntimeBackendFamily.OPENCL
+            "hexagon" -> RuntimeBackendFamily.HEXAGON
+            "vulkan" -> RuntimeBackendFamily.VULKAN
+            else -> null
+        }
+    }
+
+    private fun resolveRuntimeAvailability(
+        family: RuntimeBackendFamily,
+        discovered: Boolean?,
+        active: Boolean,
+        deviceCount: Int?,
+        runtimeSupported: Boolean?,
+        registered: Boolean,
+    ): Boolean? {
+        return when (family) {
+            RuntimeBackendFamily.CPU -> if (active || registered) true else null
+            RuntimeBackendFamily.OPENCL,
+            RuntimeBackendFamily.HEXAGON,
+            -> when {
+                deviceCount != null -> deviceCount > 0
+                discovered != null -> discovered
+                active && runtimeSupported != null -> runtimeSupported
+                else -> null
+            }
+            RuntimeBackendFamily.VULKAN -> discovered
+        }
+    }
+
+    private fun resolveBackendQualifiedState(
+        family: RuntimeBackendFamily,
+        active: Boolean,
+        runtimeSupported: Boolean?,
+        backendQualificationState: BackendQualificationState,
+    ): Boolean? {
+        return when (family) {
+            RuntimeBackendFamily.CPU -> if (active) true else null
+            RuntimeBackendFamily.OPENCL,
+            RuntimeBackendFamily.HEXAGON,
+            RuntimeBackendFamily.VULKAN,
+            -> when {
+                active && backendQualificationState == BackendQualificationState.PROBE_QUALIFIED -> true
+                runtimeSupported == false -> false
+                active && backendQualificationState in setOf(
+                    BackendQualificationState.RUNTIME_UNSUPPORTED,
+                    BackendQualificationState.MODEL_UNAVAILABLE,
+                    BackendQualificationState.PROBE_FAILED,
+                ) -> false
+                else -> null
+            }
+        }
     }
 
     private fun parseBackendQualificationState(raw: String?): BackendQualificationState? {

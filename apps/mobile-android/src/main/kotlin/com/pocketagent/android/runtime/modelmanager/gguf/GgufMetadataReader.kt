@@ -13,7 +13,7 @@ import java.io.InputStream
 interface GgufMetadataReader {
     suspend fun ensureSourceFileFormat(file: File): Boolean
     suspend fun ensureSourceFileFormat(context: Context, uri: Uri): Boolean
-    suspend fun readStructuredMetadata(input: InputStream): GgufMetadata
+    fun readStructuredMetadata(input: InputStream): GgufMetadata
 
     companion object {
         private val DEFAULT_SKIP_KEYS = setOf(

@@ -3,6 +3,9 @@ package com.pocketagent.android
 import android.app.ActivityManager
 import android.content.Context
 import android.util.Log
+import com.pocketagent.android.runtime.ModelAdmissionAction
+import com.pocketagent.android.runtime.ModelAdmissionPolicy
+import com.pocketagent.android.runtime.toAdmissionSubject
 import com.pocketagent.android.runtime.ModelMemoryEstimator
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.nativebridge.ModelLifecycleErrorCode
@@ -22,6 +25,7 @@ internal class AppRuntimeLifecycleCoordinator(
     private val currentGraphProvider: () -> AppRuntimeGraph?,
     private val installProductionRuntime: (Context) -> Unit,
     private val memoryEstimateRecorder: (ModelMemoryEstimator.EstimationResult?) -> Unit,
+    private val modelAdmissionPolicyProvider: (Context) -> ModelAdmissionPolicy,
 ) {
     private val lifecycleCommandMutex = Mutex()
     private val lifecycleState = MutableStateFlow(RuntimeModelLifecycleSnapshot.initial())
@@ -95,6 +99,15 @@ internal class AppRuntimeLifecycleCoordinator(
                 )
                 applyLifecycleCommandResult(missing, requestedModel = requestedModel)
                 return@withLock missing
+            }
+            val admissionDecision = modelAdmissionPolicyProvider(context).evaluate(
+                action = ModelAdmissionAction.LOAD,
+                subject = installed.toAdmissionSubject(),
+            )
+            if (!admissionDecision.allowed) {
+                val rejected = admissionDecision.asLifecycleRejectedResult()
+                applyLifecycleCommandResult(rejected, requestedModel = requestedModel)
+                return@withLock rejected
             }
             lifecycleState.value = lifecycleState.value.copy(
                 loadingDetail = "Checking available memory...",

@@ -8,9 +8,13 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.pocketagent.android.runtime.modelmanager.InstalledArtifactDescriptor
 import com.pocketagent.android.runtime.modelmanager.ModelDownloadWorker
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
 import com.pocketagent.android.runtime.modelmanager.StorageSummary
+import com.pocketagent.core.model.ModelArtifactRole
+import com.pocketagent.core.model.ModelSourceKind
+import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.ModelRuntimeProfile
 import com.pocketagent.runtime.ModelRegistry
 import com.pocketagent.runtime.RuntimeConfig
@@ -238,6 +242,9 @@ class AndroidRuntimeProvisioningStore(
         runtimeCompatibility: String,
         fileSizeBytes: Long,
         makeActive: Boolean = false,
+        sourceKind: ModelSourceKind? = null,
+        promptProfileId: String? = null,
+        installedArtifacts: List<InstalledArtifactDescriptor>? = null,
     ): RuntimeModelImportResult {
         val spec = modelSpecFor(modelId)
         return withModelLock(modelId) {
@@ -254,6 +261,9 @@ class AndroidRuntimeProvisioningStore(
                 runtimeCompatibility = runtimeCompatibility.ifBlank { PROVISIONING_RUNTIME_COMPATIBILITY_TAG },
                 fileSizeBytes = fileSizeBytes.coerceAtLeast(0L),
                 makeActive = makeActive,
+                sourceKind = sourceKind,
+                promptProfileId = promptProfileId,
+                installedArtifacts = installedArtifacts,
             )
             val mirrored = runCatching {
                 mirrorInstalledModelToDownloads(
@@ -373,17 +383,26 @@ class AndroidRuntimeProvisioningStore(
         return withModelLock(modelId) {
             ensureMigrated()
             val versions = readStoredVersionEntries(spec).toMutableList()
+            val installedDescriptors = readInstalledVersions(spec)
             val activeVersion = prefs.readOptional(activeVersionKey(spec))
             if (activeVersion == version) {
                 return@withModelLock false
             }
             val target = versions.firstOrNull { it.version == version } ?: return@withModelLock false
+            val targetDescriptor = installedDescriptors.firstOrNull { descriptor -> descriptor.version == version }
             versions.removeIf { it.version == version }
             writeStoredVersionEntries(spec, versions)
             deleteManagedFileIfOrphaned(
                 absolutePath = target.absolutePath,
                 remainingEntries = versions,
             )
+            targetDescriptor?.let { descriptor ->
+                deleteInstalledArtifactsIfOrphaned(
+                    removedArtifacts = descriptor.artifacts
+                        .filter { artifact -> artifact.role != ModelArtifactRole.PRIMARY_GGUF },
+                    removedPrimaryPath = target.absolutePath,
+                )
+            }
             val lastLoaded = lastLoadedModel()
             if (lastLoaded != null && lastLoaded.modelId == modelId && lastLoaded.version == version) {
                 clearLastLoadedModel()
@@ -395,16 +414,56 @@ class AndroidRuntimeProvisioningStore(
         }
     }
 
+    private fun deleteInstalledArtifactsIfOrphaned(
+        removedArtifacts: List<com.pocketagent.android.runtime.modelmanager.InstalledArtifactDescriptor>,
+        removedPrimaryPath: String,
+    ) {
+        if (removedArtifacts.isEmpty()) {
+            return
+        }
+        val remainingArtifactPaths = allModelSpecs()
+            .flatMap { candidateSpec -> readInstalledVersions(candidateSpec) }
+            .flatMap { descriptor ->
+                descriptor.artifacts
+                    .mapNotNull { artifact -> artifact.absolutePath }
+            }
+            .filter { path -> path != removedPrimaryPath }
+            .toSet()
+        removedArtifacts
+            .mapNotNull { artifact -> artifact.absolutePath?.takeIf { it.isNotBlank() } }
+            .filterNot { path -> remainingArtifactPaths.contains(path) }
+            .forEach { path ->
+                val file = File(path)
+                if (isManagedModelFile(file)) {
+                    file.takeIf { it.exists() && it.isFile }?.delete()
+                }
+            }
+    }
+
     fun storageSummary(): StorageSummary {
         ensureMigrated()
         val storageRoot = managedStorageRoot()
         val usedByModels = allModelSpecs()
-            .flatMap { spec -> readStoredVersionEntries(spec) }
-            .sumOf { it.fileSizeBytes.coerceAtLeast(0L) }
+            .flatMap { spec -> readInstalledVersions(spec) }
+            .flatMap { descriptor ->
+                descriptor.artifacts.map { artifact ->
+                    val absolutePath = artifact.absolutePath
+                    absolutePath to (
+                        artifact.fileSizeBytes
+                            ?: absolutePath?.let { path -> File(path).takeIf { it.exists() && it.isFile }?.length() }
+                            ?: 0L
+                        )
+                }
+            }
+            .filter { (path, _) -> !path.isNullOrBlank() }
+            .associate { (path, size) -> path!! to size.coerceAtLeast(0L) }
+            .values
+            .sum()
         val tempDownloadDir = managedDownloadWorkspaceDirectory()
         val tempBytes = tempDownloadDir
             .takeIf { it.exists() && it.isDirectory }
-            ?.listFiles()
+            ?.walkTopDown()
+            ?.filter { it.isFile }
             ?.sumOf { it.length().coerceAtLeast(0L) }
             ?: 0L
         return StorageSummary(
@@ -457,21 +516,23 @@ class AndroidRuntimeProvisioningStore(
     }
 
     fun resolveMmProjPath(modelId: String): String? {
-        val mmProjFileName = com.pocketagent.inference.ModelCatalog.mmProjFileNameFor(modelId) ?: return null
-        val managedDir = managedModelDirectory()
-        val managedFile = File(managedDir, mmProjFileName)
-        if (managedFile.exists() && managedFile.isFile) {
-            return managedFile.absolutePath
+        val activeVersion = listInstalledVersions(modelId)
+            .firstOrNull { descriptor -> descriptor.isActive }
+        val mmProjArtifact = activeVersion
+            ?.artifacts
+            ?.firstOrNull { artifact -> artifact.role == ModelArtifactRole.MMPROJ }
+        val explicitPath = mmProjArtifact?.absolutePath?.takeIf { candidate ->
+            val file = File(candidate)
+            file.exists() && file.isFile
         }
-        val externalRoots = arrayOf(context.getExternalFilesDir(null))
-        for (root in externalRoots) {
-            if (root == null) continue
-            val candidate = File(root, "$PROVISIONING_MANAGED_MODELS_DIR_NAME/$mmProjFileName")
-            if (candidate.exists() && candidate.isFile) {
-                return candidate.absolutePath
-            }
+        if (explicitPath != null) {
+            return explicitPath
         }
-        return null
+        val declaredFileName = mmProjArtifact?.fileName
+            ?.takeIf { it.isNotBlank() }
+            ?: ModelCatalog.mmProjFileNameFor(modelId)
+            ?: return null
+        return resolveBundledArtifactPath(declaredFileName)
     }
 
     fun expectedRuntimeCompatibilityTag(): String = PROVISIONING_RUNTIME_COMPATIBILITY_TAG
@@ -486,6 +547,9 @@ class AndroidRuntimeProvisioningStore(
         runtimeCompatibility: String,
         fileSizeBytes: Long,
         makeActive: Boolean,
+        sourceKind: ModelSourceKind? = null,
+        promptProfileId: String? = null,
+        installedArtifacts: List<InstalledArtifactDescriptor>? = null,
     ): RuntimeModelImportResult {
         val entries = readStoredVersionEntries(spec).toMutableList()
         val now = System.currentTimeMillis()
@@ -508,6 +572,9 @@ class AndroidRuntimeProvisioningStore(
         writeManagedMetadataIfApplicable(
             modelId = spec.modelId,
             entry = entry,
+            sourceKind = sourceKind,
+            promptProfileId = promptProfileId,
+            installedArtifacts = installedArtifacts,
         )
         if (makeActive || prefs.readOptional(activeVersionKey(spec)).isNullOrBlank()) {
             prefs.edit().putString(activeVersionKey(spec), sanitizedVersion).apply()
@@ -527,12 +594,50 @@ class AndroidRuntimeProvisioningStore(
         return readInstalledVersionsWithDiagnostics(spec).versions
     }
 
+    private fun resolveBundledArtifactPath(fileName: String): String? {
+        if (fileName.isBlank()) {
+            return null
+        }
+        val managedFile = File(managedModelDirectory(), fileName)
+        if (managedFile.exists() && managedFile.isFile) {
+            return managedFile.absolutePath
+        }
+        val externalRoots = arrayOf(context.getExternalFilesDir(null))
+        for (root in externalRoots) {
+            if (root == null) continue
+            val candidate = File(root, "$PROVISIONING_MANAGED_MODELS_DIR_NAME/$fileName")
+            if (candidate.exists() && candidate.isFile) {
+                return candidate.absolutePath
+            }
+        }
+        return null
+    }
+
     private fun readInstalledVersionsWithDiagnostics(spec: ModelSpec): VersionReadResult {
         val reconciled = reconcileStoredVersionEntries(spec)
         return VersionReadResult(
             versions = reconciled.entries
                 .sortedByDescending { it.importedAtEpochMs }
                 .map { entry ->
+                    val sidecar = readSidecarMetadata(entry.absolutePath)
+                    val sourceKind = sidecar?.sourceKind
+                        ?: if (isManagedModelFile(File(entry.absolutePath))) {
+                            ModelCatalog.normalizedSpecFor(spec.modelId)?.source?.kind ?: ModelSourceKind.BUILT_IN
+                        } else {
+                            ModelSourceKind.LOCAL_IMPORT
+                        }
+                    val installedArtifacts = sidecar?.artifacts?.takeIf { artifacts -> artifacts.isNotEmpty() }
+                        ?: listOf(
+                            InstalledArtifactDescriptor(
+                                artifactId = "${spec.modelId}::${entry.version}::primary",
+                                role = ModelArtifactRole.PRIMARY_GGUF,
+                                fileName = entry.absolutePath.substringAfterLast('/').ifBlank { "${spec.modelId}-${entry.version}.gguf" },
+                                absolutePath = entry.absolutePath,
+                                expectedSha256 = entry.sha256,
+                                runtimeCompatibility = entry.runtimeCompatibility,
+                                fileSizeBytes = entry.fileSizeBytes,
+                            ),
+                        )
                     ModelVersionDescriptor(
                         modelId = spec.modelId,
                         version = entry.version,
@@ -545,6 +650,9 @@ class AndroidRuntimeProvisioningStore(
                         fileSizeBytes = entry.fileSizeBytes,
                         importedAtEpochMs = entry.importedAtEpochMs,
                         isActive = entry.version == prefs.readOptional(activeVersionKey(spec)),
+                        sourceKind = sourceKind,
+                        artifacts = installedArtifacts,
+                        promptProfileId = sidecar?.promptProfileId,
                     )
                 },
             signal = reconciled.signal,

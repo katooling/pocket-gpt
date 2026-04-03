@@ -39,7 +39,7 @@ internal object GgufMetadataExtractor {
      *
      * @return true if GGUF metadata was successfully extracted and persisted.
      */
-    suspend fun extractAndPersist(modelFile: File, metadataFile: File): Boolean {
+    fun extractAndPersist(modelFile: File, metadataFile: File): Boolean {
         if (!modelFile.exists() || !modelFile.isFile) {
             Log.w(LOG_TAG, "Model file does not exist: ${modelFile.absolutePath}")
             return false

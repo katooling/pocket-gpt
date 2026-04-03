@@ -13,11 +13,13 @@ import androidx.activity.viewModels
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.material3.Surface
+import com.pocketagent.android.runtime.AndroidModelEligibilitySignalsProvider
 import com.pocketagent.android.runtime.AndroidGpuOffloadQualifier
 import com.pocketagent.android.runtime.AndroidGpuOffloadSupport
 import com.pocketagent.android.runtime.DefaultProvisioningGateway
 import com.pocketagent.android.runtime.MvpRuntimeGateway
 import com.pocketagent.android.runtime.RuntimeBootstrapper
+import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
 import com.pocketagent.android.ui.ChatViewModel
 import com.pocketagent.android.ui.ChatViewModelFactory
 import com.pocketagent.android.ui.ModelProvisioningViewModel
@@ -40,12 +42,30 @@ class MainActivity : ComponentActivity() {
         RuntimeBootstrapper.runtimeTuning(applicationContext)
     }
 
+    private val deviceGpuOffloadSupport by lazy {
+        AndroidGpuOffloadSupport(applicationContext)
+    }
+
+    private val gpuOffloadQualifier by lazy {
+        AndroidGpuOffloadQualifier(applicationContext)
+    }
+
     private val runtimeGateway by lazy {
         MvpRuntimeGateway(
             facade = RuntimeBootstrapper.runtimeFacade(),
-            deviceGpuOffloadSupport = AndroidGpuOffloadSupport(applicationContext),
-            gpuOffloadQualifier = AndroidGpuOffloadQualifier(applicationContext),
+            deviceGpuOffloadSupport = deviceGpuOffloadSupport,
+            gpuOffloadQualifier = gpuOffloadQualifier,
             runtimeTuning = runtimeTuning,
+        )
+    }
+
+    private val modelEligibilitySignalsProvider by lazy {
+        AndroidModelEligibilitySignalsProvider(
+            runtimeCompatibilityTag = AndroidRuntimeProvisioningStore(applicationContext).expectedRuntimeCompatibilityTag(),
+            deviceGpuOffloadSupport = deviceGpuOffloadSupport,
+            gpuOffloadQualifier = gpuOffloadQualifier,
+            runtimeSupportProvider = { runtimeGateway.supportsGpuOffload() },
+            runtimeDiagnosticsProvider = { runtimeGateway.runtimeDiagnosticsSnapshot() },
         )
     }
 
@@ -62,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private val provisioningViewModel: ModelProvisioningViewModel by viewModels {
         ModelProvisioningViewModelFactory(
             gateway = DefaultProvisioningGateway(applicationContext),
+            eligibilitySignalsProvider = modelEligibilitySignalsProvider,
         )
     }
 

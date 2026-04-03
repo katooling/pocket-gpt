@@ -1,8 +1,15 @@
 package com.pocketagent.android
 
 import android.content.Context
+import com.pocketagent.android.runtime.AndroidGpuOffloadQualifier
+import com.pocketagent.android.runtime.AndroidGpuOffloadSupport
+import com.pocketagent.android.runtime.AndroidModelEligibilitySignalsProvider
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
 import com.pocketagent.android.runtime.AndroidRuntimeTuningStore
+import com.pocketagent.android.runtime.DefaultModelRuntimeLaunchPlanner
+import com.pocketagent.android.runtime.DefaultModelAdmissionPolicy
+import com.pocketagent.android.runtime.MvpRuntimeGateway
+import com.pocketagent.android.runtime.modelspec.DefaultNormalizedModelCatalogRegistry
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionManifestProvider
 import com.pocketagent.android.runtime.modelmanager.ModelDownloadManager
 import com.pocketagent.core.ConversationModule
@@ -79,6 +86,30 @@ internal class AppRuntimeGraphManager {
         val manifestProvider = modelManifestProvider
             ?: ModelDistributionManifestProvider(context.applicationContext)
                 .also { modelManifestProvider = it }
+        val deviceGpuOffloadSupport = AndroidGpuOffloadSupport(context.applicationContext)
+        val gpuOffloadQualifier = AndroidGpuOffloadQualifier(context.applicationContext)
+        val runtimeGateway = MvpRuntimeGateway(
+            facade = hotSwappableRuntimeFacade,
+            deviceGpuOffloadSupport = deviceGpuOffloadSupport,
+            gpuOffloadQualifier = gpuOffloadQualifier,
+            runtimeTuning = runtimeTuning,
+        )
+        val eligibilitySignalsProvider = AndroidModelEligibilitySignalsProvider(
+            runtimeCompatibilityTag = provisioningStore.expectedRuntimeCompatibilityTag(),
+            deviceGpuOffloadSupport = deviceGpuOffloadSupport,
+            gpuOffloadQualifier = gpuOffloadQualifier,
+            runtimeSupportProvider = { runtimeGateway.supportsGpuOffload() },
+            runtimeDiagnosticsProvider = { runtimeGateway.runtimeDiagnosticsSnapshot() },
+        )
+        val normalizedModelCatalogRegistry = DefaultNormalizedModelCatalogRegistry(
+            installedVersionsProvider = { modelId -> provisioningStore.listInstalledVersions(modelId) },
+            knownModelIdsProvider = {
+                provisioningStore.snapshot().models.mapTo(linkedSetOf()) { state -> state.modelId }
+            },
+        )
+        val runtimeLaunchPlanner = DefaultModelRuntimeLaunchPlanner(
+            catalogRegistry = normalizedModelCatalogRegistry,
+        )
         return AppRuntimeGraph(
             provisioningStore = provisioningStore,
             modelDownloadManager = downloadManager,
@@ -87,6 +118,15 @@ internal class AppRuntimeGraphManager {
             conversationModule = conversationModule,
             memoryModule = memoryModule,
             runtimeFacade = hotSwappableRuntimeFacade,
+            runtimeGateway = runtimeGateway,
+            eligibilitySignalsProvider = eligibilitySignalsProvider,
+            normalizedModelCatalogRegistry = normalizedModelCatalogRegistry,
+            runtimeLaunchPlanner = runtimeLaunchPlanner,
+            modelAdmissionPolicy = DefaultModelAdmissionPolicy(
+                signalsProvider = eligibilitySignalsProvider,
+                catalogRegistry = normalizedModelCatalogRegistry,
+                launchPlanner = runtimeLaunchPlanner,
+            ),
         )
     }
 

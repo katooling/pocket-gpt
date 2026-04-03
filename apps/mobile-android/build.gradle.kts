@@ -230,6 +230,11 @@ val verifyAndroidArchitecture by tasks.registering {
                 forbiddenPatterns = listOf("com.pocketagent.android.ui"),
             ),
             SourceBoundaryRule(
+                description = "Model download stack must not depend on compile-time model catalog",
+                roots = listOf("src/main/kotlin/com/pocketagent/android/runtime/modelmanager"),
+                forbiddenPatterns = listOf("import com.pocketagent.inference.ModelCatalog"),
+            ),
+            SourceBoundaryRule(
                 description = "ui/state must not host persistence implementation details",
                 roots = listOf("src/main/kotlin/com/pocketagent/android/ui/state"),
                 forbiddenPatterns = listOf(

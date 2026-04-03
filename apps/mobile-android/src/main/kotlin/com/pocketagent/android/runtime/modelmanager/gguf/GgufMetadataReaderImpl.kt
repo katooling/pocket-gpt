@@ -56,7 +56,7 @@ internal class GgufMetadataReaderImpl(
             it.contentEquals(byteArrayOf(0x47, 0x47, 0x55, 0x46))
         }
 
-    override suspend fun readStructuredMetadata(input: InputStream): GgufMetadata {
+    override fun readStructuredMetadata(input: InputStream): GgufMetadata {
         val version = ensureMagicAndVersion(input)
         val tensorCount = readLittleLong(input)
         val kvCount = readLittleLong(input)

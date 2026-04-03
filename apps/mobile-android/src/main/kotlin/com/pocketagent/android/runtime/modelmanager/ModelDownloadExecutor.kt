@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.util.Log
 import com.pocketagent.android.runtime.AndroidRuntimeProvisioningStore
 import com.pocketagent.android.runtime.RuntimeBootstrapper
+import com.pocketagent.core.model.ModelArtifactRole
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -59,6 +60,12 @@ internal data class ResumeTransferBaseline(
     val truncatePartialFile: Boolean,
 )
 
+internal data class VerifiedBundleArtifact(
+    val state: DownloadArtifactTaskState,
+    val stagedFile: File,
+    val sha256: String,
+)
+
 internal class ModelDownloadExecutor(
     context: Context,
 ) {
@@ -73,6 +80,7 @@ internal class ModelDownloadExecutor(
     ): DownloadExecutionOutcome = withContext(Dispatchers.IO) {
         val task = ModelDownloadTaskStateStore.get(appContext, taskId)
             ?: return@withContext DownloadExecutionOutcome.FAILURE
+        var artifactStates = task.artifactStates
         if (task.status == DownloadTaskStatus.PAUSED) {
             return@withContext DownloadExecutionOutcome.SUCCESS
         }
@@ -84,6 +92,8 @@ internal class ModelDownloadExecutor(
                 reason = DownloadFailureReason.NETWORK_UNAVAILABLE,
                 processingStage = DownloadProcessingStage.DOWNLOADING,
                 message = "No network connection available.",
+                artifactStates = artifactStates,
+                activeArtifactId = artifactStates.firstOrNull()?.artifactId,
             )
             return@withContext if (retryAllowed) {
                 DownloadExecutionOutcome.RETRY
@@ -92,9 +102,7 @@ internal class ModelDownloadExecutor(
             }
         }
 
-        val downloadDir = provisioningStore.managedDownloadWorkspaceDirectory()
-        val partFile = File(downloadDir, "$taskId.part")
-        val destinationFile = provisioningStore.destinationFileForVersion(modelId = task.modelId, version = task.version)
+        val workspaceDir = taskWorkspaceDirectory(taskId).apply { mkdirs() }
 
         try {
             host.updateNotification(taskId = taskId, modelId = task.modelId, percent = 0)
@@ -103,90 +111,267 @@ internal class ModelDownloadExecutor(
                 modelId = task.modelId,
                 version = task.version,
                 status = DownloadTaskStatus.DOWNLOADING,
-                progressBytes = partFile.length().coerceAtLeast(0L),
-                totalBytes = task.totalBytes,
+                progressBytes = artifactStates.sumOf { artifact -> artifact.progressBytes.coerceAtLeast(0L) },
+                totalBytes = artifactStates.sumOf { artifact -> artifact.totalBytes.coerceAtLeast(0L) },
                 processingStage = DownloadProcessingStage.DOWNLOADING,
                 verificationPolicy = task.verificationPolicy,
                 message = "Downloading",
+                artifactStates = artifactStates,
+                activeArtifactId = artifactStates.firstOrNull()?.artifactId,
+                sourceKind = task.sourceKind,
             )
-
-            val result = downloadToPartial(
-                task = task,
-                partFile = partFile,
-                host = host,
-                network = network,
-            )
-            persistResumeMetadata(
-                taskId = taskId,
-                resumeEtag = result.resumeEtag,
-                resumeLastModified = result.resumeLastModified,
-            )
-            val verificationTotalBytes = result.computedTotalBytes.takeIf { it > 0L } ?: result.downloadedBytes
-
-            updateState(
-                taskId = taskId,
-                modelId = task.modelId,
-                version = task.version,
-                status = DownloadTaskStatus.VERIFYING,
-                progressBytes = result.downloadedBytes,
-                totalBytes = verificationTotalBytes,
-                processingStage = DownloadProcessingStage.VERIFYING,
-                verificationPolicy = task.verificationPolicy,
-                message = "Verifying",
-                clearTransferMetrics = true,
-            )
-
-            val sha = result.sha256Hex ?: sha256HexFromFile(partFile) { host.isStopped() }
-            if (!sha.equals(task.expectedSha256, ignoreCase = true)) {
-                partFile.delete()
-                fail(
-                    taskId = taskId,
-                    modelId = task.modelId,
-                    version = task.version,
-                    reason = DownloadFailureReason.CHECKSUM_MISMATCH,
-                    processingStage = DownloadProcessingStage.VERIFYING,
-                    progressBytes = result.downloadedBytes,
-                    totalBytes = verificationTotalBytes,
-                    message = "Checksum verification failed.",
-                )
-                return@withContext DownloadExecutionOutcome.FAILURE
-            }
-
             val runtimeTag = provisioningStore.expectedRuntimeCompatibilityTag()
-            if (task.runtimeCompatibility.isNotBlank() && task.runtimeCompatibility != runtimeTag) {
-                partFile.delete()
-                fail(
-                    taskId = taskId,
-                    modelId = task.modelId,
-                    version = task.version,
-                    reason = DownloadFailureReason.RUNTIME_INCOMPATIBLE,
-                    processingStage = DownloadProcessingStage.VERIFYING,
-                    progressBytes = result.downloadedBytes,
-                    totalBytes = verificationTotalBytes,
-                    message = "Runtime compatibility mismatch.",
-                )
-                return@withContext DownloadExecutionOutcome.FAILURE
-            }
+            val verifiedArtifacts = mutableListOf<VerifiedBundleArtifact>()
+            artifactStates.forEachIndexed { index, artifact ->
+                val partFile = artifactPartFile(workspaceDir, artifact)
+                val stagedFile = artifactVerifiedFile(workspaceDir, artifact)
+                val alreadyVerified = artifact.status == DownloadArtifactTaskStatus.VERIFIED &&
+                    stagedFile.exists() &&
+                    stagedFile.isFile
+                if (alreadyVerified) {
+                    verifiedArtifacts += VerifiedBundleArtifact(
+                        state = artifact,
+                        stagedFile = stagedFile,
+                        sha256 = artifact.verifiedSha256 ?: sha256HexFromFile(stagedFile) { host.isStopped() },
+                    )
+                    return@forEachIndexed
+                }
 
-            if (task.verificationPolicy.enforcesProvenance && !verifyProvenanceSignature(
-                    issuer = task.provenanceIssuer,
-                    modelId = task.modelId,
-                    sha = sha,
-                    expectedSignature = task.provenanceSignature,
+                artifactStates = artifactStates.updateArtifact(
+                    artifactId = artifact.artifactId,
+                    transform = { current ->
+                        current.copy(
+                            status = DownloadArtifactTaskStatus.DOWNLOADING,
+                            failureReason = null,
+                        )
+                    },
                 )
-            ) {
-                partFile.delete()
-                fail(
+                updateState(
                     taskId = taskId,
                     modelId = task.modelId,
                     version = task.version,
-                    reason = DownloadFailureReason.PROVENANCE_MISMATCH,
-                    processingStage = DownloadProcessingStage.VERIFYING,
-                    progressBytes = result.downloadedBytes,
-                    totalBytes = verificationTotalBytes,
-                    message = "Provenance signature mismatch.",
+                    status = DownloadTaskStatus.DOWNLOADING,
+                    progressBytes = artifactStates.sumOf { current -> current.progressBytes.coerceAtLeast(0L) },
+                    totalBytes = artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) },
+                    processingStage = DownloadProcessingStage.DOWNLOADING,
+                    verificationPolicy = task.verificationPolicy,
+                    message = "Downloading ${artifact.fileName} (${index + 1}/${artifactStates.size})",
+                    artifactStates = artifactStates,
+                    activeArtifactId = artifact.artifactId,
+                    sourceKind = task.sourceKind,
                 )
-                return@withContext DownloadExecutionOutcome.FAILURE
+                val result: DownloadResult
+                try {
+                    result = downloadArtifactToPartial(
+                        task = task,
+                        artifact = artifactStates.first { current -> current.artifactId == artifact.artifactId },
+                        partFile = partFile,
+                        host = host,
+                        network = network,
+                        onProgress = { downloaded, expectedTotal, transferMetrics ->
+                            artifactStates = artifactStates.updateArtifact(
+                                artifactId = artifact.artifactId,
+                                transform = { current ->
+                                    current.copy(
+                                        progressBytes = downloaded,
+                                        totalBytes = expectedTotal.coerceAtLeast(downloaded),
+                                        status = DownloadArtifactTaskStatus.DOWNLOADING,
+                                    )
+                                },
+                            )
+                            val percent = if (artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) } <= 0L) {
+                                0
+                            } else {
+                                (
+                                    artifactStates.sumOf { current -> current.progressBytes.coerceAtLeast(0L) } * 100L /
+                                        artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) }
+                                    ).toInt()
+                            }
+                            host.updateNotification(taskId = taskId, modelId = task.modelId, percent = percent.coerceIn(0, 100))
+                            updateState(
+                                taskId = taskId,
+                                modelId = task.modelId,
+                                version = task.version,
+                                status = DownloadTaskStatus.DOWNLOADING,
+                                progressBytes = artifactStates.sumOf { current -> current.progressBytes.coerceAtLeast(0L) },
+                                totalBytes = artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) },
+                                processingStage = DownloadProcessingStage.DOWNLOADING,
+                                verificationPolicy = task.verificationPolicy,
+                                message = "Downloading ${artifact.fileName}",
+                                transferMetrics = transferMetrics,
+                                artifactStates = artifactStates,
+                                activeArtifactId = artifact.artifactId,
+                                sourceKind = task.sourceKind,
+                            )
+                        },
+                        onResumeMetadata = { resumeEtag, resumeLastModified ->
+                            artifactStates = artifactStates.updateArtifact(
+                                artifactId = artifact.artifactId,
+                                transform = { current ->
+                                    current.copy(
+                                        resumeEtag = resumeEtag,
+                                        resumeLastModified = resumeLastModified,
+                                    )
+                                },
+                            )
+                        },
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (!artifact.required) {
+                        partFile.delete()
+                        artifactStates = artifactStates.markArtifactFailed(
+                            artifactId = artifact.artifactId,
+                            reason = when (e) {
+                                is SocketTimeoutException -> DownloadFailureReason.TIMEOUT
+                                is InsufficientStorageException -> DownloadFailureReason.INSUFFICIENT_STORAGE
+                                else -> DownloadFailureReason.NETWORK_ERROR
+                            },
+                        )
+                        Log.w(LOG_TAG, "Skipping optional artifact ${artifact.fileName}: ${e.message}")
+                        return@forEachIndexed
+                    }
+                    throw e
+                }
+                val verificationTotalBytes = result.computedTotalBytes.takeIf { it > 0L } ?: result.downloadedBytes
+                updateState(
+                    taskId = taskId,
+                    modelId = task.modelId,
+                    version = task.version,
+                    status = DownloadTaskStatus.VERIFYING,
+                    progressBytes = artifactStates.sumOf { current -> current.progressBytes.coerceAtLeast(0L) },
+                    totalBytes = artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) },
+                    processingStage = DownloadProcessingStage.VERIFYING,
+                    verificationPolicy = task.verificationPolicy,
+                    message = "Verifying ${artifact.fileName}",
+                    clearTransferMetrics = true,
+                    artifactStates = artifactStates,
+                    activeArtifactId = artifact.artifactId,
+                    sourceKind = task.sourceKind,
+                )
+                val sha = result.sha256Hex ?: sha256HexFromFile(partFile) { host.isStopped() }
+                if (!sha.equals(artifact.expectedSha256, ignoreCase = true)) {
+                    partFile.delete()
+                    artifactStates = artifactStates.markArtifactFailed(
+                        artifactId = artifact.artifactId,
+                        reason = DownloadFailureReason.CHECKSUM_MISMATCH,
+                    )
+                    if (!artifact.required) {
+                        Log.w(LOG_TAG, "Skipping optional artifact ${artifact.fileName}: checksum mismatch.")
+                        return@forEachIndexed
+                    }
+                    fail(
+                        taskId = taskId,
+                        modelId = task.modelId,
+                        version = task.version,
+                        reason = DownloadFailureReason.CHECKSUM_MISMATCH,
+                        processingStage = DownloadProcessingStage.VERIFYING,
+                        progressBytes = artifactStates.sumOf { current -> current.progressBytes.coerceAtLeast(0L) },
+                        totalBytes = artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) },
+                        message = "Checksum verification failed for ${artifact.fileName}.",
+                        artifactStates = artifactStates,
+                        activeArtifactId = artifact.artifactId,
+                    )
+                    return@withContext DownloadExecutionOutcome.FAILURE
+                }
+                if (artifact.runtimeCompatibility.isNotBlank() && artifact.runtimeCompatibility != runtimeTag) {
+                    partFile.delete()
+                    artifactStates = artifactStates.markArtifactFailed(
+                        artifactId = artifact.artifactId,
+                        reason = DownloadFailureReason.RUNTIME_INCOMPATIBLE,
+                    )
+                    if (!artifact.required) {
+                        Log.w(LOG_TAG, "Skipping optional artifact ${artifact.fileName}: runtime incompatible.")
+                        return@forEachIndexed
+                    }
+                    fail(
+                        taskId = taskId,
+                        modelId = task.modelId,
+                        version = task.version,
+                        reason = DownloadFailureReason.RUNTIME_INCOMPATIBLE,
+                        processingStage = DownloadProcessingStage.VERIFYING,
+                        progressBytes = artifactStates.sumOf { current -> current.progressBytes.coerceAtLeast(0L) },
+                        totalBytes = artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) },
+                        message = "Runtime compatibility mismatch for ${artifact.fileName}.",
+                        artifactStates = artifactStates,
+                        activeArtifactId = artifact.artifactId,
+                    )
+                    return@withContext DownloadExecutionOutcome.FAILURE
+                }
+                if (artifact.verificationPolicy.enforcesProvenance && !verifyProvenanceSignature(
+                        issuer = artifact.provenanceIssuer,
+                        modelId = task.modelId,
+                        sha = sha,
+                        expectedSignature = artifact.provenanceSignature,
+                    )
+                ) {
+                    partFile.delete()
+                    artifactStates = artifactStates.markArtifactFailed(
+                        artifactId = artifact.artifactId,
+                        reason = DownloadFailureReason.PROVENANCE_MISMATCH,
+                    )
+                    if (!artifact.required) {
+                        Log.w(LOG_TAG, "Skipping optional artifact ${artifact.fileName}: provenance mismatch.")
+                        return@forEachIndexed
+                    }
+                    fail(
+                        taskId = taskId,
+                        modelId = task.modelId,
+                        version = task.version,
+                        reason = DownloadFailureReason.PROVENANCE_MISMATCH,
+                        processingStage = DownloadProcessingStage.VERIFYING,
+                        progressBytes = artifactStates.sumOf { current -> current.progressBytes.coerceAtLeast(0L) },
+                        totalBytes = artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) },
+                        message = "Provenance signature mismatch for ${artifact.fileName}.",
+                        artifactStates = artifactStates,
+                        activeArtifactId = artifact.artifactId,
+                    )
+                    return@withContext DownloadExecutionOutcome.FAILURE
+                }
+                if (!ModelInstallIo.replaceWithAtomicMove(source = partFile, destination = stagedFile)) {
+                    artifactStates = artifactStates.markArtifactFailed(
+                        artifactId = artifact.artifactId,
+                        reason = DownloadFailureReason.UNKNOWN,
+                    )
+                    if (!artifact.required) {
+                        Log.w(LOG_TAG, "Skipping optional artifact ${artifact.fileName}: staging failed.")
+                        return@forEachIndexed
+                    }
+                    fail(
+                        taskId = taskId,
+                        modelId = task.modelId,
+                        version = task.version,
+                        reason = DownloadFailureReason.UNKNOWN,
+                        processingStage = DownloadProcessingStage.VERIFYING,
+                        progressBytes = artifactStates.sumOf { current -> current.progressBytes.coerceAtLeast(0L) },
+                        totalBytes = artifactStates.sumOf { current -> current.totalBytes.coerceAtLeast(0L) },
+                        message = "Failed to stage ${artifact.fileName}.",
+                        artifactStates = artifactStates,
+                        activeArtifactId = artifact.artifactId,
+                    )
+                    return@withContext DownloadExecutionOutcome.FAILURE
+                }
+                artifactStates = artifactStates.updateArtifact(
+                    artifactId = artifact.artifactId,
+                    transform = { current ->
+                        current.copy(
+                            progressBytes = verificationTotalBytes,
+                            totalBytes = verificationTotalBytes,
+                            resumeEtag = null,
+                            resumeLastModified = null,
+                            verifiedSha256 = sha,
+                            stagedFileName = stagedFile.name,
+                            status = DownloadArtifactTaskStatus.VERIFIED,
+                            failureReason = null,
+                        )
+                    },
+                )
+                verifiedArtifacts += VerifiedBundleArtifact(
+                    state = artifactStates.first { current -> current.artifactId == artifact.artifactId },
+                    stagedFile = stagedFile,
+                    sha256 = sha,
+                )
             }
 
             updateState(
@@ -194,52 +379,104 @@ internal class ModelDownloadExecutor(
                 modelId = task.modelId,
                 version = task.version,
                 status = DownloadTaskStatus.VERIFYING,
-                progressBytes = result.downloadedBytes,
-                totalBytes = verificationTotalBytes,
+                progressBytes = artifactStates.sumOf { artifact -> artifact.progressBytes.coerceAtLeast(0L) },
+                totalBytes = artifactStates.sumOf { artifact -> artifact.totalBytes.coerceAtLeast(0L) },
                 processingStage = DownloadProcessingStage.INSTALLING,
                 verificationPolicy = task.verificationPolicy,
-                message = "Installing",
+                message = "Installing bundle",
                 clearTransferMetrics = true,
+                artifactStates = artifactStates,
+                activeArtifactId = artifactStates.firstOrNull { artifact -> artifact.role != ModelArtifactRole.PRIMARY_GGUF }?.artifactId
+                    ?: artifactStates.firstOrNull()?.artifactId,
+                sourceKind = task.sourceKind,
             )
-            if (!ModelInstallIo.replaceWithAtomicMove(source = partFile, destination = destinationFile)) {
-                fail(
-                    taskId = taskId,
+            val installOrder = verifiedArtifacts.sortedBy { verified ->
+                if (verified.state.role == ModelArtifactRole.PRIMARY_GGUF) 1 else 0
+            }
+            val installedArtifacts = mutableListOf<InstalledArtifactDescriptor>()
+            val installedFiles = mutableListOf<File>()
+            installOrder.forEach { verified ->
+                val destinationFile = destinationFileForArtifact(
                     modelId = task.modelId,
                     version = task.version,
-                    reason = DownloadFailureReason.UNKNOWN,
-                    processingStage = DownloadProcessingStage.INSTALLING,
-                    progressBytes = result.downloadedBytes,
-                    totalBytes = verificationTotalBytes,
-                    message = "Failed to move downloaded model into install location.",
+                    artifact = verified.state,
                 )
-                return@withContext DownloadExecutionOutcome.FAILURE
+                if (!ModelInstallIo.replaceWithAtomicMove(source = verified.stagedFile, destination = destinationFile)) {
+                    installedFiles.forEach { file -> file.takeIf { it.exists() && it.isFile }?.delete() }
+                    fail(
+                        taskId = taskId,
+                        modelId = task.modelId,
+                        version = task.version,
+                        reason = DownloadFailureReason.UNKNOWN,
+                        processingStage = DownloadProcessingStage.INSTALLING,
+                        progressBytes = artifactStates.sumOf { artifact -> artifact.progressBytes.coerceAtLeast(0L) },
+                        totalBytes = artifactStates.sumOf { artifact -> artifact.totalBytes.coerceAtLeast(0L) },
+                        message = "Failed to install ${verified.state.fileName}.",
+                        artifactStates = artifactStates,
+                        activeArtifactId = verified.state.artifactId,
+                    )
+                    return@withContext DownloadExecutionOutcome.FAILURE
+                }
+                installedFiles += destinationFile
+                installedArtifacts += InstalledArtifactDescriptor(
+                    artifactId = verified.state.artifactId,
+                    role = verified.state.role,
+                    fileName = destinationFile.name,
+                    absolutePath = destinationFile.absolutePath,
+                    expectedSha256 = verified.sha256,
+                    runtimeCompatibility = verified.state.runtimeCompatibility,
+                    fileSizeBytes = destinationFile.length().coerceAtLeast(0L),
+                    required = verified.state.required,
+                )
+                artifactStates = artifactStates.updateArtifact(
+                    artifactId = verified.state.artifactId,
+                    transform = { current ->
+                        current.copy(
+                            progressBytes = current.totalBytes.coerceAtLeast(0L),
+                            stagedFileName = null,
+                            installedAbsolutePath = destinationFile.absolutePath,
+                            status = DownloadArtifactTaskStatus.INSTALLED,
+                        )
+                    },
+                )
             }
-
-            val installResult = provisioningStore.installDownloadedModel(
-                modelId = task.modelId,
-                version = task.version,
-                absolutePath = destinationFile.absolutePath,
-                sha256 = sha,
-                provenanceIssuer = task.provenanceIssuer.ifBlank { "internal-release" },
-                provenanceSignature = task.provenanceSignature.ifBlank {
-                    sha256Hex("${task.provenanceIssuer.ifBlank { "internal-release" }}|${task.modelId}|$sha|v1".encodeToByteArray())
-                },
-                runtimeCompatibility = runtimeTag,
-                fileSizeBytes = destinationFile.length().coerceAtLeast(0L),
-                makeActive = task.verificationPolicy.enforcesProvenance,
-            )
-
-            runCatching {
-                val metadataFile = File("${destinationFile.absolutePath}.meta.json")
-                GgufMetadataExtractor.extractAndPersist(
-                    modelFile = destinationFile,
-                    metadataFile = metadataFile,
+            val primaryArtifact = installedArtifacts.firstOrNull { artifact -> artifact.role == ModelArtifactRole.PRIMARY_GGUF }
+                ?: run {
+                    installedFiles.forEach { file -> file.takeIf { it.exists() && it.isFile }?.delete() }
+                    fail(
+                        taskId = taskId,
+                        modelId = task.modelId,
+                        version = task.version,
+                        reason = DownloadFailureReason.UNKNOWN,
+                        processingStage = DownloadProcessingStage.INSTALLING,
+                        progressBytes = artifactStates.sumOf { artifact -> artifact.progressBytes.coerceAtLeast(0L) },
+                        totalBytes = artifactStates.sumOf { artifact -> artifact.totalBytes.coerceAtLeast(0L) },
+                        message = "Bundle install is missing the primary GGUF artifact.",
+                        artifactStates = artifactStates,
+                    )
+                    return@withContext DownloadExecutionOutcome.FAILURE
+                }
+            val primaryVerified = verifiedArtifacts.first { verified -> verified.state.artifactId == primaryArtifact.artifactId }
+            val installResult = runCatching {
+                provisioningStore.installDownloadedModel(
+                    modelId = task.modelId,
+                    version = task.version,
+                    absolutePath = primaryArtifact.absolutePath.orEmpty(),
+                    sha256 = primaryVerified.sha256,
+                    provenanceIssuer = primaryVerified.state.provenanceIssuer.ifBlank { "internal-release" },
+                    provenanceSignature = primaryVerified.state.provenanceSignature.ifBlank {
+                        sha256Hex("${primaryVerified.state.provenanceIssuer.ifBlank { "internal-release" }}|${task.modelId}|${primaryVerified.sha256}|v1".encodeToByteArray())
+                    },
+                    runtimeCompatibility = runtimeTag,
+                    fileSizeBytes = primaryArtifact.fileSizeBytes ?: 0L,
+                    makeActive = primaryVerified.state.verificationPolicy.enforcesProvenance,
+                    sourceKind = task.sourceKind,
+                    promptProfileId = task.promptProfileId,
+                    installedArtifacts = installedArtifacts,
                 )
-            }.onFailure { error ->
-                Log.w(
-                    LOG_TAG,
-                    "GGUF metadata extraction failed for ${task.modelId}@${task.version}: ${error.message}",
-                )
+            }.getOrElse { error ->
+                installedFiles.forEach { file -> file.takeIf { it.exists() && it.isFile }?.delete() }
+                throw error
             }
 
             runCatching {
@@ -250,8 +487,8 @@ internal class ModelDownloadExecutor(
                     "Runtime refresh failed after installing ${task.modelId}@${task.version}: ${error.message}",
                 )
             }
-
-            val installedSize = destinationFile.length().coerceAtLeast(0L)
+            cleanupWorkspace(workspaceDir)
+            val installedSize = installedArtifacts.sumOf { artifact -> artifact.fileSizeBytes?.coerceAtLeast(0L) ?: 0L }
             updateState(
                 taskId = taskId,
                 modelId = task.modelId,
@@ -266,11 +503,14 @@ internal class ModelDownloadExecutor(
                 processingStage = DownloadProcessingStage.INSTALLING,
                 verificationPolicy = task.verificationPolicy,
                 message = if (installResult.isActive) {
-                    "Downloaded, verified, and active."
+                    "Bundle downloaded, verified, and active."
                 } else {
-                    "Downloaded and verified. Activation pending."
+                    "Bundle downloaded and verified. Activation pending."
                 },
                 clearTransferMetrics = true,
+                artifactStates = artifactStates,
+                activeArtifactId = null,
+                sourceKind = task.sourceKind,
             )
             DownloadExecutionOutcome.SUCCESS
         } catch (timeout: SocketTimeoutException) {
@@ -282,6 +522,8 @@ internal class ModelDownloadExecutor(
                 processingStage = ModelDownloadTaskStateStore.get(appContext, taskId)?.processingStage
                     ?: DownloadProcessingStage.DOWNLOADING,
                 message = "Download timed out.",
+                artifactStates = artifactStates,
+                activeArtifactId = currentActiveArtifactId(artifactStates),
             )
             if (retryAllowed) {
                 DownloadExecutionOutcome.RETRY
@@ -297,6 +539,8 @@ internal class ModelDownloadExecutor(
                 processingStage = ModelDownloadTaskStateStore.get(appContext, taskId)?.processingStage
                     ?: DownloadProcessingStage.DOWNLOADING,
                 message = storageError.message ?: "Not enough storage to continue the download.",
+                artifactStates = artifactStates,
+                activeArtifactId = currentActiveArtifactId(artifactStates),
             )
             DownloadExecutionOutcome.FAILURE
         } catch (cancellation: CancellationException) {
@@ -317,6 +561,8 @@ internal class ModelDownloadExecutor(
                             reason = DownloadFailureReason.CANCELLED,
                             processingStage = current?.processingStage ?: DownloadProcessingStage.DOWNLOADING,
                             message = "Download cancelled.",
+                            artifactStates = artifactStates,
+                            activeArtifactId = currentActiveArtifactId(artifactStates),
                         )
                         DownloadExecutionOutcome.FAILURE
                     }
@@ -327,12 +573,16 @@ internal class ModelDownloadExecutor(
                             modelId = task.modelId,
                             version = task.version,
                             status = DownloadTaskStatus.QUEUED,
-                            progressBytes = current?.progressBytes ?: partFile.length().coerceAtLeast(0L),
+                            progressBytes = current?.progressBytes
+                                ?: artifactStates.sumOf { artifact -> artifact.progressBytes.coerceAtLeast(0L) },
                             totalBytes = current?.totalBytes ?: task.totalBytes,
                             processingStage = DownloadProcessingStage.DOWNLOADING,
                             verificationPolicy = current?.verificationPolicy ?: task.verificationPolicy,
                             message = "Download interrupted. Rescheduling.",
                             clearTransferMetrics = true,
+                            artifactStates = artifactStates,
+                            activeArtifactId = currentActiveArtifactId(artifactStates),
+                            sourceKind = task.sourceKind,
                         )
                         DownloadExecutionOutcome.RETRY
                     }
@@ -348,6 +598,8 @@ internal class ModelDownloadExecutor(
                 processingStage = ModelDownloadTaskStateStore.get(appContext, taskId)?.processingStage
                     ?: DownloadProcessingStage.DOWNLOADING,
                 message = error.message ?: "Download failed.",
+                artifactStates = artifactStates,
+                activeArtifactId = currentActiveArtifactId(artifactStates),
             )
             if (retryAllowed) {
                 DownloadExecutionOutcome.RETRY
@@ -363,6 +615,8 @@ internal class ModelDownloadExecutor(
                 processingStage = ModelDownloadTaskStateStore.get(appContext, taskId)?.processingStage
                     ?: DownloadProcessingStage.DOWNLOADING,
                 message = error.message ?: "Download failed unexpectedly.",
+                artifactStates = artifactStates,
+                activeArtifactId = currentActiveArtifactId(artifactStates),
             )
             if (retryAllowed) {
                 DownloadExecutionOutcome.RETRY
@@ -372,19 +626,95 @@ internal class ModelDownloadExecutor(
         }
     }
 
-    private suspend fun downloadToPartial(
+    private fun taskWorkspaceDirectory(taskId: String): File {
+        return File(provisioningStore.managedDownloadWorkspaceDirectory(), taskId)
+    }
+
+    private fun artifactPartFile(workspaceDir: File, artifact: DownloadArtifactTaskState): File {
+        return File(workspaceDir, "${safeArtifactToken(artifact)}.part")
+    }
+
+    private fun artifactVerifiedFile(workspaceDir: File, artifact: DownloadArtifactTaskState): File {
+        val stagedName = artifact.stagedFileName?.takeIf { it.isNotBlank() } ?: "${safeArtifactToken(artifact)}.verified"
+        return File(workspaceDir, stagedName)
+    }
+
+    private fun cleanupWorkspace(workspaceDir: File) {
+        workspaceDir.deleteRecursively()
+    }
+
+    private fun destinationFileForArtifact(
+        modelId: String,
+        version: String,
+        artifact: DownloadArtifactTaskState,
+    ): File {
+        if (artifact.role == ModelArtifactRole.PRIMARY_GGUF) {
+            return provisioningStore.destinationFileForVersion(modelId = modelId, version = version)
+        }
+        val ext = artifact.fileName.substringAfterLast('.', "").takeIf { it.isNotBlank() }?.let { ".$it" } ?: ""
+        val base = buildString {
+            append(modelId.replace(Regex("[^a-zA-Z0-9._-]"), "-"))
+            append("-")
+            append(version.replace(Regex("[^a-zA-Z0-9._-]"), "-"))
+            append("-")
+            append(artifact.role.name.lowercase())
+            append("-")
+            append(sha256Hex("${modelId}|${version}|${artifact.artifactId}|${artifact.fileName}".encodeToByteArray()).take(12))
+        }
+        return File(provisioningStore.managedModelDirectory(), "$base$ext")
+    }
+
+    private fun safeArtifactToken(artifact: DownloadArtifactTaskState): String {
+        val basis = artifact.artifactId.ifBlank { artifact.fileName }
+        return basis.replace(Regex("[^a-zA-Z0-9._-]"), "-")
+    }
+
+    private fun List<DownloadArtifactTaskState>.updateArtifact(
+        artifactId: String,
+        transform: (DownloadArtifactTaskState) -> DownloadArtifactTaskState,
+    ): List<DownloadArtifactTaskState> {
+        return map { artifact ->
+            if (artifact.artifactId == artifactId) transform(artifact) else artifact
+        }
+    }
+
+    private fun List<DownloadArtifactTaskState>.markArtifactFailed(
+        artifactId: String,
+        reason: DownloadFailureReason,
+    ): List<DownloadArtifactTaskState> {
+        return updateArtifact(artifactId) { artifact ->
+            artifact.copy(
+                status = DownloadArtifactTaskStatus.FAILED,
+                failureReason = reason,
+            )
+        }
+    }
+
+    private fun currentActiveArtifactId(states: List<DownloadArtifactTaskState>): String? {
+        return states.firstOrNull { artifact ->
+            artifact.status == DownloadArtifactTaskStatus.DOWNLOADING ||
+                artifact.status == DownloadArtifactTaskStatus.FAILED
+        }?.artifactId ?: states.firstOrNull { artifact ->
+            artifact.status == DownloadArtifactTaskStatus.PENDING
+        }?.artifactId
+    }
+
+    private suspend fun downloadArtifactToPartial(
         task: DownloadTaskState,
+        artifact: DownloadArtifactTaskState,
         partFile: File,
         host: DownloadExecutionHost,
         network: Network?,
+        onProgress: suspend (downloaded: Long, expectedTotal: Long, transferMetrics: TransferMetrics) -> Unit,
+        onResumeMetadata: (resumeEtag: String?, resumeLastModified: String?) -> Unit,
     ): DownloadResult {
         var existingBytes = partFile.length().coerceAtLeast(0L)
-        var lastMetricBytes = task.progressBytes.coerceAtLeast(0L).coerceAtMost(existingBytes)
+        var lastMetricBytes = artifact.progressBytes.coerceAtLeast(0L).coerceAtMost(existingBytes)
         var lastMetricEpochMs = task.lastProgressEpochMs?.takeIf { it > 0L } ?: System.currentTimeMillis()
         var smoothedSpeedBps = task.downloadSpeedBps
-        var resumeEtag = task.resumeEtag
-        var resumeLastModified = task.resumeLastModified
-        var resumeHeaderValue = resolveIfRangeHeader(task)
+        var resumeEtag = artifact.resumeEtag
+        var resumeLastModified = artifact.resumeLastModified
+        var resumeHeaderValue = resolveIfRangeHeader(artifact)
         if (existingBytes > 0L && resumeHeaderValue == null) {
             partFile.delete()
             existingBytes = 0L
@@ -392,10 +722,10 @@ internal class ModelDownloadExecutor(
             lastMetricEpochMs = System.currentTimeMillis()
             resumeEtag = null
             resumeLastModified = null
-            persistResumeMetadata(task.taskId, null, null)
+            onResumeMetadata(null, null)
         }
 
-        val requestBuilder = Request.Builder().get().url(task.downloadUrl)
+        val requestBuilder = Request.Builder().get().url(artifact.downloadUrl)
         if (existingBytes > 0L) {
             requestBuilder.header("Range", "bytes=$existingBytes-")
             requestBuilder.header("If-Range", resumeHeaderValue!!)
@@ -416,7 +746,7 @@ internal class ModelDownloadExecutor(
                 partFile.delete()
                 resumeEtag = null
                 resumeLastModified = null
-                persistResumeMetadata(task.taskId, null, null)
+                onResumeMetadata(null, null)
             }
             existingBytes = baseline.existingBytes
             lastMetricBytes = baseline.metricBytes
@@ -427,11 +757,12 @@ internal class ModelDownloadExecutor(
             if (capturedStrongEtag != null || capturedLastModified != null) {
                 resumeEtag = capturedStrongEtag
                 resumeLastModified = capturedLastModified
+                onResumeMetadata(resumeEtag, resumeLastModified)
             }
             val responseBody = response.body ?: throw IOException("Download response body was empty.")
             val bodyLength = responseBody.contentLength().coerceAtLeast(0L)
             val expectedTotal = when {
-                task.totalBytes > 0L -> task.totalBytes
+                artifact.totalBytes > 0L -> artifact.totalBytes
                 responseCode == HttpURLConnection.HTTP_PARTIAL -> existingBytes + bodyLength
                 else -> bodyLength
             }
@@ -488,19 +819,7 @@ internal class ModelDownloadExecutor(
                                     totalBytes = expectedTotal,
                                     previousSmoothedSpeedBps = smoothedSpeedBps,
                                 )
-                                host.updateNotification(taskId = task.taskId, modelId = task.modelId, percent = percent)
-                                updateState(
-                                    taskId = task.taskId,
-                                    modelId = task.modelId,
-                                    version = task.version,
-                                    status = DownloadTaskStatus.DOWNLOADING,
-                                    progressBytes = downloaded,
-                                    totalBytes = expectedTotal,
-                                    processingStage = DownloadProcessingStage.DOWNLOADING,
-                                    verificationPolicy = task.verificationPolicy,
-                                    message = "Downloading ($percent%)",
-                                    transferMetrics = transferMetrics,
-                                )
+                                onProgress(downloaded, expectedTotal, transferMetrics)
                                 lastMetricBytes = downloaded
                                 lastMetricEpochMs = nowEpochMs
                                 smoothedSpeedBps = transferMetrics.downloadSpeedBps
@@ -557,18 +876,35 @@ internal class ModelDownloadExecutor(
         reason: DownloadFailureReason? = null,
         transferMetrics: TransferMetrics? = null,
         clearTransferMetrics: Boolean = false,
+        artifactStates: List<DownloadArtifactTaskState>? = null,
+        activeArtifactId: String? = null,
+        sourceKind: com.pocketagent.core.model.ModelSourceKind? = null,
     ) {
         val previous = ModelDownloadTaskStateStore.get(appContext, taskId)
+        val resolvedArtifactStates = artifactStates ?: previous?.artifactStates.orEmpty()
+        val resolvedProgressBytes = if (resolvedArtifactStates.isNotEmpty()) {
+            resolvedArtifactStates.sumOf { artifact -> artifact.progressBytes.coerceAtLeast(0L) }
+        } else {
+            progressBytes.coerceAtLeast(0L)
+        }
+        val resolvedTotalBytes = if (resolvedArtifactStates.isNotEmpty()) {
+            resolvedArtifactStates.sumOf { artifact -> artifact.totalBytes.coerceAtLeast(0L) }
+                .coerceAtLeast(resolvedProgressBytes)
+        } else {
+            totalBytes.coerceAtLeast(0L).coerceAtLeast(progressBytes.coerceAtLeast(0L))
+        }
         val next = (previous ?: DownloadTaskState(
             taskId = taskId,
             modelId = modelId,
             version = version,
+            sourceKind = sourceKind ?: com.pocketagent.core.model.ModelSourceKind.BUILT_IN,
             downloadUrl = "",
             expectedSha256 = "",
             provenanceIssuer = "",
             provenanceSignature = "",
             verificationPolicy = verificationPolicy,
             runtimeCompatibility = "",
+            promptProfileId = null,
             processingStage = processingStage,
             status = DownloadTaskStatus.QUEUED,
             progressBytes = 0L,
@@ -576,8 +912,9 @@ internal class ModelDownloadExecutor(
             updatedAtEpochMs = System.currentTimeMillis(),
         )).copy(
             status = status,
-            progressBytes = progressBytes.coerceAtLeast(0L),
-            totalBytes = totalBytes.coerceAtLeast(0L).coerceAtLeast(progressBytes.coerceAtLeast(0L)),
+            sourceKind = sourceKind ?: previous?.sourceKind ?: com.pocketagent.core.model.ModelSourceKind.BUILT_IN,
+            progressBytes = resolvedProgressBytes,
+            totalBytes = resolvedTotalBytes,
             downloadSpeedBps = when {
                 clearTransferMetrics -> null
                 transferMetrics != null -> transferMetrics.downloadSpeedBps
@@ -598,24 +935,10 @@ internal class ModelDownloadExecutor(
             updatedAtEpochMs = System.currentTimeMillis(),
             failureReason = reason,
             message = message,
+            artifactStates = resolvedArtifactStates,
+            activeArtifactId = activeArtifactId,
         )
         ModelDownloadTaskStateStore.upsert(appContext, next)
-    }
-
-    private fun persistResumeMetadata(
-        taskId: String,
-        resumeEtag: String?,
-        resumeLastModified: String?,
-    ) {
-        val previous = ModelDownloadTaskStateStore.get(appContext, taskId) ?: return
-        ModelDownloadTaskStateStore.upsert(
-            appContext,
-            previous.copy(
-                resumeEtag = resumeEtag?.takeIf(::isStrongEtag),
-                resumeLastModified = if (resumeEtag == null) resumeLastModified?.takeIf { it.isNotBlank() } else null,
-                updatedAtEpochMs = System.currentTimeMillis(),
-            ),
-        )
     }
 
     private fun fail(
@@ -627,6 +950,8 @@ internal class ModelDownloadExecutor(
         message: String,
         progressBytes: Long? = null,
         totalBytes: Long? = null,
+        artifactStates: List<DownloadArtifactTaskState>? = null,
+        activeArtifactId: String? = null,
     ) {
         val previous = ModelDownloadTaskStateStore.get(appContext, taskId)
         val resolvedProgress = progressBytes
@@ -650,6 +975,9 @@ internal class ModelDownloadExecutor(
             message = message,
             reason = reason,
             clearTransferMetrics = true,
+            artifactStates = artifactStates,
+            activeArtifactId = activeArtifactId,
+            sourceKind = previous?.sourceKind,
         )
     }
 
@@ -707,12 +1035,12 @@ internal class ModelDownloadExecutor(
             .joinToString(separator = "") { "%02x".format(it) }
     }
 
-    private fun resolveIfRangeHeader(task: DownloadTaskState): String? {
-        val strongEtag = task.resumeEtag?.trim()?.takeIf(::isStrongEtag)
+    private fun resolveIfRangeHeader(artifact: DownloadArtifactTaskState): String? {
+        val strongEtag = artifact.resumeEtag?.trim()?.takeIf(::isStrongEtag)
         if (strongEtag != null) {
             return strongEtag
         }
-        return task.resumeLastModified?.trim()?.takeIf { it.isNotBlank() }
+        return artifact.resumeLastModified?.trim()?.takeIf { it.isNotBlank() }
     }
 
     private fun isStrongEtag(value: String?): Boolean {

@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.pocketagent.android.runtime.AndroidRuntimeTuningStore
+import com.pocketagent.android.runtime.ModelAdmissionAction
+import com.pocketagent.android.runtime.ModelAdmissionPolicy
+import com.pocketagent.android.runtime.toAdmissionSubject
 import com.pocketagent.android.runtime.ModelMemoryEstimator
 import com.pocketagent.android.runtime.createDefaultAndroidInferenceModule
 import com.pocketagent.android.runtime.RuntimeModelImportResult
@@ -31,6 +34,9 @@ object AppRuntimeDependencies {
         currentGraphProvider = { graphManager.currentGraphOrNull() },
         installProductionRuntime = { context -> installProductionRuntime(context) },
         memoryEstimateRecorder = { estimate -> lastMemoryEstimate = estimate },
+        modelAdmissionPolicyProvider = { context ->
+            graphManager.getOrCreateRuntimeGraph(context).modelAdmissionPolicy
+        },
     )
     private val warmupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val warmupOrchestrator = RuntimeWarmupOrchestrator(
@@ -114,12 +120,20 @@ object AppRuntimeDependencies {
         return graphManager.runtimeTuning(context)
     }
 
+    fun modelAdmissionPolicy(context: Context): ModelAdmissionPolicy {
+        return graphManager.getOrCreateRuntimeGraph(context).modelAdmissionPolicy
+    }
+
     suspend fun importModelFromUri(
         context: Context,
         modelId: String,
         sourceUri: Uri,
     ): RuntimeModelImportResult {
         val graph = graphManager.getOrCreateRuntimeGraph(context)
+        graph.modelAdmissionPolicy.requireAllowed(
+            action = ModelAdmissionAction.IMPORT,
+            subject = com.pocketagent.android.runtime.ModelAdmissionSubject(modelId = modelId),
+        )
         val store = graph.provisioningStore
         val result = store.importModel(modelId = modelId, sourceUri = sourceUri)
         installProductionRuntime(context)
@@ -133,6 +147,10 @@ object AppRuntimeDependencies {
         absolutePath: String,
     ): RuntimeModelImportResult {
         val graph = graphManager.getOrCreateRuntimeGraph(context)
+        graph.modelAdmissionPolicy.requireAllowed(
+            action = ModelAdmissionAction.IMPORT,
+            subject = com.pocketagent.android.runtime.ModelAdmissionSubject(modelId = modelId),
+        )
         val store = graph.provisioningStore
         val result = store.seedModelFromAbsolutePath(modelId = modelId, absolutePath = absolutePath)
         installProductionRuntime(context)
@@ -151,6 +169,16 @@ object AppRuntimeDependencies {
         version: String,
     ): Boolean {
         val graph = graphManager.getOrCreateRuntimeGraph(context)
+        val installed = graph.provisioningStore.listInstalledVersions(modelId)
+            .firstOrNull { descriptor -> descriptor.version == version }
+            ?: return false
+        val activationDecision = graph.modelAdmissionPolicy.evaluate(
+            action = ModelAdmissionAction.ACTIVATE,
+            subject = installed.toAdmissionSubject(),
+        )
+        if (!activationDecision.allowed) {
+            return false
+        }
         val changed = graph.provisioningStore.setActiveVersion(modelId, version)
         if (changed) {
             installProductionRuntime(context)
@@ -208,7 +236,12 @@ object AppRuntimeDependencies {
         version: ModelDistributionVersion,
         options: DownloadRequestOptions = DownloadRequestOptions(),
     ): String {
-        return graphManager.getOrCreateRuntimeGraph(context).modelDownloadManager.enqueueDownload(version, options)
+        val graph = graphManager.getOrCreateRuntimeGraph(context)
+        graph.modelAdmissionPolicy.requireAllowed(
+            action = ModelAdmissionAction.DOWNLOAD,
+            subject = version.toAdmissionSubject(),
+        )
+        return graph.modelDownloadManager.enqueueDownload(version, options)
     }
 
     fun pauseDownload(context: Context, taskId: String) {

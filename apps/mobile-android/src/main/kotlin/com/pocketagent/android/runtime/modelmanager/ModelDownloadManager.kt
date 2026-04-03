@@ -70,7 +70,7 @@ class ModelDownloadManager(
         if (prefs.wifiOnlyEnabled || prefs.largeDownloadCellularWarningAcknowledged) {
             return false
         }
-        if (version.fileSizeBytes < DownloadPreferencesStore.LARGE_DOWNLOAD_WARNING_THRESHOLD_BYTES) {
+        if (version.bundleTotalBytes() < DownloadPreferencesStore.LARGE_DOWNLOAD_WARNING_THRESHOLD_BYTES) {
             return false
         }
         return isActiveNetworkMetered()
@@ -88,30 +88,51 @@ class ModelDownloadManager(
         }
 
         val storage = provisioningStore.storageSummary()
-        if (version.fileSizeBytes > 0L && storage.freeBytes < version.fileSizeBytes) {
+        val bundleTotalBytes = version.bundleTotalBytes()
+        if (bundleTotalBytes > 0L && storage.freeBytes < bundleTotalBytes) {
             throw IllegalStateException("INSUFFICIENT_STORAGE: Not enough free storage for model download.")
         }
 
         val taskId = "dl-${UUID.randomUUID()}"
         val now = System.currentTimeMillis()
+        val artifactStates = version.artifacts.map { artifact ->
+            DownloadArtifactTaskState(
+                artifactId = artifact.artifactId,
+                role = artifact.role,
+                fileName = artifact.fileName,
+                downloadUrl = artifact.downloadUrl,
+                expectedSha256 = artifact.expectedSha256,
+                provenanceIssuer = artifact.provenanceIssuer,
+                provenanceSignature = artifact.provenanceSignature,
+                verificationPolicy = artifact.verificationPolicy,
+                runtimeCompatibility = artifact.runtimeCompatibility,
+                fileSizeBytes = artifact.fileSizeBytes,
+                required = artifact.required,
+                totalBytes = artifact.fileSizeBytes.coerceAtLeast(0L),
+            )
+        }
         val state = DownloadTaskState(
             taskId = taskId,
             modelId = version.modelId,
             version = version.version,
+            sourceKind = version.sourceKind,
             downloadUrl = version.downloadUrl,
             expectedSha256 = version.expectedSha256,
             provenanceIssuer = version.provenanceIssuer,
             provenanceSignature = version.provenanceSignature,
             verificationPolicy = version.verificationPolicy,
             runtimeCompatibility = version.runtimeCompatibility,
+            promptProfileId = version.promptProfileId,
             processingStage = DownloadProcessingStage.DOWNLOADING,
             status = DownloadTaskStatus.QUEUED,
             progressBytes = 0L,
-            totalBytes = version.fileSizeBytes,
+            totalBytes = bundleTotalBytes,
             queueOrder = now,
             networkPreference = options.networkPreference,
             updatedAtEpochMs = now,
             message = "Queued",
+            artifactStates = artifactStates,
+            activeArtifactId = artifactStates.firstOrNull()?.artifactId,
         )
         ModelDownloadTaskStateStore.upsert(appContext, state)
         refresh()
@@ -142,11 +163,10 @@ class ModelDownloadManager(
         if (state.status != DownloadTaskStatus.PAUSED) {
             return
         }
-        val partBytes = partialFile(taskId).length().coerceAtLeast(0L)
         val resumed = state.copy(
             status = DownloadTaskStatus.QUEUED,
             processingStage = DownloadProcessingStage.DOWNLOADING,
-            progressBytes = partBytes,
+            progressBytes = state.artifactStates.sumOf { artifact -> artifact.progressBytes.coerceAtLeast(0L) },
             queueOrder = System.currentTimeMillis(),
             updatedAtEpochMs = System.currentTimeMillis(),
             failureReason = null,
@@ -154,6 +174,9 @@ class ModelDownloadManager(
             etaSeconds = null,
             lastProgressEpochMs = null,
             message = "Resumed",
+            artifactStates = state.artifactStates.map { artifact ->
+                artifact.copy(failureReason = null)
+            },
         )
         ModelDownloadTaskStateStore.upsert(appContext, resumed)
         refresh()
@@ -165,13 +188,17 @@ class ModelDownloadManager(
         if (state.status != DownloadTaskStatus.FAILED && state.status != DownloadTaskStatus.CANCELLED) {
             return
         }
-        val partBytes = partialFile(taskId).length().coerceAtLeast(0L)
         val retried = state.copy(
             status = DownloadTaskStatus.QUEUED,
             processingStage = DownloadProcessingStage.DOWNLOADING,
-            progressBytes = partBytes,
-            resumeEtag = state.resumeEtag.takeIf { partBytes > 0L },
-            resumeLastModified = state.resumeLastModified.takeIf { partBytes > 0L },
+            progressBytes = state.artifactStates
+                .filter { artifact ->
+                    artifact.status == DownloadArtifactTaskStatus.VERIFIED ||
+                        artifact.status == DownloadArtifactTaskStatus.INSTALLED
+                }
+                .sumOf { artifact -> artifact.totalBytes.coerceAtLeast(0L) },
+            resumeEtag = null,
+            resumeLastModified = null,
             queueOrder = System.currentTimeMillis(),
             updatedAtEpochMs = System.currentTimeMillis(),
             failureReason = null,
@@ -179,6 +206,28 @@ class ModelDownloadManager(
             etaSeconds = null,
             lastProgressEpochMs = null,
             message = "Retrying",
+            artifactStates = state.artifactStates.map { artifact ->
+                when (artifact.status) {
+                    DownloadArtifactTaskStatus.INSTALLED,
+                    DownloadArtifactTaskStatus.VERIFIED,
+                    -> artifact.copy(failureReason = null)
+
+                    else -> artifact.copy(
+                        status = DownloadArtifactTaskStatus.PENDING,
+                        progressBytes = if (artifact.status == DownloadArtifactTaskStatus.FAILED) 0L else artifact.progressBytes,
+                        resumeEtag = artifact.resumeEtag.takeIf { artifact.progressBytes > 0L },
+                        resumeLastModified = artifact.resumeLastModified.takeIf { artifact.progressBytes > 0L },
+                        verifiedSha256 = null,
+                        stagedFileName = artifact.stagedFileName.takeIf {
+                            artifact.status == DownloadArtifactTaskStatus.VERIFIED
+                        },
+                        installedAbsolutePath = artifact.installedAbsolutePath.takeIf {
+                            artifact.status == DownloadArtifactTaskStatus.INSTALLED
+                        },
+                        failureReason = null,
+                    )
+                }
+            },
         )
         ModelDownloadTaskStateStore.upsert(appContext, retried)
         refresh()
@@ -188,7 +237,7 @@ class ModelDownloadManager(
     fun cancelDownload(taskId: String) {
         val state = ModelDownloadTaskStateStore.get(appContext, taskId) ?: return
         scheduler.cancel(taskId)
-        cleanupPartial(taskId)
+        cleanupWorkspace(taskId)
         ModelDownloadTaskStateStore.upsert(
             appContext,
             state.copy(
@@ -333,7 +382,7 @@ class ModelDownloadManager(
     private fun defaultRequestOptions(version: ModelDistributionVersion): DownloadRequestOptions {
         val prefs = currentDownloadPreferences()
         return DownloadRequestOptions(
-            networkPreference = if (prefs.wifiOnlyEnabled && version.fileSizeBytes >= DownloadPreferencesStore.LARGE_DOWNLOAD_WARNING_THRESHOLD_BYTES) {
+            networkPreference = if (prefs.wifiOnlyEnabled && version.bundleTotalBytes() >= DownloadPreferencesStore.LARGE_DOWNLOAD_WARNING_THRESHOLD_BYTES) {
                 DownloadNetworkPreference.UNMETERED_ONLY
             } else {
                 DownloadNetworkPreference.ALLOW_METERED
@@ -346,13 +395,13 @@ class ModelDownloadManager(
         return connectivityManager.isActiveNetworkMetered
     }
 
-    private fun cleanupPartial(taskId: String) {
-        partialFile(taskId).takeIf { it.exists() }?.delete()
+    private fun cleanupWorkspace(taskId: String) {
+        workspaceDirectory(taskId).deleteRecursively()
     }
 
-    private fun partialFile(taskId: String): File {
+    private fun workspaceDirectory(taskId: String): File {
         val dir = provisioningStore.managedDownloadWorkspaceDirectory()
-        return File(dir, "$taskId.part")
+        return File(dir, taskId)
     }
 
     companion object {

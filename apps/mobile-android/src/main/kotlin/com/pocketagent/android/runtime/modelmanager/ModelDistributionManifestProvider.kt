@@ -5,6 +5,8 @@ import com.pocketagent.android.BuildConfig
 import com.pocketagent.android.runtime.RuntimeDomainError
 import com.pocketagent.android.runtime.RuntimeDomainException
 import com.pocketagent.android.runtime.RuntimeErrorCodes
+import com.pocketagent.core.model.ModelArtifactRole
+import com.pocketagent.core.model.ModelSourceKind
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -118,18 +120,27 @@ class ModelDistributionManifestProvider(
             for (v in 0 until versionsJson.length()) {
                 val versionItem = versionsJson.optJSONObject(v) ?: continue
                 val version = versionItem.optString("version", "").trim()
-                val downloadUrl = versionItem.optString("downloadUrl", "").trim()
-                val sha = versionItem.optString("expectedSha256", "").trim()
-                val issuer = versionItem.optString("provenanceIssuer", "").trim()
-                val signature = versionItem.optString("provenanceSignature", "").trim()
+                val artifacts = parseArtifacts(modelId = modelId, version = version, versionItem = versionItem, warnings = warnings)
+                val primaryArtifact = artifacts.firstOrNull { artifact -> artifact.role == ModelArtifactRole.PRIMARY_GGUF }
+                val downloadUrl = primaryArtifact?.downloadUrl
+                    ?: versionItem.optString("downloadUrl", "").trim()
+                val sha = primaryArtifact?.expectedSha256
+                    ?: versionItem.optString("expectedSha256", "").trim()
+                val issuer = primaryArtifact?.provenanceIssuer
+                    ?: versionItem.optString("provenanceIssuer", "").trim()
+                val signature = primaryArtifact?.provenanceSignature
+                    ?: versionItem.optString("provenanceSignature", "").trim()
                 val verificationPolicyRaw = versionItem
                     .optString("verificationPolicy", DownloadVerificationPolicy.INTEGRITY_ONLY.name)
                     .trim()
-                val runtimeCompatibility = versionItem
+                val runtimeCompatibility = primaryArtifact?.runtimeCompatibility ?: versionItem
                     .optString("runtimeCompatibility", "android-arm64-v8a")
                     .trim()
                     .ifEmpty { "android-arm64-v8a" }
-                val fileSizeBytes = versionItem.optLong("fileSizeBytes", 0L)
+                val fileSizeBytes = primaryArtifact?.fileSizeBytes ?: versionItem.optLong("fileSizeBytes", 0L)
+                val promptProfileId = versionItem.optString("promptProfileId", "").trim().ifEmpty { null }
+                val sourceKind = parseSourceKind(versionItem.optString("sourceKind", "").trim())
+                    ?: ModelSourceKind.REMOTE_MANIFEST
                 val verificationPolicy = parseVerificationPolicy(verificationPolicyRaw)
                     ?: run {
                         warnings += "Version '$modelId/$version' has invalid verificationPolicy '$verificationPolicyRaw'; using INTEGRITY_ONLY."
@@ -149,6 +160,28 @@ class ModelDistributionManifestProvider(
                     warnings += "Dropped duplicate $modelId/$version entry from manifest."
                     continue
                 }
+                val resolvedArtifacts = if (artifacts.isNotEmpty()) {
+                    artifacts
+                } else {
+                    listOf(
+                        ModelDistributionArtifact(
+                            artifactId = "$modelId::$version::primary",
+                            role = ModelArtifactRole.PRIMARY_GGUF,
+                            fileName = downloadUrl.substringAfterLast('/').ifBlank { "$modelId-$version.gguf" },
+                            downloadUrl = downloadUrl,
+                            expectedSha256 = sha,
+                            provenanceIssuer = issuer,
+                            provenanceSignature = signature,
+                            runtimeCompatibility = runtimeCompatibility,
+                            fileSizeBytes = fileSizeBytes,
+                            verificationPolicy = verificationPolicy,
+                        ),
+                    )
+                }
+                if (resolvedArtifacts.none { artifact -> artifact.role == ModelArtifactRole.PRIMARY_GGUF }) {
+                    warnings += "Dropped $modelId/$version: artifact list has no PRIMARY_GGUF artifact."
+                    continue
+                }
                 accumulator.versionsByVersion[version] = ModelDistributionVersion(
                     modelId = modelId,
                     version = version,
@@ -159,6 +192,9 @@ class ModelDistributionManifestProvider(
                     runtimeCompatibility = runtimeCompatibility,
                     fileSizeBytes = fileSizeBytes,
                     verificationPolicy = verificationPolicy,
+                    sourceKind = sourceKind,
+                    promptProfileId = promptProfileId,
+                    artifacts = resolvedArtifacts,
                 )
             }
         }
@@ -261,6 +297,97 @@ class ModelDistributionManifestProvider(
         }
         val normalized = raw.trim().uppercase()
         return runCatching { DownloadVerificationPolicy.valueOf(normalized) }.getOrNull()
+    }
+
+    private fun parseArtifacts(
+        modelId: String,
+        version: String,
+        versionItem: JSONObject,
+        warnings: MutableList<String>,
+    ): List<ModelDistributionArtifact> {
+        val artifactsJson = versionItem.optJSONArray("artifacts") ?: return emptyList()
+        val parsed = mutableListOf<ModelDistributionArtifact>()
+        for (index in 0 until artifactsJson.length()) {
+            val artifactItem = artifactsJson.optJSONObject(index) ?: continue
+            val role = parseArtifactRole(artifactItem.optString("role", "").trim())
+            if (role == null) {
+                warnings += "Dropped artifact at index=$index for $modelId/$version: unknown or missing role."
+                continue
+            }
+            val downloadUrl = artifactItem.optString("downloadUrl", "").trim()
+            val expectedSha256 = artifactItem.optString("expectedSha256", "").trim()
+            val fileSizeBytes = artifactItem.optLong("fileSizeBytes", 0L)
+            val required = artifactItem.optBoolean("required", true)
+            val rejectionReason = validateArtifactEntry(
+                role = role,
+                downloadUrl = downloadUrl,
+                expectedSha256 = expectedSha256,
+                fileSizeBytes = fileSizeBytes,
+            )
+            if (rejectionReason != null) {
+                val severity = if (required) "required" else "optional"
+                warnings += "Dropped $severity artifact role=${role.name} for $modelId/$version: $rejectionReason."
+                continue
+            }
+            val fileName = artifactItem.optString("fileName", "").trim()
+                .ifEmpty { downloadUrl.substringAfterLast('/').trim() }
+            val verificationPolicy = parseVerificationPolicy(
+                artifactItem.optString("verificationPolicy", DownloadVerificationPolicy.INTEGRITY_ONLY.name),
+            ) ?: DownloadVerificationPolicy.INTEGRITY_ONLY
+            parsed += ModelDistributionArtifact(
+                artifactId = artifactItem.optString("artifactId", "").trim()
+                    .ifEmpty { "$modelId::$version::${role.name.lowercase()}" },
+                role = role,
+                fileName = fileName,
+                downloadUrl = downloadUrl,
+                expectedSha256 = expectedSha256,
+                provenanceIssuer = artifactItem.optString("provenanceIssuer", "").trim(),
+                provenanceSignature = artifactItem.optString("provenanceSignature", "").trim(),
+                runtimeCompatibility = artifactItem.optString("runtimeCompatibility", "android-arm64-v8a").trim(),
+                fileSizeBytes = fileSizeBytes,
+                required = required,
+                verificationPolicy = verificationPolicy,
+            )
+        }
+        return parsed
+    }
+
+    private fun validateArtifactEntry(
+        role: ModelArtifactRole,
+        downloadUrl: String,
+        expectedSha256: String,
+        fileSizeBytes: Long,
+    ): String? {
+        if (downloadUrl.isBlank()) {
+            return "missing downloadUrl"
+        }
+        if (!isHttpsUrl(downloadUrl)) {
+            return "downloadUrl must be HTTPS"
+        }
+        if (expectedSha256.isBlank()) {
+            return "missing expectedSha256"
+        }
+        if (!SHA256_HEX_REGEX.matches(expectedSha256)) {
+            return "expectedSha256 must be 64 lowercase/uppercase hex chars"
+        }
+        if (fileSizeBytes <= 0L) {
+            return "fileSizeBytes must be > 0"
+        }
+        return null
+    }
+
+    private fun parseArtifactRole(raw: String): ModelArtifactRole? {
+        if (raw.isBlank()) {
+            return null
+        }
+        return runCatching { ModelArtifactRole.valueOf(raw.trim().uppercase()) }.getOrNull()
+    }
+
+    private fun parseSourceKind(raw: String): ModelSourceKind? {
+        if (raw.isBlank()) {
+            return null
+        }
+        return runCatching { ModelSourceKind.valueOf(raw.trim().uppercase()) }.getOrNull()
     }
 
     private fun mergeWarnings(vararg warnings: String?): String? {

@@ -1,9 +1,11 @@
 package com.pocketagent.runtime
 
+import com.pocketagent.core.model.NormalizedModelTier
+import com.pocketagent.core.model.NormalizedRuntimeProfile
+import com.pocketagent.core.model.PromptTemplateFamily
 import com.pocketagent.core.RoutingMode
 import com.pocketagent.inference.ModelCatalog
 import com.pocketagent.inference.ModelRuntimeProfile
-import com.pocketagent.inference.ModelTier
 
 enum class RuntimeModelTier {
     BASELINE,
@@ -104,30 +106,49 @@ class ModelRegistry(
         }
 
         fun defaultMetadata(): List<RuntimeModelMetadata> {
-            return ModelCatalog.modelDescriptors()
-                .filter { descriptor -> descriptor.bridgeSupported || descriptor.startupCandidate }
-                .map { descriptor ->
+            return ModelCatalog.normalizedSpecs()
+                .filter { spec ->
+                    spec.runtimeRequirements.bridgeSupported || spec.productPolicy.startupCandidate
+                }
+                .map { spec ->
                     RuntimeModelMetadata(
-                        modelId = descriptor.modelId,
-                        templateProfile = ModelTemplateProfile.valueOf(descriptor.chatTemplateId),
-                        tier = descriptor.tier.toRuntimeTier(),
+                        modelId = spec.modelId,
+                        templateProfile = spec.promptProfile.templateFamily.toRuntimeTemplateProfile(),
+                        tier = spec.productPolicy.tier.toRuntimeTier(),
                         startupRequirement = when {
-                            descriptor.startupRequired -> StartupRequirement.REQUIRED
-                            descriptor.startupCandidate -> StartupRequirement.OPTIONAL
+                            spec.productPolicy.startupRequired -> StartupRequirement.REQUIRED
+                            spec.productPolicy.startupCandidate -> StartupRequirement.OPTIONAL
                             else -> StartupRequirement.NONE
                         },
-                        defaultForGetReadyProfiles = descriptor.defaultGetReadyProfiles,
-                        routingModes = ModelCatalog.routingModesForModel(descriptor.modelId),
+                        defaultForGetReadyProfiles = spec.productPolicy.defaultForGetReadyProfiles
+                            .mapTo(linkedSetOf()) { profile -> profile.toRuntimeProfile() },
+                        routingModes = spec.productPolicy.routingModes,
                     )
                 }
         }
     }
 }
 
-private fun ModelTier.toRuntimeTier(): RuntimeModelTier {
+private fun NormalizedModelTier.toRuntimeTier(): RuntimeModelTier {
     return when (this) {
-        ModelTier.BASELINE -> RuntimeModelTier.BASELINE
-        ModelTier.FAST -> RuntimeModelTier.FAST
-        ModelTier.DEBUG -> RuntimeModelTier.DEBUG
+        NormalizedModelTier.BASELINE -> RuntimeModelTier.BASELINE
+        NormalizedModelTier.FAST -> RuntimeModelTier.FAST
+        NormalizedModelTier.DEBUG -> RuntimeModelTier.DEBUG
+    }
+}
+
+private fun PromptTemplateFamily.toRuntimeTemplateProfile(): ModelTemplateProfile {
+    return when (this) {
+        PromptTemplateFamily.CHATML -> ModelTemplateProfile.CHATML
+        PromptTemplateFamily.LLAMA3 -> ModelTemplateProfile.LLAMA3
+        PromptTemplateFamily.PHI -> ModelTemplateProfile.PHI
+        PromptTemplateFamily.GEMMA -> ModelTemplateProfile.GEMMA
+    }
+}
+
+private fun NormalizedRuntimeProfile.toRuntimeProfile(): ModelRuntimeProfile {
+    return when (this) {
+        NormalizedRuntimeProfile.PROD -> ModelRuntimeProfile.PROD
+        NormalizedRuntimeProfile.DEV_FAST -> ModelRuntimeProfile.DEV_FAST
     }
 }

@@ -5,12 +5,14 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.pocketagent.core.model.ModelArtifactRole
+import com.pocketagent.core.model.ModelSourceKind
 import org.json.JSONArray
 import org.json.JSONObject
 
 internal object ModelDownloadTaskStateStore {
     private const val DB_NAME = "pocketagent_model_downloads.db"
-    private const val DB_VERSION = 3
+    private const val DB_VERSION = 5
     private const val TABLE = "download_tasks"
 
     private const val LEGACY_PREFS_NAME = "pocketagent_model_downloads"
@@ -101,12 +103,14 @@ internal object ModelDownloadTaskStateStore {
             put("task_id", task.taskId)
             put("model_id", task.modelId)
             put("version", task.version)
+            put("source_kind", task.sourceKind.name)
             put("download_url", task.downloadUrl)
             put("expected_sha256", task.expectedSha256)
             put("provenance_issuer", task.provenanceIssuer)
             put("provenance_signature", task.provenanceSignature)
             put("verification_policy", task.verificationPolicy.name)
             put("runtime_compatibility", task.runtimeCompatibility)
+            put("prompt_profile_id", task.promptProfileId)
             put("processing_stage", task.processingStage.name)
             put("status", task.status.name)
             put("progress_bytes", task.progressBytes)
@@ -121,6 +125,8 @@ internal object ModelDownloadTaskStateStore {
             put("updated_at_epoch_ms", task.updatedAtEpochMs)
             put("failure_reason", task.failureReason?.name)
             put("message", task.message)
+            put("artifact_states_json", encodeArtifactStates(task.artifactStates).toString())
+            put("active_artifact_id", task.activeArtifactId)
         }
         db.insertWithOnConflict(TABLE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -130,6 +136,7 @@ internal object ModelDownloadTaskStateStore {
             taskId = json.optString("taskId", "").trim(),
             modelId = json.optString("modelId", "").trim(),
             version = json.optString("version", "").trim(),
+            sourceKindRaw = json.optString("sourceKind", "").trim(),
             downloadUrl = json.optString("downloadUrl", "").trim(),
             expectedSha256 = json.optString("expectedSha256", "").trim(),
             provenanceIssuer = json.optString("provenanceIssuer", "").trim(),
@@ -139,6 +146,7 @@ internal object ModelDownloadTaskStateStore {
                 DownloadVerificationPolicy.INTEGRITY_ONLY.name,
             ),
             runtimeCompatibility = json.optString("runtimeCompatibility", "").trim(),
+            promptProfileId = json.optString("promptProfileId", "").trim().ifEmpty { null },
             processingStageRaw = json.optString(
                 "processingStage",
                 DownloadProcessingStage.DOWNLOADING.name,
@@ -159,6 +167,8 @@ internal object ModelDownloadTaskStateStore {
             updatedAtEpochMs = json.optLong("updatedAtEpochMs", System.currentTimeMillis()),
             failureReasonRaw = json.optString("failureReason", ""),
             message = json.optString("message", "").trim().ifEmpty { null },
+            artifactStatesJson = json.optJSONArray("artifactStates")?.toString(),
+            activeArtifactId = json.optString("activeArtifactId", "").trim().ifEmpty { null },
         )
     }
 
@@ -167,12 +177,14 @@ internal object ModelDownloadTaskStateStore {
             taskId = cursor.stringOrEmpty("task_id"),
             modelId = cursor.stringOrEmpty("model_id"),
             version = cursor.stringOrEmpty("version"),
+            sourceKindRaw = cursor.stringOrEmpty("source_kind"),
             downloadUrl = cursor.stringOrEmpty("download_url"),
             expectedSha256 = cursor.stringOrEmpty("expected_sha256"),
             provenanceIssuer = cursor.stringOrEmpty("provenance_issuer"),
             provenanceSignature = cursor.stringOrEmpty("provenance_signature"),
             verificationPolicyRaw = cursor.stringOrEmpty("verification_policy"),
             runtimeCompatibility = cursor.stringOrEmpty("runtime_compatibility"),
+            promptProfileId = cursor.stringOrEmpty("prompt_profile_id").ifBlank { null },
             processingStageRaw = cursor.stringOrEmpty("processing_stage"),
             statusRaw = cursor.stringOrEmpty("status"),
             progressBytes = cursor.longOrZero("progress_bytes"),
@@ -187,6 +199,8 @@ internal object ModelDownloadTaskStateStore {
             updatedAtEpochMs = cursor.longOrZero("updated_at_epoch_ms"),
             failureReasonRaw = cursor.stringOrEmpty("failure_reason"),
             message = cursor.stringOrEmpty("message").ifBlank { null },
+            artifactStatesJson = cursor.stringOrEmpty("artifact_states_json").ifBlank { null },
+            activeArtifactId = cursor.stringOrEmpty("active_artifact_id").ifBlank { null },
         )
     }
 
@@ -194,12 +208,14 @@ internal object ModelDownloadTaskStateStore {
         taskId: String,
         modelId: String,
         version: String,
+        sourceKindRaw: String,
         downloadUrl: String,
         expectedSha256: String,
         provenanceIssuer: String,
         provenanceSignature: String,
         verificationPolicyRaw: String,
         runtimeCompatibility: String,
+        promptProfileId: String?,
         processingStageRaw: String,
         statusRaw: String,
         progressBytes: Long,
@@ -214,6 +230,8 @@ internal object ModelDownloadTaskStateStore {
         updatedAtEpochMs: Long,
         failureReasonRaw: String,
         message: String?,
+        artifactStatesJson: String?,
+        activeArtifactId: String?,
     ): DownloadTaskState? {
         val status = runCatching { DownloadTaskStatus.valueOf(statusRaw) }.getOrNull()
         val failure = runCatching {
@@ -224,6 +242,13 @@ internal object ModelDownloadTaskStateStore {
             }
         }.getOrNull()
         val verificationPolicy = runCatching { DownloadVerificationPolicy.valueOf(verificationPolicyRaw) }.getOrNull()
+        val sourceKind = runCatching {
+            if (sourceKindRaw.isBlank()) {
+                ModelSourceKind.BUILT_IN
+            } else {
+                ModelSourceKind.valueOf(sourceKindRaw)
+            }
+        }.getOrNull()
         val processingStage = runCatching { DownloadProcessingStage.valueOf(processingStageRaw) }.getOrNull()
         val networkPreference = runCatching {
             if (networkPreferenceRaw.isBlank()) {
@@ -242,6 +267,9 @@ internal object ModelDownloadTaskStateStore {
             if (verificationPolicy == null) {
                 add("invalid_verification_policy=$verificationPolicyRaw")
             }
+            if (sourceKind == null) {
+                add("invalid_source_kind=$sourceKindRaw")
+            }
             if (processingStage == null) {
                 add("invalid_processing_stage=$processingStageRaw")
             }
@@ -253,6 +281,36 @@ internal object ModelDownloadTaskStateStore {
             }
         }
         val isCorrupt = corruptionNotes.isNotEmpty()
+        val artifactStates = decodeArtifactStates(artifactStatesJson).ifEmpty {
+            listOf(
+                DownloadArtifactTaskState(
+                    artifactId = "$modelId::$version::primary",
+                    role = ModelArtifactRole.PRIMARY_GGUF,
+                    fileName = downloadUrl.substringAfterLast('/').ifBlank { "$modelId-$version.gguf" },
+                    downloadUrl = downloadUrl,
+                    expectedSha256 = expectedSha256,
+                    provenanceIssuer = provenanceIssuer,
+                    provenanceSignature = provenanceSignature,
+                    verificationPolicy = verificationPolicy ?: DownloadVerificationPolicy.UNKNOWN,
+                    runtimeCompatibility = runtimeCompatibility,
+                    fileSizeBytes = totalBytes.coerceAtLeast(0L),
+                    progressBytes = progressBytes.coerceAtLeast(0L),
+                    totalBytes = totalBytes.coerceAtLeast(progressBytes.coerceAtLeast(0L)),
+                    resumeEtag = resumeEtag?.takeIf { it.isNotBlank() },
+                    resumeLastModified = resumeLastModified?.takeIf { it.isNotBlank() },
+                    status = when {
+                        isCorrupt -> DownloadArtifactTaskStatus.FAILED
+                        status == DownloadTaskStatus.FAILED -> DownloadArtifactTaskStatus.FAILED
+                        status == DownloadTaskStatus.VERIFYING -> DownloadArtifactTaskStatus.VERIFIED
+                        status == DownloadTaskStatus.DOWNLOADING -> DownloadArtifactTaskStatus.DOWNLOADING
+                        status == DownloadTaskStatus.COMPLETED || status == DownloadTaskStatus.INSTALLED_INACTIVE ->
+                            DownloadArtifactTaskStatus.INSTALLED
+                        else -> DownloadArtifactTaskStatus.PENDING
+                    },
+                    failureReason = if (isCorrupt) DownloadFailureReason.UNKNOWN else failure,
+                ),
+            )
+        }
         val resolvedMessage = if (isCorrupt) {
             "Corrupt task metadata detected; task marked failed (${corruptionNotes.joinToString(",")})."
         } else {
@@ -262,12 +320,14 @@ internal object ModelDownloadTaskStateStore {
             taskId = taskId,
             modelId = modelId,
             version = version,
+            sourceKind = sourceKind ?: ModelSourceKind.BUILT_IN,
             downloadUrl = downloadUrl,
             expectedSha256 = expectedSha256,
             provenanceIssuer = provenanceIssuer,
             provenanceSignature = provenanceSignature,
             verificationPolicy = verificationPolicy ?: DownloadVerificationPolicy.UNKNOWN,
             runtimeCompatibility = runtimeCompatibility,
+            promptProfileId = promptProfileId,
             processingStage = processingStage ?: DownloadProcessingStage.CORRUPT,
             status = if (isCorrupt) DownloadTaskStatus.FAILED else status ?: DownloadTaskStatus.FAILED,
             progressBytes = progressBytes.coerceAtLeast(0L),
@@ -282,6 +342,8 @@ internal object ModelDownloadTaskStateStore {
             updatedAtEpochMs = updatedAtEpochMs.takeIf { it > 0L } ?: System.currentTimeMillis(),
             failureReason = if (isCorrupt) DownloadFailureReason.UNKNOWN else failure,
             message = resolvedMessage,
+            artifactStates = artifactStates,
+            activeArtifactId = activeArtifactId ?: artifactStates.firstOrNull()?.artifactId,
         )
     }
 
@@ -331,12 +393,14 @@ internal object ModelDownloadTaskStateStore {
                     task_id TEXT PRIMARY KEY NOT NULL,
                     model_id TEXT NOT NULL,
                     version TEXT NOT NULL,
+                    source_kind TEXT NOT NULL DEFAULT '${ModelSourceKind.BUILT_IN.name}',
                     download_url TEXT NOT NULL,
                     expected_sha256 TEXT NOT NULL,
                     provenance_issuer TEXT NOT NULL,
                     provenance_signature TEXT NOT NULL,
                     verification_policy TEXT NOT NULL,
                     runtime_compatibility TEXT NOT NULL,
+                    prompt_profile_id TEXT,
                     processing_stage TEXT NOT NULL,
                     status TEXT NOT NULL,
                     progress_bytes INTEGER NOT NULL,
@@ -350,7 +414,9 @@ internal object ModelDownloadTaskStateStore {
                     last_progress_epoch_ms INTEGER,
                     updated_at_epoch_ms INTEGER NOT NULL,
                     failure_reason TEXT,
-                    message TEXT
+                    message TEXT,
+                    artifact_states_json TEXT,
+                    active_artifact_id TEXT
                 )
                 """.trimIndent(),
             )
@@ -369,6 +435,97 @@ internal object ModelDownloadTaskStateStore {
                 db.execSQL("ALTER TABLE $TABLE ADD COLUMN queue_order INTEGER NOT NULL DEFAULT 0")
                 db.execSQL(
                     "ALTER TABLE $TABLE ADD COLUMN network_preference TEXT NOT NULL DEFAULT '${DownloadNetworkPreference.ALLOW_METERED.name}'",
+                )
+            }
+            if (oldVersion < 4) {
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN source_kind TEXT NOT NULL DEFAULT '${ModelSourceKind.BUILT_IN.name}'")
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN artifact_states_json TEXT")
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN active_artifact_id TEXT")
+            }
+            if (oldVersion < 5) {
+                db.execSQL("ALTER TABLE $TABLE ADD COLUMN prompt_profile_id TEXT")
+            }
+        }
+    }
+
+    private fun encodeArtifactStates(states: List<DownloadArtifactTaskState>): JSONArray {
+        return JSONArray().apply {
+            states.forEach { state ->
+                put(
+                    JSONObject()
+                        .put("artifactId", state.artifactId)
+                        .put("role", state.role.name)
+                        .put("fileName", state.fileName)
+                        .put("downloadUrl", state.downloadUrl)
+                        .put("expectedSha256", state.expectedSha256)
+                        .put("provenanceIssuer", state.provenanceIssuer)
+                        .put("provenanceSignature", state.provenanceSignature)
+                        .put("verificationPolicy", state.verificationPolicy.name)
+                        .put("runtimeCompatibility", state.runtimeCompatibility)
+                        .put("fileSizeBytes", state.fileSizeBytes)
+                        .put("required", state.required)
+                        .put("progressBytes", state.progressBytes)
+                        .put("totalBytes", state.totalBytes)
+                        .put("resumeEtag", state.resumeEtag)
+                        .put("resumeLastModified", state.resumeLastModified)
+                        .put("verifiedSha256", state.verifiedSha256)
+                        .put("stagedFileName", state.stagedFileName)
+                        .put("installedAbsolutePath", state.installedAbsolutePath)
+                        .put("status", state.status.name)
+                        .put("failureReason", state.failureReason?.name)
+                )
+            }
+        }
+    }
+
+    private fun decodeArtifactStates(raw: String?): List<DownloadArtifactTaskState> {
+        val payload = raw?.trim().orEmpty()
+        if (payload.isEmpty()) {
+            return emptyList()
+        }
+        val array = runCatching { JSONArray(payload) }.getOrNull() ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val role = runCatching { ModelArtifactRole.valueOf(item.optString("role", "").trim()) }.getOrNull() ?: continue
+                val status = runCatching { DownloadArtifactTaskStatus.valueOf(item.optString("status", "").trim()) }
+                    .getOrDefault(DownloadArtifactTaskStatus.PENDING)
+                val verificationPolicy = runCatching {
+                    DownloadVerificationPolicy.valueOf(item.optString("verificationPolicy", DownloadVerificationPolicy.INTEGRITY_ONLY.name).trim())
+                }.getOrDefault(DownloadVerificationPolicy.INTEGRITY_ONLY)
+                val failureReason = runCatching {
+                    item.optString("failureReason", "").trim()
+                        .takeIf { it.isNotBlank() }
+                        ?.let(DownloadFailureReason::valueOf)
+                }.getOrNull()
+                val artifactId = item.optString("artifactId", "").trim()
+                val fileName = item.optString("fileName", "").trim()
+                if (artifactId.isEmpty() || fileName.isEmpty()) {
+                    continue
+                }
+                add(
+                    DownloadArtifactTaskState(
+                        artifactId = artifactId,
+                        role = role,
+                        fileName = fileName,
+                        downloadUrl = item.optString("downloadUrl", "").trim(),
+                        expectedSha256 = item.optString("expectedSha256", "").trim(),
+                        provenanceIssuer = item.optString("provenanceIssuer", "").trim(),
+                        provenanceSignature = item.optString("provenanceSignature", "").trim(),
+                        verificationPolicy = verificationPolicy,
+                        runtimeCompatibility = item.optString("runtimeCompatibility", "").trim(),
+                        fileSizeBytes = item.optLong("fileSizeBytes", 0L).coerceAtLeast(0L),
+                        required = item.optBoolean("required", true),
+                        progressBytes = item.optLong("progressBytes", 0L).coerceAtLeast(0L),
+                        totalBytes = item.optLong("totalBytes", 0L).coerceAtLeast(0L),
+                        resumeEtag = item.optString("resumeEtag", "").trim().ifEmpty { null },
+                        resumeLastModified = item.optString("resumeLastModified", "").trim().ifEmpty { null },
+                        verifiedSha256 = item.optString("verifiedSha256", "").trim().ifEmpty { null },
+                        stagedFileName = item.optString("stagedFileName", "").trim().ifEmpty { null },
+                        installedAbsolutePath = item.optString("installedAbsolutePath", "").trim().ifEmpty { null },
+                        status = status,
+                        failureReason = failureReason,
+                    ),
                 )
             }
         }

@@ -1,5 +1,8 @@
 package com.pocketagent.android.runtime.modelmanager
 
+import com.pocketagent.core.model.ModelArtifactRole
+import com.pocketagent.core.model.ModelSourceKind
+
 data class ModelDistributionManifest(
     val models: List<ModelDistributionModel>,
     val source: ManifestSource = ManifestSource.BUNDLED,
@@ -19,6 +22,20 @@ data class ModelDistributionModel(
     val versions: List<ModelDistributionVersion>,
 )
 
+data class ModelDistributionArtifact(
+    val artifactId: String,
+    val role: ModelArtifactRole,
+    val fileName: String,
+    val downloadUrl: String,
+    val expectedSha256: String,
+    val provenanceIssuer: String,
+    val provenanceSignature: String,
+    val runtimeCompatibility: String,
+    val fileSizeBytes: Long,
+    val required: Boolean = true,
+    val verificationPolicy: DownloadVerificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
+)
+
 data class ModelDistributionVersion(
     val modelId: String,
     val version: String,
@@ -29,6 +46,22 @@ data class ModelDistributionVersion(
     val runtimeCompatibility: String,
     val fileSizeBytes: Long,
     val verificationPolicy: DownloadVerificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
+    val sourceKind: ModelSourceKind = ModelSourceKind.BUILT_IN,
+    val promptProfileId: String? = null,
+    val artifacts: List<ModelDistributionArtifact> = listOf(
+        ModelDistributionArtifact(
+            artifactId = "$modelId::$version::primary",
+            role = ModelArtifactRole.PRIMARY_GGUF,
+            fileName = downloadUrl.substringAfterLast('/').ifBlank { "$modelId-$version.gguf" },
+            downloadUrl = downloadUrl,
+            expectedSha256 = expectedSha256,
+            provenanceIssuer = provenanceIssuer,
+            provenanceSignature = provenanceSignature,
+            runtimeCompatibility = runtimeCompatibility,
+            fileSizeBytes = fileSizeBytes,
+            verificationPolicy = verificationPolicy,
+        ),
+    ),
 )
 
 enum class DownloadNetworkPreference {
@@ -58,6 +91,30 @@ data class ModelVersionDescriptor(
     val fileSizeBytes: Long,
     val importedAtEpochMs: Long,
     val isActive: Boolean,
+    val sourceKind: ModelSourceKind = ModelSourceKind.LOCAL_IMPORT,
+    val artifacts: List<InstalledArtifactDescriptor> = listOf(
+        InstalledArtifactDescriptor(
+            artifactId = "$modelId::$version::primary",
+            role = ModelArtifactRole.PRIMARY_GGUF,
+            fileName = absolutePath.substringAfterLast('/').ifBlank { "$modelId-$version.gguf" },
+            absolutePath = absolutePath,
+            expectedSha256 = sha256,
+            runtimeCompatibility = runtimeCompatibility,
+            fileSizeBytes = fileSizeBytes,
+        ),
+    ),
+    val promptProfileId: String? = null,
+)
+
+data class InstalledArtifactDescriptor(
+    val artifactId: String,
+    val role: ModelArtifactRole,
+    val fileName: String,
+    val absolutePath: String? = null,
+    val expectedSha256: String? = null,
+    val runtimeCompatibility: String? = null,
+    val fileSizeBytes: Long? = null,
+    val required: Boolean = true,
 )
 
 enum class DownloadTaskStatus {
@@ -99,16 +156,49 @@ enum class DownloadFailureReason {
     UNKNOWN,
 }
 
-data class DownloadTaskState(
-    val taskId: String,
-    val modelId: String,
-    val version: String,
+enum class DownloadArtifactTaskStatus {
+    PENDING,
+    DOWNLOADING,
+    VERIFIED,
+    INSTALLED,
+    FAILED,
+}
+
+data class DownloadArtifactTaskState(
+    val artifactId: String,
+    val role: ModelArtifactRole,
+    val fileName: String,
     val downloadUrl: String,
     val expectedSha256: String,
     val provenanceIssuer: String,
     val provenanceSignature: String,
     val verificationPolicy: DownloadVerificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
     val runtimeCompatibility: String,
+    val fileSizeBytes: Long,
+    val required: Boolean = true,
+    val progressBytes: Long = 0L,
+    val totalBytes: Long = fileSizeBytes.coerceAtLeast(0L),
+    val resumeEtag: String? = null,
+    val resumeLastModified: String? = null,
+    val verifiedSha256: String? = null,
+    val stagedFileName: String? = null,
+    val installedAbsolutePath: String? = null,
+    val status: DownloadArtifactTaskStatus = DownloadArtifactTaskStatus.PENDING,
+    val failureReason: DownloadFailureReason? = null,
+)
+
+data class DownloadTaskState(
+    val taskId: String,
+    val modelId: String,
+    val version: String,
+    val sourceKind: ModelSourceKind = ModelSourceKind.BUILT_IN,
+    val downloadUrl: String,
+    val expectedSha256: String,
+    val provenanceIssuer: String,
+    val provenanceSignature: String,
+    val verificationPolicy: DownloadVerificationPolicy = DownloadVerificationPolicy.INTEGRITY_ONLY,
+    val runtimeCompatibility: String,
+    val promptProfileId: String? = null,
     val processingStage: DownloadProcessingStage = DownloadProcessingStage.DOWNLOADING,
     val status: DownloadTaskStatus,
     val progressBytes: Long,
@@ -123,6 +213,34 @@ data class DownloadTaskState(
     val updatedAtEpochMs: Long,
     val failureReason: DownloadFailureReason? = null,
     val message: String? = null,
+    val artifactStates: List<DownloadArtifactTaskState> = listOf(
+        DownloadArtifactTaskState(
+            artifactId = "$modelId::$version::primary",
+            role = ModelArtifactRole.PRIMARY_GGUF,
+            fileName = downloadUrl.substringAfterLast('/').ifBlank { "$modelId-$version.gguf" },
+            downloadUrl = downloadUrl,
+            expectedSha256 = expectedSha256,
+            provenanceIssuer = provenanceIssuer,
+            provenanceSignature = provenanceSignature,
+            verificationPolicy = verificationPolicy,
+            runtimeCompatibility = runtimeCompatibility,
+            fileSizeBytes = totalBytes.coerceAtLeast(0L),
+            progressBytes = progressBytes.coerceAtLeast(0L),
+            totalBytes = totalBytes.coerceAtLeast(progressBytes.coerceAtLeast(0L)),
+            resumeEtag = resumeEtag,
+            resumeLastModified = resumeLastModified,
+            status = when {
+                status == DownloadTaskStatus.FAILED -> DownloadArtifactTaskStatus.FAILED
+                status == DownloadTaskStatus.VERIFYING -> DownloadArtifactTaskStatus.VERIFIED
+                status == DownloadTaskStatus.DOWNLOADING -> DownloadArtifactTaskStatus.DOWNLOADING
+                (status == DownloadTaskStatus.COMPLETED || status == DownloadTaskStatus.INSTALLED_INACTIVE) &&
+                    failureReason == null -> DownloadArtifactTaskStatus.INSTALLED
+                else -> DownloadArtifactTaskStatus.PENDING
+            },
+            failureReason = failureReason,
+        ),
+    ),
+    val activeArtifactId: String? = null,
 ) {
     val progressPercent: Int
         get() {
@@ -146,6 +264,10 @@ data class DownloadTaskState(
 
     val hasThroughputEstimate: Boolean
         get() = (downloadSpeedBps ?: 0L) > 0L && (etaSeconds ?: -1L) >= 0L
+}
+
+fun ModelDistributionVersion.bundleTotalBytes(): Long {
+    return artifacts.sumOf { artifact -> artifact.fileSizeBytes.coerceAtLeast(0L) }
 }
 
 data class StorageSummary(

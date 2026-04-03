@@ -40,9 +40,11 @@ interface ProvisioningGateway {
 
 class DefaultProvisioningGateway(
     private val dependencies: ProvisioningDependencyAccess,
+    private val admissionPolicy: ModelAdmissionPolicy? = null,
 ) : ProvisioningGateway {
     constructor(appContext: android.content.Context) : this(
         dependencies = AppProvisioningDependencyAccess(appContext.applicationContext),
+        admissionPolicy = AppRuntimeDependencies.modelAdmissionPolicy(appContext.applicationContext),
     )
 
     override fun currentSnapshot(): RuntimeProvisioningSnapshot {
@@ -70,6 +72,10 @@ class DefaultProvisioningGateway(
     }
 
     override suspend fun importModelFromUri(modelId: String, sourceUri: Uri): RuntimeModelImportResult {
+        admissionPolicy?.requireAllowed(
+            action = ModelAdmissionAction.IMPORT,
+            subject = ModelAdmissionSubject(modelId = modelId),
+        )
         return dependencies.importModelFromUri(
             modelId = modelId,
             sourceUri = sourceUri,
@@ -85,6 +91,18 @@ class DefaultProvisioningGateway(
     }
 
     override fun setActiveVersion(modelId: String, version: String): Boolean {
+        if (admissionPolicy != null) {
+            val installed = dependencies.listInstalledVersions(modelId = modelId)
+                .firstOrNull { descriptor -> descriptor.version == version }
+                ?: return false
+            val decision = admissionPolicy.evaluate(
+                action = ModelAdmissionAction.ACTIVATE,
+                subject = installed.toAdmissionSubject(),
+            )
+            if (!decision.allowed) {
+                return false
+            }
+        }
         return dependencies.setActiveVersion(modelId = modelId, version = version)
     }
 
@@ -97,6 +115,17 @@ class DefaultProvisioningGateway(
     }
 
     override suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult {
+        val installed = dependencies.listInstalledVersions(modelId = modelId)
+            .firstOrNull { descriptor -> descriptor.version == version }
+        val decision = installed?.let { descriptor ->
+            admissionPolicy?.evaluate(
+                action = ModelAdmissionAction.LOAD,
+                subject = descriptor.toAdmissionSubject(),
+            )
+        }
+        if (decision != null && !decision.allowed) {
+            return decision.asLifecycleRejectedResult()
+        }
         return dependencies.loadInstalledModel(modelId = modelId, version = version)
     }
 
@@ -109,6 +138,10 @@ class DefaultProvisioningGateway(
     }
 
     override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+        admissionPolicy?.requireAllowed(
+            action = ModelAdmissionAction.DOWNLOAD,
+            subject = version.toAdmissionSubject(),
+        )
         return dependencies.enqueueDownload(version = version, options = options)
     }
 

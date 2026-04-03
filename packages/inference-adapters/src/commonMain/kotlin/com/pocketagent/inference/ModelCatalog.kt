@@ -1,6 +1,26 @@
 package com.pocketagent.inference
 
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.core.model.ArtifactBundleSpec
+import com.pocketagent.core.model.ArtifactLocator
+import com.pocketagent.core.model.ArtifactSpec
+import com.pocketagent.core.model.CapabilityFlag
+import com.pocketagent.core.model.CapabilityProfile
+import com.pocketagent.core.model.ModelArtifactRole
+import com.pocketagent.core.model.ModelSourceKind
+import com.pocketagent.core.model.ModelSourceRef
+import com.pocketagent.core.model.ModelVariantSpec
+import com.pocketagent.core.model.NormalizedModelSpec
+import com.pocketagent.core.model.NormalizedModelTier
+import com.pocketagent.core.model.NormalizedRuntimeProfile
+import com.pocketagent.core.model.ProductPolicyProfile
+import com.pocketagent.core.model.PromptProfile
+import com.pocketagent.core.model.PromptTemplateFamily
+import com.pocketagent.core.model.RuntimeBackendFamilyTag
+import com.pocketagent.core.model.RuntimeRequirementProfile
+import com.pocketagent.core.model.SystemPromptHandling
+import com.pocketagent.core.model.ThinkingStrategyId
+import com.pocketagent.core.model.ToolCallStrategyId
 
 enum class ModelTier {
     BASELINE,
@@ -67,6 +87,8 @@ object ModelCatalog {
     const val QWEN3_0_6B_Q4_K_M = "qwen3-0.6b-q4_k_m"
     const val PHI_4_MINI_Q4_K_M = "phi-4-mini-instruct-q4_k_m"
     const val GEMMA_2_2B_Q4_K_M = "gemma-2-2b-it-q4_k_m"
+    const val BONSAI_1_7B_Q1_0_G128 = "bonsai-1.7b-q1_0_g128"
+    const val BONSAI_4B_Q1_0_G128 = "bonsai-4b-q1_0_g128"
     const val BONSAI_8B_Q1_0_G128 = "bonsai-8b-q1_0_g128"
 
     private val descriptors: List<ModelDescriptor> = listOf(
@@ -246,6 +268,50 @@ object ModelCatalog {
             explicitRoutingModes = setOf(RoutingMode.GEMMA_2_2B),
         ),
         ModelDescriptor(
+            modelId = BONSAI_1_7B_Q1_0_G128,
+            tier = ModelTier.BASELINE,
+            family = ModelFamily.QWEN,
+            bridgeSupported = true,
+            autoRoutingEnabled = false,
+            capabilities = setOf(
+                ModelCapability.SHORT_TEXT,
+                ModelCapability.LONG_TEXT,
+                ModelCapability.REASONING,
+            ),
+            minRamGb = 4,
+            qualityRank = 5,
+            speedRank = 0,
+            fallbackPriority = 28,
+            startupCandidate = false,
+            startupRequired = false,
+            defaultGetReadyProfiles = emptySet(),
+            envKeyToken = "BONSAI_1_7B_Q1_0_G128",
+            interactionFeatures = setOf("THINKING_TAGS"),
+            includeAutoRoutingMode = false,
+        ),
+        ModelDescriptor(
+            modelId = BONSAI_4B_Q1_0_G128,
+            tier = ModelTier.BASELINE,
+            family = ModelFamily.QWEN,
+            bridgeSupported = true,
+            autoRoutingEnabled = false,
+            capabilities = setOf(
+                ModelCapability.SHORT_TEXT,
+                ModelCapability.LONG_TEXT,
+                ModelCapability.REASONING,
+            ),
+            minRamGb = 6,
+            qualityRank = 6,
+            speedRank = -1,
+            fallbackPriority = 29,
+            startupCandidate = false,
+            startupRequired = false,
+            defaultGetReadyProfiles = emptySet(),
+            envKeyToken = "BONSAI_4B_Q1_0_G128",
+            interactionFeatures = setOf("THINKING_TAGS"),
+            includeAutoRoutingMode = false,
+        ),
+        ModelDescriptor(
             modelId = BONSAI_8B_Q1_0_G128,
             tier = ModelTier.BASELINE,
             family = ModelFamily.QWEN,
@@ -273,6 +339,8 @@ object ModelCatalog {
     private val descriptorsByModelId: Map<String, ModelDescriptor> = descriptors.associateBy { descriptor -> descriptor.modelId }
     private val descriptorsByEnvKeyToken: Map<String, ModelDescriptor> =
         descriptors.associateBy { descriptor -> descriptor.envKeyToken }
+    private val normalizedSpecsByModelId: Map<String, NormalizedModelSpec> =
+        descriptors.associate { descriptor -> descriptor.modelId to descriptor.toNormalizedModelSpec() }
     private val modelIdByRoutingMode: Map<RoutingMode, String> = buildMap {
         descriptors.forEach { descriptor ->
             descriptor.explicitRoutingModes.forEach { routingMode ->
@@ -293,6 +361,10 @@ object ModelCatalog {
     fun fastTierModels(): List<String> = emptyList()
 
     fun modelDescriptors(): List<ModelDescriptor> = descriptors
+
+    fun normalizedSpecs(): List<NormalizedModelSpec> = normalizedSpecsByModelId.values.toList()
+
+    fun normalizedSpecFor(modelId: String): NormalizedModelSpec? = normalizedSpecsByModelId[modelId]
 
     fun descriptorFor(modelId: String): ModelDescriptor? = descriptorsByModelId[modelId]
 
@@ -414,5 +486,176 @@ object ModelCatalog {
             "image" -> ModelCapability.IMAGE
             else -> ModelCapability.SHORT_TEXT
         }
+    }
+}
+
+private fun ModelDescriptor.toNormalizedModelSpec(): NormalizedModelSpec {
+    val descriptorModelId = this.modelId
+    val promptProfile = when (chatTemplateId) {
+        "LLAMA3" -> PromptProfile(
+            profileId = "llama3-default",
+            templateFamily = PromptTemplateFamily.LLAMA3,
+            toolCallStrategy = interactionFeatures.toToolCallStrategy(),
+            thinkingStrategy = interactionFeatures.toThinkingStrategy(descriptorModelId, capabilities, chatTemplateId),
+            stopSequences = listOf("<|eot_id|>", "<|start_header_id|>user<|end_header_id|>"),
+        )
+
+        "PHI" -> PromptProfile(
+            profileId = "phi-default",
+            templateFamily = PromptTemplateFamily.PHI,
+            toolCallStrategy = interactionFeatures.toToolCallStrategy(),
+            thinkingStrategy = interactionFeatures.toThinkingStrategy(descriptorModelId, capabilities, chatTemplateId),
+            stopSequences = listOf("<|end|>", "<|endoftext|>"),
+        )
+
+        "GEMMA" -> PromptProfile(
+            profileId = "gemma2-it-legacy",
+            templateFamily = PromptTemplateFamily.GEMMA,
+            systemPromptHandling = SystemPromptHandling.PREPEND_TO_USER,
+            toolCallStrategy = interactionFeatures.toToolCallStrategy(),
+            thinkingStrategy = interactionFeatures.toThinkingStrategy(descriptorModelId, capabilities, chatTemplateId),
+            assistantRoleName = "model",
+            stopSequences = listOf("<end_of_turn>", "<start_of_turn>user"),
+        )
+
+        else -> PromptProfile(
+            profileId = "chatml-default",
+            templateFamily = PromptTemplateFamily.CHATML,
+            toolCallStrategy = interactionFeatures.toToolCallStrategy(),
+            thinkingStrategy = interactionFeatures.toThinkingStrategy(descriptorModelId, capabilities, chatTemplateId),
+            stopSequences = listOf("<|im_end|>", "<|im_start|>user", "</tool_call>"),
+        )
+    }
+    val primaryVariantId = descriptorModelId.substringAfterLast('-')
+        .takeIf { it.contains('_') || it.startsWith("q") }
+        ?: descriptorModelId
+    val primaryArtifact = ArtifactSpec(
+        artifactId = "$descriptorModelId::$primaryVariantId::primary",
+        role = ModelArtifactRole.PRIMARY_GGUF,
+        locator = ArtifactLocator(fileName = "$descriptorModelId.gguf"),
+    )
+    val variantArtifacts = buildList {
+        add(primaryArtifact)
+        mmProjFileName?.let { mmproj ->
+            add(
+                ArtifactSpec(
+                    artifactId = "$descriptorModelId::$primaryVariantId::mmproj",
+                    role = ModelArtifactRole.MMPROJ,
+                    required = capabilities.contains(ModelCapability.IMAGE),
+                    locator = ArtifactLocator(fileName = mmproj),
+                ),
+            )
+        }
+    }
+    return NormalizedModelSpec(
+        modelId = descriptorModelId,
+        displayName = descriptorModelId,
+        family = family.name,
+        promptProfile = promptProfile,
+        capabilities = CapabilityProfile(flags = capabilities.toCapabilityFlags(interactionFeatures)),
+        runtimeRequirements = RuntimeRequirementProfile(
+            bridgeSupported = bridgeSupported,
+            minRamGb = minRamGb,
+            requiredBackendFamily = when {
+                descriptorModelId.contains("q1_0_g128") -> RuntimeBackendFamilyTag.OPENCL
+                else -> null
+            },
+            supportedBackendFamilies = when {
+                bridgeSupported -> setOf(RuntimeBackendFamilyTag.CPU, RuntimeBackendFamilyTag.OPENCL)
+                else -> setOf(RuntimeBackendFamilyTag.CPU)
+            },
+        ),
+        productPolicy = ProductPolicyProfile(
+            tier = tier.toNormalizedTier(),
+            startupCandidate = startupCandidate,
+            startupRequired = startupRequired,
+            defaultForGetReadyProfiles = defaultGetReadyProfiles.mapTo(linkedSetOf()) { profile -> profile.toNormalizedProfile() },
+            autoRoutingEligible = autoRoutingEnabled,
+            routingModes = ModelCatalog.routingModesForModel(descriptorModelId),
+            qualityRank = qualityRank,
+            speedRank = speedRank,
+            fallbackPriority = fallbackPriority,
+        ),
+        variants = listOf(
+            ModelVariantSpec(
+                variantId = primaryVariantId,
+                artifactBundle = ArtifactBundleSpec(artifacts = variantArtifacts),
+                source = ModelSourceRef(
+                    kind = ModelSourceKind.BUILT_IN,
+                    originId = envKeyToken,
+                ),
+            ),
+        ),
+        source = ModelSourceRef(
+            kind = ModelSourceKind.BUILT_IN,
+            originId = envKeyToken,
+        ),
+    )
+}
+
+private fun Set<ModelCapability>.toCapabilityFlags(interactionFeatures: Set<String>): Set<CapabilityFlag> {
+    return buildSet {
+        this@toCapabilityFlags.forEach { capability ->
+            when (capability) {
+                ModelCapability.SHORT_TEXT -> add(CapabilityFlag.SHORT_TEXT)
+                ModelCapability.LONG_TEXT -> add(CapabilityFlag.LONG_TEXT)
+                ModelCapability.REASONING -> add(CapabilityFlag.REASONING)
+                ModelCapability.IMAGE -> add(CapabilityFlag.IMAGE)
+            }
+        }
+        if (interactionFeatures.contains("TOOL_CALL_XML")) {
+            add(CapabilityFlag.TOOL_CALLING)
+            add(CapabilityFlag.STRUCTURED_OUTPUT)
+        }
+        if (this@toCapabilityFlags.contains(ModelCapability.LONG_TEXT)) {
+            add(CapabilityFlag.LONG_CONTEXT)
+        }
+    }
+}
+
+private fun Set<String>.toToolCallStrategy(): ToolCallStrategyId {
+    return if (contains("TOOL_CALL_XML")) {
+        ToolCallStrategyId.XML_TAGS
+    } else {
+        ToolCallStrategyId.NONE
+    }
+}
+
+private fun Set<String>.toThinkingStrategy(
+    modelId: String,
+    capabilities: Set<ModelCapability>,
+    chatTemplateId: String,
+): ThinkingStrategyId {
+    if (contains("THINKING_TAGS")) {
+        return ThinkingStrategyId.THINK_TAGS
+    }
+    val normalizedModelId = modelId.lowercase()
+    val knownThinkingModel = normalizedModelId.contains("deepseek-r1") ||
+        normalizedModelId.contains("qwen3") ||
+        normalizedModelId.contains("qwen3.5") ||
+        normalizedModelId.contains("smollm3") ||
+        normalizedModelId.contains("phi-4")
+    if (knownThinkingModel) {
+        return ThinkingStrategyId.THINK_TAGS
+    }
+    return if (capabilities.contains(ModelCapability.REASONING) && chatTemplateId != "GEMMA") {
+        ThinkingStrategyId.THINK_TAGS
+    } else {
+        ThinkingStrategyId.NONE
+    }
+}
+
+private fun ModelTier.toNormalizedTier(): NormalizedModelTier {
+    return when (this) {
+        ModelTier.BASELINE -> NormalizedModelTier.BASELINE
+        ModelTier.FAST -> NormalizedModelTier.FAST
+        ModelTier.DEBUG -> NormalizedModelTier.DEBUG
+    }
+}
+
+private fun ModelRuntimeProfile.toNormalizedProfile(): NormalizedRuntimeProfile {
+    return when (this) {
+        ModelRuntimeProfile.PROD -> NormalizedRuntimeProfile.PROD
+        ModelRuntimeProfile.DEV_FAST -> NormalizedRuntimeProfile.DEV_FAST
     }
 }
