@@ -7,12 +7,11 @@ tags:
 ---
 - runFlow: shared/bootstrap-runtime-ready.yaml
 - takeScreenshot: "scenario-b-01-ready"
-- tapOn: "Advanced"
-- assertVisible: "Advanced controls"
+- runFlow: shared/open-advanced-controls.yaml
 - assertVisible: "Downloads"
 - back
 - extendedWaitUntil:
-    visible: "Runtime: Ready"
+    visible: "Send"
     timeout: 180000
 - takeScreenshot: "scenario-b-03-after-diagnostics"
 - tapOn:

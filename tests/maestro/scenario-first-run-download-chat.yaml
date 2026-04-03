@@ -21,7 +21,12 @@ tags:
 - assertVisible: "Offline-first"
 - runFlow:
     when:
-      notVisible: "Runtime: Ready"
+      visible: "Load last used"
+    commands:
+      - tapOn: "Load last used"
+- runFlow:
+    when:
+      visible: "Setup"
     commands:
       - runFlow:
           when:
@@ -30,43 +35,25 @@ tags:
             - tapOn: "Get ready"
       - runFlow:
           when:
-            visible: "Open model library"
+            visible: "Load last used"
           commands:
-            - tapOn: "Open model library"
+            - tapOn: "Load last used"
       - runFlow:
           when:
-            visible: "Fix model library"
+            visible: "Setup"
           commands:
-            - tapOn: "Fix model library"
+            - tapOn:
+                id: "send_button"
       - runFlow:
           when:
-            notVisible: "Model library"
+            visible: "Load last used"
           commands:
-            - runFlow:
-                when:
-                  visible:
-                    id: "advanced_sheet_button"
-                commands:
-                  - tapOn:
-                      id: "advanced_sheet_button"
-            - runFlow:
-                when:
-                  visible: "Advanced"
-                commands:
-                  - tapOn: "Advanced"
-            - runFlow:
-                when:
-                  visible: "Open model library"
-                commands:
-                  - tapOn: "Open model library"
-            - runFlow:
-                when:
-                  visible: "Fix model library"
-                commands:
-                  - tapOn: "Fix model library"
-      - extendedWaitUntil:
-          visible: "Model library"
-          timeout: 30000
+            - tapOn: "Load last used"
+      - runFlow:
+          when:
+            visible: "Setup"
+          commands:
+            - runFlow: shared/open-model-library.yaml
       - runFlow:
           when:
             visible: "Download default model"
@@ -74,26 +61,37 @@ tags:
             - tapOn: "Download default model"
       - runFlow:
           when:
-            visible: "Start download"
+            visible: "Download"
           commands:
-            - tapOn: "Start download"
+            - tapOn: "Download"
+      - runFlow:
+          when:
+            visible: "Pause"
+          commands:
             - extendedWaitUntil:
-                visible: "Pause"
-                timeout: 120000
+                notVisible: "Pause"
+                timeout: 900000
       - runFlow:
           when:
             visible: "Model library"
           commands:
             - back
-      - runFlow:
-          when:
-            visible: "Runtime: Error"
-          commands:
-            - tapOn: "Refresh"
-      - extendedWaitUntil:
-          visible: "Runtime: Ready"
-          timeout: 900000
-- assertNotVisible: "Runtime: Error"
+- runFlow:
+    when:
+      visible: "Refresh"
+    commands:
+      - tapOn:
+          id: "refresh_button"
+- extendedWaitUntil:
+    notVisible: "Setup"
+    timeout: 900000
+- extendedWaitUntil:
+    notVisible: "Loading…"
+    timeout: 900000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 60000
+- assertNotVisible: "UI-STARTUP-001"
 - tapOn:
     id: "composer_input"
 - eraseText

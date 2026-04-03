@@ -1,0 +1,17 @@
+appId: com.pocketagent.android
+---
+- runFlow:
+    when:
+      visible:
+        id: "advanced_sheet_button"
+    commands:
+      - tapOn:
+          id: "advanced_sheet_button"
+- runFlow:
+    when:
+      visible: "Advanced"
+    commands:
+      - tapOn: "Advanced"
+- extendedWaitUntil:
+    visible: "Advanced controls"
+    timeout: 20000

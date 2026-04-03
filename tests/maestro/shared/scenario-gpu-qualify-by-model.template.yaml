@@ -15,26 +15,8 @@ appId: com.pocketagent.android
       - tapOn:
           id: "onboarding_get_started"
 - assertVisible: "Offline-first"
-- runFlow:
-    when:
-      visible:
-        id: "advanced_sheet_button"
-    commands:
-      - tapOn:
-          id: "advanced_sheet_button"
-- runFlow:
-    when:
-      visible: "Advanced"
-    commands:
-      - tapOn: "Advanced"
-- assertVisible: "Advanced controls"
-- tapOn: "Open model library"
-- assertVisible: "Model library"
-- scrollUntilVisible:
-    element:
-      text: "Downloads"
-    direction: DOWN
-    timeout: 30000
+- runFlow: shared/open-advanced-controls.yaml
+- runFlow: shared/open-model-library.yaml
 - scrollUntilVisible:
     element:
       text: "__TARGET_DOWNLOAD_START__"

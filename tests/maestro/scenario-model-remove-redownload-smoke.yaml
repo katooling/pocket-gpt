@@ -5,12 +5,7 @@ tags:
   - remove
 ---
 - runFlow: shared/bootstrap-runtime-ready.yaml
-
-- tapOn:
-    id: "open_model_library"
-- extendedWaitUntil:
-    visible: "Model library"
-    timeout: 30000
+- runFlow: shared/open-model-library.yaml
 
 - assertVisible: "Downloaded models"
 - scrollUntilVisible:
@@ -21,28 +16,22 @@ tags:
 
 - tapOn: "Remove"
 - extendedWaitUntil:
-    visible: "Remove model"
+    visible: "Remove model?"
     timeout: 10000
 - assertVisible: "Cancel"
-- tapOn:
-    text: "Remove"
-    index: 1
-
+- tapOn: "Remove"
 - extendedWaitUntil:
     visible: "Undo"
     timeout: 10000
-
 - extendedWaitUntil:
     notVisible: "Undo"
-    timeout: 15000
-
+    timeout: 20000
 - scrollUntilVisible:
     element:
       text: "Available models"
     direction: DOWN
     timeout: 20000
 - assertVisible: "Available models"
-
 - scrollUntilVisible:
     element:
       text: "Download"

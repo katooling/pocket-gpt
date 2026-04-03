@@ -4,19 +4,7 @@ tags:
   - diagnostics
 ---
 - runFlow: shared/bootstrap-runtime-ready.yaml
-- runFlow:
-    when:
-      visible:
-        id: "advanced_sheet_button"
-    commands:
-      - tapOn:
-          id: "advanced_sheet_button"
-- runFlow:
-    when:
-      visible: "Advanced"
-    commands:
-      - tapOn: "Advanced"
-- assertVisible: "Advanced controls"
+- runFlow: shared/open-advanced-controls.yaml
 - runFlow:
     when:
       visible: "Validating GPU support..."

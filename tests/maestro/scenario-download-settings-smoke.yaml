@@ -29,7 +29,8 @@ tags:
       - tapOn:
           id: "onboarding_skip"
 - assertVisible: "Offline-first"
-- tapOn: "Advanced"
+- tapOn:
+    id: "advanced_sheet_button"
 - extendedWaitUntil:
     visible: "Advanced controls"
     timeout: 20000
@@ -49,7 +50,8 @@ tags:
     visible: "Model library"
     timeout: 30000
 - assertVisible: "Refresh all"
-- assertVisible: "Downloads"
+- assertVisible: "Downloaded models"
+- assertVisible: "Available models"
 - assertNotVisible: "Load now"
 - assertNotVisible: "Offload"
 - scrollUntilVisible:
@@ -63,7 +65,7 @@ tags:
     timeout: 30000
 - assertVisible: "Runtime load state"
 - assertVisible: "No installed models yet"
-- assertNotVisible: "Downloads"
+- assertNotVisible: "Downloaded models"
 - assertNotVisible: "Start download"
 - tapOn: "Open model library"
 - extendedWaitUntil:
