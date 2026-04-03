@@ -46,6 +46,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import com.pocketagent.android.runtime.ModelEligibilityReason
+import com.pocketagent.android.runtime.ModelSupportLevel
+import com.pocketagent.android.runtime.ModelVersionEligibility
 import com.pocketagent.android.runtime.ProvisionedModelState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
@@ -95,14 +98,21 @@ internal fun ModelSheet(
     val availableVersions by remember(libraryState, searchQuery, installedKeys) {
         derivedStateOf {
             libraryState.manifest.models.flatMap { model ->
-                model.versions.map { version -> model.displayName to version }
-            }.filter { (displayName, version) ->
-                versionIdentityKey(version.modelId, version.version) !in installedKeys &&
+                model.versions.map { version ->
+                    AvailableCatalogVersion(
+                        displayName = model.displayName,
+                        version = version,
+                        eligibility = libraryState.eligibility.eligibilityFor(version.modelId, version.version),
+                    )
+                }
+            }.filter { entry ->
+                versionIdentityKey(entry.version.modelId, entry.version.version) !in installedKeys &&
+                    entry.eligibility.catalogVisible &&
                     matchesModelSearch(
                         searchQuery = searchQuery,
-                        modelId = version.modelId,
-                        displayName = displayName,
-                        version = version.version,
+                        modelId = entry.version.modelId,
+                        displayName = entry.displayName,
+                        version = entry.version.version,
                     )
             }
         }
@@ -201,6 +211,7 @@ internal fun ModelSheet(
                 DownloadedModelCard(
                     model = model,
                     version = version,
+                    eligibility = libraryState.eligibility.eligibilityFor(model.modelId, version.version),
                     defaultGetReadyModelId = libraryState.defaultGetReadyModelId,
                     activeModel = activeModel,
                     loadedModel = modelLoadingState.loadedModel,
@@ -229,12 +240,13 @@ internal fun ModelSheet(
         } else {
             items(
                 availableVersions,
-                key = { (_, version) -> downloadVersionItemKey(version.modelId, version.version) },
-            ) { (displayName, version) ->
+                key = { entry -> downloadVersionItemKey(entry.version.modelId, entry.version.version) },
+            ) { entry ->
                 AvailableModelCard(
-                    displayName = displayName,
-                    version = version,
-                    task = downloadTasksByKey[versionIdentityKey(version.modelId, version.version)],
+                    displayName = entry.displayName,
+                    version = entry.version,
+                    eligibility = entry.eligibility,
+                    task = downloadTasksByKey[versionIdentityKey(entry.version.modelId, entry.version.version)],
                     isImporting = runtimeState.isImporting,
                     onImportModel = { modelId -> onEvent(ModelSheetEvent.ImportModel(modelId)) },
                     onDownloadVersion = { ver -> onEvent(ModelSheetEvent.DownloadVersion(ver)) },
@@ -411,6 +423,7 @@ private fun ActiveModelSection(
 private fun DownloadedModelCard(
     model: ProvisionedModelState,
     version: ModelVersionDescriptor,
+    eligibility: ModelVersionEligibility,
     defaultGetReadyModelId: String?,
     activeModel: com.pocketagent.runtime.RuntimeLoadedModel?,
     loadedModel: com.pocketagent.runtime.RuntimeLoadedModel?,
@@ -437,6 +450,7 @@ private fun DownloadedModelCard(
         DownloadedModelBadge.READY -> MaterialTheme.colorScheme.outline
     }
     val loadDisabledReason = when {
+        !eligibility.loadAllowed -> eligibilityMessage(eligibility)
         isLoaded -> stringResource(id = R.string.ui_load_button_disabled_already_loaded)
         busy -> stringResource(id = R.string.ui_load_button_disabled_busy)
         else -> null
@@ -477,13 +491,26 @@ private fun DownloadedModelCard(
                     },
                 )
             }
+            eligibilityMessage(eligibility)?.takeIf { message ->
+                eligibility.experimental || !eligibility.loadAllowed
+            }?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (eligibility.experimental) {
+                        MaterialTheme.colorScheme.tertiary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+            }
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
                 verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
             ) {
                 Button(
                     onClick = { onLoadVersion(model.modelId, version.version) },
-                    enabled = !busy && !isLoaded,
+                    enabled = !busy && !isLoaded && eligibility.loadAllowed,
                     modifier = if (loadDisabledReason != null) {
                         Modifier.semantics { stateDescription = loadDisabledReason }
                     } else {
@@ -520,6 +547,7 @@ private fun DownloadedModelCard(
 private fun AvailableModelCard(
     displayName: String,
     version: ModelDistributionVersion,
+    eligibility: ModelVersionEligibility,
     task: DownloadTaskState?,
     isImporting: Boolean,
     onImportModel: (String) -> Unit,
@@ -535,7 +563,19 @@ private fun AvailableModelCard(
             modifier = Modifier.fillMaxWidth().padding(PocketAgentDimensions.cardPadding),
             verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
         ) {
-            Text(displayName, style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(displayName, style = MaterialTheme.typography.labelLarge)
+                if (eligibility.supportLevel == ModelSupportLevel.EXPERIMENTAL) {
+                    StatusRow(
+                        color = MaterialTheme.colorScheme.tertiary,
+                        label = stringResource(id = R.string.ui_experimental),
+                    )
+                }
+            }
             Text(
                 text = stringResource(
                     id = R.string.ui_model_download_version_label,
@@ -553,6 +593,17 @@ private fun AvailableModelCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            eligibilityMessage(eligibility)?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (eligibility.experimental) {
+                        MaterialTheme.colorScheme.tertiary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+            }
             if (task != null) {
                 val progress = (task.progressPercent / 100f).coerceIn(0f, 1f)
                 LinearProgressIndicator(
@@ -581,6 +632,7 @@ private fun AvailableModelCard(
                 horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
                 verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
             ) {
+                val downloadDisabledReason = if (eligibility.downloadAllowed) null else eligibilityMessage(eligibility)
                 when (task?.status) {
                     DownloadTaskStatus.DOWNLOADING,
                     DownloadTaskStatus.QUEUED,
@@ -612,14 +664,22 @@ private fun AvailableModelCard(
                     }
 
                     else -> {
-                        Button(onClick = { onDownloadVersion(version) }) {
+                        Button(
+                            onClick = { onDownloadVersion(version) },
+                            enabled = eligibility.downloadAllowed,
+                            modifier = if (downloadDisabledReason != null) {
+                                Modifier.semantics { stateDescription = downloadDisabledReason }
+                            } else {
+                                Modifier
+                            },
+                        ) {
                             Text(stringResource(id = R.string.ui_download))
                         }
                     }
                 }
                 OutlinedButton(
                     onClick = { onImportModel(version.modelId) },
-                    enabled = !isImporting,
+                    enabled = !isImporting && eligibility.downloadAllowed,
                 ) {
                     Text(stringResource(id = R.string.ui_import))
                 }
@@ -686,6 +746,25 @@ private fun StatusDot(color: Color, statusDescription: String) {
     )
 }
 
+@Composable
+private fun eligibilityMessage(eligibility: ModelVersionEligibility): String? {
+    return when (eligibility.reason) {
+        ModelEligibilityReason.NONE -> null
+        ModelEligibilityReason.RUNTIME_COMPATIBILITY_MISMATCH ->
+            stringResource(id = R.string.ui_model_eligibility_runtime_mismatch)
+        ModelEligibilityReason.MODEL_NOT_RUNTIME_ENABLED ->
+            stringResource(id = R.string.ui_model_eligibility_runtime_disabled)
+        ModelEligibilityReason.DEVICE_GPU_CLASS_UNSUPPORTED ->
+            stringResource(id = R.string.ui_model_eligibility_gpu_device_unsupported)
+        ModelEligibilityReason.GPU_RUNTIME_UNAVAILABLE ->
+            stringResource(id = R.string.ui_model_eligibility_gpu_runtime_unavailable)
+        ModelEligibilityReason.GPU_QUALIFICATION_PENDING ->
+            stringResource(id = R.string.ui_model_eligibility_gpu_qualification_pending)
+        ModelEligibilityReason.GPU_QUALIFICATION_FAILED ->
+            stringResource(id = R.string.ui_model_eligibility_gpu_qualification_failed)
+    }
+}
+
 private fun matchesModelSearch(
     searchQuery: String,
     modelId: String,
@@ -701,6 +780,12 @@ private fun matchesModelSearch(
 }
 
 private fun versionIdentityKey(modelId: String, version: String): String = "$modelId::$version"
+
+private data class AvailableCatalogVersion(
+    val displayName: String,
+    val version: ModelDistributionVersion,
+    val eligibility: ModelVersionEligibility,
+)
 
 @Composable
 internal fun ModelLoadingState.statusHeadline(): String {

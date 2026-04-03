@@ -4,6 +4,10 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.pocketagent.android.runtime.DefaultModelCatalogEligibilityEvaluator
+import com.pocketagent.android.runtime.ModelCatalogEligibilityEvaluator
+import com.pocketagent.android.runtime.ModelCatalogEligibilitySnapshot
+import com.pocketagent.android.runtime.ModelEligibilitySignalsProvider
 import com.pocketagent.android.runtime.ProvisioningGateway
 import com.pocketagent.android.runtime.RuntimeDomainException
 import com.pocketagent.android.runtime.RuntimeModelImportResult
@@ -32,6 +36,7 @@ data class ModelProvisioningUiState(
     val downloads: List<DownloadTaskState> = emptyList(),
     val downloadPreferences: DownloadPreferencesState = DownloadPreferencesState(),
     val manifest: ModelDistributionManifest = ModelDistributionManifest(models = emptyList()),
+    val eligibility: ModelCatalogEligibilitySnapshot = ModelCatalogEligibilitySnapshot(),
     val isImporting: Boolean = false,
     val statusMessage: String? = null,
 )
@@ -40,6 +45,7 @@ data class ModelLibraryUiState(
     val snapshot: RuntimeProvisioningSnapshot,
     val manifest: ModelDistributionManifest,
     val downloads: List<DownloadTaskState>,
+    val eligibility: ModelCatalogEligibilitySnapshot = ModelCatalogEligibilitySnapshot(),
     val isImporting: Boolean,
     val statusMessage: String?,
     val defaultGetReadyModelId: String?,
@@ -59,6 +65,7 @@ internal fun ModelProvisioningUiState.toModelLibraryUiState(defaultGetReadyModel
         snapshot = currentSnapshot,
         manifest = manifest,
         downloads = downloads,
+        eligibility = eligibility,
         isImporting = isImporting,
         statusMessage = statusMessage,
         defaultGetReadyModelId = defaultGetReadyModelId,
@@ -81,6 +88,8 @@ internal fun ModelProvisioningUiState.toRuntimeModelUiState(): RuntimeModelUiSta
 
 class ModelProvisioningViewModel(
     private val gateway: ProvisioningGateway,
+    private val eligibilityEvaluator: ModelCatalogEligibilityEvaluator = DefaultModelCatalogEligibilityEvaluator(),
+    private val eligibilitySignalsProvider: ModelEligibilitySignalsProvider = ModelEligibilitySignalsProvider.ASSUME_SUPPORTED,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
@@ -122,7 +131,13 @@ class ModelProvisioningViewModel(
                 snapshotRefreshQueued = false
                 val snapshot = gateway.currentSnapshot()
                 val lifecycle = gateway.currentModelLifecycle()
-                _uiState.update { state -> state.copy(snapshot = snapshot, lifecycle = lifecycle) }
+                _uiState.update { state ->
+                    val updated = state.copy(snapshot = snapshot, lifecycle = lifecycle)
+                    updated.withEligibility(
+                        evaluator = eligibilityEvaluator,
+                        signalsProvider = eligibilitySignalsProvider,
+                    )
+                }
             } while (snapshotRefreshQueued && isActive)
         }.also { job ->
             job.invokeOnCompletion {
@@ -140,7 +155,13 @@ class ModelProvisioningViewModel(
         val manifest = withContext(ioDispatcher) {
             gateway.loadModelDistributionManifest()
         }
-        _uiState.update { state -> state.copy(manifest = manifest) }
+        _uiState.update { state ->
+            val updated = state.copy(manifest = manifest)
+            updated.withEligibility(
+                evaluator = eligibilityEvaluator,
+                signalsProvider = eligibilitySignalsProvider,
+            )
+        }
     }
 
     fun setStatusMessage(message: String?) {
@@ -312,12 +333,31 @@ class ProvisioningUserFacingException(
 
 class ModelProvisioningViewModelFactory(
     private val gateway: ProvisioningGateway,
+    private val eligibilityEvaluator: ModelCatalogEligibilityEvaluator = DefaultModelCatalogEligibilityEvaluator(),
+    private val eligibilitySignalsProvider: ModelEligibilitySignalsProvider = ModelEligibilitySignalsProvider.ASSUME_SUPPORTED,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ModelProvisioningViewModel::class.java)) {
-            return ModelProvisioningViewModel(gateway) as T
+            return ModelProvisioningViewModel(
+                gateway = gateway,
+                eligibilityEvaluator = eligibilityEvaluator,
+                eligibilitySignalsProvider = eligibilitySignalsProvider,
+            ) as T
         }
         throw IllegalArgumentException("Unsupported ViewModel class: ${modelClass.name}")
     }
+}
+
+private fun ModelProvisioningUiState.withEligibility(
+    evaluator: ModelCatalogEligibilityEvaluator,
+    signalsProvider: ModelEligibilitySignalsProvider,
+): ModelProvisioningUiState {
+    return copy(
+        eligibility = evaluator.evaluate(
+            manifest = manifest,
+            snapshot = snapshot,
+            signals = signalsProvider.currentSignals(),
+        ),
+    )
 }
