@@ -231,7 +231,7 @@ object AppRuntimeDependencies {
         return graphManager.getOrCreateRuntimeGraph(context).modelManifestProvider.loadManifest()
     }
 
-    fun enqueueDownload(
+    suspend fun enqueueDownload(
         context: Context,
         version: ModelDistributionVersion,
         options: DownloadRequestOptions = DownloadRequestOptions(),

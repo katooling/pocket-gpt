@@ -404,6 +404,38 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
     }
 
     @Test
+    fun storageSummaryRefreshesImmediatelyAfterRemovingInstalledVersion() = runBlocking {
+        val source = writeTempFile(
+            dir = appContext.cacheDir,
+            fileName = "storage-summary-remove-source.gguf",
+            content = "storage-summary-remove-content",
+        )
+        val sourceUri = android.net.Uri.fromFile(source)
+
+        store.importModel(
+            modelId = ModelCatalog.QWEN_3_5_2B_Q4,
+            sourceUri = sourceUri,
+            version = "storage-v1",
+        )
+
+        val beforeRemove = store.storageSummary()
+        assertTrue(
+            "Expected imported model bytes to contribute to used storage before removal.",
+            beforeRemove.usedByModelsBytes > 0L,
+        )
+
+        assertTrue(store.clearActiveVersion(ModelCatalog.QWEN_3_5_2B_Q4))
+        assertTrue(store.removeVersion(ModelCatalog.QWEN_3_5_2B_Q4, "storage-v1"))
+
+        val afterRemove = store.storageSummary()
+        assertEquals(
+            "Storage summary should drop removed model bytes immediately instead of serving a stale cached value.",
+            0L,
+            afterRemove.usedByModelsBytes,
+        )
+    }
+
+    @Test
     fun removeOnlyVersionClearsActiveVersionInSnapshot() = runBlocking {
         val source = writeTempFile(
             dir = appContext.cacheDir,
@@ -512,6 +544,10 @@ class AndroidRuntimeProvisioningStoreInstrumentationTest {
         appContext.getSharedPreferences("pocketagent_runtime_models", 0).edit().clear().commit()
         File(appContext.filesDir, "runtime-models").deleteRecursively()
         File(appContext.filesDir, "runtime-model-downloads").deleteRecursively()
+        File("/sdcard/Android/media/${appContext.packageName}/models").deleteRecursively()
+        File("/storage/emulated/0/Android/media/${appContext.packageName}/models").deleteRecursively()
+        File("/sdcard/Android/media/${appContext.packageName}/runtime-model-downloads").deleteRecursively()
+        File("/storage/emulated/0/Android/media/${appContext.packageName}/runtime-model-downloads").deleteRecursively()
         File("/sdcard/Download/${appContext.packageName}/models").deleteRecursively()
         File("/storage/emulated/0/Download/${appContext.packageName}/models").deleteRecursively()
         arrayOf(appContext.getExternalFilesDir(null))

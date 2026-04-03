@@ -632,7 +632,7 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
         return RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+    override suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
         lastEnqueuedOptions = options
         return "task-1"
     }

@@ -1,8 +1,24 @@
-@file:OptIn(ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalLayoutApi::class, ExperimentalAnimationApi::class)
 
 package com.pocketagent.android.ui
 
 import android.text.format.Formatter
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.ui.res.stringResource
 import com.pocketagent.android.R
@@ -54,10 +70,14 @@ import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.android.runtime.modelmanager.ModelVersionDescriptor
+import com.pocketagent.android.runtime.modelmanager.bundleTotalBytes
 import com.pocketagent.android.ui.components.SectionHeader
 import com.pocketagent.android.ui.state.ModelLoadingState
 import com.pocketagent.android.ui.state.activeOrRequestedModel
+import com.pocketagent.android.ui.theme.LocalReduceMotion
 import com.pocketagent.android.ui.theme.PocketAgentDimensions
+import com.pocketagent.android.ui.theme.rememberHaptic
+import com.pocketagent.android.ui.theme.rememberLongPressHaptic
 import com.pocketagent.core.RoutingMode
 import kotlinx.coroutines.launch
 
@@ -230,7 +250,9 @@ internal fun ModelSheet(
                 subtitle = stringResource(id = R.string.ui_available_models_subtitle),
             )
         }
-        if (availableVersions.isEmpty()) {
+        if (!libraryState.isManifestLoaded) {
+            items(3) { ShimmerModelCard() }
+        } else if (availableVersions.isEmpty()) {
             item {
                 EmptyStateCard(
                     title = stringResource(id = R.string.ui_catalog_up_to_date_title),
@@ -248,6 +270,7 @@ internal fun ModelSheet(
                     eligibility = entry.eligibility,
                     task = downloadTasksByKey[versionIdentityKey(entry.version.modelId, entry.version.version)],
                     isImporting = runtimeState.isImporting,
+                    isEnqueuing = versionIdentityKey(entry.version.modelId, entry.version.version) in libraryState.enqueuingModelIds,
                     onImportModel = { modelId -> onEvent(ModelSheetEvent.ImportModel(modelId)) },
                     onDownloadVersion = { ver -> onEvent(ModelSheetEvent.DownloadVersion(ver)) },
                     onPauseDownload = { taskId -> onEvent(ModelSheetEvent.PauseDownload(taskId)) },
@@ -319,6 +342,7 @@ private fun ActiveModelSection(
             StatusRow(
                 color = modelLoadingState.statusColor(),
                 label = modelLoadingState.statusHeadline(),
+                pulsing = modelLoadingState is ModelLoadingState.Loading || modelLoadingState is ModelLoadingState.Offloading,
             )
             Text(
                 text = currentModel?.let { loaded ->
@@ -433,6 +457,8 @@ private fun DownloadedModelCard(
     onLoadVersion: (String, String) -> Unit,
     onRemoveVersion: (String, String) -> Unit,
 ) {
+    val haptic = rememberHaptic()
+    val hapticConfirm = rememberLongPressHaptic()
     val badge = resolveDownloadedModelBadge(
         model = model,
         version = version,
@@ -489,6 +515,7 @@ private fun DownloadedModelCard(
                         DownloadedModelBadge.ACTIVE -> stringResource(id = R.string.ui_active)
                         DownloadedModelBadge.READY -> stringResource(id = R.string.ui_ready)
                     },
+                    pulsing = badge == DownloadedModelBadge.SWITCHING,
                 )
             }
             eligibilityMessage(eligibility)?.takeIf { message ->
@@ -509,7 +536,7 @@ private fun DownloadedModelCard(
                 verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
             ) {
                 Button(
-                    onClick = { onLoadVersion(model.modelId, version.version) },
+                    onClick = { haptic(); onLoadVersion(model.modelId, version.version) },
                     enabled = !busy && !isLoaded && eligibility.loadAllowed,
                     modifier = if (loadDisabledReason != null) {
                         Modifier.semantics { stateDescription = loadDisabledReason }
@@ -520,18 +547,18 @@ private fun DownloadedModelCard(
                     Text(stringResource(id = if (isLoaded) R.string.ui_loaded else R.string.ui_load))
                 }
                 OutlinedButton(
-                    onClick = { onSetDefaultVersion(model.modelId, version.version) },
+                    onClick = { haptic(); onSetDefaultVersion(model.modelId, version.version) },
                     enabled = !version.isActive,
                 ) {
                     Text(stringResource(id = if (version.isActive) R.string.ui_active else R.string.ui_set_active))
                 }
-                OutlinedButton(onClick = { onImportModel(model.modelId) }) {
+                OutlinedButton(onClick = { haptic(); onImportModel(model.modelId) }) {
                     Text(stringResource(id = if (model.isProvisioned) R.string.ui_replace_file else R.string.ui_import))
                 }
             }
             HorizontalDivider()
             OutlinedButton(
-                onClick = { onRemoveVersion(model.modelId, version.version) },
+                onClick = { hapticConfirm(); onRemoveVersion(model.modelId, version.version) },
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,
                 ),
@@ -550,6 +577,7 @@ private fun AvailableModelCard(
     eligibility: ModelVersionEligibility,
     task: DownloadTaskState?,
     isImporting: Boolean,
+    isEnqueuing: Boolean,
     onImportModel: (String) -> Unit,
     onDownloadVersion: (ModelDistributionVersion) -> Unit,
     onPauseDownload: (String) -> Unit,
@@ -558,6 +586,9 @@ private fun AvailableModelCard(
     onCancelDownload: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val reducedMotion = LocalReduceMotion.current
+    val haptic = rememberHaptic()
+    val hapticConfirm = rememberLongPressHaptic()
     Card {
         Column(
             modifier = Modifier.fillMaxWidth().padding(PocketAgentDimensions.cardPadding),
@@ -588,7 +619,7 @@ private fun AvailableModelCard(
             Text(
                 text = stringResource(
                     id = R.string.ui_model_download_expected_size,
-                    Formatter.formatShortFileSize(context, version.fileSizeBytes.coerceAtLeast(0L)),
+                    Formatter.formatShortFileSize(context, version.bundleTotalBytes().coerceAtLeast(0L)),
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -604,84 +635,130 @@ private fun AvailableModelCard(
                     },
                 )
             }
-            if (task != null) {
-                val progress = (task.progressPercent / 100f).coerceIn(0f, 1f)
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = stringResource(
-                        id = R.string.ui_model_download_state,
-                        task.readableStateNameLocalized(),
-                        task.progressPercent,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                task.stageWarningChips()
-                if (task.status == DownloadTaskStatus.FAILED || task.status == DownloadTaskStatus.CANCELLED) {
-                    Text(
-                        text = task.failureReasonMessage(version),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+            // Download progress section — animates in/out when a task appears or disappears
+            AnimatedVisibility(
+                visible = task != null,
+                enter = if (reducedMotion) fadeIn(snap()) else fadeIn(tween(PocketAgentDimensions.animNormal)) + expandVertically(),
+                exit = if (reducedMotion) fadeOut(snap()) else fadeOut(tween(PocketAgentDimensions.animFast)) + shrinkVertically(),
+            ) {
+                task?.let { activeTask ->
+                    val rawProgress = (activeTask.progressPercent / 100f).coerceIn(0f, 1f)
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = rawProgress,
+                        animationSpec = if (reducedMotion) snap() else tween(PocketAgentDimensions.animNormal),
+                        label = "download_progress_${activeTask.taskId}",
                     )
+                    Column(verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing)) {
+                        LinearProgressIndicator(
+                            progress = { animatedProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics {
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                        )
+                        Text(
+                            text = stringResource(
+                                id = R.string.ui_model_download_state,
+                                activeTask.readableStateNameLocalized(),
+                                activeTask.progressPercent,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // Transfer speed + ETA (shown when available)
+                        activeTask.transferSummary()?.let { speedSummary ->
+                            Text(
+                                text = speedSummary,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        activeTask.stageWarningChips()
+                        if (activeTask.status == DownloadTaskStatus.FAILED || activeTask.status == DownloadTaskStatus.CANCELLED) {
+                            Text(
+                                text = activeTask.failureReasonMessage(version),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 }
             }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
-                verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
-            ) {
-                val downloadDisabledReason = if (eligibility.downloadAllowed) null else eligibilityMessage(eligibility)
-                when (task?.status) {
-                    DownloadTaskStatus.DOWNLOADING,
-                    DownloadTaskStatus.QUEUED,
-                    DownloadTaskStatus.VERIFYING,
-                    -> {
-                        OutlinedButton(onClick = { onPauseDownload(task.taskId) }) {
-                            Text(stringResource(id = R.string.ui_pause))
-                        }
-                        OutlinedButton(onClick = { onCancelDownload(task.taskId) }) {
-                            Text(stringResource(id = R.string.ui_cancel_button))
-                        }
+            // Action buttons — animate between download-idle / queuing / active / paused / failed states
+            AnimatedContent(
+                targetState = Pair(task?.status, isEnqueuing),
+                transitionSpec = {
+                    if (reducedMotion) {
+                        fadeIn(snap()) togetherWith fadeOut(snap())
+                    } else {
+                        fadeIn(tween(PocketAgentDimensions.animFast)) togetherWith
+                            fadeOut(tween(PocketAgentDimensions.animFast))
                     }
-
-                    DownloadTaskStatus.PAUSED -> {
-                        Button(onClick = { onResumeDownload(task.taskId) }) {
-                            Text(stringResource(id = R.string.ui_resume))
-                        }
-                        OutlinedButton(onClick = { onCancelDownload(task.taskId) }) {
-                            Text(stringResource(id = R.string.ui_cancel_button))
-                        }
-                    }
-
-                    DownloadTaskStatus.FAILED,
-                    DownloadTaskStatus.CANCELLED,
-                    -> {
-                        Button(onClick = { onRetryDownload(task.taskId) }) {
-                            Text(stringResource(id = R.string.ui_retry))
-                        }
-                    }
-
-                    else -> {
-                        Button(
-                            onClick = { onDownloadVersion(version) },
-                            enabled = eligibility.downloadAllowed,
-                            modifier = if (downloadDisabledReason != null) {
-                                Modifier.semantics { stateDescription = downloadDisabledReason }
-                            } else {
-                                Modifier
-                            },
-                        ) {
-                            Text(stringResource(id = R.string.ui_download))
-                        }
-                    }
-                }
-                OutlinedButton(
-                    onClick = { onImportModel(version.modelId) },
-                    enabled = !isImporting && eligibility.downloadAllowed,
+                },
+                label = "download_action_buttons",
+            ) { (taskStatus, enqueuing) ->
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+                    verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
                 ) {
-                    Text(stringResource(id = R.string.ui_import))
+                    val downloadDisabledReason = if (eligibility.downloadAllowed) null else eligibilityMessage(eligibility)
+                    when (taskStatus) {
+                        DownloadTaskStatus.DOWNLOADING,
+                        DownloadTaskStatus.QUEUED,
+                        DownloadTaskStatus.VERIFYING,
+                        -> {
+                            OutlinedButton(onClick = { haptic(); task?.taskId?.let(onPauseDownload) }) {
+                                Text(stringResource(id = R.string.ui_pause))
+                            }
+                            OutlinedButton(onClick = { hapticConfirm(); task?.taskId?.let(onCancelDownload) }) {
+                                Text(stringResource(id = R.string.ui_cancel_button))
+                            }
+                        }
+
+                        DownloadTaskStatus.PAUSED -> {
+                            Button(onClick = { haptic(); task?.taskId?.let(onResumeDownload) }) {
+                                Text(stringResource(id = R.string.ui_resume))
+                            }
+                            OutlinedButton(onClick = { hapticConfirm(); task?.taskId?.let(onCancelDownload) }) {
+                                Text(stringResource(id = R.string.ui_cancel_button))
+                            }
+                        }
+
+                        DownloadTaskStatus.FAILED,
+                        DownloadTaskStatus.CANCELLED,
+                        -> {
+                            Button(onClick = { haptic(); task?.taskId?.let(onRetryDownload) }) {
+                                Text(stringResource(id = R.string.ui_retry))
+                            }
+                        }
+
+                        else -> {
+                            if (enqueuing) {
+                                Button(onClick = {}, enabled = false) {
+                                    Text(stringResource(id = R.string.ui_model_download_queuing))
+                                }
+                            } else {
+                                Button(
+                                    onClick = { haptic(); onDownloadVersion(version) },
+                                    enabled = eligibility.downloadAllowed,
+                                    modifier = if (downloadDisabledReason != null) {
+                                        Modifier.semantics { stateDescription = downloadDisabledReason }
+                                    } else {
+                                        Modifier
+                                    },
+                                ) {
+                                    Text(stringResource(id = R.string.ui_download))
+                                }
+                            }
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { haptic(); onImportModel(version.modelId) },
+                        enabled = !isImporting && eligibility.downloadAllowed,
+                    ) {
+                        Text(stringResource(id = R.string.ui_import))
+                    }
                 }
             }
         }
@@ -712,6 +789,7 @@ private fun EmptyStateCard(
 private fun StatusRow(
     color: Color,
     label: String,
+    pulsing: Boolean = false,
 ) {
     val statusDescription = stringResource(
         id = R.string.cd_model_status_indicator,
@@ -724,6 +802,7 @@ private fun StatusRow(
         StatusDot(
             color = color,
             statusDescription = statusDescription,
+            pulsing = pulsing,
         )
         Text(
             text = label,
@@ -734,12 +813,24 @@ private fun StatusRow(
 }
 
 @Composable
-private fun StatusDot(color: Color, statusDescription: String) {
+private fun StatusDot(color: Color, statusDescription: String, pulsing: Boolean = false) {
+    val reducedMotion = LocalReduceMotion.current
+    val infiniteTransition = rememberInfiniteTransition(label = "status_dot_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(PocketAgentDimensions.animSlow, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "status_dot_alpha",
+    )
+    val alpha = if (pulsing && !reducedMotion) pulseAlpha else 1f
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .size(PocketAgentDimensions.statusDotSize)
             .clip(MaterialTheme.shapes.small)
-            .background(color)
+            .background(color.copy(alpha = alpha))
             .semantics {
                 contentDescription = statusDescription
             },

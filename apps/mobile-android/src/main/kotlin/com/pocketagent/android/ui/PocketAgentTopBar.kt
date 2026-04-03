@@ -82,7 +82,9 @@ internal fun PocketAgentTopBar(
                             showModelMenu = true
                         }
                     },
-                    modifier = Modifier.widthIn(max = 120.dp),
+                    modifier = Modifier
+                        .testTag("open_model_library")
+                        .widthIn(max = 120.dp),
                     label = {
                         Text(
                             text = activeRuntimeModelLabel

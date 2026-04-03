@@ -78,9 +78,13 @@ class RealRuntimeAppPathInstrumentationTest {
 
         val facade = AppRuntimeDependencies.runtimeFacadeFactory()
         val startupChecks = facade.runStartupChecks()
-        assertTrue(
-            "App-path startup checks failed: ${startupChecks.joinToString()}",
-            startupChecks.isEmpty(),
+        assertStartupChecksReadyWithOptionalWarnings(
+            startupChecks = startupChecks,
+            healthyModelIds = setOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4,
+                ModelCatalog.QWEN_3_5_2B_Q4,
+            ),
+            failurePrefix = "App-path startup checks failed",
         )
         assertEquals("NATIVE_JNI", facade.runtimeBackend())
 

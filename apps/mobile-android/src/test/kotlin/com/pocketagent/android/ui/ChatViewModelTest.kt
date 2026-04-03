@@ -1620,7 +1620,7 @@ private class LifecycleOnlyProvisioningGateway(
         error("not used in ChatViewModelTest")
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+    override suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
         error("not used in ChatViewModelTest")
     }
 
@@ -1896,7 +1896,7 @@ private class LoadingProvisioningGateway : ProvisioningGateway {
         error("not used in ChatViewModelTest")
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+    override suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
         error("not used in ChatViewModelTest")
     }
 
@@ -2044,7 +2044,7 @@ private class QuickLoadProvisioningGatewayForTest(
         return com.pocketagent.runtime.RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+    override suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
         error("not used in ChatViewModelTest")
     }
 

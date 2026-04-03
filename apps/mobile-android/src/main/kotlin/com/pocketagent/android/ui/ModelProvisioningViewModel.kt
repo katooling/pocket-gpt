@@ -36,9 +36,11 @@ data class ModelProvisioningUiState(
     val downloads: List<DownloadTaskState> = emptyList(),
     val downloadPreferences: DownloadPreferencesState = DownloadPreferencesState(),
     val manifest: ModelDistributionManifest = ModelDistributionManifest(models = emptyList()),
+    val manifestLoaded: Boolean = false,
     val eligibility: ModelCatalogEligibilitySnapshot = ModelCatalogEligibilitySnapshot(),
     val isImporting: Boolean = false,
     val statusMessage: String? = null,
+    val enqueuingModelIds: Set<String> = emptySet(),
 )
 
 data class ModelLibraryUiState(
@@ -47,9 +49,11 @@ data class ModelLibraryUiState(
     val downloads: List<DownloadTaskState>,
     val eligibility: ModelCatalogEligibilitySnapshot = ModelCatalogEligibilitySnapshot(),
     val isImporting: Boolean,
+    val isManifestLoaded: Boolean,
     val statusMessage: String?,
     val defaultGetReadyModelId: String?,
     val defaultModelVersion: ModelDistributionVersion?,
+    val enqueuingModelIds: Set<String> = emptySet(),
 )
 
 data class RuntimeModelUiState(
@@ -67,12 +71,14 @@ internal fun ModelProvisioningUiState.toModelLibraryUiState(defaultGetReadyModel
         downloads = downloads,
         eligibility = eligibility,
         isImporting = isImporting,
+        isManifestLoaded = manifestLoaded,
         statusMessage = statusMessage,
         defaultGetReadyModelId = defaultGetReadyModelId,
         defaultModelVersion = resolveDefaultGetReadyVersion(
             manifest = manifest,
             defaultModelId = defaultGetReadyModelId,
         ),
+        enqueuingModelIds = enqueuingModelIds,
     )
 }
 
@@ -103,6 +109,7 @@ class ModelProvisioningViewModel(
     init {
         refreshSnapshot()
         refreshLifecycle()
+        viewModelScope.launch { refreshManifest() }
         viewModelScope.launch {
             gateway.observeDownloads().collect { downloads ->
                 _uiState.update { state -> state.copy(downloads = downloads) }
@@ -156,7 +163,7 @@ class ModelProvisioningViewModel(
             gateway.loadModelDistributionManifest()
         }
         _uiState.update { state ->
-            val updated = state.copy(manifest = manifest)
+            val updated = state.copy(manifest = manifest, manifestLoaded = true)
             updated.withEligibility(
                 evaluator = eligibilityEvaluator,
                 signalsProvider = eligibilitySignalsProvider,
@@ -280,11 +287,19 @@ class ModelProvisioningViewModel(
         return result
     }
 
-    fun enqueueDownload(
+    suspend fun enqueueDownload(
         version: ModelDistributionVersion,
         options: DownloadRequestOptions = DownloadRequestOptions(),
     ): String {
-        return gateway.enqueueDownload(version = version, options = options)
+        val key = "${version.modelId}::${version.version}"
+        _uiState.update { state -> state.copy(enqueuingModelIds = state.enqueuingModelIds + key) }
+        return try {
+            withContext(ioDispatcher) {
+                gateway.enqueueDownload(version = version, options = options)
+            }
+        } finally {
+            _uiState.update { state -> state.copy(enqueuingModelIds = state.enqueuingModelIds - key) }
+        }
     }
 
     fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean {

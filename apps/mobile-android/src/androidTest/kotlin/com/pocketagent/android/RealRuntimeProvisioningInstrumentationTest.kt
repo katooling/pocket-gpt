@@ -89,9 +89,13 @@ class RealRuntimeProvisioningInstrumentationTest {
         AppRuntimeDependencies.installProductionRuntime(appContext)
         val facade = AppRuntimeDependencies.runtimeFacadeFactory()
         val startupChecks = facade.runStartupChecks()
-        assertTrue(
-            "Startup checks failed after provisioning: ${startupChecks.joinToString()}",
-            startupChecks.isEmpty(),
+        assertStartupChecksReadyWithOptionalWarnings(
+            startupChecks = startupChecks,
+            healthyModelIds = setOf(
+                ModelCatalog.QWEN_3_5_0_8B_Q4,
+                ModelCatalog.QWEN_3_5_2B_Q4,
+            ),
+            failurePrefix = "Startup checks failed after provisioning",
         )
         assertEquals("NATIVE_JNI", facade.runtimeBackend())
     }

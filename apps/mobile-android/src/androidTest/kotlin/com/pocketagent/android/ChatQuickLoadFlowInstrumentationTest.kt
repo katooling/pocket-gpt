@@ -395,7 +395,10 @@ private class QuickLoadProvisioningGateway(
         return RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String = "task-1"
+    override suspend fun enqueueDownload(
+        version: ModelDistributionVersion,
+        options: DownloadRequestOptions,
+    ): String = "task-1"
 
     override fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean = false
 

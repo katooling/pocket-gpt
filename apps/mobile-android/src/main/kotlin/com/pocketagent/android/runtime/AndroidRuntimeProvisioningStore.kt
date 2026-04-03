@@ -43,6 +43,10 @@ class AndroidRuntimeProvisioningStore(
         .ifEmpty { baselineModelIdSet }
     @Volatile
     internal var migrationEnsured: Boolean = false
+    @Volatile
+    private var storageSummaryCache: StorageSummary? = null
+    @Volatile
+    private var storageSummaryCacheTimeMs: Long = 0L
 
     fun snapshot(): RuntimeProvisioningSnapshot {
         ensureMigrated()
@@ -284,6 +288,7 @@ class AndroidRuntimeProvisioningStore(
                     "Skipping Downloads mirror for ${spec.modelId}@${result.version}; install remains available in managed storage.",
                 )
             }
+            invalidateStorageSummaryCache()
             result
         }
     }
@@ -410,6 +415,7 @@ class AndroidRuntimeProvisioningStore(
             if (versions.isEmpty() && !isBaselineModel(modelId)) {
                 unregisterDynamicModelId(modelId)
             }
+            invalidateStorageSummaryCache()
             true
         }
     }
@@ -441,6 +447,10 @@ class AndroidRuntimeProvisioningStore(
     }
 
     fun storageSummary(): StorageSummary {
+        val now = System.currentTimeMillis()
+        storageSummaryCache?.let { cached ->
+            if (now - storageSummaryCacheTimeMs < 2_000L) return cached
+        }
         ensureMigrated()
         val storageRoot = managedStorageRoot()
         val usedByModels = allModelSpecs()
@@ -466,12 +476,15 @@ class AndroidRuntimeProvisioningStore(
             ?.filter { it.isFile }
             ?.sumOf { it.length().coerceAtLeast(0L) }
             ?: 0L
-        return StorageSummary(
+        val result = StorageSummary(
             totalBytes = storageRoot.totalSpace.coerceAtLeast(0L),
             freeBytes = storageRoot.usableSpace.coerceAtLeast(0L),
             usedByModelsBytes = usedByModels,
             tempDownloadBytes = tempBytes,
         )
+        storageSummaryCache = result
+        storageSummaryCacheTimeMs = System.currentTimeMillis()
+        return result
     }
 
     fun runtimeConfig(): RuntimeConfig {
@@ -579,6 +592,7 @@ class AndroidRuntimeProvisioningStore(
         if (makeActive || prefs.readOptional(activeVersionKey(spec)).isNullOrBlank()) {
             prefs.edit().putString(activeVersionKey(spec), sanitizedVersion).apply()
         }
+        invalidateStorageSummaryCache()
         val isActive = prefs.readOptional(activeVersionKey(spec)) == sanitizedVersion
         return RuntimeModelImportResult(
             modelId = spec.modelId,
@@ -588,6 +602,11 @@ class AndroidRuntimeProvisioningStore(
             copiedBytes = fileSizeBytes.coerceAtLeast(0L),
             isActive = isActive,
         )
+    }
+
+    private fun invalidateStorageSummaryCache() {
+        storageSummaryCache = null
+        storageSummaryCacheTimeMs = 0L
     }
 
     private fun readInstalledVersions(spec: ModelSpec): List<ModelVersionDescriptor> {
@@ -757,8 +776,9 @@ class AndroidRuntimeProvisioningStore(
         val migrated = entries.map { entry ->
             val currentFile = File(entry.absolutePath)
             if (currentFile.exists() && currentFile.isFile) {
-                // File exists at current path — check if it should be relocated to managed dir
-                if (!isManagedModelFile(currentFile)) {
+                // Existing app-owned external/media or imported files remain valid in place.
+                // Only relocate older app-private legacy cache/files paths.
+                if (!isManagedModelFile(currentFile) && shouldRelocateExistingModelFile(currentFile)) {
                     val targetFile = File(managedDir, currentFile.name)
                     if (!targetFile.exists()) {
                         val relocated = runCatching {
@@ -790,6 +810,19 @@ class AndroidRuntimeProvisioningStore(
             writeStoredVersionEntries(spec, migrated)
         }
         return changed
+    }
+
+    internal fun shouldRelocateExistingModelFile(file: File): Boolean {
+        val filePath = runCatching { file.canonicalPath }.getOrNull() ?: return false
+        val legacyCandidates = listOf(
+            File(context.filesDir, PROVISIONING_LEGACY_MODEL_DIR_NAME),
+            File(context.filesDir, "models"),
+            File(context.cacheDir, "models"),
+        )
+        return legacyCandidates.any { root ->
+            val rootPath = runCatching { root.canonicalPath }.getOrNull() ?: return@any false
+            filePath == rootPath || filePath.startsWith("$rootPath${File.separator}")
+        }
     }
 
     internal fun readStoredVersionEntries(spec: ModelSpec): List<StoredVersionEntry> {

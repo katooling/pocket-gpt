@@ -147,12 +147,14 @@ fun PocketAgentApp(
         },
     )
     val beginDownload: (ModelDistributionVersion) -> Unit = { version ->
-        startModelDownload(
-            context = context,
-            version = version,
-            enqueueDownload = { selected -> provisioningViewModel.enqueueDownload(selected) },
-            onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
-        )
+        scope.launch {
+            startModelDownload(
+                context = context,
+                version = version,
+                enqueueDownload = { selected -> provisioningViewModel.enqueueDownload(selected) },
+                onStatus = { message -> provisioningViewModel.setStatusMessage(message) },
+            )
+        }
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -185,8 +187,6 @@ fun PocketAgentApp(
         }
     }
     val openModelSheet: () -> Unit = {
-        provisioningViewModel.refreshSnapshot()
-        scope.launch { provisioningViewModel.refreshManifest() }
         viewModel.showSurface(ModalSurface.ModelLibrary)
     }
     val showBusyModelOperationFeedback: () -> Unit = {
@@ -427,7 +427,6 @@ fun PocketAgentApp(
     LaunchedEffect(state.activeSurface) {
         if (state.activeSurface !is ModalSurface.ModelLibrary) return@LaunchedEffect
         provisioningViewModel.refreshSnapshot()
-        provisioningViewModel.refreshManifest()
     }
 
     LaunchedEffect(state.activeSurface) {

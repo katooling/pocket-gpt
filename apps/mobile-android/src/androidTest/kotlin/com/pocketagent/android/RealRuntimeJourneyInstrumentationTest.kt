@@ -97,9 +97,13 @@ class RealRuntimeJourneyInstrumentationTest {
 
             val startupChecks = facade.runStartupChecks()
             trace("startup", startupChecks.joinToString("; ").ifBlank { "ok" })
-            assertTrue(
-                "Real-runtime startup checks failed: ${startupChecks.joinToString()}",
-                startupChecks.isEmpty(),
+            assertStartupChecksReadyWithOptionalWarnings(
+                startupChecks = startupChecks,
+                healthyModelIds = setOf(
+                    ModelCatalog.QWEN_3_5_0_8B_Q4,
+                    ModelCatalog.QWEN_3_5_2B_Q4,
+                ),
+                failurePrefix = "Real-runtime startup checks failed",
             )
             assertEquals("NATIVE_JNI", facade.runtimeBackend())
 

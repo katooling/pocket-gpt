@@ -317,12 +317,17 @@ private fun BottomNavigation(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
+    val buttonModifier = if (isLastPage) {
+        modifier.testTag("onboarding_get_started")
+    } else {
+        modifier.testTag("onboarding_next")
+    }
     Button(
         onClick = {
             haptic.tickLight()
             if (isLastPage) onFinish() else onNext()
         },
-        modifier = modifier.testTag(if (isLastPage) "onboarding_get_started" else "onboarding_next"),
+        modifier = buttonModifier,
         enabled = !isDownloading || !isLastPage,
     ) {
         Text(

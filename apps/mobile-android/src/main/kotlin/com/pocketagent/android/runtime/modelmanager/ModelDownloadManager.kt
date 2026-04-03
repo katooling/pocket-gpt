@@ -76,15 +76,15 @@ class ModelDownloadManager(
         return isActiveNetworkMetered()
     }
 
-    fun enqueueDownload(
+    suspend fun enqueueDownload(
         version: ModelDistributionVersion,
         options: DownloadRequestOptions = defaultRequestOptions(version),
-    ): String {
+    ): String = withContext(Dispatchers.IO) {
         val duplicate = _downloads.value.firstOrNull {
             it.modelId == version.modelId && it.version == version.version && !it.terminal
         }
         if (duplicate != null) {
-            return duplicate.taskId
+            return@withContext duplicate.taskId
         }
 
         val storage = provisioningStore.storageSummary()
@@ -137,7 +137,7 @@ class ModelDownloadManager(
         ModelDownloadTaskStateStore.upsert(appContext, state)
         refresh()
         pumpQueue()
-        return taskId
+        taskId
     }
 
     fun pauseDownload(taskId: String) {

@@ -11,6 +11,8 @@ tmp/
 .kotlin/
 .idea/
 .vscode/
+.cursor/
+.maestro-android/
 
 # Build
 build/
@@ -32,6 +34,8 @@ __pycache__/
 scripts/benchmarks/logcat-*.txt
 scripts/benchmarks/runs/
 scripts/benchmarks/device-env/
+scripts/benchmarks/cache/
+report.xml
 
 .env*
 

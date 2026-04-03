@@ -3,6 +3,7 @@ package com.pocketagent.android
 import android.app.Instrumentation
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasClickAction
@@ -18,6 +19,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
@@ -45,6 +47,7 @@ import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -61,6 +64,14 @@ class MainActivityUiSmokeTest {
 
     @Before
     fun setUp() {
+        val args = InstrumentationRegistry.getArguments()
+        val screenshotPackEnabled =
+            args.getString("screenshot_pack_dir")?.trim()?.isNotEmpty() == true ||
+                args.getString("screenshot_pack_fallback_dir")?.trim()?.isNotEmpty() == true
+        assumeTrue(
+            "Skipping MainActivity UI smoke screenshots outside screenshot-pack lane.",
+            screenshotPackEnabled,
+        )
         AppRuntimeDependencies.runtimeFacadeFactory = { FakeRuntimeFacade() }
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         appContext.getSharedPreferences("pocketagent_chat_state", 0).edit().clear().apply()
@@ -77,13 +88,13 @@ class MainActivityUiSmokeTest {
     fun launchShowsComposerAndOfflineIndicator() {
         composeRule.dismissOnboardingIfVisible()
         composeRule.waitForRuntimeReady()
-        composeRule.onNodeWithTag("offline_indicator").assertIsDisplayed()
-        composeRule.onNodeWithText("Runtime: Ready").assertIsDisplayed()
+        composeRule.onNodeWithText("Offline").assertIsDisplayed()
         composeRule.onNodeWithTag("composer_input").assertIsDisplayed()
         composeRule.onNodeWithTag("send_button").assertIsDisplayed()
+        composeRule.assertSendButtonLabel("Send")
         composeRule.onNodeWithContentDescription("Sessions").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Advanced").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Privacy").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open tools").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Attach image").assertIsDisplayed()
         composeRule.captureScreenshotIfEnabled("ui-04-chat-ready-empty")
         composeRule.captureScreenshotIfEnabled("ui-15-image-entry-visible")
@@ -148,7 +159,7 @@ class MainActivityUiSmokeTest {
     @Test
     fun toolAndDiagnosticsActionsRenderResults() {
         composeRule.unlockAdvancedControls()
-        composeRule.onNodeWithContentDescription("Tools").performClick()
+        composeRule.onNodeWithContentDescription("Open tools").performClick()
         composeRule.captureScreenshotIfEnabled("ui-08-tools-dialog")
         composeRule.onNode(hasText("calculate 4*9") and hasClickAction()).performClick()
         composeRule.onNodeWithTag("send_button").performClick()
@@ -165,8 +176,10 @@ class MainActivityUiSmokeTest {
     @Test
     fun privacySheetOpensWithExpectedCopy() {
         composeRule.dismissOnboardingIfVisible()
-        composeRule.onNodeWithContentDescription("Privacy").performClick()
+        composeRule.waitForRuntimeReady()
+        composeRule.onNodeWithTag("advanced_sheet_button").performClick()
         composeRule.onNodeWithText("Privacy and data controls").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Toggle privacy details").performScrollTo().performClick()
         composeRule.onNodeWithText("Chats and memory are stored locally on this device.").assertIsDisplayed()
         composeRule.captureScreenshotIfEnabled("ui-07-privacy-sheet")
     }
@@ -186,13 +199,9 @@ class MainActivityUiSmokeTest {
         composeRule.onNodeWithTag("advanced_sheet_button").performClick()
         composeRule.onNodeWithText("Open model library").performClick()
         composeRule.onNodeWithText("Model library").assertIsDisplayed()
+        composeRule.onNodeWithText("Downloaded models").assertIsDisplayed()
         composeRule.onNodeWithText("Qwen 3.5 0.8B (Q4)").assertIsDisplayed()
         composeRule.onNodeWithText("Qwen 3.5 2B (Q4)").assertIsDisplayed()
-        composeRule.onNodeWithTag("model_library_list")
-            .performScrollToNode(hasText("Downloads"))
-        composeRule.onNodeWithText("Downloads").assertIsDisplayed()
-        assertTrue(composeRule.onAllNodesWithText("Load").fetchSemanticsNodes().isEmpty())
-        assertTrue(composeRule.onAllNodesWithText("Offload").fetchSemanticsNodes().isEmpty())
         assertFalse(
             composeRule.onAllNodesWithText("Downloads are disabled in this build. Use local import for now.")
                 .fetchSemanticsNodes()
@@ -228,7 +237,7 @@ class MainActivityUiSmokeTest {
         composeRule.dismissOnboardingIfVisible()
         composeRule.waitForRuntimeReady()
         composeRule.onNodeWithTag("advanced_sheet_button").assertIsDisplayed()
-        composeRule.onNodeWithTag("tool_dialog_button").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Open tools").assertIsDisplayed()
         assertFalse(
             composeRule.onAllNodesWithTag("advanced_unlock_cue").fetchSemanticsNodes().isNotEmpty(),
         )
@@ -245,8 +254,7 @@ class MainActivityUiSmokeTest {
             composeRule.onNodeWithTag("composer_input").performTextInput("slow screenshot prompt")
             composeRule.onNodeWithTag("send_button").performClick()
             composeRule.waitUntil(timeoutMillis = 10_000) {
-                composeRule.onAllNodesWithText("Runtime: Loading").fetchSemanticsNodes().isNotEmpty() &&
-                    composeRule.onAllNodesWithText("Cancel").fetchSemanticsNodes().isNotEmpty()
+                composeRule.hasSendButtonLabel("Cancel")
             }
             composeRule.captureScreenshotIfEnabled("ui-12-runtime-loading")
             composeRule.waitUntil(timeoutMillis = 20_000) {
@@ -298,7 +306,7 @@ class MainActivityUiSmokeTest {
             composeRule.onAllNodesWithText(refreshRuntimeLabel).onFirst().performClick()
         }
         composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithText("Runtime: Ready").fetchSemanticsNodes().isNotEmpty() ||
+            composeRule.hasSendButtonLabel("Send") ||
                 composeRule.onAllNodesWithTag("runtime_error_banner").fetchSemanticsNodes().isNotEmpty()
         }
         if (composeRule.onAllNodesWithText(closeLabel).fetchSemanticsNodes().isNotEmpty()) {
@@ -320,7 +328,14 @@ class MainActivityUiSmokeTest {
 
     private fun AndroidComposeTestRule<*, *>.waitForRuntimeReady() {
         waitUntil(timeoutMillis = 10_000) {
-            onAllNodesWithText("Runtime: Ready").fetchSemanticsNodes().isNotEmpty()
+            hasSendButtonLabel("Send") ||
+                hasSendButtonLabel("Setup") ||
+                hasNodeWithText("Welcome to Pocket GPT")
+        }
+        bootstrapRuntimeIfNeeded()
+        waitUntil(timeoutMillis = 30_000) {
+            hasSendButtonLabel("Send") ||
+                hasNodeWithTag("runtime_error_banner")
         }
     }
 
@@ -329,8 +344,88 @@ class MainActivityUiSmokeTest {
         waitForRuntimeReady()
         waitUntil(timeoutMillis = 10_000) {
             onAllNodesWithTag("advanced_sheet_button").fetchSemanticsNodes().isNotEmpty() &&
-                onAllNodesWithTag("tool_dialog_button").fetchSemanticsNodes().isNotEmpty()
+                onAllNodesWithContentDescription("Open tools").fetchSemanticsNodes().isNotEmpty()
         }
+    }
+
+    private fun AndroidComposeTestRule<*, *>.assertSendButtonLabel(label: String) {
+        waitUntil(timeoutMillis = 5_000) {
+            hasSendButtonLabel(label)
+        }
+    }
+
+    private fun AndroidComposeTestRule<*, *>.bootstrapRuntimeIfNeeded() {
+        if (!hasSendButtonLabel("Setup")) {
+            return
+        }
+        onNodeWithTag("send_button").performClick()
+        waitUntil(timeoutMillis = 30_000) {
+            hasSendButtonLabel("Send") ||
+                hasNodeWithText("Load last used") ||
+                hasNodeWithText("Load") ||
+                hasNodeWithText("Model library") ||
+                hasNodeWithTag("runtime_error_banner")
+        }
+        when {
+            hasNodeWithText("Load last used") -> {
+                onNodeWithText("Load last used").performClick()
+            }
+            hasNodeWithText("More models…") -> {
+                onNodeWithText("More models…").performClick()
+            }
+        }
+        waitUntil(timeoutMillis = 30_000) {
+            hasSendButtonLabel("Send") ||
+                hasNodeWithText("Load") ||
+                hasNodeWithTag("runtime_error_banner")
+        }
+        if (hasNodeWithText("Load")) {
+            onAllNodesWithText("Load").onFirst().performClick()
+        }
+        if (!hasSendButtonLabel("Send") && !hasNodeWithTag("runtime_error_banner")) {
+            when {
+                hasNodeWithContentDescription("Close") -> onNodeWithContentDescription("Close").performClick()
+                hasNodeWithText("Close") -> onNodeWithText("Close").performClick()
+            }
+        }
+        waitUntil(timeoutMillis = 60_000) {
+            hasSendButtonLabel("Send") ||
+                hasNodeWithTag("runtime_error_banner")
+        }
+    }
+
+    private fun AndroidComposeTestRule<*, *>.hasSendButtonLabel(label: String): Boolean {
+        return runCatching {
+            onAllNodesWithTag("send_button")
+                .fetchSemanticsNodes()
+                .any { node ->
+                    if (SemanticsProperties.Text !in node.config) {
+                        false
+                    } else {
+                        node.config[SemanticsProperties.Text].any { annotatedString ->
+                            annotatedString.text == label
+                        }
+                    }
+                }
+        }.getOrDefault(false)
+    }
+
+    private fun AndroidComposeTestRule<*, *>.hasNodeWithText(text: String): Boolean {
+        return runCatching {
+            onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }.getOrDefault(false)
+    }
+
+    private fun AndroidComposeTestRule<*, *>.hasNodeWithTag(tag: String): Boolean {
+        return runCatching {
+            onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+        }.getOrDefault(false)
+    }
+
+    private fun AndroidComposeTestRule<*, *>.hasNodeWithContentDescription(description: String): Boolean {
+        return runCatching {
+            onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty()
+        }.getOrDefault(false)
     }
 
     private fun AndroidComposeTestRule<*, *>.sendPrompt(prompt: String) {

@@ -217,6 +217,10 @@
     <string name="ui_model_download_failed_timeout">Download failed for %1$s (%2$s): request timed out. Retry.</string>
     <string name="ui_model_download_failed_cancelled">Download cancelled for %1$s (%2$s).</string>
     <string name="ui_model_download_failed_unknown">Download failed for %1$s (%2$s). Review technical details and retry.</string>
+    <string name="ui_model_download_queuing">Queuing\u2026</string>
+    <string name="ui_model_artifact_progress">File %1$d of %2$d</string>
+    <string name="ui_model_stage_optional_skipped">Optional file skipped</string>
+    <string name="ui_model_download_completed_vision_degraded">Downloaded %1$s (%2$s): text model ready. Vision features unavailable (optional file skipped).</string>
     <string name="ui_model_download_failure_panel_title">Download action required</string>
     <string name="ui_model_stage_paused">Paused</string>
     <string name="ui_model_stage_installing">Installing</string>

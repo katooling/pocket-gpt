@@ -9,6 +9,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
+import com.pocketagent.android.ui.theme.rememberHaptic
+import com.pocketagent.android.ui.theme.rememberLongPressHaptic
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 
 @Composable
@@ -30,6 +32,8 @@ internal fun DownloadTransitionHandler(
     onOpenModelSheet: () -> Unit,
 ) {
     val context = LocalContext.current
+    val haptic = rememberHaptic()
+    val hapticConfirm = rememberLongPressHaptic()
     val previousDownloadStatuses = remember { mutableStateMapOf<String, DownloadTaskStatus>() }
     val currentPendingGetReadyActivation by rememberUpdatedState(pendingGetReadyActivation)
     val currentLoadedModelId by rememberUpdatedState(loadedModelId)
@@ -44,6 +48,13 @@ internal fun DownloadTransitionHandler(
         }
         val transitionFeedback = transitioned?.provisioningFeedback(context)
         transitionFeedback?.let(onSetStatusMessage)
+        when (transitioned?.status) {
+            DownloadTaskStatus.COMPLETED,
+            DownloadTaskStatus.INSTALLED_INACTIVE,
+            -> hapticConfirm()
+            DownloadTaskStatus.FAILED -> haptic()
+            else -> Unit
+        }
         if (
             transitioned?.status == DownloadTaskStatus.COMPLETED ||
             transitioned?.status == DownloadTaskStatus.INSTALLED_INACTIVE

@@ -168,3 +168,53 @@ internal fun ShimmerSessionListPlaceholder(count: Int = 5) {
         }
     }
 }
+
+@Composable
+internal fun ShimmerModelCard() {
+    val brush = shimmerBrush()
+    androidx.compose.material3.Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clearAndSetSemantics { },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(PocketAgentDimensions.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(PocketAgentDimensions.sectionSpacing),
+        ) {
+            // Title line
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.55f)
+                    .height(16.dp)
+                    .clip(androidx.compose.material3.MaterialTheme.shapes.small)
+                    .background(brush),
+            )
+            // Subtitle / id line
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.75f)
+                    .height(12.dp)
+                    .clip(androidx.compose.material3.MaterialTheme.shapes.small)
+                    .background(brush),
+            )
+            // Size line
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.35f)
+                    .height(12.dp)
+                    .clip(androidx.compose.material3.MaterialTheme.shapes.small)
+                    .background(brush),
+            )
+            // Button placeholder
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.32f)
+                    .height(36.dp)
+                    .clip(androidx.compose.material3.MaterialTheme.shapes.small)
+                    .background(brush),
+            )
+        }
+    }
+}

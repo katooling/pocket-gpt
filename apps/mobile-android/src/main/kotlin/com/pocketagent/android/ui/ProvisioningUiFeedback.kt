@@ -4,16 +4,17 @@ import android.content.Context
 import android.util.Log
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.errorCodeName
+import com.pocketagent.android.runtime.modelmanager.DownloadArtifactTaskStatus
 import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskStatus
 import com.pocketagent.android.runtime.modelmanager.ModelDistributionVersion
 import com.pocketagent.runtime.RuntimeModelLifecycleCommandResult
 
-internal fun startModelDownload(
+internal suspend fun startModelDownload(
     context: Context,
     version: ModelDistributionVersion,
-    enqueueDownload: (ModelDistributionVersion) -> String,
+    enqueueDownload: suspend (ModelDistributionVersion) -> String,
     onStatus: (String) -> Unit,
 ) {
     runCatching { enqueueDownload(version) }
@@ -99,11 +100,24 @@ internal fun lifecycleStatusMessage(
 
 internal fun DownloadTaskState.provisioningFeedback(context: Context): String? {
     return when (status) {
-        DownloadTaskStatus.COMPLETED -> context.getString(
-            R.string.ui_model_download_verified_active,
-            modelId,
-            version,
-        )
+        DownloadTaskStatus.COMPLETED -> {
+            val hasSkippedOptional = artifactStates.any { artifact ->
+                !artifact.required && artifact.status == DownloadArtifactTaskStatus.FAILED
+            }
+            if (hasSkippedOptional) {
+                context.getString(
+                    R.string.ui_model_download_completed_vision_degraded,
+                    modelId,
+                    version,
+                )
+            } else {
+                context.getString(
+                    R.string.ui_model_download_verified_active,
+                    modelId,
+                    version,
+                )
+            }
+        }
         DownloadTaskStatus.INSTALLED_INACTIVE -> context.getString(
             R.string.ui_model_download_verified_inactive,
             modelId,

@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.pocketagent.android.R
 import com.pocketagent.android.runtime.ModelPathOrigin
+import com.pocketagent.android.runtime.modelmanager.DownloadArtifactTaskStatus
 import com.pocketagent.android.runtime.modelmanager.DownloadFailureReason
 import com.pocketagent.android.runtime.modelmanager.DownloadProcessingStage
 import com.pocketagent.android.runtime.modelmanager.DownloadTaskState
@@ -117,6 +118,31 @@ internal fun DownloadTaskState.stageWarningChips() {
         }
         if (failureReason == DownloadFailureReason.TIMEOUT) {
             add(stringResource(id = R.string.ui_model_stage_timeout))
+        }
+        // Show "File N of M" when downloading a multi-artifact bundle
+        val totalArtifacts = artifactStates.size
+        if (totalArtifacts > 1 && activeArtifactId != null &&
+            (status == DownloadTaskStatus.DOWNLOADING || status == DownloadTaskStatus.VERIFYING)
+        ) {
+            val activeIndex = artifactStates.indexOfFirst { it.artifactId == activeArtifactId }
+            if (activeIndex >= 0) {
+                add(
+                    stringResource(
+                        id = R.string.ui_model_artifact_progress,
+                        activeIndex + 1,
+                        totalArtifacts,
+                    ),
+                )
+            }
+        }
+        // Warn when a completed task has a skipped optional artifact (e.g. MMPROJ)
+        if (status == DownloadTaskStatus.COMPLETED) {
+            val hasSkippedOptional = artifactStates.any { artifact ->
+                !artifact.required && artifact.status == DownloadArtifactTaskStatus.FAILED
+            }
+            if (hasSkippedOptional) {
+                add(stringResource(id = R.string.ui_model_stage_optional_skipped))
+            }
         }
     }
     if (chips.isEmpty()) {

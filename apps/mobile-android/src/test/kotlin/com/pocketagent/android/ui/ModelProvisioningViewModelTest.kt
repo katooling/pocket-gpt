@@ -451,7 +451,7 @@ private class FakeProvisioningGateway : ProvisioningGateway {
         return RuntimeModelLifecycleCommandResult.applied()
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+    override suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
         lastEnqueuedVersion = version
         lastEnqueuedOptions = options
         return "task-1"

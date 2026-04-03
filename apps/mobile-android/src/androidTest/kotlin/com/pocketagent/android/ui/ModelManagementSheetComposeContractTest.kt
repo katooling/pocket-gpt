@@ -239,7 +239,7 @@ class ModelManagementSheetComposeContractTest {
             }
         }
 
-        composeRule.onNodeWithText("Retry load").assertIsDisplayed()
+        composeRule.onNodeWithText("Retry").assertIsDisplayed()
         composeRule.onNodeWithTag("choose_another_model").assertIsDisplayed()
         composeRule.onNodeWithText("Choose another").assertIsDisplayed()
     }
@@ -396,6 +396,7 @@ private fun sampleLibraryState(): ModelLibraryUiState {
         manifest = sampleManifest(),
         downloads = listOf(sampleDownload()),
         isImporting = false,
+        isManifestLoaded = true,
         statusMessage = "Ready for provisioning actions",
         defaultGetReadyModelId = "qwen3.5-0.8b-q4",
         defaultModelVersion = sampleManifest().models.first().versions.first(),

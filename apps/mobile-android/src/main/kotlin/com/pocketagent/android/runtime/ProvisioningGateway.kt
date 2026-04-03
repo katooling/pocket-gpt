@@ -27,7 +27,7 @@ interface ProvisioningGateway {
     suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult
     suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult
     suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult
-    fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions = DownloadRequestOptions()): String
+    suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions = DownloadRequestOptions()): String
     fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean
     fun setDownloadWifiOnlyEnabled(enabled: Boolean)
     fun acknowledgeLargeDownloadCellularWarning()
@@ -137,7 +137,7 @@ class DefaultProvisioningGateway(
         return dependencies.offloadModel(reason = reason)
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+    override suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
         admissionPolicy?.requireAllowed(
             action = ModelAdmissionAction.DOWNLOAD,
             subject = version.toAdmissionSubject(),
@@ -199,7 +199,7 @@ interface ProvisioningDependencyAccess {
     suspend fun loadInstalledModel(modelId: String, version: String): RuntimeModelLifecycleCommandResult
     suspend fun loadLastUsedModel(): RuntimeModelLifecycleCommandResult
     suspend fun offloadModel(reason: String): RuntimeModelLifecycleCommandResult
-    fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions = DownloadRequestOptions()): String
+    suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions = DownloadRequestOptions()): String
     fun shouldWarnForMeteredLargeDownload(version: ModelDistributionVersion): Boolean
     fun setDownloadWifiOnlyEnabled(enabled: Boolean)
     fun acknowledgeLargeDownloadCellularWarning()
@@ -282,7 +282,7 @@ class AppProvisioningDependencyAccess(
         return AppRuntimeDependencies.offloadModel(context = context, reason = reason)
     }
 
-    override fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
+    override suspend fun enqueueDownload(version: ModelDistributionVersion, options: DownloadRequestOptions): String {
         return AppRuntimeDependencies.enqueueDownload(context = context, version = version, options = options)
     }
 
