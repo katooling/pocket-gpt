@@ -160,6 +160,7 @@ std::string g_last_turboquant_fallback_reason;
 bool g_last_opencl_flash_guard_applied = false;
 bool g_last_opencl_quant_kv_guard_applied = false;
 std::string g_last_model_quantization = "unknown";
+std::string g_active_model_quantization = "unknown";
 std::string g_backend_profile = "auto";
 std::string g_active_backend = "cpu";
 uint64_t g_active_backend_memory_bytes = 0;
@@ -1301,7 +1302,8 @@ std::string backend_diagnostics_json() {
         << "\"opencl_device_description\":\"" << json_escape(diag.opencl_device_description) << "\","
         << "\"opencl_device_version\":\"" << json_escape(diag.opencl_device_version) << "\","
         << "\"opencl_adreno_generation\":" << diag.opencl_adreno_generation << ","
-        << "\"active_model_quantization\":\"" << json_escape(g_last_model_quantization) << "\","
+        << "\"requested_model_quantization\":\"" << json_escape(g_last_model_quantization) << "\","
+        << "\"active_model_quantization\":\"" << json_escape(g_active_model_quantization) << "\","
         << "\"supports_q1_0\":" << (runtime_supports_q1_0() ? "true" : "false") << ","
         << "\"supports_q1_0_g128\":" << (runtime_supports_q1_0_g128() ? "true" : "false") << ","
         << "\"model_memory_mode\":\"" << json_escape(model_memory_mode_label()) << "\","
@@ -1712,6 +1714,7 @@ void release_runtime_locked() {
     g_last_opencl_flash_guard_applied = false;
     g_last_opencl_quant_kv_guard_applied = false;
     g_last_model_quantization = "unknown";
+    g_active_model_quantization = "unknown";
     g_active_backend = "cpu";
     g_active_backend_memory_bytes = 0;
     g_model_uses_recurrent_memory = false;
@@ -3870,6 +3873,7 @@ Java_com_pocketagent_android_AndroidLlamaCppRuntimeBridge_00024JniNativeApi_nati
             return JNI_FALSE;
         }
         clear_backend_error_locked();
+        g_active_model_quantization = g_last_model_quantization;
         g_cancel_requested.store(false, std::memory_order_release);
         return JNI_TRUE;
     } catch (const std::bad_alloc & error) {

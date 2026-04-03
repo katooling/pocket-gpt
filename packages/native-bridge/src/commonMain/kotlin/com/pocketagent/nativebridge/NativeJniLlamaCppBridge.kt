@@ -18,6 +18,7 @@ class NativeJniLlamaCppBridge(
     private val fallbackBridge: LlamaCppRuntimeBridge = AdbDeviceLlamaCppBridge(),
     private val fallbackEnabled: Boolean = defaultFallbackEnabled(),
     private val gpuOffloadAllowed: Boolean = defaultGpuOffloadEnabled(),
+    private val openClQualificationProvider: (() -> OpenClQualificationSnapshot?)? = null,
 ) : LlamaCppRuntimeBridge {
     private val lifecycleLock = Any()
     private val lifecycleObserverLock = Any()
@@ -514,10 +515,12 @@ class NativeJniLlamaCppBridge(
             return loaded
         }
         val baseConfig = runtimeGenerationConfig
-        validateBonsaiDeviceSupport(
+        val openClQualification = resolveOpenClQualificationSnapshot()
+        validateSpecializedFormatDeviceSupport(
             modelId = modelId,
             modelPath = normalizedModelPath,
             modelVersion = options.modelVersion,
+            qualification = openClQualification,
         )?.let { incompatibility ->
             recordBridgeError(incompatibility.code, incompatibility.detail)
             return false
@@ -527,11 +530,12 @@ class NativeJniLlamaCppBridge(
             modelPath = normalizedModelPath,
             modelId = modelId,
             modelVersion = options.modelVersion,
+            qualification = openClQualification,
         )
         val openclQuantUnsupported = preferredBackend == GpuExecutionBackend.OPENCL &&
             openclQuantCompatibility == OpenClQuantCompatibility.UNSUPPORTED
-        val openclQuantUnknown = preferredBackend == GpuExecutionBackend.OPENCL &&
-            openclQuantCompatibility == OpenClQuantCompatibility.UNKNOWN &&
+        val openclQuantExperimental = preferredBackend == GpuExecutionBackend.OPENCL &&
+            openclQuantCompatibility == OpenClQuantCompatibility.EXPERIMENTAL &&
             !baseConfig.speculativeEnabled
         if (openclQuantUnsupported) {
             preferredBackend = GpuExecutionBackend.CPU
@@ -567,12 +571,12 @@ class NativeJniLlamaCppBridge(
         } else {
             0
         }
-        val effectiveGpuLayers = if (openclQuantUnsupported || openclQuantUnknown) 0 else requestedGpuLayers
-        val effectiveDraftGpuLayers = if (openclQuantUnsupported || openclQuantUnknown) 0 else requestedDraftGpuLayers
-        if (openclQuantUnsupported || openclQuantUnknown) {
+        val effectiveGpuLayers = if (openclQuantUnsupported || openclQuantExperimental) 0 else requestedGpuLayers
+        val effectiveDraftGpuLayers = if (openclQuantUnsupported || openclQuantExperimental) 0 else requestedDraftGpuLayers
+        if (preferredBackend == GpuExecutionBackend.OPENCL) {
             logBridge(
-                "OPENCL_QUANT_DEMOTE",
-                "model=$normalizedModelPath|model_id=$modelId|demoted_to_cpu=$openclQuantUnsupported|backend=${preferredBackend.name.lowercase()}|compatibility=${openclQuantCompatibility.name.lowercase()}",
+                "OPENCL_QUANT_POLICY",
+                "model=$normalizedModelPath|model_id=$modelId|demoted_to_cpu=$openclQuantUnsupported|effective_gpu_layers=$effectiveGpuLayers|backend=${preferredBackend.name.lowercase()}|compatibility=${openclQuantCompatibility.name.lowercase()}|probe_status=${openClQualification.probeStatus.name.lowercase()}",
             )
         }
 
@@ -1337,25 +1341,54 @@ class NativeJniLlamaCppBridge(
         }
     }
 
-    private fun validateBonsaiDeviceSupport(
+    private fun resolveOpenClQualificationSnapshot(): OpenClQualificationSnapshot {
+        val provided = runCatching { openClQualificationProvider?.invoke() }.getOrNull()
+        return OpenClQualificationSnapshot(
+            runtimeSupportsGpuOffload = supportsGpuOffload(),
+            automaticOpenClEligible = provided?.automaticOpenClEligible,
+            probeStatus = provided?.probeStatus ?: OpenClProbeQualificationStatus.UNKNOWN,
+        )
+    }
+
+    private fun validateSpecializedFormatDeviceSupport(
         modelId: String,
         modelPath: String,
         modelVersion: String?,
+        qualification: OpenClQualificationSnapshot,
     ): BridgeError? {
-        if (requiredRuntimeFormat(modelId, modelPath, modelVersion) != "q1_0_g128") {
+        val formatHint = ModelRuntimeFormats.infer(
+            modelId = modelId,
+            modelVersion = modelVersion,
+            modelPath = modelPath,
+        )
+        if (!formatHint.requiresQualifiedGpu) {
             return null
         }
         if (supportsGpuOffload()) {
-            return null
+            if (qualification.automaticOpenClEligible != false) {
+                return null
+            }
+            val diagnostics = backendDiagnosticsJson().orEmpty()
+            return BridgeError(
+                code = "RUNTIME_INCOMPATIBLE_MODEL_FORMAT",
+                detail = buildString {
+                    append("modelId=").append(modelId)
+                    append("|required_format=").append(formatHint.normalizedToken ?: "specialized")
+                    append("|required_backend=gpu")
+                    append("|qualified_gpu_required=true")
+                    append("|device_gpu_path_supported=false")
+                    append("|compiled_backends=").append(parseCompiledBackends(diagnostics).joinToString(separator = ","))
+                },
+            )
         }
         val diagnostics = backendDiagnosticsJson().orEmpty()
         return BridgeError(
             code = "RUNTIME_INCOMPATIBLE_MODEL_FORMAT",
             detail = buildString {
                 append("modelId=").append(modelId)
-                append("|required_format=q1_0_g128")
+                append("|required_format=").append(formatHint.normalizedToken ?: "specialized")
                 append("|required_backend=gpu")
-                append("|bonsai_gpu_required=true")
+                append("|qualified_gpu_required=true")
                 append("|gpu_runtime_supported=false")
                 append("|compiled_backends=").append(parseCompiledBackends(diagnostics).joinToString(separator = ","))
             },
@@ -1367,13 +1400,17 @@ class NativeJniLlamaCppBridge(
         modelPath: String,
         modelVersion: String?,
     ): String? {
-        return when {
-            modelId == ModelCatalog.BONSAI_8B_Q1_0_G128 -> "q1_0_g128"
-            modelVersion?.contains("q1_0_g128", ignoreCase = true) == true -> "q1_0_g128"
-            modelPath.contains("q1_0_g128", ignoreCase = true) -> "q1_0_g128"
-            modelVersion?.equals("q1_0", ignoreCase = true) == true -> "q1_0"
-            modelPath.contains("q1_0", ignoreCase = true) -> "q1_0"
-            else -> null
+        val formatHint = ModelRuntimeFormats.infer(
+            modelId = modelId,
+            modelVersion = modelVersion,
+            modelPath = modelPath,
+        )
+        return when (formatHint.family) {
+            ModelRuntimeFormatFamily.Q1_0_G128,
+            ModelRuntimeFormatFamily.Q1_0,
+            ModelRuntimeFormatFamily.UNKNOWN_SPECIALIZED,
+            -> formatHint.normalizedToken
+            ModelRuntimeFormatFamily.STANDARD -> null
         }
     }
 

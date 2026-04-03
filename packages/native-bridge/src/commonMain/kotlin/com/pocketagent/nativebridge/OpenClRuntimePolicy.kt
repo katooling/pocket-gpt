@@ -1,11 +1,28 @@
 package com.pocketagent.nativebridge
 
-import com.pocketagent.inference.ModelCatalog
-
 enum class OpenClQuantCompatibility {
-    SAFE,
+    SUPPORTED,
+    EXPERIMENTAL,
     UNSUPPORTED,
+}
+
+enum class OpenClProbeQualificationStatus {
+    QUALIFIED,
+    PENDING,
+    FAILED,
     UNKNOWN,
+}
+
+data class OpenClQualificationSnapshot(
+    val runtimeSupportsGpuOffload: Boolean? = null,
+    val automaticOpenClEligible: Boolean? = null,
+    val probeStatus: OpenClProbeQualificationStatus = OpenClProbeQualificationStatus.UNKNOWN,
+) {
+    val canAttemptSpecializedFormats: Boolean
+        get() = runtimeSupportsGpuOffload == true && automaticOpenClEligible != false
+
+    val specializedFormatsQualified: Boolean
+        get() = canAttemptSpecializedFormats && probeStatus == OpenClProbeQualificationStatus.QUALIFIED
 }
 
 object OpenClRuntimePolicy {
@@ -25,22 +42,22 @@ object OpenClRuntimePolicy {
         modelPath: String?,
         modelId: String,
         modelVersion: String?,
+        qualification: OpenClQualificationSnapshot = OpenClQualificationSnapshot(),
     ): OpenClQuantCompatibility {
-        val normalizedModelId = modelId.trim().lowercase()
-        val normalizedModelPath = modelPath
-            ?.substringAfterLast('/')
-            ?.substringBeforeLast('.')
-            .orEmpty()
-            .trim()
-            .lowercase()
-        if (
-            normalizedModelId == ModelCatalog.BONSAI_8B_Q1_0_G128 ||
-            normalizedModelPath.contains("bonsai-8b")
-        ) {
-            return OpenClQuantCompatibility.SAFE
+        val formatHint = ModelRuntimeFormats.infer(
+            modelId = modelId,
+            modelVersion = modelVersion,
+            modelPath = modelPath,
+        )
+        if (formatHint.requiresQualifiedGpu) {
+            return when {
+                qualification.specializedFormatsQualified -> OpenClQuantCompatibility.SUPPORTED
+                qualification.canAttemptSpecializedFormats -> OpenClQuantCompatibility.EXPERIMENTAL
+                else -> OpenClQuantCompatibility.UNSUPPORTED
+            }
         }
         val versionCompatibility = classifyQuantHint(modelVersion.orEmpty())
-        if (versionCompatibility != OpenClQuantCompatibility.UNKNOWN) {
+        if (versionCompatibility != null) {
             return versionCompatibility
         }
         val filenameStem = modelPath
@@ -52,33 +69,36 @@ object OpenClRuntimePolicy {
             if (filenameStem.isNotBlank()) {
                 add(filenameStem)
             }
+            val normalizedModelId = modelId.trim().lowercase()
             if (normalizedModelId.isNotBlank()) {
                 add(normalizedModelId)
             }
         }.asSequence()
-            .map(::classifyQuantHint)
-            .firstOrNull { compatibility -> compatibility != OpenClQuantCompatibility.UNKNOWN }
-            ?: OpenClQuantCompatibility.UNKNOWN
+            .mapNotNull(::classifyQuantHint)
+            .firstOrNull()
+            ?: OpenClQuantCompatibility.EXPERIMENTAL
     }
 
     fun isReleaseSafeQuantization(
         modelPath: String?,
         modelId: String,
         modelVersion: String?,
+        qualification: OpenClQualificationSnapshot = OpenClQualificationSnapshot(),
     ): Boolean = releaseQuantCompatibility(
         modelPath = modelPath,
         modelId = modelId,
         modelVersion = modelVersion,
-    ) == OpenClQuantCompatibility.SAFE
+        qualification = qualification,
+    ) == OpenClQuantCompatibility.SUPPORTED
 
-    private fun classifyQuantHint(rawHint: String): OpenClQuantCompatibility {
+    private fun classifyQuantHint(rawHint: String): OpenClQuantCompatibility? {
         if (rawHint.isBlank()) {
-            return OpenClQuantCompatibility.UNKNOWN
+            return null
         }
         return when {
-            safeQuantRegex.containsMatchIn(rawHint) -> OpenClQuantCompatibility.SAFE
+            safeQuantRegex.containsMatchIn(rawHint) -> OpenClQuantCompatibility.SUPPORTED
             knownQuantRegex.containsMatchIn(rawHint) -> OpenClQuantCompatibility.UNSUPPORTED
-            else -> OpenClQuantCompatibility.UNKNOWN
+            else -> null
         }
     }
 }

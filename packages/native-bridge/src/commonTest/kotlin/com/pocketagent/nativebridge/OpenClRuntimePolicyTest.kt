@@ -5,35 +5,50 @@ import kotlin.test.assertEquals
 
 class OpenClRuntimePolicyTest {
     @Test
-    fun `bonsai q1 quantization is classified as safe for opencl`() {
+    fun `q1 g128 is supported only when qualification succeeds`() {
         assertEquals(
-            OpenClQuantCompatibility.SAFE,
+            OpenClQuantCompatibility.SUPPORTED,
             OpenClRuntimePolicy.releaseQuantCompatibility(
                 modelPath = "/tmp/Bonsai-8B.gguf",
                 modelId = "bonsai-8b-q1_0_g128",
                 modelVersion = "q1_0_g128",
+                qualification = OpenClQualificationSnapshot(
+                    runtimeSupportsGpuOffload = true,
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                ),
             ),
         )
     }
 
     @Test
-    fun `bonsai path-based match returns SAFE even with non-matching model id`() {
+    fun `q1 g128 is experimental on eligible but unqualified paths`() {
         val result = OpenClRuntimePolicy.releaseQuantCompatibility(
             modelPath = "/data/models/Bonsai-8B.gguf",
             modelId = "some-other-id",
-            modelVersion = null,
+            modelVersion = "q1_0_g128",
+            qualification = OpenClQualificationSnapshot(
+                runtimeSupportsGpuOffload = true,
+                automaticOpenClEligible = true,
+                probeStatus = OpenClProbeQualificationStatus.PENDING,
+            ),
         )
-        assertEquals(OpenClQuantCompatibility.SAFE, result)
+        assertEquals(OpenClQuantCompatibility.EXPERIMENTAL, result)
     }
 
     @Test
-    fun `bonsai case insensitive path match returns SAFE`() {
+    fun `q1 g128 is unsupported when device cannot attempt specialized opencl`() {
         val result = OpenClRuntimePolicy.releaseQuantCompatibility(
             modelPath = "/data/models/BONSAI-8B-custom.gguf",
             modelId = "custom-model",
-            modelVersion = null,
+            modelVersion = "q1_0_g128",
+            qualification = OpenClQualificationSnapshot(
+                runtimeSupportsGpuOffload = false,
+                automaticOpenClEligible = false,
+                probeStatus = OpenClProbeQualificationStatus.FAILED,
+            ),
         )
-        assertEquals(OpenClQuantCompatibility.SAFE, result)
+        assertEquals(OpenClQuantCompatibility.UNSUPPORTED, result)
     }
 
     @Test

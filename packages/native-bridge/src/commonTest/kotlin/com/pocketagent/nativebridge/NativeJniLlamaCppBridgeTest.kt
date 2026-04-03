@@ -132,6 +132,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -186,7 +192,7 @@ class NativeJniLlamaCppBridgeTest {
         )
         assertFalse(nativeApi.loadCalled)
         assertEquals("RUNTIME_INCOMPATIBLE_MODEL_FORMAT", bridge.lastError()?.code)
-        assertTrue(bridge.lastError()?.detail?.contains("bonsai_gpu_required=true") == true)
+        assertTrue(bridge.lastError()?.detail?.contains("qualified_gpu_required=true") == true)
     }
 
     @Test
@@ -228,6 +234,40 @@ class NativeJniLlamaCppBridgeTest {
         assertEquals(listOf(KvCacheMethodPreset.SAFE.code), nativeApi.loadKvCacheMethodPresetCodes)
         assertEquals(listOf(128), nativeApi.loadNBatches)
         assertEquals(listOf(128), nativeApi.loadNUbatches)
+    }
+
+    @Test
+    fun `q1 release rejects explicitly unsupported gpu device classes before load`() {
+        val nativeApi = FakeNativeApi(
+            initializeOk = true,
+            loadOk = true,
+            generatedText = "native hello",
+            supportsGpuOffload = true,
+            backendDiagnosticsJson = """{"compiled_backend":"opencl","opencl_device_count":1,"supports_q1_0_g128":true}""",
+        )
+        val bridge = NativeJniLlamaCppBridge(
+            nativeApi = nativeApi,
+            libraryLoader = { _ -> },
+            fallbackBridge = FakeFallbackBridge(),
+            fallbackEnabled = false,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = false,
+                    probeStatus = OpenClProbeQualificationStatus.FAILED,
+                )
+            },
+        )
+
+        assertTrue(bridge.isReady())
+        assertFalse(
+            bridge.loadModel(
+                ModelCatalog.BONSAI_8B_Q1_0_G128,
+                "/tmp/bonsai-8b-q1_0_g128.gguf",
+                options = ModelLoadOptions(modelVersion = "q1_0_g128"),
+            ),
+        )
+        assertFalse(nativeApi.loadCalled)
+        assertTrue(bridge.lastError()?.detail?.contains("device_gpu_path_supported=false") == true)
     }
 
     @Test
@@ -406,6 +446,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -442,6 +488,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -496,6 +548,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -561,6 +619,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -591,6 +655,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -625,6 +695,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -661,6 +737,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
 
         assertTrue(bridge.isReady())
@@ -690,6 +772,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -724,6 +812,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
@@ -862,6 +956,12 @@ class NativeJniLlamaCppBridgeTest {
             fallbackBridge = FakeFallbackBridge(),
             fallbackEnabled = false,
             gpuOffloadAllowed = true,
+            openClQualificationProvider = {
+                OpenClQualificationSnapshot(
+                    automaticOpenClEligible = true,
+                    probeStatus = OpenClProbeQualificationStatus.QUALIFIED,
+                )
+            },
         )
         bridge.setRuntimeGenerationConfig(
             RuntimeGenerationConfig.default().copy(
