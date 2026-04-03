@@ -51,6 +51,32 @@ That example config preserves the repo’s current operating model:
 - `audit-selectors` inventories id-based vs text-based selectors before you widen a refactor
 - `clean --stale-flows` removes old scoped tmp flows after a dry run
 
+## Bundle download validation with a local manifest
+
+When you need to validate the bundle-aware download path against a real device, use a local fixture directory behind an HTTPS-capable host plus the app's manifest override:
+
+```bash
+# Serve a local fixture directory that contains catalog.json + real artifacts.
+python3 -m http.server 8765 --directory tmp/bundle-fixture
+
+# Expose that local directory through an HTTPS-capable tunnel or host.
+# Example: ngrok http 8765
+
+# Reinstall the app with a remote manifest override.
+./gradlew --no-daemon \
+  -Ppocketgpt.modelManifestUrl=https://<fixture-host>/catalog.json \
+  :apps:mobile-android:installDebug
+```
+
+Then use `maestro-android scoped --flow tmp/bundle-download-e2e.yaml` or `bash scripts/dev/scoped-repro.sh --flow tmp/bundle-download-e2e.yaml` to exercise the download in-app.
+
+This is the preferred way to validate:
+
+- multi-artifact bundle downloads
+- sidecar path persistence
+- prompt-profile propagation from manifest -> task -> install metadata
+- runtime projector resolution for multimodal bundles
+
 See `.claude/skills/maestro-android-cli/references/testing-map.md` for the canonical testing ladder.
 
 ## Example usage

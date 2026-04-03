@@ -68,7 +68,7 @@ AndroidUI -. explicit_opt_in_only .-> RemoteModelCatalog
 1. Conversation/session state is persisted locally on device.
 2. Model payloads are verified (checksum and compatibility hard gates) before activation.
 3. Tool execution is allowlisted and schema-validated before dispatch.
-4. Optional remote manifest fetch is additive; bundled catalog fallback remains available.
+4. Optional remote manifest fetch is additive; bundled catalog fallback remains available, and manifest entries may declare multi-artifact model bundles.
 5. Diagnostics export is local and redaction-aware.
 
 ## Quality Attributes

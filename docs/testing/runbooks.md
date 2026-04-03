@@ -86,6 +86,99 @@ Promotion rule:
 2. Add targeted unit/contract tests for the logic branch that caused the failure.
 3. Run canonical lanes (`fast`, and risk-appropriate `android-instrumented`/`maestro`/`journey`) before merge.
 
+## Runbook: Bundle Download E2E (Remote Manifest + Local Fixture Server)
+
+Use this when validating the multi-artifact provisioning path (`PRIMARY_GGUF` + `MMPROJ` or future auxiliary artifacts) on a real device.
+
+Preconditions:
+
+1. A single authorized ADB device is visible in `python3 tools/devctl/main.py doctor`.
+2. You have a real model bundle on the host machine, not placeholder files.
+3. The fixture host is reachable over HTTPS from the device.
+
+Example fixture layout:
+
+```text
+tmp/bundle-fixture/
+  catalog.json
+  model.gguf
+  model-mmproj.gguf
+```
+
+Minimal `catalog.json` shape:
+
+```json
+{
+  "models": [
+    {
+      "modelId": "bundle-e2e-test",
+      "displayName": "Bundle E2E Test",
+      "versions": [
+        {
+          "version": "local-e2e",
+          "sourceKind": "HUGGING_FACE",
+          "promptProfileId": "hf-chatml",
+          "artifacts": [
+            {
+              "artifactId": "primary",
+              "role": "PRIMARY_GGUF",
+              "fileName": "model.gguf",
+              "downloadUrl": "https://<fixture-host>/model.gguf",
+              "expectedSha256": "<sha256>",
+              "runtimeCompatibility": "android-arm64-v8a",
+              "fileSizeBytes": <bytes>
+            },
+            {
+              "artifactId": "mmproj",
+              "role": "MMPROJ",
+              "fileName": "model-mmproj.gguf",
+              "downloadUrl": "https://<fixture-host>/model-mmproj.gguf",
+              "expectedSha256": "<sha256>",
+              "runtimeCompatibility": "android-arm64-v8a",
+              "fileSizeBytes": <bytes>,
+              "required": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Execution recipe:
+
+```bash
+# 1. Verify device visibility.
+python3 tools/devctl/main.py doctor
+
+# 2. Serve the local fixture directory.
+python3 -m http.server 8765 --directory tmp/bundle-fixture
+
+# 3. Expose it through an HTTPS-capable tunnel or host.
+# Example: ngrok http 8765
+# Then replace <fixture-host> below with the generated HTTPS hostname.
+
+# 4. Install the app with the remote manifest override.
+./gradlew --no-daemon \
+  -Ppocketgpt.modelManifestUrl=https://<fixture-host>/catalog.json \
+  :apps:mobile-android:installDebug
+
+# 5. Run a focused Maestro repro that opens the model library and downloads the bundle.
+bash scripts/dev/scoped-repro.sh --flow tmp/bundle-download-e2e.yaml --serial <device-id>
+
+# 6. Inspect installed files and runtime signals.
+maestro-android device --device <device-id> files models/
+maestro-android device --device <device-id> logcat --filter "ModelDownload|MULTIMODAL|RuntimeOrchestrator" --lines 120
+```
+
+Success criteria:
+
+1. The download completes without surfacing a checksum/runtime/provenance error.
+2. Both primary and auxiliary artifacts appear under device model storage.
+3. The installed version is visible in the model library and can be activated.
+4. Runtime logs show the auxiliary projector path resolving when the model requires it.
+
 ## Runbook: High-Risk PR Verification
 
 Use when PR carries `risk:e2e-lifecycle`, `risk:runtime`, `risk:provisioning`, or touches high-risk runtime/provisioning/chat paths.

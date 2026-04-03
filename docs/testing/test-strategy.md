@@ -26,7 +26,7 @@ Last updated: 2026-03-15
 | Image attach | runtime/image contract tests | maestro scenario coverage | Eng + QA |
 | Tool safety contracts | tool-runtime schema tests + typed tool result mapping | local-tool evidence in QA matrix/usability packet | Eng + QA + Security |
 | Privacy controls and redaction | diagnostics redaction tests + privacy UI checks | privacy claim-parity ticket evidence | Eng + QA + Security |
-| Model setup recovery | provisioning/viewmodel tests | first-run lifecycle E2E + recovery evidence in WP-13 packet | Eng + QA + Product |
+| Model setup recovery | provisioning/viewmodel tests | first-run lifecycle E2E + recovery evidence in WP-13 packet; use a scoped bundle-download repro when provisioning changes affect multi-artifact models | Eng + QA + Product |
 
 ## Environment Decision Matrix
 
@@ -58,7 +58,7 @@ Last updated: 2026-03-15
 4. `python3 tools/devctl/main.py gate promotion [--include-screenshot-pack]` for promotion readiness.
 5. `bash scripts/dev/test.sh merge` remains the canonical broad merge-equivalent unit/contract lane.
 6. `python3 tools/devctl/main.py lane android-instrumented` for Android smoke.
-7. `python3 tools/devctl/main.py lane maestro` for E2E app workflows; prefer tag-scoped runs when you only need one risk slice (for example `--include-tags smoke` or `--include-tags model-management`).
+7. `python3 tools/devctl/main.py lane maestro` for E2E app workflows; prefer tag-scoped runs when you only need one risk slice (for example `--include-tags smoke` or `--include-tags model-management`), and use the bundle-download scoped repro recipe for remote-manifest multi-artifact validation.
 8. `python3 tools/devctl/main.py lane journey` for strict send/runtime journey evidence; add `--steps instrumentation,send-capture,maestro` only when you explicitly want Maestro replay in the same lane.
 9. `python3 tools/devctl/main.py lane screenshot-pack [--product-signal-only]` for UI screenshot contract.
 10. Stage-2 runtime closure lanes remain physical-device signoff lanes.

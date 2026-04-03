@@ -75,10 +75,10 @@
           ]
         },
         {
-          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt",
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ModalOrchestrator.kt",
           "must_contain": [
             "ToolDialog(",
-            "onUsePrompt = viewModel::prefillComposer"
+            "onUsePrompt = onUseToolPrompt"
           ]
         },
         {
@@ -88,10 +88,17 @@
           ]
         },
         {
+          "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatApp.kt",
+          "must_contain": [
+            "onSuggestedPrompt = viewModel::prefillComposer",
+            "onUseToolPrompt = viewModel::prefillComposer"
+          ]
+        },
+        {
           "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/ChatViewModelRuntimeWorkflow.kt",
           "must_contain": [
             "fun ChatViewModel.prefillComposerInternal(text: String)",
-            "isToolDialogOpen = false"
+            "activeSurface = ModalSurface.None"
           ]
         }
       ]
@@ -122,7 +129,7 @@
         {
           "glob": "apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/SettingsSheet.kt",
           "must_contain": [
-            "internal fun PrivacyInfoSheet"
+            "private fun PrivacySection"
           ]
         }
       ]

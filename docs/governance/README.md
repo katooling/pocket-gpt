@@ -6,13 +6,13 @@ Docs governance has three layers:
 
 1. `docs-drift`: checks canonical-vs-noncanonical command/process duplication policy.
 2. `docs-health`: checks link integrity (markdown links + backtick path refs), status-field policy, required indexes, and evidence-retention policy from config.
-3. `docs-accuracy`: checks feature-doc-code parity using `docs/governance/docs-accuracy-manifest.json` and emits a machine-readable drift report.
+3. `docs-accuracy`: checks feature-doc-code parity using `docs/governance/docs-accuracy-manifest.json` and emits a machine-readable drift report under the build output directory.
 
 ## Contracts
 
 - Policy config: `config/devctl/docs-governance.json`
 - Feature parity manifest: `docs/governance/docs-accuracy-manifest.json`
-- Drift report output: `build/devctl/docs-drift-report.json`
+- Drift report output: generated under the build output directory as `docs-drift-report.json`
 
 ## Commands
 
@@ -25,7 +25,7 @@ python3 tools/devctl/main.py governance screenshot-inventory-check
 
 ## Drift Report Schema (v1)
 
-`build/devctl/docs-drift-report.json` contains:
+The generated drift report file contains:
 
 1. `schema`
 2. `generated_at_utc`
@@ -74,7 +74,7 @@ What it catches:
 
 1. Explicit doc/code marker parity for features defined in manifest.
 2. Missing files or code globs in the declared parity surface.
-3. Drift report output (`build/devctl/docs-drift-report.json`) for CI/review.
+3. Drift report output for CI/review.
 
 What it misses:
 

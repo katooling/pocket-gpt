@@ -156,7 +156,7 @@ Decision:
 2. compare every change against PocketPal on the same phone and model;
 3. use stage-2, not feel, as the source of truth.
 
-Status:
+Current state:
 
 1. implemented as a repeatable compact/full sweep through `bash scripts/dev/cpu-sweep.sh`;
 2. still needs repeated device runs and PocketPal exports to choose the best long-term defaults.
@@ -172,7 +172,7 @@ Decision:
 
 1. turn it into a hard device benchmark gate.
 
-Status:
+Current state:
 
 1. implemented:
    - `stage2_require_prefix_cache_hit`
@@ -189,7 +189,7 @@ Decision:
 
 1. add a stable instrumentation regression around that full flow.
 
-Status:
+Current state:
 
 1. implemented in `ChatQuickLoadFlowInstrumentationTest`.
 
@@ -203,7 +203,7 @@ Decision:
 
 1. surface model memory mode and prefix-cache mode in exported diagnostics and the in-app diagnostics panel.
 
-Status:
+Current state:
 
 1. implemented.
 
@@ -218,7 +218,7 @@ Decision:
 
 1. keep OpenCL frozen except for a narrow native-only spike when explicitly scheduled.
 
-Status:
+Current state:
 
 1. not selected for the mainline performance lane right now.
 
@@ -233,7 +233,7 @@ Decision:
 
 1. treat Hexagon as a bounded reference-device spike only.
 
-Status:
+Current state:
 
 1. not selected for the current mainline lane.
 
