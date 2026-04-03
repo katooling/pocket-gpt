@@ -50,9 +50,9 @@ Old persisted values take precedence over new code defaults on startup.
 
 **Resolution**:
 ```bash
-adb -s <device-id> shell run-as com.pocketagent.android \
+adb -s your-device-id shell run-as com.pocketagent.android \
   rm -f shared_prefs/pocketagent_runtime_tuning.xml
-adb -s <device-id> shell am force-stop com.pocketagent.android
+adb -s your-device-id shell am force-stop com.pocketagent.android
 ```
 
 For production: Add migration guards (e.g., `safeKvCacheType()`) that reject invalid
@@ -85,7 +85,7 @@ Long inference runs produce enough logs to rotate out your diagnostic output.
 
 **Resolution**: Always stream logcat to a file BEFORE starting the test:
 ```bash
-adb -s <device-id> logcat -s PocketLlamaJNI:I > /tmp/diag.log &
+adb -s your-device-id logcat -s PocketLlamaJNI:I > /tmp/diag.log &
 ```
 
 ---

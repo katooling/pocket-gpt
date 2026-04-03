@@ -33,7 +33,7 @@ UI (Compose)  →  Runtime (KMP)  →  JNI Bridge  →  llama.cpp (C++)
 ## Build and Deploy
 
 ```bash
-bash scripts/android/dev_loop.sh --serial <device-id>   # full cycle
+bash scripts/android/dev_loop.sh --serial your-device-id   # full cycle
 ./gradlew :apps:mobile-android:installDebug              # just install
 adb -s <id> shell am start -n com.pocketagent.android/.MainActivity
 ```

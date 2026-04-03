@@ -5,9 +5,9 @@
 Use the wrapper when you want repo lanes plus an explicit target device:
 
 ```bash
-maestro-android lane maestro --device RFCT2178PDV
-maestro-android lane journey --device RFCT2178PDV
-maestro-android lane screenshot-pack --device RFCT2178PDV
+maestro-android lane maestro --device your-device-id
+maestro-android lane journey --device your-device-id
+maestro-android lane screenshot-pack --device your-device-id
 ```
 
 This saves the manual `ANDROID_SERIAL=<serial> ...` prefix for delegated lanes.
@@ -19,7 +19,7 @@ Use `scoped` instead of hand-writing long `connectedDebugAndroidTest` commands:
 ```bash
 maestro-android scoped \
   --type instrumented \
-  --device RFCT2178PDV \
+  --device your-device-id \
   --test-class com.pocketagent.android.ChatQuickLoadFlowInstrumentationTest
 ```
 
@@ -28,7 +28,7 @@ Method-level selection works too:
 ```bash
 maestro-android scoped \
   --type instrumented \
-  --device RFCT2178PDV \
+  --device your-device-id \
   --test-class com.pocketagent.android.RealRuntimeJourneyInstrumentationTest#send_flow_reaches_ready
 ```
 
@@ -37,7 +37,7 @@ Pass runner args without spelling out Gradle properties:
 ```bash
 maestro-android scoped \
   --type instrumented \
-  --device RFCT2178PDV \
+  --device your-device-id \
   --test-class com.pocketagent.android.MainActivityUiSmokeTest \
   --runner-arg screenshot_pack_dir=tmp/screenshots \
   --runner-arg screenshot_pack_fallback_dir=tmp/screenshots-fallback \
@@ -48,7 +48,7 @@ maestro-android scoped \
 If you bypass the wrapper, the equivalent direct form is:
 
 ```bash
-ANDROID_SERIAL=RFCT2178PDV ./gradlew --no-daemon \
+ANDROID_SERIAL=your-device-id ./gradlew --no-daemon \
   :apps:mobile-android:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.pocketagent.android.MainActivityUiSmokeTest \
   -Pandroid.testInstrumentationRunnerArguments.screenshot_pack_dir=tmp/screenshots

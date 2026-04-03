@@ -30,11 +30,11 @@ Use the smallest standard command that proves the change.
    - Use for one connected Android test class or method without rerunning the full lane.
    - Add `--runner-arg key=value` for screenshot-pack or other instrumentation args.
 10. `maestro-android cloud smoke`
-   - Hosted supplemental smoke coverage only.
+    - Hosted supplemental smoke coverage only.
 11. `maestro-android cloud benchmark`
-   - Hosted GPU-vs-CPU benchmark coverage only.
+    - Hosted GPU-vs-CPU benchmark coverage only.
 12. `maestro-android cloud status label:upload-id`
-   - Poll upload ids when a cloud run has already been started.
+    - Poll upload ids when a cloud run has already been started.
 
 ## Flow Health
 
@@ -80,6 +80,8 @@ For this repo, these are the preferred short loops before rerunning `android-ins
 Use these when a failure is isolated to one bootstrap path, one instrumentation suite, or one device-only state problem.
 
 ## Available testTags (resource-ids for Maestro `id:` selectors)
+
+Run `maestro-android audit-testtags` to verify these against the live build.
 
 | testTag | Component | File |
 |---------|-----------|------|

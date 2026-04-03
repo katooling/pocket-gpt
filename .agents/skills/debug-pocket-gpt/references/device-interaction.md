@@ -14,8 +14,8 @@ diagnostic output may have already been rotated out of the buffer.
 
 ```bash
 # Clear old logs, start fresh capture
-adb -s <device-id> logcat -c
-adb -s <device-id> logcat -s PocketLlamaJNI:I > /tmp/pocket-diag.log 2>&1 &
+adb -s your-device-id logcat -c
+adb -s your-device-id logcat -s PocketLlamaJNI:I > /tmp/pocket-diag.log 2>&1 &
 LOGCAT_PID=$!
 
 # ... do your testing ...
@@ -28,23 +28,23 @@ kill $LOGCAT_PID 2>/dev/null
 
 ```bash
 # Filtered (recommended for inference debugging)
-adb -s <device-id> logcat -s PocketLlamaJNI:I > /tmp/diag.log &
+adb -s your-device-id logcat -s PocketLlamaJNI:I > /tmp/diag.log &
 
 # With core layer too (for ggml allocation / graph errors)
-adb -s <device-id> logcat -s PocketLlamaJNI:I PocketLlamaCore:D > /tmp/diag.log &
+adb -s your-device-id logcat -s PocketLlamaJNI:I PocketLlamaCore:D > /tmp/diag.log &
 
 # Full logcat (when you don't know where the problem is)
-adb -s <device-id> logcat > /tmp/full.log &
+adb -s your-device-id logcat > /tmp/full.log &
 ```
 
 ### Querying Existing Buffer
 
 ```bash
 # Dump existing buffer (no streaming)
-adb -s <device-id> logcat -d -s PocketLlamaJNI:I | tail -30
+adb -s your-device-id logcat -d -s PocketLlamaJNI:I | tail -30
 
 # Search for specific diagnostic output
-adb -s <device-id> logcat -d | grep "DIAG_" | head -30
+adb -s your-device-id logcat -d | grep "DIAG_" | head -30
 ```
 
 ## Reading Screen Text
@@ -54,8 +54,8 @@ adb -s <device-id> logcat -d | grep "DIAG_" | head -30
 More reliable than screenshots -- gives you exact text content programmatically.
 
 ```bash
-adb -s <device-id> shell uiautomator dump /data/local/tmp/ui.xml
-adb -s <device-id> shell cat /data/local/tmp/ui.xml \
+adb -s your-device-id shell uiautomator dump /data/local/tmp/ui.xml
+adb -s your-device-id shell cat /data/local/tmp/ui.xml \
   | sed 's/></>\n</g' \
   | grep 'text="' | grep -v 'text=""' \
   | sed 's/.*text="\([^"]*\)".*/\1/'
@@ -64,7 +64,7 @@ adb -s <device-id> shell cat /data/local/tmp/ui.xml \
 ### Screenshots
 
 ```bash
-adb -s <device-id> exec-out screencap -p > /tmp/screen.png
+adb -s your-device-id exec-out screencap -p > /tmp/screen.png
 ```
 
 Useful when you need visual layout context, but text extraction is
@@ -77,7 +77,7 @@ harder (requires OCR or visual inspection).
 Extract bounds from the UI hierarchy dump:
 
 ```bash
-adb -s <device-id> shell cat /data/local/tmp/ui.xml \
+adb -s your-device-id shell cat /data/local/tmp/ui.xml \
   | sed 's/></>\n</g' \
   | grep 'text="Send"'
 # Output: ... bounds="[903,1317][996,1376]" ...
@@ -87,7 +87,7 @@ adb -s <device-id> shell cat /data/local/tmp/ui.xml \
 ### Tapping
 
 ```bash
-adb -s <device-id> shell input tap 949 1346
+adb -s your-device-id shell input tap 949 1346
 ```
 
 ### Keyboard Coordinate Shift (Critical Pitfall)
@@ -99,15 +99,15 @@ Button coordinates from before the keyboard appeared are now WRONG.
 
 ```bash
 # 1. Tap input field
-adb -s <device-id> shell input tap 322 2238
+adb -s your-device-id shell input tap 322 2238
 sleep 1
 # 2. Type text
-adb -s <device-id> shell input text 'Hello'
+adb -s your-device-id shell input text 'Hello'
 sleep 1
 # 3. RE-DUMP UI to get updated Send button coordinates
-adb -s <device-id> shell uiautomator dump /data/local/tmp/ui.xml
+adb -s your-device-id shell uiautomator dump /data/local/tmp/ui.xml
 # 4. Find Send button in new coordinates
-adb -s <device-id> shell cat /data/local/tmp/ui.xml \
+adb -s your-device-id shell cat /data/local/tmp/ui.xml \
   | sed 's/></>\n</g' | grep 'send_button'
 # 5. Tap at the NEW coordinates
 ```
@@ -120,7 +120,7 @@ adb -s <device-id> shell cat /data/local/tmp/ui.xml \
 
 ```bash
 # "Say hi to me"
-adb -s <device-id> shell input text 'Say%shi%sto%sme'
+adb -s your-device-id shell input text 'Say%shi%sto%sme'
 ```
 
 Note: `%s` encoding can be inconsistent across Android versions.
@@ -134,9 +134,9 @@ or cleared, you get concatenated garbage.
 **Solution**: Force-stop the app and restart for a clean composer state:
 
 ```bash
-adb -s <device-id> shell am force-stop com.pocketagent.android
+adb -s your-device-id shell am force-stop com.pocketagent.android
 sleep 1
-adb -s <device-id> shell am start -n com.pocketagent.android/.MainActivity
+adb -s your-device-id shell am start -n com.pocketagent.android/.MainActivity
 ```
 
 ## Clearing Stale State
@@ -146,7 +146,7 @@ adb -s <device-id> shell am start -n com.pocketagent.android/.MainActivity
 Stale runtime tuning (KV cache type, GPU settings) can persist across builds:
 
 ```bash
-adb -s <device-id> shell run-as com.pocketagent.android \
+adb -s your-device-id shell run-as com.pocketagent.android \
   rm -f shared_prefs/pocketagent_runtime_tuning.xml
 ```
 
@@ -157,7 +157,7 @@ Then force-stop and restart the app.
 Nuclear option -- clears everything including downloaded models:
 
 ```bash
-adb -s <device-id> shell pm clear com.pocketagent.android
+adb -s your-device-id shell pm clear com.pocketagent.android
 ```
 
 Only use this if you want a truly fresh start (model re-download required).
@@ -167,17 +167,17 @@ Only use this if you want a truly fresh start (model re-download required).
 ### Check if App is Running
 
 ```bash
-adb -s <device-id> shell pidof com.pocketagent.android
+adb -s your-device-id shell pidof com.pocketagent.android
 ```
 
 ### Check Thread State
 
 ```bash
-APP_PID=$(adb -s <device-id> shell pidof com.pocketagent.android)
+APP_PID=$(adb -s your-device-id shell pidof com.pocketagent.android)
 # List threads
-adb -s <device-id> shell ls /proc/$APP_PID/task/
+adb -s your-device-id shell ls /proc/$APP_PID/task/
 # Check specific thread status (R=running, S=sleeping, D=disk wait)
-adb -s <device-id> shell cat /proc/$APP_PID/task/<TID>/status | head -5
+adb -s your-device-id shell cat /proc/$APP_PID/task/<TID>/status | head -5
 ```
 
 Thread in state `R (running)` during generation = active inference (not stuck).

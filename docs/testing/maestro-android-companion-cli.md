@@ -87,12 +87,12 @@ See `.claude/skills/maestro-android-cli/references/testing-map.md` for the canon
 
 ```bash
 maestro-android lane smoke
-maestro-android lane journey --device RFCT2178PDV
+maestro-android lane journey --device your-device-id
 maestro-android lane journey -- --repeats 2
 maestro-android lane screenshot-pack
 maestro-android scoped --flow tmp/maestro-repro.yaml
-maestro-android scoped --type instrumented --device RFCT2178PDV --test-class com.pocketagent.android.ChatQuickLoadFlowInstrumentationTest
-maestro-android scoped --type instrumented --device RFCT2178PDV --test-class com.pocketagent.android.MainActivityUiSmokeTest --runner-arg screenshot_pack_dir=tmp/screens
+maestro-android scoped --type instrumented --device your-device-id --test-class com.pocketagent.android.ChatQuickLoadFlowInstrumentationTest
+maestro-android scoped --type instrumented --device your-device-id --test-class com.pocketagent.android.MainActivityUiSmokeTest --runner-arg screenshot_pack_dir=tmp/screens
 maestro-android device files --storage media models/
 maestro-android device push --storage media mmproj-q8_0.gguf models/
 maestro-android lint
