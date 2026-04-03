@@ -88,7 +88,7 @@ For runtime tuning analysis after repeated device runs, use `docs/testing/runtim
 ## Stage-2 Benchmark Wrapper
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id> [--date YYYY-MM-DD] [--profile quick|closure] [--models 0.8b|2b|both] [--scenarios a|b|both] [--resume] [--install-mode auto|force|skip] [--logcat filtered|full] [--evidence-note-path <abs-path>]
+bash scripts/dev/bench.sh stage2 --device your-device-id [--date YYYY-MM-DD] [--profile quick|closure] [--models 0.8b|2b|both] [--scenarios a|b|both] [--resume] [--install-mode auto|force|skip] [--logcat filtered|full] [--evidence-note-path <abs-path>]
 ```
 
 Required environment (device file paths for side-loaded models):
@@ -100,7 +100,7 @@ export POCKETGPT_QWEN_3_5_2B_Q4_SIDELOAD_PATH=/absolute/device/path/qwen3.5-2b-q
 
 Only the paths for the selected `--models` are required now. A `0.8b` quick run does not require the 2B path.
 
-Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`:
+Contract outputs under `scripts/benchmarks/runs/YYYY-MM-DD/your-device-id/`:
 
 1. `scenario-a.csv`
 2. `scenario-b.csv`
@@ -120,7 +120,7 @@ Evidence integrity gate:
 
 ```bash
 python3 scripts/benchmarks/validate_stage2_runtime_evidence.py \
-  scripts/benchmarks/runs/YYYY-MM-DD/<device-id>
+  scripts/benchmarks/runs/YYYY-MM-DD/your-device-id
 ```
 
 Profile behavior:
@@ -153,7 +153,7 @@ Optional cache controls (env):
 Focused shared-session prefix-cache regression:
 
 ```bash
-bash scripts/dev/prefix-cache-regression.sh --device <device-id> --install-mode skip
+bash scripts/dev/prefix-cache-regression.sh --device your-device-id --install-mode skip
 ```
 
 This wraps the smallest stage-2 run that must prove:
@@ -165,7 +165,7 @@ This wraps the smallest stage-2 run that must prove:
 Curated CPU tuning sweep:
 
 ```bash
-bash scripts/dev/cpu-sweep.sh --device <device-id> --install-mode skip
+bash scripts/dev/cpu-sweep.sh --device your-device-id --install-mode skip
 ```
 
 This runs the shared-session 0.8B stage-2 path across a small CPU-focused preset set, then writes:
@@ -177,7 +177,7 @@ This runs the shared-session 0.8B stage-2 path across a small CPU-focused preset
 Optional parity input:
 
 ```bash
-bash scripts/dev/cpu-sweep.sh --device <device-id> --install-mode skip --pocketpal tmp/pocketpal-benchmark.json
+bash scripts/dev/cpu-sweep.sh --device your-device-id --install-mode skip --pocketpal tmp/pocketpal-benchmark.json
 ```
 
 Use `--preset full` when you want the larger batch/context sweep instead of the compact default.
@@ -271,7 +271,7 @@ bash scripts/dev/scoped-repro.sh --flow tmp/maestro-repro.yaml
 Common options:
 
 1. `--no-build --no-install` for faster iterative loops.
-2. `--serial <device-id>` when multiple devices are attached.
+2. `--serial your-device-id` when multiple devices are attached.
 3. `--pattern "<regex>"` to tune crash/runtime signature detection.
 4. `-- --format junit` to pass extra flags through to `maestro test`.
 

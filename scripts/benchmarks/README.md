@@ -25,7 +25,7 @@ This directory contains benchmark utilities used by stage-2 and journey evidence
 
 Stage-2 raw artifacts are written under:
 
-- `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/...`
+- `scripts/benchmarks/runs/YYYY-MM-DD/your-device-id/...`
 
 Human-readable evidence belongs under:
 

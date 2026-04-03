@@ -30,6 +30,6 @@ Search in the existing minimal flows in first 2 lines of the files to see if you
 - If not, create a minimal Maestro flow in `tmp/` that performs only the failing path (ensure to include title and description the first 2 lines).
 Use `bash scripts/dev/scoped-repro.sh --flow tmp/<scoped-flow>.yaml` for this loop.
 The script builds/installs, runs the flow, captures Maestro output + logcat under `tmp/`, and scans for crash/runtime signatures with app-context filtering. 
-Use `--no-build --no-install` for fast reruns and `--serial <device-id>` for multi-device setups.
+Use `--no-build --no-install` for fast reruns and `--serial your-device-id` for multi-device setups.
 
 Do not use scoped repro alone as release evidence. Promote recurring risks into stable tests under `tests/maestro/` and run canonical lanes afterward.

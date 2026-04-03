@@ -76,7 +76,7 @@ Speed loop options:
 1. Re-run without rebuilding/installing app:
    - `bash scripts/dev/scoped-repro.sh --flow tmp/maestro-repro.yaml --no-build --no-install`
 2. Target a specific device:
-   - `bash scripts/dev/scoped-repro.sh --flow tmp/maestro-repro.yaml --serial <device-id>`
+   - `bash scripts/dev/scoped-repro.sh --flow tmp/maestro-repro.yaml --serial your-device-id`
 3. Override crash signature regex:
    - `bash scripts/dev/scoped-repro.sh --flow tmp/maestro-repro.yaml --pattern "<regex>"`
 
@@ -165,11 +165,11 @@ python3 -m http.server 8765 --directory tmp/bundle-fixture
   :apps:mobile-android:installDebug
 
 # 5. Run a focused Maestro repro that opens the model library and downloads the bundle.
-bash scripts/dev/scoped-repro.sh --flow tmp/bundle-download-e2e.yaml --serial <device-id>
+bash scripts/dev/scoped-repro.sh --flow tmp/bundle-download-e2e.yaml --serial your-device-id
 
 # 6. Inspect installed files and runtime signals.
-maestro-android device --device <device-id> files models/
-maestro-android device --device <device-id> logcat --filter "ModelDownload|MULTIMODAL|RuntimeOrchestrator" --lines 120
+maestro-android device --device your-device-id files models/
+maestro-android device --device your-device-id logcat --filter "ModelDownload|MULTIMODAL|RuntimeOrchestrator" --lines 120
 ```
 
 Success criteria:
@@ -241,14 +241,14 @@ python3 tools/devctl/main.py lane journey --repeats 3 --mode strict --reply-time
 Or run the benchmark sweep:
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id> --profile quick --models 0.8b --scenarios a
+bash scripts/dev/bench.sh stage2 --device your-device-id --profile quick --models 0.8b --scenarios a
 ```
 
 Then:
 
 1. Export diagnostics from the app's advanced settings sheet.
 2. In the diagnostic message, inspect `RUNTIME_TUNING|...`, `RUNTIME_TUNING_SAMPLE|...`, `RUNTIME_RESIDENCY|...`, and `PREFIX_CACHE_DIAG|...`.
-3. Correlate them with files under `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/` for stage-2 benchmark sweeps or `tmp/devctl-artifacts/YYYY-MM-DD/<device-id>/journey/<stamp>/` for `devctl lane journey` runs:
+3. Correlate them with files under `scripts/benchmarks/runs/YYYY-MM-DD/your-device-id/` for stage-2 benchmark sweeps or `tmp/devctl-artifacts/YYYY-MM-DD/your-device-id/journey/<stamp>/` for `devctl lane journey` runs:
    - `summary.json`
    - `runtime-log-signals.md`
    - `scenario-a.csv` / `scenario-b.csv`
@@ -302,7 +302,7 @@ python3 tools/devctl/main.py lane screenshot-pack --product-signal-only
 ## Runbook: Stage-2 Runtime Closure
 
 ```bash
-bash scripts/dev/bench.sh stage2 --profile closure --device <device-id> --models both --scenarios both --install-mode auto
+bash scripts/dev/bench.sh stage2 --profile closure --device your-device-id --models both --scenarios both --install-mode auto
 ```
 
 Attach evidence note and run:

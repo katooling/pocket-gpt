@@ -67,7 +67,7 @@ bash scripts/android/dev_loop.sh
 Options:
 
 ```bash
-bash scripts/android/dev_loop.sh --serial <device-id>          # Target specific device
+bash scripts/android/dev_loop.sh --serial your-device-id          # Target specific device
 bash scripts/android/dev_loop.sh --no-install                  # Skip rebuild (just relaunch + logs)
 bash scripts/android/dev_loop.sh --full-logcat                 # Stream all logcat (unfiltered)
 bash scripts/android/dev_loop.sh --filter "ERROR|CRASH"        # Custom log filter

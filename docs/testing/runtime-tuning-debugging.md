@@ -42,7 +42,7 @@ There are two primary result surfaces.
 
 Device benchmark artifacts live under:
 
-- `scripts/benchmarks/runs/YYYY-MM-DD/<device-id>/`
+- `scripts/benchmarks/runs/YYYY-MM-DD/your-device-id/`
 
 Important files to inspect first:
 
@@ -104,13 +104,13 @@ Use this when you want repeated sends against the same device/runtime configurat
 ### Stage-2 Benchmark Sweep
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id> --profile quick --models 0.8b --scenarios a
+bash scripts/dev/bench.sh stage2 --device your-device-id --profile quick --models 0.8b --scenarios a
 ```
 
 For closure-level evidence:
 
 ```bash
-bash scripts/dev/bench.sh stage2 --device <device-id> --profile closure --models both --scenarios both
+bash scripts/dev/bench.sh stage2 --device your-device-id --profile closure --models both --scenarios both
 ```
 
 After the benchmark finishes:

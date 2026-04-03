@@ -22,7 +22,7 @@ rules:
     gradle_tasks:
       - :packages:native-bridge:test
     recommended_lanes:
-      - "stage2 --profile quick --device <device-id>"
+      - "stage2 --profile quick --device your-device-id"
 
   - pattern: apps/mobile-android/src/main/kotlin/com/pocketagent/android/ui/**
     include_android_unit: true
@@ -79,7 +79,7 @@ rules:
 
   - pattern: scripts/android/**
     recommended_lanes:
-      - "stage2 --profile quick --device <device-id>"
+      - "stage2 --profile quick --device your-device-id"
 
   - pattern: scripts/dev/**
     gradle_tasks:

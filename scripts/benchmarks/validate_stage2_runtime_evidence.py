@@ -127,7 +127,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate Stage-2 benchmark artifacts for native runtime closure evidence"
     )
-    parser.add_argument("run_dir", help="Path to scripts/benchmarks/runs/YYYY-MM-DD/<device-id>")
+    parser.add_argument("run_dir", help="Path to scripts/benchmarks/runs/YYYY-MM-DD/your-device-id")
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
