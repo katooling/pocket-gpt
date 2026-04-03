@@ -1,6 +1,7 @@
 package com.pocketagent.inference
 
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.core.model.ModelArtifactRole
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -104,6 +105,21 @@ class ModelCatalogTest {
     }
 
     @Test
+    fun `bonsai expansion tiers stay bridge-supported but opt in only`() {
+        listOf(
+            ModelCatalog.BONSAI_1_7B_Q1_0_G128 to 4,
+            ModelCatalog.BONSAI_4B_Q1_0_G128 to 6,
+        ).forEach { (modelId, minRamGb) ->
+            val descriptor = ModelCatalog.descriptorFor(modelId)!!
+            assertTrue(descriptor.bridgeSupported, "$modelId should stay runtime-enabled")
+            assertEquals(false, descriptor.autoRoutingEnabled, "$modelId should stay out of auto-routing")
+            assertEquals(false, descriptor.startupCandidate, "$modelId should stay opt-in")
+            assertEquals(minRamGb, descriptor.minRamGb, "$modelId should keep the expected RAM floor")
+            assertTrue(ModelCatalog.routingModesForModel(modelId).isEmpty(), "$modelId should not require a routing enum")
+        }
+    }
+
+    @Test
     fun `descriptors expose env key tokens`() {
         ModelCatalog.modelDescriptors().forEach { descriptor ->
             assertEquals(
@@ -139,6 +155,21 @@ class ModelCatalogTest {
                 targetModelId = "missing-target",
                 draftModelId = ModelCatalog.SMOLLM3_3B_UD_IQ2_XXS,
             ),
+        )
+    }
+
+    @Test
+    fun `normalized specs expose prompt profile and artifact bundle metadata`() {
+        val gemma = ModelCatalog.normalizedSpecFor(ModelCatalog.GEMMA_2_2B_Q4_K_M)
+        val qwenVision = ModelCatalog.normalizedSpecFor(ModelCatalog.QWEN_3_5_0_8B_Q4)
+
+        assertEquals("gemma2-it-legacy", gemma?.promptProfile?.profileId)
+        assertEquals("model", gemma?.promptProfile?.assistantRoleName)
+        assertTrue(
+            qwenVision?.variants?.firstOrNull()
+                ?.artifactBundle
+                ?.artifacts
+                ?.any { artifact -> artifact.role == ModelArtifactRole.MMPROJ } == true,
         )
     }
 }

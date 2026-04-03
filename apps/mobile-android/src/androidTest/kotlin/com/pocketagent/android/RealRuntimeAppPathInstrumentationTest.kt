@@ -204,6 +204,10 @@ class RealRuntimeAppPathInstrumentationTest {
             "Skipping Bonsai app-path lane. Set stage2_enable_app_path_test=true for RC app-path validation.",
             parseBooleanArg(args, ARG_ENABLE_APP_PATH_TEST, defaultValue = false),
         )
+        val bonsaiModelId = args.getString(ARG_BONSAI_MODEL_ID)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: ModelCatalog.BONSAI_8B_Q1_0_G128
         val modelPath0_8bRaw = args.getString(ARG_MODEL_PATH_0_8B)?.trim().orEmpty()
         val modelPathBonsaiRaw = args.getString(ARG_MODEL_PATH_BONSAI)?.trim().orEmpty()
         assumeTrue(
@@ -222,13 +226,13 @@ class RealRuntimeAppPathInstrumentationTest {
         )
         val seededBonsai = seedAndActivateModel(
             appContext = appContext,
-            modelId = ModelCatalog.BONSAI_8B_Q1_0_G128,
+            modelId = bonsaiModelId,
             absolutePath = modelPathBonsai,
         )
 
         val snapshot = AppRuntimeDependencies.currentProvisioningSnapshot(appContext)
         val state0 = snapshot.models.first { it.modelId == ModelCatalog.QWEN_3_5_0_8B_Q4 }
-        val stateBonsai = snapshot.models.first { it.modelId == ModelCatalog.BONSAI_8B_Q1_0_G128 }
+        val stateBonsai = snapshot.models.first { it.modelId == bonsaiModelId }
         assertEquals(seeded0.version, state0.activeVersion)
         assertEquals(seededBonsai.version, stateBonsai.activeVersion)
         assertEquals(normalizePath(modelPath0_8b), normalizePath(state0.absolutePath.orEmpty()))
@@ -248,7 +252,7 @@ class RealRuntimeAppPathInstrumentationTest {
         assertEquals("NATIVE_JNI", facade.runtimeBackend())
         val resourceControl = facade as com.pocketagent.runtime.RuntimeResourceControl
         val loadResult = resourceControl.loadModel(
-            modelId = ModelCatalog.BONSAI_8B_Q1_0_G128,
+            modelId = bonsaiModelId,
             modelVersion = seededBonsai.version,
         )
         assertTrue(
@@ -256,7 +260,7 @@ class RealRuntimeAppPathInstrumentationTest {
             loadResult.success,
         )
         assertEquals(
-            ModelCatalog.BONSAI_8B_Q1_0_G128,
+            bonsaiModelId,
             resourceControl.loadedModel()?.modelId,
         )
     }
@@ -346,6 +350,7 @@ class RealRuntimeAppPathInstrumentationTest {
         private const val ARG_MODEL_PATH_0_8B = "stage2_model_0_8b_path"
         private const val ARG_MODEL_PATH_2B = "stage2_model_2b_path"
         private const val ARG_MODEL_PATH_BONSAI = "stage2_model_bonsai_path"
+        private const val ARG_BONSAI_MODEL_ID = "stage2_model_bonsai_id"
         private const val ARG_MODEL_PATH_SMOLLM3_Q4 = "stage2_model_smol_360m_path"
         private const val ARG_MODEL_PATH_SMOLLM3_DRAFT = "stage2_model_smol_135m_path"
     }

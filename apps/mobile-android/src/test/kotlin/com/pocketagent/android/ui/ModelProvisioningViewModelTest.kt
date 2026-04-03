@@ -6,6 +6,14 @@ import com.pocketagent.android.runtime.ProvisioningGateway
 import com.pocketagent.android.runtime.RuntimeDomainError
 import com.pocketagent.android.runtime.RuntimeDomainException
 import com.pocketagent.android.runtime.RuntimeErrorCodes
+import com.pocketagent.android.runtime.DefaultModelCatalogEligibilityEvaluator
+import com.pocketagent.android.runtime.DeviceGpuOffloadAdvisory
+import com.pocketagent.android.runtime.GpuProbeFailureReason
+import com.pocketagent.android.runtime.GpuProbeResult
+import com.pocketagent.android.runtime.GpuProbeStatus
+import com.pocketagent.android.runtime.ModelEligibilitySignals
+import com.pocketagent.android.runtime.ModelEligibilitySignalsProvider
+import com.pocketagent.android.runtime.ModelSupportLevel
 import com.pocketagent.android.runtime.RuntimeModelImportResult
 import com.pocketagent.android.runtime.RuntimeModelLifecycleSnapshot
 import com.pocketagent.android.runtime.RuntimeProvisioningSnapshot
@@ -184,6 +192,65 @@ class ModelProvisioningViewModelTest {
     }
 
     @Test
+    fun `library ui state carries unsupported bonsai eligibility for cpu only devices`() = runTest(dispatcher) {
+        val bonsaiVersion = ModelDistributionVersion(
+            modelId = "bonsai-1.7b-q1_0_g128",
+            version = "q1_0_g128",
+            downloadUrl = "https://example.com/bonsai-1.7b.gguf",
+            expectedSha256 = "b".repeat(64),
+            provenanceIssuer = "issuer",
+            provenanceSignature = "sig",
+            runtimeCompatibility = "android-arm64-v8a",
+            fileSizeBytes = 123L,
+        )
+        val gateway = FakeProvisioningGateway().apply {
+            manifestResult = ModelDistributionManifest(
+                models = listOf(
+                    ModelDistributionModel(
+                        modelId = bonsaiVersion.modelId,
+                        displayName = "Bonsai 1.7B",
+                        versions = listOf(bonsaiVersion),
+                    ),
+                ),
+            )
+        }
+        val signalsProvider = object : ModelEligibilitySignalsProvider {
+            override fun currentSignals(): ModelEligibilitySignals {
+                return ModelEligibilitySignals(
+                    runtimeCompatibilityTag = "android-arm64-v8a",
+                    runtimeSupportsGpuOffload = false,
+                    deviceAdvisory = DeviceGpuOffloadAdvisory(
+                        supportedForProbe = false,
+                        automaticOpenClEligible = false,
+                        reason = "adreno_family_missing",
+                    ),
+                    gpuProbeResult = GpuProbeResult(
+                        status = GpuProbeStatus.FAILED,
+                        failureReason = GpuProbeFailureReason.RUNTIME_UNSUPPORTED,
+                    ),
+                )
+            }
+        }
+        val viewModel = ModelProvisioningViewModel(
+            gateway = gateway,
+            eligibilityEvaluator = DefaultModelCatalogEligibilityEvaluator(),
+            eligibilitySignalsProvider = signalsProvider,
+            ioDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+
+        viewModel.refreshManifest()
+        advanceUntilIdle()
+
+        val libraryState = viewModel.uiState.value.toModelLibraryUiState(defaultGetReadyModelId = "qwen3.5-0.8b-q4")
+        val eligibility = libraryState!!.eligibility.eligibilityFor(bonsaiVersion.modelId, bonsaiVersion.version)
+        assertEquals(ModelSupportLevel.UNSUPPORTED, eligibility.supportLevel)
+        assertFalse(eligibility.catalogVisible)
+        assertFalse(eligibility.downloadAllowed)
+        assertFalse(eligibility.loadAllowed)
+    }
+
+    @Test
     fun `runtime ui state exposes lifecycle and installed versions`() = runTest(dispatcher) {
         val gateway = FakeProvisioningGateway().apply {
             lifecycle.value = RuntimeModelLifecycleSnapshot(
@@ -284,6 +351,16 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     val downloads = MutableStateFlow<List<DownloadTaskState>>(emptyList())
     val downloadPreferences = MutableStateFlow(DownloadPreferencesState())
     val lifecycle = MutableStateFlow(RuntimeModelLifecycleSnapshot.initial())
+    var snapshotResult: RuntimeProvisioningSnapshot = sampleSnapshot()
+    var manifestResult: ModelDistributionManifest = ModelDistributionManifest(
+        models = listOf(
+            ModelDistributionModel(
+                modelId = "qwen3.5-0.8b-q4",
+                displayName = "Qwen",
+                versions = emptyList(),
+            ),
+        ),
+    )
     var snapshotCalls: Int = 0
     var importCalls: Int = 0
     var setActiveCalls: Int = 0
@@ -299,7 +376,7 @@ private class FakeProvisioningGateway : ProvisioningGateway {
 
     override fun currentSnapshot(): RuntimeProvisioningSnapshot {
         snapshotCalls += 1
-        return sampleSnapshot()
+        return snapshotResult
     }
 
     override fun observeDownloads() = downloads
@@ -326,19 +403,11 @@ private class FakeProvisioningGateway : ProvisioningGateway {
     }
 
     override suspend fun loadModelDistributionManifest(): ModelDistributionManifest {
-        return ModelDistributionManifest(
-            models = listOf(
-                ModelDistributionModel(
-                    modelId = "qwen3.5-0.8b-q4",
-                    displayName = "Qwen",
-                    versions = emptyList(),
-                ),
-            ),
-        )
+        return manifestResult
     }
 
     override fun listInstalledVersions(modelId: String): List<ModelVersionDescriptor> {
-        return sampleSnapshot().models.first().installedVersions
+        return snapshotResult.models.first().installedVersions
     }
 
     override fun setActiveVersion(modelId: String, version: String): Boolean {

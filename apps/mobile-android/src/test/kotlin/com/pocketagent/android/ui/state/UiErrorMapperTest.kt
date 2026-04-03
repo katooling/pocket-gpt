@@ -66,13 +66,13 @@ class UiErrorMapperTest {
         )
 
         assertNotNull(error)
-        assertTrue(error.userMessage.contains("Bonsai runtime support", ignoreCase = true))
+        assertTrue(error.userMessage.contains("1-bit model format", ignoreCase = true))
     }
 
     @Test
     fun `startup mapper differentiates bonsai gpu requirement guidance`() {
         val error = UiErrorMapper.startupFailure(
-            listOf("RUNTIME_INCOMPATIBLE_MODEL_FORMAT:modelId=bonsai-8b-q1_0_g128|required_backend=gpu|bonsai_gpu_required=true"),
+            listOf("RUNTIME_INCOMPATIBLE_MODEL_FORMAT:modelId=bonsai-8b-q1_0_g128|required_backend=gpu|qualified_gpu_required=true"),
         )
 
         assertNotNull(error)
@@ -195,7 +195,7 @@ class UiErrorMapperTest {
         )
 
         assertNotNull(error)
-        assertTrue(error.userMessage.contains("Bonsai runtime support", ignoreCase = true))
+        assertTrue(error.userMessage.contains("1-bit model format", ignoreCase = true))
         assertEquals(RecoveryAction.CHANGE_MODEL, error.recoveryAction)
     }
 
@@ -204,7 +204,7 @@ class UiErrorMapperTest {
         val error = UiErrorMapper.fromModelLifecycleResult(
             RuntimeModelLifecycleCommandResult.rejected(
                 code = ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE,
-                detail = "RUNTIME_INCOMPATIBLE_MODEL_FORMAT:modelId=bonsai-8b-q1_0_g128|required_backend=gpu|bonsai_gpu_required=true",
+                detail = "RUNTIME_INCOMPATIBLE_MODEL_FORMAT:modelId=bonsai-8b-q1_0_g128|required_backend=gpu|qualified_gpu_required=true",
             ),
         )
 

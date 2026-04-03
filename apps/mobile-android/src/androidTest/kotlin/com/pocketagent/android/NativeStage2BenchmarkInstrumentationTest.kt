@@ -7,8 +7,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.pocketagent.android.runtime.RuntimeDiagnosticsSnapshotParser
 import com.pocketagent.core.ChatResponse
 import com.pocketagent.core.RoutingMode
+import com.pocketagent.inference.AdaptiveRoutingPolicy
 import com.pocketagent.inference.DeviceState
 import com.pocketagent.inference.ModelCatalog
+import com.pocketagent.inference.RoutingModule
 import com.pocketagent.nativebridge.FlashAttnMode
 import com.pocketagent.runtime.PerformanceRuntimeConfig
 import com.pocketagent.runtime.RuntimePerformanceProfile
@@ -63,6 +65,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         )
 
         val container = buildContainer(
+            selectedModelId = modelId,
             modelPathsById = mapOf(modelId to modelPath),
             prefixCacheEnabled = prefixCacheEnabled,
             prefixCacheStrict = prefixCacheStrict,
@@ -144,6 +147,7 @@ class NativeStage2BenchmarkInstrumentationTest {
         )
 
         val container = buildContainer(
+            selectedModelId = modelId,
             modelPathsById = mapOf(modelId to modelPath),
             prefixCacheEnabled = prefixCacheEnabled,
             prefixCacheStrict = prefixCacheStrict,
@@ -393,14 +397,9 @@ class NativeStage2BenchmarkInstrumentationTest {
     }
 
     private fun configureContainerForModel(container: AndroidMvpContainer, modelId: String) {
-        container.setRoutingMode(
-            when (modelId) {
-                ModelCatalog.QWEN_3_5_2B_Q4 -> RoutingMode.QWEN_2B
-                ModelCatalog.SMOLLM3_3B_Q4_K_M -> RoutingMode.SMOLLM3_3B
-                ModelCatalog.BONSAI_8B_Q1_0_G128 -> RoutingMode.BONSAI_8B
-                else -> RoutingMode.QWEN_0_8B
-            },
-        )
+        val descriptor = ModelCatalog.descriptorFor(modelId)
+        val explicitMode = descriptor?.explicitRoutingModes?.firstOrNull()
+        container.setRoutingMode(explicitMode ?: RoutingMode.AUTO)
     }
 
     private fun resolveMaxTokens(raw: String?, defaultValue: Int, minTokens: Int): Int {
@@ -439,6 +438,7 @@ class NativeStage2BenchmarkInstrumentationTest {
     }
 
     private fun buildContainer(
+        selectedModelId: String,
         modelPathsById: Map<String, String>,
         prefixCacheEnabled: Boolean,
         prefixCacheStrict: Boolean,
@@ -464,12 +464,24 @@ class NativeStage2BenchmarkInstrumentationTest {
             artifactSha256ByModelId = shaByModel,
             artifactProvenanceIssuerByModelId = issuerByModel,
             artifactProvenanceSignatureByModelId = signatureByModel,
+            routingModule = fixedBenchmarkRoutingModule(selectedModelId),
             prefixCacheEnabled = prefixCacheEnabled,
             prefixCacheStrict = prefixCacheStrict,
             responseCacheTtlSec = 0L,
             responseCacheMaxEntries = 0,
             toolModule = if (runtimeOptions.disableTools) DisabledBenchmarkToolModule else ToolModuleDefaults.default,
         )
+    }
+
+    private fun fixedBenchmarkRoutingModule(modelId: String): RoutingModule {
+        val fallback = AdaptiveRoutingPolicy()
+        return object : RoutingModule {
+            override fun selectModel(taskType: String, deviceState: DeviceState): String = modelId
+
+            override fun selectContextBudget(taskType: String, deviceState: DeviceState): Int {
+                return fallback.selectContextBudget(taskType, deviceState)
+            }
+        }
     }
 
     private fun scenarioPrompt(
@@ -736,7 +748,10 @@ class NativeStage2BenchmarkInstrumentationTest {
             ModelCatalog.QWEN_3_5_0_8B_Q4 -> ARG_MODEL_PATH_0_8B
             ModelCatalog.QWEN_3_5_2B_Q4 -> ARG_MODEL_PATH_2B
             ModelCatalog.SMOLLM3_3B_Q4_K_M -> ARG_MODEL_PATH_SMOLLM3_Q4
-            ModelCatalog.BONSAI_8B_Q1_0_G128 -> ARG_MODEL_PATH_BONSAI
+            ModelCatalog.BONSAI_1_7B_Q1_0_G128,
+            ModelCatalog.BONSAI_4B_Q1_0_G128,
+            ModelCatalog.BONSAI_8B_Q1_0_G128
+            -> ARG_MODEL_PATH_BONSAI
             else -> ARG_MODEL_PATH_0_8B
         }
     }

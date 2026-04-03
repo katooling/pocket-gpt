@@ -45,6 +45,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class GatewayAdaptersTest {
@@ -165,6 +166,36 @@ class GatewayAdaptersTest {
 
         assertTrue(gateway.currentDownloadPreferences().wifiOnlyEnabled)
         assertTrue(gateway.currentDownloadPreferences().largeDownloadCellularWarningAcknowledged)
+    }
+
+    @Test
+    fun `default provisioning gateway blocks disallowed admission actions`() = runTest {
+        val dependency = RecordingProvisioningDependencyAccess()
+        val gateway = DefaultProvisioningGateway(
+            dependencies = dependency,
+            admissionPolicy = blockedAdmissionPolicy(
+                reason = ModelEligibilityReason.GPU_RUNTIME_UNAVAILABLE,
+            ),
+        )
+        val version = ModelDistributionVersion(
+            modelId = "bonsai-8b-q1_0_g128",
+            version = "q1_0_g128",
+            downloadUrl = "https://example.com/bonsai.gguf",
+            expectedSha256 = "c".repeat(64),
+            provenanceIssuer = "issuer",
+            provenanceSignature = "sig",
+            runtimeCompatibility = "android-arm64-v8a",
+            fileSizeBytes = 123L,
+        )
+
+        val downloadError = assertFailsWith<RuntimeDomainException> {
+            gateway.enqueueDownload(version)
+        }
+        val loadResult = gateway.loadInstalledModel("qwen3.5-0.8b-q4", "1")
+
+        assertEquals(RuntimeErrorCodes.MODEL_ADMISSION_BLOCKED, downloadError.domainError.code)
+        assertEquals(ModelLifecycleErrorCode.RUNTIME_INCOMPATIBLE, loadResult.errorCode)
+        assertTrue(loadResult.detail.orEmpty().contains("action=load"))
     }
 
     @Test
@@ -638,4 +669,22 @@ private class RecordingProvisioningDependencyAccess : ProvisioningDependencyAcce
     }
 
     override fun syncDownloadsFromScheduler() = Unit
+}
+
+private fun blockedAdmissionPolicy(reason: ModelEligibilityReason): ModelAdmissionPolicy {
+    return object : ModelAdmissionPolicy {
+        override fun evaluate(
+            action: ModelAdmissionAction,
+            subject: ModelAdmissionSubject,
+        ): ModelAdmissionDecision {
+            return ModelAdmissionDecision(
+                action = action,
+                subject = subject,
+                eligibility = ModelVersionEligibility.unsupported(
+                    reason = reason,
+                    technicalDetail = "blocked_for_test",
+                ),
+            )
+        }
+    }
 }

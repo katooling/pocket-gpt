@@ -3,6 +3,8 @@ package com.pocketagent.android.runtime.modelmanager
 import com.pocketagent.android.runtime.RuntimeDomainError
 import com.pocketagent.android.runtime.RuntimeDomainException
 import com.pocketagent.android.runtime.RuntimeErrorCodes
+import com.pocketagent.core.model.ModelArtifactRole
+import com.pocketagent.core.model.ModelSourceKind
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -222,6 +224,54 @@ class ModelDistributionManifestProviderTest {
         val manifest = provider.loadManifest()
 
         assertTrue(manifest.lastError?.contains(RuntimeErrorCodes.MODEL_MANIFEST_HTTP_ERROR) == true)
+    }
+
+    @Test
+    fun `load manifest parses bundle artifacts and source kind`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "",
+            bundledManifestLoader = { manifestWithArtifactBundleJson() },
+        )
+
+        val manifest = provider.loadManifest()
+
+        val version = manifest.models.single().versions.single()
+        assertEquals(ModelSourceKind.HUGGING_FACE, version.sourceKind)
+        assertEquals("hf-chatml", version.promptProfileId)
+        assertEquals(2, version.artifacts.size)
+        assertEquals(ModelArtifactRole.PRIMARY_GGUF, version.artifacts.first().role)
+        assertEquals(ModelArtifactRole.MMPROJ, version.artifacts.last().role)
+    }
+
+    @Test
+    fun `load manifest drops invalid optional artifact and keeps valid version`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "",
+            bundledManifestLoader = { manifestWithInvalidOptionalArtifactJson() },
+        )
+
+        val manifest = provider.loadManifest()
+
+        val version = manifest.models.single().versions.single()
+        assertEquals(1, version.artifacts.size)
+        assertEquals(ModelArtifactRole.PRIMARY_GGUF, version.artifacts.single().role)
+        assertTrue(manifest.lastError?.contains("Dropped optional artifact") == true)
+    }
+
+    @Test
+    fun `load manifest drops bundle version when no primary artifact remains`() = runTest {
+        val provider = ModelDistributionManifestProvider(
+            context = null,
+            endpointOverride = "",
+            bundledManifestLoader = { manifestWithoutPrimaryArtifactJson() },
+        )
+
+        val manifest = provider.loadManifest()
+
+        assertTrue(manifest.models.isEmpty())
+        assertTrue(manifest.lastError?.contains("Dropped") == true)
     }
 }
 
@@ -515,6 +565,122 @@ private fun manifestWithRemoteVersionOrderingJson(): String {
                   "expectedSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                   "runtimeCompatibility": "android-arm64-v8a",
                   "fileSizeBytes": 1234
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithArtifactBundleJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "qwen3.5-0.8b-q4",
+              "displayName": "Qwen 3.5 0.8B (Q4)",
+              "versions": [
+                {
+                  "version": "q4_0",
+                  "sourceKind": "HUGGING_FACE",
+                  "promptProfileId": "hf-chatml",
+                  "artifacts": [
+                    {
+                      "artifactId": "primary",
+                      "role": "PRIMARY_GGUF",
+                      "fileName": "Qwen3.5-0.8B-Q4_0.gguf",
+                      "downloadUrl": "https://example.test/qwen.gguf",
+                      "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "runtimeCompatibility": "android-arm64-v8a",
+                      "fileSizeBytes": 111
+                    },
+                    {
+                      "artifactId": "mmproj",
+                      "role": "MMPROJ",
+                      "fileName": "qwen-mmproj.gguf",
+                      "downloadUrl": "https://example.test/qwen-mmproj.gguf",
+                      "expectedSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "runtimeCompatibility": "android-arm64-v8a",
+                      "fileSizeBytes": 22,
+                      "required": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithInvalidOptionalArtifactJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "bundle-opt-test",
+              "displayName": "Bundle Optional Test",
+              "versions": [
+                {
+                  "version": "q4_0",
+                  "sourceKind": "HUGGING_FACE",
+                  "downloadUrl": "https://example.test/bundle-no-primary-fallback.gguf",
+                  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "runtimeCompatibility": "android-arm64-v8a",
+                  "fileSizeBytes": 111,
+                  "artifacts": [
+                    {
+                      "artifactId": "primary",
+                      "role": "PRIMARY_GGUF",
+                      "fileName": "bundle-opt-test.gguf",
+                      "downloadUrl": "https://example.test/bundle-opt-test.gguf",
+                      "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "runtimeCompatibility": "android-arm64-v8a",
+                      "fileSizeBytes": 111
+                    },
+                    {
+                      "artifactId": "mmproj",
+                      "role": "MMPROJ",
+                      "fileName": "bundle-opt-test-mmproj.gguf",
+                      "downloadUrl": "http://example.test/bundle-opt-test-mmproj.gguf",
+                      "expectedSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "runtimeCompatibility": "android-arm64-v8a",
+                      "fileSizeBytes": 22,
+                      "required": false
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+    """.trimIndent()
+}
+
+private fun manifestWithoutPrimaryArtifactJson(): String {
+    return """
+        {
+          "models": [
+            {
+              "modelId": "bundle-no-primary-test",
+              "displayName": "Bundle No Primary Test",
+              "versions": [
+                {
+                  "version": "q4_0",
+                  "sourceKind": "HUGGING_FACE",
+                  "artifacts": [
+                    {
+                      "artifactId": "mmproj",
+                      "role": "MMPROJ",
+                      "fileName": "bundle-no-primary-mmproj.gguf",
+                      "downloadUrl": "https://example.test/bundle-no-primary-mmproj.gguf",
+                      "expectedSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "runtimeCompatibility": "android-arm64-v8a",
+                      "fileSizeBytes": 22,
+                      "required": true
+                    }
+                  ]
                 }
               ]
             }
